@@ -1,4 +1,4 @@
-# inalpha
+# Inalpha
 
 自建全球市场量化交易系统的学习与开发项目。
 
@@ -19,7 +19,7 @@
 | B-2 | vnpy 深度拆解（§3-§8） | ✅ 完成 |
 | B-3 | qlib 深度拆解（§3-§8） | ✅ 完成 |
 | B-4 | TradingAgents 深度拆解（§3-§8） | ✅ 完成 |
-| C | inalpha 自建内核架构设计 | ✅ 完成 |
+| C | Inalpha 自建内核架构设计 | ✅ 完成 |
 | C+ | 编排底盘补强（借鉴 Claude Code：hooks / permissions / plan-exec / MCP） | ✅ 完成 |
 | D | infra + services/data + services/paper 骨架 | ⏳ 待启动 |
 | E | MVP 端到端（用户对话 → 研究 → 回测 → 模拟盘） | ⏳ 待启动 |

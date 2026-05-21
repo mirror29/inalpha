@@ -1,4 +1,4 @@
-# 03 · inalpha 内核架构（正式版）
+# 03 · Inalpha 内核架构（正式版）
 
 > 状态：**Phase C 正式设计**，基于 Phase B 4 份 repo 拆解结论 + 用户锁定决策。
 > 取代 `01-architecture-overview.md` 中的 high-level 草图；01 保留作快照。
@@ -325,7 +325,7 @@ class Order:
 // agents/orchestrator.ts
 export const orchestrator = new Agent({
   name: 'orchestrator',
-  instructions: `你是 inalpha 总调度...`,
+  instructions: `你是 Inalpha 总调度...`,
   model: anthropic('claude-opus-4-7'),
   agents: { traderAgent, riskAgent, researchHubAgent, swarmCoordAgent },
   tools: { dataGetBars, paperListStrategies, /* ... */ },
@@ -541,7 +541,7 @@ inalpha/
 
 按这个顺序起 packages：
 
-1. **infra**：docker-compose 起 postgres + timescaledb + redis；写 0000 migration（建 inalpha 自己的表）
+1. **infra**：docker-compose 起 postgres + timescaledb + redis；写 0000 migration（建 Inalpha 自己的表）
 2. **services/data**（最底层）：FastAPI 骨架 + CCXT Binance 连接 + 1 个 endpoint `GET /bars/{symbol}` + 1 个 WS `/ticks/{symbol}`
 3. **services/paper**：先内核（Clock / MessageBus / Order / Bar）+ 1 个 strategy（SMA cross）+ backtest endpoint
 4. **packages/orchestration**：先 1 个 agent（orchestrator）+ 2 个 tool（`data.get_bars` / `paper.run_backtest`）+ 1 个 workflow（`backtest-and-report`）
