@@ -1,20 +1,34 @@
-"""用户策略实现（例子）+ 策略注册表。
+"""用户策略实现 + 策略注册表。
 
-D-5 起步只有 ``SMACrossStrategy``。后续 D-7+ 会有更多策略示例，最终在 Phase F+ 接受
-外部贡献时再考虑 [ADR-0017 layer 1 沙盒](../../../../docs/decisions/0017-isolation-and-sandboxing.md)。
+D-7 起步 3 个示例：
 
-策略注册表给 D-6 起的 ``POST /backtest`` 用 —— 通过 ``strategy_id`` 字符串
-路由到具体类。
+- ``sma_cross``：经典快慢均线交叉
+- ``buy_and_hold``：基准对照（第一根 bar 买入持有到结束）
+- ``mean_reversion``：布林带均值回归 long-only
+
+策略注册表给 ``POST /backtest`` 用 —— 通过 ``strategy_id`` 字符串路由到具体类。
+
+后续添加策略：实现一个 ``Strategy`` 子类，在 ``_REGISTRY`` 注册一行即可。Phase F+ 接受
+外部贡献时考虑 [ADR-0017 layer 1 沙盒](../../../../docs/decisions/0017-isolation-and-sandboxing.md)。
 """
 from ..strategy.base import Strategy
+from .buy_and_hold import BuyAndHoldStrategy
+from .mean_reversion import MeanReversionStrategy
 from .sma_cross import SMACrossStrategy
 
-__all__ = ["SMACrossStrategy", "get_strategy_class", "list_strategies"]
+__all__ = [
+    "BuyAndHoldStrategy",
+    "MeanReversionStrategy",
+    "SMACrossStrategy",
+    "get_strategy_class",
+    "list_strategies",
+]
 
 
-# 简单字典 registry。D-7+ 多策略时可扩成 entry-points 自动发现。
 _REGISTRY: dict[str, type[Strategy]] = {
     "sma_cross": SMACrossStrategy,
+    "buy_and_hold": BuyAndHoldStrategy,
+    "mean_reversion": MeanReversionStrategy,
 }
 
 
