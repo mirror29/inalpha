@@ -40,6 +40,13 @@ class BinanceConnector:
                 "apiKey": api_key or None,
                 "secret": api_secret or None,
                 "enableRateLimit": True,
+                # 只加载现货 markets：CCXT 默认会同时拉 spot + fapi（USDM 期货）+
+                # dapi（COINM 期货）+ options 的 exchangeInfo，部分网络/VPN 出口对
+                # fapi.binance.com 不通会整个 loadMarkets 失败。MVP 只用现货。
+                "options": {
+                    "defaultType": "spot",
+                    "fetchMarkets": ["spot"],
+                },
             }
         )
 
