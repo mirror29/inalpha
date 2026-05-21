@@ -1,0 +1,98 @@
+"""data-service 的 HTTP 客户端 wrapper。
+
+简单 httpx 异步客户端，附带：
+
+- ``Authorization: Bearer <jwt>`` 自动注入（forward 用户 token）
+- error 时把 data-service 的 ``{code, message}`` 翻译成 ``QuantLabError`` 子类
+- 30s 默认超时
+
+后续 D-7+ 长任务 / WS 订阅另外加 client。
+"""
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+import httpx
+from quant_lab_shared.errors import QuantLabError
+
+
+class DataServiceError(QuantLabError):
+    code = "DATA_SERVICE_ERROR"
+    status_code = 502
+
+
+class DataClient:
+    """data-service 的薄包装。"""
+
+    def __init__(
+        self,
+        base_url: str,
+        jwt_token: str,
+        *,
+        timeout: float = 30.0,
+    ) -> None:
+        # trust_env=False：服务内部互调不走系统代理（避免 ClashX / corp proxy 把
+        # localhost 也代理走）。外部 API（如 CCXT 到 Binance）由各自连接器自己管。
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            headers={"Authorization": f"Bearer {jwt_token}"},
+            timeout=timeout,
+            trust_env=False,
+        )
+
+    async def __aenter__(self) -> DataClient:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        await self._client.aclose()
+
+    async def get_bars(
+        self,
+        *,
+        venue: str,
+        symbol: str,
+        timeframe: str,
+        from_ts: datetime,
+        to_ts: datetime,
+        limit: int = 10_000,
+    ) -> list[dict[str, Any]]:
+        """``GET /bars`` —— 返回 list of bar dicts（schema 见 data-service.BarResponse）。"""
+        try:
+            r = await self._client.get(
+                "/bars",
+                params={
+                    "venue": venue,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "from_ts": from_ts.isoformat(),
+                    "to_ts": to_ts.isoformat(),
+                    "limit": limit,
+                },
+            )
+        except httpx.RequestError as e:
+            raise DataServiceError(
+                f"failed to reach data-service: {e}",
+                code="DATA_SERVICE_UNREACHABLE",
+            ) from e
+
+        if r.status_code >= 400:
+            try:
+                detail = r.json()
+            except Exception:
+                detail = {"message": r.text}
+            raise DataServiceError(
+                f"data-service {r.status_code}: {detail.get('message', 'unknown')}",
+                code=detail.get("code", "DATA_SERVICE_ERROR"),
+                details={"upstream_status": r.status_code, "upstream_body": detail},
+            )
+
+        result = r.json()
+        if not isinstance(result, list):
+            raise DataServiceError(
+                f"unexpected response shape from data-service: {type(result).__name__}"
+            )
+        return result
