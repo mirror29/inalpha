@@ -8,7 +8,7 @@
 无外部依赖。
 
 ```
-src/quant_lab_paper/
+src/inalpha_paper/
 ├── kernel/
 │   ├── clock.py         Clock (ABC) + LiveClock + TestClock
 │   ├── msgbus.py        MessageBus (pub/sub + endpoint，wildcard 匹配)

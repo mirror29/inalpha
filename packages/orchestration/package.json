@@ -1,5 +1,5 @@
 {
-  "name": "@quant-lab/orchestration",
+  "name": "@inalpha/orchestration",
   "version": "0.1.0",
   "private": true,
   "description": "Mastra 编排层：tool / agent / workflow / memory，把后端 service 暴露给 LLM",
@@ -16,15 +16,19 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "echo 'TODO: add eslint or biome'",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "dev": "mastra dev --dir src/mastra"
   },
   "dependencies": {
-    "@mastra/core": "^0.10.0",
+    "@ai-sdk/deepseek": "^0.1.0",
+    "@mastra/core": "^1.35.0",
+    "@mastra/loggers": "^1.1.1",
     "jose": "^5.9.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "mastra": "^1.9.3",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"

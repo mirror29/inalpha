@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from quant_lab_paper.kernel.clock import LiveClock, TestClock, TimeEvent
+from inalpha_paper.kernel.clock import LiveClock, TestClock, TimeEvent
 
 # ─── TestClock 基础 ───
 

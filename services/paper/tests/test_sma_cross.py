@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import pytest
 
-from quant_lab_paper.kernel.clock import TestClock
-from quant_lab_paper.kernel.identifiers import InstrumentId
-from quant_lab_paper.kernel.msgbus import MessageBus
-from quant_lab_paper.model.commands import SubmitOrderCommand
-from quant_lab_paper.model.data import Bar
-from quant_lab_paper.strategies.sma_cross import SMACrossStrategy
-from quant_lab_paper.strategy.base import RISK_ENGINE_ENDPOINT
+from inalpha_paper.kernel.clock import TestClock
+from inalpha_paper.kernel.identifiers import InstrumentId
+from inalpha_paper.kernel.msgbus import MessageBus
+from inalpha_paper.model.commands import SubmitOrderCommand
+from inalpha_paper.model.data import Bar
+from inalpha_paper.strategies.sma_cross import SMACrossStrategy
+from inalpha_paper.strategy.base import RISK_ENGINE_ENDPOINT
 
 
 def _btc() -> InstrumentId:
@@ -82,7 +82,7 @@ def test_golden_cross_triggers_buy() -> None:
 def test_death_cross_triggers_sell_after_buy() -> None:
     strat, captured = _build_strat(fast=3, slow=5)
     # 模拟 PositionOpened 让 strategy 进入 long 状态（绕过完整链路）
-    from quant_lab_paper.model.events import PositionOpened
+    from inalpha_paper.model.events import PositionOpened
 
     # 先金叉买入
     prices_up = [100, 100, 100, 100, 100, 95, 90, 95, 105, 115, 125]
@@ -118,7 +118,7 @@ def test_death_cross_triggers_sell_after_buy() -> None:
 def test_no_repeat_buy_when_already_long() -> None:
     strat, captured = _build_strat(fast=3, slow=5)
     # 模拟已经持有多头
-    from quant_lab_paper.model.events import PositionOpened
+    from inalpha_paper.model.events import PositionOpened
 
     # 先发一个 PositionOpened 让 strategy 进入 long 状态
     strat.msgbus.publish(

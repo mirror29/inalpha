@@ -1,13 +1,13 @@
 """data service 专属 settings。
 
-继承 ``quant_lab_shared.Settings``，加 Binance 凭证字段（公开接口可以为空）。
+继承 ``inalpha_shared.Settings``，加 Binance 凭证字段（公开接口可以为空）。
 """
 from __future__ import annotations
 
 from functools import lru_cache
 
 from pydantic import Field
-from quant_lab_shared.config import Settings as BaseSettings
+from inalpha_shared.config import Settings as BaseSettings
 
 
 class DataSettings(BaseSettings):

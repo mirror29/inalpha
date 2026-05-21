@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from quant_lab_shared.db import DBConn
+from inalpha_shared.db import DBConn
 
 from .. import __version__
 from ..schemas import HealthResponse

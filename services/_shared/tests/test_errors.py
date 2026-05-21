@@ -3,19 +3,19 @@ from __future__ import annotations
 
 import pytest
 
-from quant_lab_shared.errors import (
+from inalpha_shared.errors import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
-    QuantLabError,
+    InalphaError,
     RateLimitedError,
     UnauthorizedError,
     ValidationError,
 )
 
 
-def test_quant_lab_error_default() -> None:
-    err = QuantLabError("something broke")
+def test_inalpha_error_default() -> None:
+    err = InalphaError("something broke")
     assert err.status_code == 500
     assert err.detail == {
         "code": "INTERNAL_ERROR",
@@ -24,8 +24,8 @@ def test_quant_lab_error_default() -> None:
     }
 
 
-def test_quant_lab_error_override() -> None:
-    err = QuantLabError(
+def test_inalpha_error_override() -> None:
+    err = InalphaError(
         "nope",
         code="CUSTOM_CODE",
         status_code=418,
@@ -48,7 +48,7 @@ def test_quant_lab_error_override() -> None:
         (RateLimitedError, "RATE_LIMITED", 429),
     ],
 )
-def test_subclass_defaults(cls: type[QuantLabError], code: str, status: int) -> None:
+def test_subclass_defaults(cls: type[InalphaError], code: str, status: int) -> None:
     err = cls("test message")
     assert err.status_code == status
     assert err.detail["code"] == code

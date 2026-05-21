@@ -1,13 +1,13 @@
 """paper service 专属 settings。
 
-继承 ``quant_lab_shared.Settings``，加 ``DATA_SERVICE_URL`` 字段（跨服务调用 data 用）。
+继承 ``inalpha_shared.Settings``，加 ``DATA_SERVICE_URL`` 字段（跨服务调用 data 用）。
 """
 from __future__ import annotations
 
 from functools import lru_cache
 
 from pydantic import Field
-from quant_lab_shared.config import Settings as BaseSettings
+from inalpha_shared.config import Settings as BaseSettings
 
 
 class PaperSettings(BaseSettings):

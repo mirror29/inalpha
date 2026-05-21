@@ -1,14 +1,14 @@
-name: quant-lab
+name: inalpha
 
 services:
   postgres:
     image: timescale/timescaledb:latest-pg17
-    container_name: quant-lab-postgres
+    container_name: inalpha-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-quant}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required, copy .env.example to .env first}
-      POSTGRES_DB: ${POSTGRES_DB:-quant_lab}
+      POSTGRES_DB: ${POSTGRES_DB:-inalpha}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -20,14 +20,14 @@ services:
       -c shared_buffers=512MB
       -c work_mem=32MB
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quant} -d ${POSTGRES_DB:-quant_lab}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quant} -d ${POSTGRES_DB:-inalpha}"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: quant-lab-redis
+    container_name: inalpha-redis
     restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"

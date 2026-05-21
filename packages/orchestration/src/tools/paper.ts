@@ -4,6 +4,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
+import { mintServiceToken } from "../auth.js";
 import { PaperClient } from "../clients/paper.js";
 import { getSettings } from "../config.js";
 
@@ -12,14 +13,11 @@ const SymbolSchema = z
   .string()
   .regex(/^[A-Z0-9]+\/[A-Z0-9]+$/, "symbol 必须是 CCXT 风格 'BASE/QUOTE'");
 
-type ToolContext = { authToken?: string };
+type ToolRequestContext = { authToken?: string };
 
-function getClient(ctx?: ToolContext): PaperClient {
+async function getClient(ctx?: ToolRequestContext): Promise<PaperClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? "";
-  if (!token) {
-    throw new Error("paper tool 需要 authToken");
-  }
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
   return new PaperClient({ baseUrl: settings.paperServiceUrl, token });
 }
 
@@ -42,9 +40,9 @@ export const paperListStrategiesTool = createTool({
     坑：D-7 起步只有 'sma_cross' 一个，后续会逐步添加
   `.trim(),
   inputSchema: z.object({}),
-  execute: async ({ runtimeContext }) => {
-    const ctx = runtimeContext as ToolContext | undefined;
-    const client = getClient(ctx);
+  execute: async (_input, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
     return await client.listStrategies();
   },
 });
@@ -90,19 +88,19 @@ export const paperRunBacktestTool = createTool({
     initialCash: z.number().positive().default(10_000),
     feeRate: z.number().min(0).lt(1).default(0.001),
   }),
-  execute: async ({ context, runtimeContext }) => {
-    const ctx = runtimeContext as ToolContext | undefined;
-    const client = getClient(ctx);
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
     return await client.runBacktest({
-      strategyId: context.strategyId,
-      params: context.params,
-      venue: context.venue,
-      symbol: context.symbol,
-      timeframe: context.timeframe,
-      fromTs: context.fromTs,
-      toTs: context.toTs,
-      initialCash: context.initialCash,
-      feeRate: context.feeRate,
+      strategyId: inputData.strategyId,
+      params: inputData.params ?? {},
+      venue: inputData.venue ?? "binance",
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe ?? "1h",
+      fromTs: inputData.fromTs,
+      toTs: inputData.toTs,
+      initialCash: inputData.initialCash ?? 10_000,
+      feeRate: inputData.feeRate ?? 0.001,
     });
   },
 });
@@ -117,9 +115,9 @@ export const paperHealthTool = createTool({
     探活 paper-service。LLM 一般不会主动调，主要供编排层 health check / 故障诊断用。
   `.trim(),
   inputSchema: z.object({}),
-  execute: async ({ runtimeContext }) => {
-    const ctx = runtimeContext as ToolContext | undefined;
-    const client = getClient(ctx);
+  execute: async (_input, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
     return await client.health();
   },
 });

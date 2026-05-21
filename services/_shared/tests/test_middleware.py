@@ -5,8 +5,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from quant_lab_shared.errors import NotFoundError, ValidationError
-from quant_lab_shared.middleware import install_error_handler, install_request_logging
+from inalpha_shared.errors import NotFoundError, ValidationError
+from inalpha_shared.middleware import install_error_handler, install_request_logging
 
 
 def _build_app() -> FastAPI:
@@ -17,8 +17,8 @@ def _build_app() -> FastAPI:
     class Body(BaseModel):
         x: int
 
-    @app.get("/quant-lab-error")
-    def raise_quant_lab() -> None:
+    @app.get("/inalpha-error")
+    def raise_inalpha() -> None:
         raise NotFoundError("strategy not found", details={"id": "abc"})
 
     @app.get("/business-validation")
@@ -40,9 +40,9 @@ def _build_app() -> FastAPI:
     return app
 
 
-def test_quant_lab_error_passes_through() -> None:
+def test_inalpha_error_passes_through() -> None:
     client = TestClient(_build_app())
-    r = client.get("/quant-lab-error")
+    r = client.get("/inalpha-error")
     assert r.status_code == 404
     body = r.json()
     assert body["code"] == "NOT_FOUND"

@@ -24,7 +24,7 @@
 
 | Repo | 拆解关注点 | 决策依据 |
 |---|---|---|
-| Nautilus | 事件循环 / message bus / backtest=live 不变量 / 时间源抽象 | 决定 **quant-lab 内核**怎么拆 |
+| Nautilus | 事件循环 / message bus / backtest=live 不变量 / 时间源抽象 | 决定 **inalpha 内核**怎么拆 |
 | vnpy | Gateway / EventEngine / App 分包 | 决定 **接交易所**怎么抽象，决定**国内市场**怎么接 |
 | qlib | DatasetH / Handler / Alpha / Model / Strategy / Executor pipeline | 决定 **ML 因子 / 模型**接口 |
 | TradingAgents | 多 agent 角色分工 / 辩论 / Portfolio Manager 决策合成 | 决定 **Mastra 编排层**多 agent 怎么排 |
@@ -42,7 +42,7 @@
 |---|---|---|
 | Phase A | 文档骨架 + 4 份 repo §1-§2 | 当天 |
 | Phase B | 4 份 repo 深度拆解（§3-§8） | 每 repo 1-2 天 |
-| Phase C | quant-lab 自建内核架构（设计文档） | 2-3 天 |
+| Phase C | inalpha 自建内核架构（设计文档） | 2-3 天 |
 | Phase D | Mastra 编排层骨架 + 第一个 tool | 1-2 天 |
 | Phase E | MVP：crypto 单交易所，规则化策略，回测→模拟盘对话调用 | 1-2 周 |
 

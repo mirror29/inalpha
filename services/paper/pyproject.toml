@@ -1,10 +1,10 @@
 [project]
-name = "quant-lab-paper"
+name = "inalpha-paper"
 version = "0.1.0"
-description = "Quant-Lab paper / live / backtest 三合一引擎：内核（Clock + MessageBus + Strategy）+ Gateway + Engine"
+description = "Inalpha paper / live / backtest 三合一引擎：内核（Clock + MessageBus + Strategy）+ Gateway + Engine"
 requires-python = ">=3.12"
 dependencies = [
-    "quant-lab-shared",
+    "inalpha-shared",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "httpx>=0.27.0",
@@ -21,14 +21,14 @@ dev = [
 ]
 
 [tool.uv.sources]
-quant-lab-shared = { path = "../_shared", editable = true }
+inalpha-shared = { path = "../_shared", editable = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quant_lab_paper"]
+packages = ["src/inalpha_paper"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

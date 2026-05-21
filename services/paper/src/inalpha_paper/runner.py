@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from quant_lab_shared.errors import ValidationError
+from inalpha_shared.errors import ValidationError
 
 from .data_client import DataClient
 from .engine.backtest import BacktestEngine

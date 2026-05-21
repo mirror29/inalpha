@@ -9,10 +9,10 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from quant_lab_shared.auth import User, get_current_user, verify_jwt
-from quant_lab_shared.config import Settings, get_settings
-from quant_lab_shared.errors import UnauthorizedError
-from quant_lab_shared.middleware import install_error_handler
+from inalpha_shared.auth import User, get_current_user, verify_jwt
+from inalpha_shared.config import Settings, get_settings
+from inalpha_shared.errors import UnauthorizedError
+from inalpha_shared.middleware import install_error_handler
 
 # 32+ 字节，避免 PyJWT 的 InsecureKeyLengthWarning
 SECRET = "test-secret-do-not-use-in-prod-please-and-thank-you"

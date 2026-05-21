@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import math
 
-from quant_lab_paper.engine.backtest import BacktestEngine
-from quant_lab_paper.engine.report import BacktestReport
-from quant_lab_paper.kernel.identifiers import InstrumentId
-from quant_lab_paper.model.data import Bar
-from quant_lab_paper.strategies.sma_cross import SMACrossStrategy
+from inalpha_paper.engine.backtest import BacktestEngine
+from inalpha_paper.engine.report import BacktestReport
+from inalpha_paper.kernel.identifiers import InstrumentId
+from inalpha_paper.model.data import Bar
+from inalpha_paper.strategies.sma_cross import SMACrossStrategy
 
 
 def _btc() -> InstrumentId:

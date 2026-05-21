@@ -3,7 +3,7 @@
 每个 service 可继承 `Settings` 加自己的字段：
 
     from pydantic import Field
-    from quant_lab_shared.config import Settings
+    from inalpha_shared.config import Settings
 
     class DataServiceSettings(Settings):
         binance_api_key: str = Field(..., alias="BINANCE_API_KEY")

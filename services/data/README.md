@@ -21,7 +21,7 @@ cd services/data
 cp .env.example .env       # 至少改 DATABASE_URL（如果本机 postgres 不在 5433）
 uv sync --group dev
 uv run pytest              # 25 个左右测试
-uv run uvicorn quant_lab_data.main:app --reload --port 8001
+uv run uvicorn inalpha_data.main:app --reload --port 8001
 ```
 
 然后另开终端测：
@@ -56,7 +56,7 @@ curl -G "http://localhost:8001/bars" \
 - `connectors/binance.py` —— CCXT async 包装，公开接口（OHLCV）免 key
 - `storage/bars.py` —— bars 表读写，psycopg 异步，ON CONFLICT 幂等
 - `api/{health,bars,backfill}.py` —— FastAPI 路由
-- 全部 middleware（请求日志 / 错误处理 / JWT 验签）走 `quant_lab_shared`
+- 全部 middleware（请求日志 / 错误处理 / JWT 验签）走 `inalpha_shared`
 
 ## 质量门
 

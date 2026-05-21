@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from quant_lab_paper.execution.exchange import SimulatedExchange
-from quant_lab_paper.kernel.clock import TestClock
-from quant_lab_paper.kernel.identifiers import ClientOrderId, InstrumentId, StrategyId
-from quant_lab_paper.kernel.msgbus import MessageBus
-from quant_lab_paper.model.data import Bar
-from quant_lab_paper.model.orders import Order, OrderSide, OrderType
+from inalpha_paper.execution.exchange import SimulatedExchange
+from inalpha_paper.kernel.clock import TestClock
+from inalpha_paper.kernel.identifiers import ClientOrderId, InstrumentId, StrategyId
+from inalpha_paper.kernel.msgbus import MessageBus
+from inalpha_paper.model.data import Bar
+from inalpha_paper.model.orders import Order, OrderSide, OrderType
 
 
 def _btc() -> InstrumentId:

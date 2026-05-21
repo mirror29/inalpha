@@ -17,7 +17,7 @@ pytestmark = pytest.mark.integration
 
 def _make_app() -> Any:
     """每次返回 fresh app 避免 lifespan / state 干扰。"""
-    from quant_lab_paper.main import app
+    from inalpha_paper.main import app
 
     return app
 

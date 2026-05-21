@@ -3,7 +3,7 @@
 简单 httpx 异步客户端，附带：
 
 - ``Authorization: Bearer <jwt>`` 自动注入（forward 用户 token）
-- error 时把 data-service 的 ``{code, message}`` 翻译成 ``QuantLabError`` 子类
+- error 时把 data-service 的 ``{code, message}`` 翻译成 ``InalphaError`` 子类
 - 30s 默认超时
 
 后续 D-7+ 长任务 / WS 订阅另外加 client。
@@ -14,10 +14,10 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-from quant_lab_shared.errors import QuantLabError
+from inalpha_shared.errors import InalphaError
 
 
-class DataServiceError(QuantLabError):
+class DataServiceError(InalphaError):
     code = "DATA_SERVICE_ERROR"
     status_code = 502
 

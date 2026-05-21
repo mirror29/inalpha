@@ -4,9 +4,9 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from quant_lab_shared.auth import User, get_current_user
-from quant_lab_shared.db import DBConn
-from quant_lab_shared.errors import ValidationError
+from inalpha_shared.auth import User, get_current_user
+from inalpha_shared.db import DBConn
+from inalpha_shared.errors import ValidationError
 
 from ..schemas import BarResponse, BarsQuery
 from ..storage.bars import query_bars

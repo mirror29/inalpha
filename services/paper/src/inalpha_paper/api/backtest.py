@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header
-from quant_lab_shared.auth import User, get_current_user
-from quant_lab_shared.errors import UnauthorizedError, ValidationError
+from inalpha_shared.auth import User, get_current_user
+from inalpha_shared.errors import UnauthorizedError, ValidationError
 
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient

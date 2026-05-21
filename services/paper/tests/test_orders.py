@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from quant_lab_paper.kernel.identifiers import ClientOrderId, InstrumentId, VenueOrderId
-from quant_lab_paper.model.orders import Order, OrderSide, OrderStatus, OrderType
+from inalpha_paper.kernel.identifiers import ClientOrderId, InstrumentId, VenueOrderId
+from inalpha_paper.model.orders import Order, OrderSide, OrderStatus, OrderType
 
 
 def _btc() -> InstrumentId:

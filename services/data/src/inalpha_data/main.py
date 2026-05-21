@@ -1,6 +1,6 @@
 """data service FastAPI 入口。
 
-启动：``uvicorn quant_lab_data.main:app --port 8001``
+启动：``uvicorn inalpha_data.main:app --port 8001``
 """
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from quant_lab_shared import (
+from inalpha_shared import (
     close_pool,
     configure_logging,
     init_pool,
@@ -41,7 +41,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="quant-lab-data",
+    title="inalpha-data",
     version=__version__,
     description="行情数据接入 / 时序存储 / 历史查询",
     lifespan=lifespan,

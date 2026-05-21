@@ -50,7 +50,7 @@ async def get_current_user(
 
         from typing import Annotated
         from fastapi import Depends
-        from quant_lab_shared.auth import User, get_current_user
+        from inalpha_shared.auth import User, get_current_user
 
         @app.get("/positions")
         def list_positions(user: Annotated[User, Depends(get_current_user)]):

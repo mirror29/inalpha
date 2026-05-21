@@ -15,8 +15,8 @@ from uuid import uuid4
 import jwt
 import pytest
 from fastapi.testclient import TestClient
-from quant_lab_shared.config import get_settings
-from quant_lab_shared.db import close_pool, init_pool
+from inalpha_shared.config import get_settings
+from inalpha_shared.db import close_pool, init_pool
 
 # === 测试 secret + token ===
 
@@ -41,7 +41,7 @@ def _ensure_env() -> None:
     """确保 DATABASE_URL / JWT_SECRET 在测试环境就位。"""
     os.environ.setdefault(
         "DATABASE_URL",
-        "postgresql+psycopg://quant:devpass@localhost:5433/quant_lab",
+        "postgresql+psycopg://quant:devpass@localhost:5433/inalpha",
     )
     os.environ.setdefault("JWT_SECRET", TEST_JWT_SECRET)
     # 清缓存让 get_settings / get_data_settings 拿到新环境
@@ -70,7 +70,7 @@ def venue_symbol_tf() -> tuple[str, str, str]:
 
 def _make_app() -> Any:
     """重新 import main 拿到 fresh app（避免 lifespan 全局状态干扰）。"""
-    from quant_lab_data.main import app
+    from inalpha_data.main import app
 
     return app
 
@@ -81,7 +81,7 @@ async def app_with_overrides() -> AsyncIterator[Any]:
     app = _make_app()
 
     # mock connector
-    from quant_lab_data.connectors.binance import BinanceConnector, get_connector
+    from inalpha_data.connectors.binance import BinanceConnector, get_connector
 
     class MockBinanceConnector(BinanceConnector):
         def __init__(self) -> None:

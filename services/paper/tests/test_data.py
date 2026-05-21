@@ -5,8 +5,8 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from quant_lab_paper.kernel.identifiers import InstrumentId
-from quant_lab_paper.model.data import Bar, QuoteTick, TradeTick
+from inalpha_paper.kernel.identifiers import InstrumentId
+from inalpha_paper.model.data import Bar, QuoteTick, TradeTick
 
 
 def _btc() -> InstrumentId:

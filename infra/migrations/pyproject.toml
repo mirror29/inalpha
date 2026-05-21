@@ -1,7 +1,7 @@
 [project]
-name = "quant-lab-migrations"
+name = "inalpha-migrations"
 version = "0.1.0"
-description = "Quant-Lab database migrations (alembic + psycopg)"
+description = "Inalpha database migrations (alembic + psycopg)"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13.0",

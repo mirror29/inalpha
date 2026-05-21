@@ -8,7 +8,7 @@
 |---|---|
 | `config.Settings` | 基础 settings（DATABASE_URL / JWT_SECRET / SERVICE_NAME / LOG_LEVEL），子类化加各 service 自己的字段 |
 | `db.init_pool` / `close_pool` / `get_conn` / `DBConn` | psycopg 异步连接池 + FastAPI dependency |
-| `errors.QuantLabError` + 6 个子类 | 统一错误码（NOT_FOUND / VALIDATION_ERROR / UNAUTHORIZED / ...），HTTP 异常会被 middleware 转成 `{code, message, details}` JSON |
+| `errors.InalphaError` + 6 个子类 | 统一错误码（NOT_FOUND / VALIDATION_ERROR / UNAUTHORIZED / ...），HTTP 异常会被 middleware 转成 `{code, message, details}` JSON |
 | `auth.User` / `verify_jwt` / `get_current_user` | JWT HS256 验证 + FastAPI dependency 注入 User |
 | `logging.configure_logging` / `get_logger` | structlog JSON 输出 + trace_id 上下文 |
 | `middleware.install_request_logging` / `install_error_handler` | 请求日志 / 错误统一包装 |
@@ -19,7 +19,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from quant_lab_shared import (
+from inalpha_shared import (
     Settings, configure_logging,
     init_pool, close_pool,
     install_request_logging, install_error_handler,
@@ -44,8 +44,8 @@ install_error_handler(app)
 # 在路由里用 DBConn / User dependency
 from typing import Annotated
 from fastapi import Depends
-from quant_lab_shared.auth import User, get_current_user
-from quant_lab_shared.db import DBConn
+from inalpha_shared.auth import User, get_current_user
+from inalpha_shared.db import DBConn
 
 @app.get("/strategies")
 async def list_strategies(
@@ -78,12 +78,12 @@ uv run ruff check src tests
 ```toml
 [project]
 dependencies = [
-    "quant-lab-shared",
+    "inalpha-shared",
     # ...
 ]
 
 [tool.uv.sources]
-quant-lab-shared = { path = "../_shared", editable = true }
+inalpha-shared = { path = "../_shared", editable = true }
 ```
 
 `editable = true` 让 `_shared` 修改实时生效，不用每次 `uv sync`。

@@ -7,7 +7,7 @@ from typing import Any
 
 import jwt
 import pytest
-from quant_lab_shared.config import get_settings
+from inalpha_shared.config import get_settings
 
 TEST_JWT_SECRET = "test-secret-do-not-use-in-prod-please-and-thank-you"
 
@@ -29,7 +29,7 @@ def auth_headers() -> dict[str, str]:
 def _ensure_env() -> None:
     os.environ.setdefault(
         "DATABASE_URL",
-        "postgresql+psycopg://quant:devpass@localhost:5433/quant_lab",
+        "postgresql+psycopg://quant:devpass@localhost:5433/inalpha",
     )
     os.environ.setdefault("JWT_SECRET", TEST_JWT_SECRET)
     os.environ.setdefault("DATA_SERVICE_URL", "http://data-mock.test")

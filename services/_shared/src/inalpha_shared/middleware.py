@@ -2,7 +2,7 @@
 
 用法（在 service ``main.py`` 里）::
 
-    from quant_lab_shared import (
+    from inalpha_shared import (
         configure_logging,
         install_request_logging,
         install_error_handler,
@@ -24,7 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.responses import JSONResponse
 
-from .errors import QuantLabError
+from .errors import InalphaError
 
 _logger = structlog.get_logger(__name__)
 
@@ -75,14 +75,14 @@ def install_error_handler(app: FastAPI) -> None:
 
     处理 4 类异常：
 
-    - :class:`QuantLabError`：直接用其 ``detail``（已是统一格式）
+    - :class:`InalphaError`：直接用其 ``detail``（已是统一格式）
     - :class:`RequestValidationError`：FastAPI 请求体 schema 校验，包成 ``VALIDATION_ERROR``
     - :class:`HTTPException`：FastAPI 内置异常，包成 ``HTTP_ERROR``
     - 未捕获 ``Exception``：兜底 ``INTERNAL_ERROR`` 500
     """
 
-    @app.exception_handler(QuantLabError)
-    async def handle_quant_lab_error(request: Request, exc: QuantLabError) -> JSONResponse:
+    @app.exception_handler(InalphaError)
+    async def handle_inalpha_error(request: Request, exc: InalphaError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=exc.detail)
 
     @app.exception_handler(RequestValidationError)

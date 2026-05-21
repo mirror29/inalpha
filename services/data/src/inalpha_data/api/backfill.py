@@ -5,10 +5,10 @@ from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from quant_lab_shared import get_logger
-from quant_lab_shared.auth import User, get_current_user
-from quant_lab_shared.db import DBConn
-from quant_lab_shared.errors import ValidationError
+from inalpha_shared import get_logger
+from inalpha_shared.auth import User, get_current_user
+from inalpha_shared.db import DBConn
+from inalpha_shared.errors import ValidationError
 
 from ..connectors.binance import TIMEFRAME_SECONDS, BinanceConnector, get_connector
 from ..schemas import BackfillRequest, BackfillResponse

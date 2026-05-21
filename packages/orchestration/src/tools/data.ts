@@ -7,6 +7,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
+import { mintServiceToken } from "../auth.js";
 import { DataClient } from "../clients/data.js";
 import { getSettings } from "../config.js";
 
@@ -15,17 +16,14 @@ const SymbolSchema = z
   .string()
   .regex(/^[A-Z0-9]+\/[A-Z0-9]+$/, "symbol 必须是 CCXT 风格 'BASE/QUOTE'，例如 BTC/USDT");
 
-type ToolContext = {
-  /** forward 用户 JWT 给 data-service。smoke / 后台用 mintServiceToken。 */
+type ToolRequestContext = {
+  /** forward 用户 JWT 给 data-service；缺省时 fallback 自签 service token（dev 友好）。 */
   authToken?: string;
 };
 
-function getClient(ctx?: ToolContext): DataClient {
+async function getClient(ctx?: ToolRequestContext): Promise<DataClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? "";
-  if (!token) {
-    throw new Error("data tool 需要 authToken（runtimeContext.authToken 或 mintServiceToken）");
-  }
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
   return new DataClient({ baseUrl: settings.dataServiceUrl, token });
 }
 
@@ -60,16 +58,16 @@ export const dataGetBarsTool = createTool({
     toTs: z.string().datetime().describe("ISO 8601 结束时间，含"),
     limit: z.number().int().min(1).max(50_000).default(10_000),
   }),
-  execute: async ({ context, runtimeContext }) => {
-    const ctx = runtimeContext as ToolContext | undefined;
-    const client = getClient(ctx);
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
     const bars = await client.getBars({
-      venue: context.venue,
-      symbol: context.symbol,
-      timeframe: context.timeframe,
-      fromTs: context.fromTs,
-      toTs: context.toTs,
-      limit: context.limit,
+      venue: inputData.venue ?? "binance",
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe ?? "1h",
+      fromTs: inputData.fromTs,
+      toTs: inputData.toTs,
+      limit: inputData.limit ?? 10_000,
     });
     return { bars, count: bars.length };
   },
@@ -104,15 +102,15 @@ export const dataBackfillBarsTool = createTool({
     fromTs: z.string().datetime(),
     toTs: z.string().datetime(),
   }),
-  execute: async ({ context, runtimeContext }) => {
-    const ctx = runtimeContext as ToolContext | undefined;
-    const client = getClient(ctx);
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
     return await client.backfillBars({
-      venue: context.venue,
-      symbol: context.symbol,
-      timeframe: context.timeframe,
-      fromTs: context.fromTs,
-      toTs: context.toTs,
+      venue: inputData.venue ?? "binance",
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe ?? "1h",
+      fromTs: inputData.fromTs,
+      toTs: inputData.toTs,
     });
   },
 });

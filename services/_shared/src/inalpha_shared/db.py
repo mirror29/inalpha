@@ -75,7 +75,7 @@ DBConn = Annotated[AsyncConnection, Depends(_db_dep)]
 
 用法::
 
-    from quant_lab_shared.db import DBConn
+    from inalpha_shared.db import DBConn
 
     @app.get("/strategies")
     async def list_strategies(db: DBConn):

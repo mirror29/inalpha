@@ -34,16 +34,16 @@ uv run alembic upgrade head
 
 ```bash
 # 进 postgres 看 timescaledb 装好了没
-docker compose exec postgres psql -U quant -d quant_lab -c "\dx"
+docker compose exec postgres psql -U quant -d inalpha -c "\dx"
 # 应有 timescaledb 行
 
 # 看表都建了没
-docker compose exec postgres psql -U quant -d quant_lab -c "\dt"
+docker compose exec postgres psql -U quant -d inalpha -c "\dt"
 # 应看到 bars / ticks / strategies / backtest_runs / strategy_instances /
 #       orders / research_memory + alembic_version
 
 # 看时序表是不是 hypertable
-docker compose exec postgres psql -U quant -d quant_lab -c \
+docker compose exec postgres psql -U quant -d inalpha -c \
   "SELECT hypertable_name FROM timescaledb_information.hypertables"
 # 应有 bars / ticks
 ```

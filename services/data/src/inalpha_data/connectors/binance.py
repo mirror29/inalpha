@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import ccxt.async_support as ccxt
-from quant_lab_shared import get_logger
+from inalpha_shared import get_logger
 
 _logger = get_logger(__name__)
 
@@ -90,7 +90,7 @@ class BinanceConnector:
         await self._exchange.close()
 
 
-# ---------- module-level singleton（跟 quant_lab_shared.db 同模式） ----------
+# ---------- module-level singleton（跟 inalpha_shared.db 同模式） ----------
 
 _connector: BinanceConnector | None = None
 

@@ -1,5 +1,8 @@
 /**
  * Tool 层单测 —— 用 vitest 的 fetch mock。
+ *
+ * Mastra 1.x 后 execute 签名是 ``(inputData, ctx)``，ctx.requestContext 替代旧的
+ * runtimeContext。手动调 execute() 不走 inputSchema 校验。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +34,10 @@ function mockFetch(impl: (url: string, init?: RequestInit) => Promise<Response>)
   vi.stubGlobal("fetch", vi.fn(impl));
 }
 
+/** 共享的 ctx fixture（绕过 Mastra 1.x 类型严格性，测试时不需要真实 ToolExecutionContext） */
+const ctx = (authToken: string | undefined = TEST_TOKEN): never =>
+  ({ requestContext: { authToken } }) as never;
+
 // ────────────────────────────────────────────────────────────────────
 // data.get_bars
 // ────────────────────────────────────────────────────────────────────
@@ -60,17 +67,17 @@ describe("data.get_bars", () => {
       );
     });
 
-    const result = await dataGetBarsTool.execute!({
-      context: {
+    const result = await dataGetBarsTool.execute!(
+      {
         venue: "binance",
         symbol: "BTC/USDT",
         timeframe: "1h",
         fromTs: "2026-01-01T00:00:00Z",
         toTs: "2026-01-02T00:00:00Z",
         limit: 100,
-      },
-      runtimeContext: { authToken: TEST_TOKEN },
-    } as never);
+      } as never,
+      ctx(),
+    );
 
     expect(capturedUrl).toContain("/bars");
     expect(capturedUrl).toContain("venue=binance");
@@ -96,20 +103,27 @@ describe("data.get_bars", () => {
     expect(result.success).toBe(false);
   });
 
-  it("requires authToken", async () => {
-    await expect(
-      dataGetBarsTool.execute!({
-        context: {
-          venue: "binance",
-          symbol: "BTC/USDT",
-          timeframe: "1h",
-          fromTs: "2026-01-01T00:00:00Z",
-          toTs: "2026-01-02T00:00:00Z",
-          limit: 100,
-        },
-        runtimeContext: {},
-      } as never),
-    ).rejects.toThrow(/authToken/);
+  it("falls back to service token when no authToken in requestContext", async () => {
+    // dev 友好：缺 authToken 时自签 service token（不再抛错）
+    let capturedAuth = "";
+    mockFetch(async (_url, init) => {
+      capturedAuth = (init?.headers as Record<string, string>)?.Authorization ?? "";
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await dataGetBarsTool.execute!(
+      {
+        venue: "binance",
+        symbol: "BTC/USDT",
+        timeframe: "1h",
+        fromTs: "2026-01-01T00:00:00Z",
+        toTs: "2026-01-02T00:00:00Z",
+        limit: 100,
+      } as never,
+      { requestContext: {} } as never,
+    );
+
+    expect(capturedAuth).toMatch(/^Bearer .+/); // 自签了 token
   });
 });
 
@@ -139,16 +153,16 @@ describe("data.backfill_bars", () => {
       return new Response("not found", { status: 404 });
     });
 
-    const result = await dataBackfillBarsTool.execute!({
-      context: {
+    const result = await dataBackfillBarsTool.execute!(
+      {
         venue: "binance",
         symbol: "BTC/USDT",
         timeframe: "1h",
         fromTs: "2026-05-14T00:00:00Z",
         toTs: "2026-05-21T00:00:00Z",
-      },
-      runtimeContext: { authToken: TEST_TOKEN },
-    } as never);
+      } as never,
+      ctx(),
+    );
 
     expect(JSON.parse(capturedBody)).toMatchObject({
       symbol: "BTC/USDT",
@@ -171,10 +185,7 @@ describe("paper.list_strategies", () => {
       }),
     );
 
-    const result = await paperListStrategiesTool.execute!({
-      context: {},
-      runtimeContext: { authToken: TEST_TOKEN },
-    } as never);
+    const result = await paperListStrategiesTool.execute!({} as never, ctx());
 
     expect((result as { strategies: string[] }).strategies).toContain("sma_cross");
   });
@@ -187,7 +198,7 @@ describe("paper.list_strategies", () => {
 describe("paper.run_backtest", () => {
   it("posts request and returns full report", async () => {
     let capturedBody = "";
-    mockFetch(async (url, init) => {
+    mockFetch(async (_url, init) => {
       capturedBody = (init?.body as string) ?? "";
       return new Response(
         JSON.stringify({
@@ -209,8 +220,8 @@ describe("paper.run_backtest", () => {
       );
     });
 
-    const result = await paperRunBacktestTool.execute!({
-      context: {
+    const result = await paperRunBacktestTool.execute!(
+      {
         strategyId: "sma_cross",
         params: { fast_period: 5, slow_period: 20, trade_size: 0.01 },
         venue: "binance",
@@ -220,9 +231,9 @@ describe("paper.run_backtest", () => {
         toTs: "2026-05-21T00:00:00Z",
         initialCash: 10000,
         feeRate: 0.001,
-      },
-      runtimeContext: { authToken: TEST_TOKEN },
-    } as never);
+      } as never,
+      ctx(),
+    );
 
     expect(JSON.parse(capturedBody)).toMatchObject({
       strategy_id: "sma_cross",
@@ -244,8 +255,8 @@ describe("paper.run_backtest", () => {
     );
 
     await expect(
-      paperRunBacktestTool.execute!({
-        context: {
+      paperRunBacktestTool.execute!(
+        {
           strategyId: "sma_cross",
           params: {},
           venue: "binance",
@@ -255,9 +266,9 @@ describe("paper.run_backtest", () => {
           toTs: "2026-05-21T00:00:00Z",
           initialCash: 10000,
           feeRate: 0.001,
-        },
-        runtimeContext: { authToken: TEST_TOKEN },
-      } as never),
+        } as never,
+        ctx(),
+      ),
     ).rejects.toMatchObject({ code: "NO_BARS_AVAILABLE", status: 400 });
   });
 });

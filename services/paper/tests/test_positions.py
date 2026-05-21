@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from quant_lab_paper.kernel.identifiers import InstrumentId
-from quant_lab_paper.model.orders import OrderSide
-from quant_lab_paper.model.positions import Position, PositionSide
+from inalpha_paper.kernel.identifiers import InstrumentId
+from inalpha_paper.model.orders import OrderSide
+from inalpha_paper.model.positions import Position, PositionSide
 
 
 def _btc() -> InstrumentId:

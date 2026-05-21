@@ -5,15 +5,15 @@ from typing import Any
 
 import pytest
 
-from quant_lab_paper.kernel.clock import TestClock
-from quant_lab_paper.kernel.identifiers import ClientOrderId, InstrumentId, VenueOrderId
-from quant_lab_paper.kernel.msgbus import MessageBus
-from quant_lab_paper.model.commands import SubmitOrderCommand
-from quant_lab_paper.model.data import Bar, QuoteTick
-from quant_lab_paper.model.events import OrderFilled, PositionOpened
-from quant_lab_paper.model.orders import Order, OrderSide, OrderType
-from quant_lab_paper.strategy.actor import Actor
-from quant_lab_paper.strategy.base import RISK_ENGINE_ENDPOINT, Strategy
+from inalpha_paper.kernel.clock import TestClock
+from inalpha_paper.kernel.identifiers import ClientOrderId, InstrumentId, VenueOrderId
+from inalpha_paper.kernel.msgbus import MessageBus
+from inalpha_paper.model.commands import SubmitOrderCommand
+from inalpha_paper.model.data import Bar, QuoteTick
+from inalpha_paper.model.events import OrderFilled, PositionOpened
+from inalpha_paper.model.orders import Order, OrderSide, OrderType
+from inalpha_paper.strategy.actor import Actor
+from inalpha_paper.strategy.base import RISK_ENGINE_ENDPOINT, Strategy
 
 
 def _btc() -> InstrumentId:

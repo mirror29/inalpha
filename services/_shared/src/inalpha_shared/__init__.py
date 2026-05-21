@@ -1,4 +1,4 @@
-"""Quant-Lab 各 service 共享的 FastAPI 基础设施。
+"""Inalpha 各 service 共享的 FastAPI 基础设施。
 
 公共能力（每个 service 直接 import 用）：
 
@@ -16,7 +16,7 @@ from .errors import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
-    QuantLabError,
+    InalphaError,
     RateLimitedError,
     UnauthorizedError,
     ValidationError,
@@ -29,7 +29,7 @@ __all__ = [
     "DBConn",
     "ForbiddenError",
     "NotFoundError",
-    "QuantLabError",
+    "InalphaError",
     "RateLimitedError",
     "Settings",
     "UnauthorizedError",

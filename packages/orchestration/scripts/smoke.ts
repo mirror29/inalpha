@@ -16,8 +16,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 
-// 显式加载 .env（Node 24+ 自带 loadEnvFile；--env-file 在 pnpm script wrapper
-// 下传递偶有问题，这里保险）
+// 显式加载 .env（Node 24+ 自带 loadEnvFile）
 const envPath = resolve(process.cwd(), ".env");
 if (existsSync(envPath)) {
   loadEnvFile(envPath);
@@ -31,37 +30,37 @@ import {
 } from "../src/tools/index.js";
 
 async function main(): Promise<void> {
-  // 1. 自签 token（JWT_SECRET 从 .env / 环境读）
   const token = await mintServiceToken({ sub: "service:smoke" });
-  const rc = { authToken: token };
+  // Mastra 1.x ToolExecutionContext.requestContext 替代旧的 runtimeContext
+  const ctx = { requestContext: { authToken: token } } as never;
 
-  // 用过去 7 天作为 demo（系统时区无所谓）
   const toTs = new Date();
   const fromTs = new Date(toTs.getTime() - 7 * 24 * 3600 * 1000);
 
-  console.log("─── 1. backfill 7d BTC/USDT 1h ───");
-  const backfill = await dataBackfillBarsTool.execute!({
-    context: {
-      venue: "binance",
-      symbol: "BTC/USDT",
-      timeframe: "1h",
-      fromTs: fromTs.toISOString(),
-      toTs: toTs.toISOString(),
-    },
-    runtimeContext: rc,
-  } as never);
-  console.log(JSON.stringify(backfill, null, 2));
+  console.log("─── 1. backfill 7d BTC/USDT 1h（Binance 不可达时跳过用已有缓存） ───");
+  try {
+    const backfill = await dataBackfillBarsTool.execute!(
+      {
+        venue: "binance",
+        symbol: "BTC/USDT",
+        timeframe: "1h",
+        fromTs: fromTs.toISOString(),
+        toTs: toTs.toISOString(),
+      } as never,
+      ctx,
+    );
+    console.log(JSON.stringify(backfill, null, 2));
+  } catch (err) {
+    console.log(`⚠️  backfill 失败（${(err as Error).message}），继续用 DB 已缓存的数据`);
+  }
 
   console.log("\n─── 2. list strategies ───");
-  const strategies = await paperListStrategiesTool.execute!({
-    context: {},
-    runtimeContext: rc,
-  } as never);
+  const strategies = await paperListStrategiesTool.execute!({} as never, ctx);
   console.log(strategies);
 
   console.log("\n─── 3. run backtest (SMA cross 5/20) ───");
-  const report = await paperRunBacktestTool.execute!({
-    context: {
+  const report = await paperRunBacktestTool.execute!(
+    {
       strategyId: "sma_cross",
       params: { fast_period: 5, slow_period: 20, trade_size: 0.01 },
       venue: "binance",
@@ -71,9 +70,9 @@ async function main(): Promise<void> {
       toTs: toTs.toISOString(),
       initialCash: 10_000,
       feeRate: 0.001,
-    },
-    runtimeContext: rc,
-  } as never);
+    } as never,
+    ctx,
+  );
   console.log(JSON.stringify(report, null, 2));
 
   console.log("\n─── ✅ smoke test PASSED ───");

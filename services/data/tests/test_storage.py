@@ -4,9 +4,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from quant_lab_shared.db import get_conn
+from inalpha_shared.db import get_conn
 
-from quant_lab_data.storage.bars import count_bars, insert_bars, query_bars
+from inalpha_data.storage.bars import count_bars, insert_bars, query_bars
 
 pytestmark = pytest.mark.integration
 

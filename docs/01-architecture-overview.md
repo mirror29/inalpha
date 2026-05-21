@@ -90,7 +90,7 @@
 
 ## Mastra 编排层的关键
 
-Mastra 在 quant-lab 里做的事：
+Mastra 在 inalpha 里做的事：
 
 1. **把每个核心服务的能力包装成 tool**，让 agent 能调用
 

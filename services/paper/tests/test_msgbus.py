@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from quant_lab_paper.kernel.msgbus import MessageBus
+from inalpha_paper.kernel.msgbus import MessageBus
 
 # ─── pub/sub ───
 

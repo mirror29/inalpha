@@ -1,6 +1,6 @@
 """paper service FastAPI 入口。
 
-启动：``uvicorn quant_lab_paper.main:app --port 8002``
+启动：``uvicorn inalpha_paper.main:app --port 8002``
 """
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from quant_lab_shared import (
+from inalpha_shared import (
     configure_logging,
     install_error_handler,
     install_request_logging,
@@ -29,7 +29,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="quant-lab-paper",
+    title="inalpha-paper",
     version=__version__,
     description="回测 / 模拟盘 / 实盘三合一引擎",
     lifespan=lifespan,

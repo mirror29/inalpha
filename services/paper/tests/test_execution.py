@@ -12,22 +12,22 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from quant_lab_paper.engine.portfolio import Portfolio
-from quant_lab_paper.execution.exchange import SimulatedExchange
-from quant_lab_paper.execution.execution_engine import ExecutionEngine
-from quant_lab_paper.execution.risk_engine import RiskEngine
-from quant_lab_paper.kernel.clock import TestClock
-from quant_lab_paper.kernel.identifiers import ClientOrderId, InstrumentId
-from quant_lab_paper.kernel.msgbus import MessageBus
-from quant_lab_paper.model.data import Bar
-from quant_lab_paper.model.events import (
+from inalpha_paper.engine.portfolio import Portfolio
+from inalpha_paper.execution.exchange import SimulatedExchange
+from inalpha_paper.execution.execution_engine import ExecutionEngine
+from inalpha_paper.execution.risk_engine import RiskEngine
+from inalpha_paper.kernel.clock import TestClock
+from inalpha_paper.kernel.identifiers import ClientOrderId, InstrumentId
+from inalpha_paper.kernel.msgbus import MessageBus
+from inalpha_paper.model.data import Bar
+from inalpha_paper.model.events import (
     OrderAccepted,
     OrderFilled,
     OrderSubmitted,
     PositionOpened,
 )
-from quant_lab_paper.model.orders import Order, OrderSide, OrderStatus, OrderType
-from quant_lab_paper.strategy.base import Strategy
+from inalpha_paper.model.orders import Order, OrderSide, OrderStatus, OrderType
+from inalpha_paper.strategy.base import Strategy
 
 
 def _btc() -> InstrumentId:
