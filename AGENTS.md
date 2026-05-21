@@ -19,7 +19,6 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**，重度
 | `docs/00-context.md` | 项目背景、边界、不做什么 |
 | `docs/01-architecture-overview.md` | 三层架构总图 |
 | `docs/03-kernel-design.md` | Python services 设计与职责拆分 |
-| `docs/brand/` | 品牌定位、视觉、传播口径 |
 
 > 内部设计文档、决策记录、思考过程在私人空间维护，**不入开源仓库**。
 

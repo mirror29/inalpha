@@ -21,14 +21,14 @@
 | `docs/00-context.md` | 项目背景、边界、不做什么 |
 | `docs/01-architecture-overview.md` | 三层架构总图 |
 | `docs/03-kernel-design.md` | Python services 设计与职责拆分 |
-| `docs/brand/` | 品牌定位、命名故事、视觉系统、传播口径 |
 
 > 内部设计文档、决策记录、思考过程留在私人空间，不入开源仓库。
 
-## 3. 当前 Phase（D-7）
+## 3. 当前 Phase（D-8a）
 
-- 已起包：`services/data`（CCXT Binance + Postgres）、`services/paper`（回测 + SMA cross / BuyAndHold / 布林带 MeanReversion）、`packages/orchestration`（Mastra tool 层骨架）
-- 下一里程碑：D-8 trader agent + Plan/Exec 端到端、D-9 risk agent
+- 已起包：`services/data`（CCXT Binance + Postgres）、`services/paper`（回测 + 3 策略 + `/orders/submit` 单笔下单）、`packages/orchestration`（Mastra tool 层 + hooks + permissions + plan store + 3 agent）
+- **D-8a 完成**：Plan/Exec in-memory 端到端（`trade.create_plan` → risk `approve` → trader `execute` → paper 真撮合），orchestrator/trader/risk 三 agent 拆分，工程硬约束"LLM 没有直接下单路径"已落地（tool 集 + permissions deny 双层）
+- 下一里程碑：D-8b 持久化（trade_plans + approval_tokens Postgres 表）、D-9 risk 规则化 + 真 Risk Engine 接入
 
 ## 4. 协作硬约束
 
@@ -62,7 +62,9 @@ bash scripts/check-consistency.sh
 ## 6. 本文件 TODO
 
 - [ ] 填回 §5 端到端 smoke test 最小命令
-- [ ] D-8 完成后更新 §3 Phase 状态
+- [x] D-8a 完成（2026-05-21）：Plan/Exec in-memory + agent 三分
+- [ ] D-8b：trade_plans / approval_tokens Postgres 表 + alembic migration
+- [ ] D-9：Risk agent 规则化（max notional / 价格偏离）+ paper RiskEngine 真接入
 - [ ] 多设备 / 多人协作时启用 user 层 memory（`~/.inalpha/CLAUDE.md`）
 
 ---

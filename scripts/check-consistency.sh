@@ -66,9 +66,8 @@ sect "C2 · docs/miro/ 私有空间不被公开文件引用"
 
 # 在所有公开文件中搜 docs/miro 路径或 ADR 字眼（私有信息泄漏检测）
 LEAK_HITS=$(
-    grep -EnI "docs/miro|\bADR\b|docs/decisions" \
+    grep -EnI "docs/miro|\bADR\b|docs/decisions|docs/brand" \
         README.md README.zh-CN.md CLAUDE.md AGENTS.md \
-        docs/brand/*.md docs/brand/en/*.md \
         docs/00-context.md docs/01-architecture-overview.md docs/03-kernel-design.md \
         2>/dev/null \
     | grep -vE 'check-consistency: skip' \

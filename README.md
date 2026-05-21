@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/brand/assets/04-mascot-avatar.png" alt="Inalpha" width="200" />
+<img src="assets/mascot-avatar.png" alt="Inalpha" width="200" />
 
 <h1>Inalpha</h1>
 
