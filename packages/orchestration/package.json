@@ -20,7 +20,7 @@
     "dev": "mastra dev --dir src/mastra"
   },
   "dependencies": {
-    "@ai-sdk/deepseek": "^0.1.0",
+    "@ai-sdk/deepseek": "^2.0.35",
     "@mastra/core": "^1.35.0",
     "@mastra/loggers": "^1.1.1",
     "jose": "^5.9.0",
