@@ -1,0 +1,66 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+out/
+coverage/
+*.log
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Rust
+target/
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Data / models / cached artifacts
+data/
+models/
+checkpoints/
+mlruns/
+tmp/
+.cache/
+*.parquet
+*.feather
+*.pkl
+*.h5
+*.duckdb
+*.sqlite
+*.db
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Local clone of reference repos (we read but don't track)
+_refs/
