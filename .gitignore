@@ -44,12 +44,12 @@ Cargo.lock
 *.pem
 *.key
 
-# Data / models / cached artifacts
-data/
-models/
-checkpoints/
-mlruns/
-tmp/
+# Data / models / cached artifacts —— 仅匹配仓库根，避免误伤 services/data/ 等代码目录
+/data/
+/models/
+/checkpoints/
+/mlruns/
+/tmp/
 .cache/
 *.parquet
 *.feather
