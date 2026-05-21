@@ -5,15 +5,15 @@
 
 ## 锁定决策（Phase C·2026-05-21）
 
-| 维度 | 决策 | ADR |
-|---|---|---|
-| 内核语言 | **MVP 纯 Python**，后期 Rust 优化 hot path | [0004](decisions/0004-kernel-language.md) |
-| MVP 范围 | **Crypto（Binance 起步）+ TradingAgents 风格多 agent 研究** | 本文 §MVP |
-| 时序数据库 | **Postgres + TimescaleDB**（与 Mastra PostgresStore 同台） | [0003](decisions/0003-timeseries-db.md) |
-| 跨服务通信 | **HTTP REST + WebSocket** 组合 | [0002](decisions/0002-cross-service-communication.md) |
-| 编排框架 | Mastra（TypeScript） | [0001](decisions/0001-mastra-orchestration.md) |
-| 多 agent | Mastra supervisor pattern，**不嵌 LangGraph** | [0001](decisions/0001-mastra-orchestration.md) |
-| Swarm worker 池 | 在各 engine 服务内部（RQ → Celery） | [0005](decisions/0005-swarm-worker-pool.md) |
+| 维度 | 决策 |
+|---|---|
+| 内核语言 | **MVP 纯 Python**，后期 Rust 优化 hot path |
+| MVP 范围 | **Crypto（Binance 起步）+ TradingAgents 风格多 agent 研究** |
+| 时序数据库 | **Postgres + TimescaleDB**（与 Mastra PostgresStore 同台） |
+| 跨服务通信 | **HTTP REST + WebSocket** 组合 |
+| 编排框架 | Mastra（TypeScript） |
+| 多 agent | Mastra supervisor pattern，**不嵌 LangGraph** |
+| Swarm worker 池 | 在各 engine 服务内部（RQ → Celery） |
 
 ---
 
@@ -528,7 +528,7 @@ inalpha/
 ├── infra/
 │   ├── docker-compose.yml      # postgres+timescale / redis / 各 service
 │   └── migrations/             # Alembic
-├── docs/                       # 本目录（计划 + 拆解 + ADR）
+├── docs/                       # 本目录（计划 + 设计文档）
 ├── _refs/                      # 4 个参考 repo 的 sparse-clone（gitignored）
 ├── README.md
 ├── .gitignore
@@ -575,13 +575,3 @@ inalpha/
 - `services/paper` 内核单测覆盖 ≥70%（Clock / MessageBus / 状态机）
 - 一份 e2e 测试：跑通 backtest → start paper → wait fill → assert position
 
----
-
-## 后续 ADR 待写
-
-- `0002` HTTP REST + WebSocket 通信协议（本 Phase）
-- `0003` Postgres + TimescaleDB 选型（本 Phase）
-- `0004` 内核语言：MVP Python，Rust 迁移路径（本 Phase）
-- `0006` 风控规则 spec（Phase D 起 packages 时写）
-- `0007` Memory schema（research-service 把 TradingMemoryLog 移植到 Postgres 时）
-- `0008` Agent prompt 版本管理（避免 prompt 改了无法 reproduce）

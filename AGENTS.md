@@ -14,13 +14,14 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**，重度
 
 | 文件 | 何时读 |
 |---|---|
-| `README.md` | 想知道项目跑起来后干什么 |
+| `README.md` / `README.zh-CN.md` | 项目首页（双语） |
 | `CLAUDE.md` | 用 Claude Code 时（其他工具也建议读，内容重叠 80%） |
 | `docs/00-context.md` | 项目背景、边界、不做什么 |
 | `docs/01-architecture-overview.md` | 三层架构总图 |
-| `docs/04-claude-code-borrowed-patterns.md` | 24 份 ADR 的主题索引 |
-| `docs/05-tool-skill-discipline.md` | tool 命名 / schema / description 三段式规范 |
-| `docs/decisions/` | 全部 ADR（架构决策记录，0001-0024） |
+| `docs/03-kernel-design.md` | Python services 设计与职责拆分 |
+| `docs/brand/` | 品牌定位、视觉、传播口径 |
+
+> 内部设计文档、决策记录、思考过程在私人空间维护，**不入开源仓库**。
 
 ## 3. 协作硬约束（任何 AI 工具必须遵守）
 
@@ -28,12 +29,12 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**，重度
 - **市场约束**：仅 crypto，**不**涉及 A 股 / 美股盘前盘后逻辑
 - **命名约定**：
   - Python 包：`inalpha_<service>`（snake_case） <!-- check-consistency: skip -->（占位符不匹配白名单）
-  - tools：`<service>.<verb>` 或 `mcp__<server>__<verb>`（见 `docs/05` §1）
+  - tools：`<service>.<verb>` 或 `mcp__<server>__<verb>`
 - **不要碰**：
   - `.mastra/`（gitignored 构建产物）
-  - `services/_shared/`（基础设施稳定层，改前先开 ADR）
-  - **Accepted 状态的 ADR 不要绕过**——先开新 ADR `supersede`
-- **tool description 必须三段式**："功能 + 何时用 + 何时不用 + 坑"（`docs/05` §10）
+  - `docs/miro/`（gitignored 个人空间）
+  - `services/_shared/`（基础设施稳定层，改前先谨慎评估）
+- **tool description 必须三段式**："功能 + 何时用 + 何时不用 + 坑"
 - **commit message**：中文 + `<type>(<scope>): <desc>`，可标 Phase D-N
 
 ## 4. 起步（clone 之后）
@@ -64,7 +65,7 @@ bash scripts/check-consistency.sh
 ## 6. 当前 Phase 状态
 
 Phase **D-7**：Mastra tool 层骨架已起包；下一里程碑 D-8 trader agent + Plan/Exec
-端到端。详见 `CLAUDE.md` §4 / 仓库根 `README.md`。
+端到端。详见 `CLAUDE.md` §3 / 仓库根 `README.md`。
 
 > Phase 状态可能漂移——以 `scripts/check-consistency.sh` 的检查结果为准。
 
@@ -73,21 +74,18 @@ Phase **D-7**：Mastra tool 层骨架已起包；下一里程碑 D-8 trader agen
 | 想做的事 | 去哪里 |
 |---|---|
 | 加新策略 | `services/paper/src/inalpha_paper/strategies/` |
-| 加新 tool | `packages/orchestration/src/tools/` + `docs/05` 落地清单 |
-| 加新因子 | `docs/06-factor-discovery-l0.md` §3 八个 `factor.*` tool |
-| 做策略进化实验 | `docs/10-strategy-evolution-roadmap.md` §3 五个模块 |
-| 加 hook / permission / slash command | ADR-0010 / 0011 / 0022 + `.claude/` 或 `packages/orchestration/config/` |
-| 不确定 | `docs/04-claude-code-borrowed-patterns.md` 的索引 |
+| 加新 tool | `packages/orchestration/src/tools/` |
+| 调整内核 | `services/_shared/` 之外的 services 模块 |
+| 不确定 | 先开 issue 讨论，再动 |
 
 ## 8. 红线（任何 AI 工具都不能跨）
 
-- ❌ 不绕过 ADR-Accepted 状态的核心决策直接改代码
-- ❌ 不 commit `.mastra/` / `.env` / `node_modules/` / 任何 secret
+- ❌ 不绕过设计决策直接改架构（先讨论再动）
+- ❌ 不 commit `.mastra/` / `.env` / `node_modules/` / `docs/miro/` / 任何 secret <!-- check-consistency: skip -->
 - ❌ 不在 `services/_shared/` 加项目特有逻辑（破坏复用）
 - ❌ 不写跳过测试 / 跳过 hook 的 commit（`--no-verify` 等）——遇阻先 ask user
 - ❌ 不商业使用本仓库代码（LICENSE: PolyForm Noncommercial 1.0.0）
 
 ---
 
-> 本文件是协议入口，**短小**为美。详细规则在 `docs/decisions/` 和 `docs/0[0-9]-*.md`。
-> 加新内容前评估：是不是应该放进 ADR 或 docs/？
+> 本文件是协议入口，**短小**为美。详细规则在公开的 `docs/00-03` 与 `docs/brand/`。

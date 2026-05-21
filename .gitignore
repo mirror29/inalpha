@@ -65,3 +65,6 @@ Cargo.lock
 
 # Local clone of reference repos (we read but don't track)
 _refs/
+
+# 个人思考/设计文档 —— 不开源
+docs/miro/
