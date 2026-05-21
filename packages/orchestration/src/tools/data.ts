@@ -54,19 +54,32 @@ export const dataGetBarsTool = createTool({
     venue: z.string().default("binance"),
     symbol: SymbolSchema,
     timeframe: TimeframeSchema.default("1h"),
-    fromTs: z.string().datetime().describe("ISO 8601 起始时间，含"),
-    toTs: z.string().datetime().describe("ISO 8601 结束时间，含"),
+    fromTs: z
+      .string()
+      .datetime()
+      .optional()
+      .describe("ISO 8601 起始时间；省略默认 = 当前时间 - 1 年"),
+    toTs: z
+      .string()
+      .datetime()
+      .optional()
+      .describe("ISO 8601 结束时间；省略默认 = 当前时间"),
     limit: z.number().int().min(1).max(50_000).default(10_000),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
+
+    const now = new Date();
+    const fromTs = inputData.fromTs ?? new Date(now.getTime() - 365 * 86_400_000).toISOString();
+    const toTs = inputData.toTs ?? now.toISOString();
+
     const bars = await client.getBars({
       venue: inputData.venue ?? "binance",
       symbol: inputData.symbol,
       timeframe: inputData.timeframe ?? "1h",
-      fromTs: inputData.fromTs,
-      toTs: inputData.toTs,
+      fromTs,
+      toTs,
       limit: inputData.limit ?? 10_000,
     });
     return { bars, count: bars.length };
@@ -99,18 +112,27 @@ export const dataBackfillBarsTool = createTool({
     venue: z.literal("binance").default("binance"),
     symbol: SymbolSchema,
     timeframe: TimeframeSchema.default("1h"),
-    fromTs: z.string().datetime(),
-    toTs: z.string().datetime(),
+    fromTs: z
+      .string()
+      .datetime()
+      .optional()
+      .describe("ISO 8601 起始；省略默认 = 当前 - 1 年"),
+    toTs: z.string().datetime().optional().describe("ISO 8601 结束；省略默认 = 当前"),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
+
+    const now = new Date();
+    const fromTs = inputData.fromTs ?? new Date(now.getTime() - 365 * 86_400_000).toISOString();
+    const toTs = inputData.toTs ?? now.toISOString();
+
     return await client.backfillBars({
       venue: inputData.venue ?? "binance",
       symbol: inputData.symbol,
       timeframe: inputData.timeframe ?? "1h",
-      fromTs: inputData.fromTs,
-      toTs: inputData.toTs,
+      fromTs,
+      toTs,
     });
   },
 });

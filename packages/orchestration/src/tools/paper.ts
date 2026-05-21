@@ -83,22 +83,37 @@ export const paperRunBacktestTool = createTool({
     venue: z.string().default("binance"),
     symbol: SymbolSchema,
     timeframe: TimeframeSchema.default("1h"),
-    fromTs: z.string().datetime(),
-    toTs: z.string().datetime(),
+    fromTs: z
+      .string()
+      .datetime()
+      .optional()
+      .describe("ISO 8601 起始时间；**省略时默认 = 当前时间往前回推 1 年**"),
+    toTs: z
+      .string()
+      .datetime()
+      .optional()
+      .describe("ISO 8601 结束时间；**省略时默认 = 当前时间**"),
     initialCash: z.number().positive().default(10_000),
     feeRate: z.number().min(0).lt(1).default(0.001),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
+
+    // 默认窗口：[now - 1y, now]。LLM 没指定 fromTs / toTs 时自动填，避免每次都要算时间。
+    const now = new Date();
+    const oneYearAgo = new Date(now.getTime() - 365 * 24 * 3600 * 1000);
+    const fromTs = inputData.fromTs ?? oneYearAgo.toISOString();
+    const toTs = inputData.toTs ?? now.toISOString();
+
     return await client.runBacktest({
       strategyId: inputData.strategyId,
       params: inputData.params ?? {},
       venue: inputData.venue ?? "binance",
       symbol: inputData.symbol,
       timeframe: inputData.timeframe ?? "1h",
-      fromTs: inputData.fromTs,
-      toTs: inputData.toTs,
+      fromTs,
+      toTs,
       initialCash: inputData.initialCash ?? 10_000,
       feeRate: inputData.feeRate ?? 0.001,
     });
