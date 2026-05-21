@@ -19,8 +19,9 @@
 | B-2 | vnpy 深度拆解（§3-§8） | ✅ 完成 |
 | B-3 | qlib 深度拆解（§3-§8） | ✅ 完成 |
 | B-4 | TradingAgents 深度拆解（§3-§8） | ✅ 完成 |
-| C | quant-lab 自建内核架构设计 | ⏳ 待启动 |
-| D | Mastra 编排层 + agent 对话入口 | ⏳ 待启动 |
+| C | quant-lab 自建内核架构设计 | ✅ 完成 |
+| D | infra + services/data + services/paper 骨架 | ⏳ 待启动 |
+| E | MVP 端到端（用户对话 → 研究 → 回测 → 模拟盘） | ⏳ 待启动 |
 | E | 第一个端到端 MVP（建议先做 crypto 单交易所） | ⏳ 待启动 |
 
 ## 4 个参考 repo
@@ -37,17 +38,21 @@
 ```
 docs/
 ├── 00-context.md                  → 项目背景、目标、关键决策摘要
-├── 01-architecture-overview.md    → 自建系统顶层架构草图（含 Mastra 编排层）
+├── 01-architecture-overview.md    → 顶层架构草图（Phase A 快照，看 03 为准）
 ├── 02-agent-orchestration.md      → Agent 拓扑 / 并行模型 / Swarm 设计 / Skill 取舍
+├── 03-kernel-design.md            → ⭐ 正式内核架构设计 + MVP 范围 + 接口签名
 ├── refs/
 │   ├── _template.md               → 8 段拆解模板
-│   ├── nautilus.md                → Nautilus 拆解
-│   ├── vnpy.md                    → vnpy 拆解
-│   ├── qlib.md                    → qlib 拆解
-│   └── tradingagents.md           → TradingAgents 拆解
+│   ├── nautilus.md                → Nautilus 拆解（学事件循环 / Clock）
+│   ├── vnpy.md                    → vnpy 拆解（学 Gateway / OffsetConverter）
+│   ├── qlib.md                    → qlib 拆解（学算子 DSL / Pipeline）
+│   └── tradingagents.md           → TradingAgents 拆解（学多 agent + Mastra 重写映射）
 └── decisions/
-    ├── 0001-mastra-orchestration.md  → ADR：为什么用 Mastra 编排
-    └── 0005-swarm-worker-pool.md     → ADR：Swarm worker 池放各 engine 服务内
+    ├── 0001-mastra-orchestration.md  → 编排层选型
+    ├── 0002-cross-service-communication.md → 跨服务通信 HTTP+WS
+    ├── 0003-timeseries-db.md         → 时序数据库 Postgres+TimescaleDB
+    ├── 0004-kernel-language.md       → 内核语言 MVP Python + 后期 Rust
+    └── 0005-swarm-worker-pool.md     → Swarm worker 池放各 engine 服务内
 ```
 
 ## 后续目录（Phase C+ 才建）
