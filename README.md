@@ -38,6 +38,7 @@
 docs/
 ├── 00-context.md                  → 项目背景、目标、关键决策摘要
 ├── 01-architecture-overview.md    → 自建系统顶层架构草图（含 Mastra 编排层）
+├── 02-agent-orchestration.md      → Agent 拓扑 / 并行模型 / Swarm 设计 / Skill 取舍
 ├── refs/
 │   ├── _template.md               → 8 段拆解模板
 │   ├── nautilus.md                → Nautilus 拆解
@@ -45,7 +46,8 @@ docs/
 │   ├── qlib.md                    → qlib 拆解
 │   └── tradingagents.md           → TradingAgents 拆解
 └── decisions/
-    └── 0001-mastra-orchestration.md → ADR：为什么用 Mastra 编排
+    ├── 0001-mastra-orchestration.md  → ADR：为什么用 Mastra 编排
+    └── 0005-swarm-worker-pool.md     → ADR：Swarm worker 池放各 engine 服务内
 ```
 
 ## 后续目录（Phase C+ 才建）
