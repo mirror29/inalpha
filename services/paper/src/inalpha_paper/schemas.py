@@ -128,11 +128,12 @@ class SubmitOrderRequest(BaseModel):
         description="LIMIT 必填；MARKET 必须为空",
     )
 
-    # D-8a 暂时不接 data-service 拉实时价，调用方显式传参考价（撮合用）
-    ref_price: float = Field(
-        ...,
+    # D-8a' 起：ref_price 可省略，服务端自动调 data-service /ticker 拿最新价
+    # 调用方依然可显式传（如压测 / 单元测试），不传则走服务端兜底
+    ref_price: float | None = Field(
+        default=None,
         gt=0,
-        description="撮合参考价（D-8a 必填，由调用方传入 / 后续版本可省略由服务端拉最新 bar）",
+        description="撮合参考价；省略时服务端调 data-service /ticker 自取最新价",
     )
 
     fee_rate: float = Field(default=0.001, ge=0, lt=1)

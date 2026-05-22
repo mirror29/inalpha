@@ -50,6 +50,45 @@ class DataClient:
     async def close(self) -> None:
         await self._client.aclose()
 
+    async def get_ticker(
+        self,
+        *,
+        venue: str,
+        symbol: str,
+    ) -> dict[str, Any]:
+        """``GET /ticker`` —— 服务端取最新价（D-8a' 加，给 /orders/submit 自取 refPrice）。
+
+        Returns dict with: ``venue, symbol, price, ts, source, is_stale, stale_seconds``。
+        """
+        try:
+            r = await self._client.get(
+                "/ticker",
+                params={"venue": venue, "symbol": symbol},
+            )
+        except httpx.RequestError as e:
+            raise DataServiceError(
+                f"failed to reach data-service: {e}",
+                code="DATA_SERVICE_UNREACHABLE",
+            ) from e
+
+        if r.status_code >= 400:
+            try:
+                detail = r.json()
+            except Exception:
+                detail = {"message": r.text}
+            raise DataServiceError(
+                f"data-service {r.status_code}: {detail.get('message', 'unknown')}",
+                code=detail.get("code", "DATA_SERVICE_ERROR"),
+                details={"upstream_status": r.status_code, "upstream_body": detail},
+            )
+
+        result = r.json()
+        if not isinstance(result, dict):
+            raise DataServiceError(
+                f"unexpected ticker response shape: {type(result).__name__}"
+            )
+        return result
+
     async def get_bars(
         self,
         *,
