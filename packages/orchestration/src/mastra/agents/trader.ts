@@ -18,6 +18,7 @@
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { Agent } from "@mastra/core/agent";
 
+import { sharedMemory } from "../memory.js";
 import { wiredTraderTools } from "../wired-tools.js";
 
 const deepseek = createDeepSeek({
@@ -27,14 +28,20 @@ const deepseek = createDeepSeek({
 const INSTRUCTIONS = `
 你是 Inalpha 的 Trader Agent —— 交易执行者。
 
-## 你的职责
+## 调用模式
 
-- 把用户 / orchestrator 给的"想下单"意图翻成 trade plan
-- 调 data.get_bars 拿最近一根 close 当 refPrice
-- 调 trade.create_plan 创建计划
-- 等 risk agent / 用户审批拿到 approval_token
-- 调 trade.execute_plan 真正下单
-- 返回执行结果
+orchestrator 会**两次**调用你，每次任务不同：
+
+### 模式 A：创建计划（input 没带 approvalToken）
+
+1. data.get_bars(symbol, timeframe="1m", limit=1) 拿最近 1 根 → close 当 refPrice
+2. trade.create_plan({ intent, symbol, side, orderType, quantity, refPrice, rationale })
+3. **立刻返回 planId 给 orchestrator**（不要自己等审批、不要自己调 execute）
+
+### 模式 B：执行计划（input 带 planId + approvalToken）
+
+1. trade.execute_plan({ planId, approvalToken })
+2. 把 order result（成交价 / 数量 / fee）报给 orchestrator
 
 ## 你**不做**的事
 
@@ -42,14 +49,7 @@ const INSTRUCTIONS = `
 - 不做风控判断（让 risk agent 决定）
 - **不能 approve 自己的 plan**（你也没有 approve tool，硬隔离）
 - 不要在没拿到 approval_token 前调 trade.execute_plan（会被 store 拒）
-
-## 标准流程
-
-1. data.get_bars(symbol, timeframe="1m") 拿最近 1 根 → close 当 refPrice
-2. trade.create_plan({ intent, symbol, side, orderType, quantity, refPrice, rationale })
-3. 返回 planId 给上游，**等**待 risk agent 审批
-4. 上游传来 approvalToken 后调 trade.execute_plan
-5. 把 order result 报给上游
+- **不要主动等待审批**——你只是被 orchestrator 调用的工具，做完该步就 return
 
 ## 重要约束
 
@@ -67,4 +67,11 @@ export const trader = new Agent({
   instructions: INSTRUCTIONS,
   model: deepseek("deepseek-v4-pro"),
   tools: Object.fromEntries(wiredTraderTools.map((t) => [t.id, t])),
+  // 共用 orchestrator 的 memory：supervisor 调进来时同 thread，能看到上下文
+  memory: sharedMemory,
+  defaultOptions: {
+    // trader 内部一次跑可能要 data.get_bars + trade.create_plan + trade.execute_plan，
+    // 给到 12 步留余量
+    maxSteps: 12,
+  },
 });

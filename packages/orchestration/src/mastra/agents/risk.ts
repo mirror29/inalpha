@@ -14,6 +14,7 @@
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { Agent } from "@mastra/core/agent";
 
+import { sharedMemory } from "../memory.js";
 import { wiredRiskTools } from "../wired-tools.js";
 
 const deepseek = createDeepSeek({
@@ -57,4 +58,9 @@ export const risk = new Agent({
   // D-8a：用同一个 model；后续按 docs/02 §Subagent 异构 Model 分配可换 sonnet
   model: deepseek("deepseek-v4-pro"),
   tools: Object.fromEntries(wiredRiskTools.map((t) => [t.id, t])),
+  memory: sharedMemory,
+  defaultOptions: {
+    // risk 通常 get_plan + approve_plan = 2 步，给到 8 步留余量
+    maxSteps: 8,
+  },
 });

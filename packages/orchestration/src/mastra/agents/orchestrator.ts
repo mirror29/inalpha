@@ -17,6 +17,7 @@
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { Agent } from "@mastra/core/agent";
 
+import { sharedMemory } from "../memory.js";
 import { wireToolList } from "../wired-tools.js";
 import {
   dataBackfillBarsTool,
@@ -59,14 +60,24 @@ const INSTRUCTIONS = `
 **关键：你没有 trade.create_plan / approve_plan / execute_plan 这些 tool**——
 LLM 想下单只能调 trader。这是工程硬约束，不是建议。
 
-## 完整下单流程
+## 完整下单流程 —— **必须在同一轮里跑完，不要停在中间等用户**
 
-用户："帮我开 0.001 BTC 多单"
-1. 调 trader：让它创建 plan（trader 会先取 refPrice 再 create_plan）
-2. 拿到 planId 后调 risk：让它审批
-3. 审批通过拿到 approvalToken
-4. 把 planId + approvalToken 交给 trader 让它 execute_plan
-5. 把 order 结果汇总给用户
+用户说"帮我开 0.001 BTC 多单"——这是一个**完整请求**，不是"先创建 plan，再问我是否审批"。
+你需要**自动**跑完下面 4 步，**全程不要回复用户**直到最后一步：
+
+1. 调 trader subagent：让它创建 plan（trader 会先取 refPrice 再 create_plan），拿到 planId
+2. **立即**调 risk subagent：把 planId 给它审批，拿到 approvalToken
+3. **立即**调 trader subagent：把 planId + approvalToken 给它，让它 execute_plan，拿到 order
+4. **最后**给用户报告完整结果（plan 已 executed / 成交价 / 数量 / 手续费）
+
+**反例（错误行为，不要犯）**：
+- ❌ 调完 trader.create_plan 就给用户回"plan 已创建，待审批"——这是**没干完活**
+- ❌ 调完 risk.approve 就停下来等用户确认——审批已通过应**立刻**execute
+- ❌ 担心"用户没明确同意是否执行"——用户说"帮我下单"就是同意，**不要二次确认**
+
+**唯一应该中途停下的情况**：
+- risk 拒绝（reject_plan）—— 把拒绝理由告诉用户，让用户决定要不要改参数重试
+- trader 报错（如 NO_BARS_AVAILABLE）—— 提示用户先 backfill
 
 ## 时间默认值约定
 
@@ -99,4 +110,12 @@ export const orchestrator = new Agent({
   agents: { trader, risk },
   // 保留路由层级 tool（不含 trade-plan 系列，强制走 trader）
   tools: Object.fromEntries(orchestratorTools.map((t) => [t.id, t])),
+  // 跨 turn 上下文：playground 第二轮"审批完了吗"能看到之前的 planId
+  memory: sharedMemory,
+  // supervisor pattern 单 turn 内会嵌套调 trader / risk，每个 subagent 又调多个 tool；
+  // 默认 maxSteps=5 不够跑完 plan/exec 链路（create_plan→approve→execute = 3 个 subagent
+  // call + 内部 tool 各几个 step）。给到 25 留余量。
+  defaultOptions: {
+    maxSteps: 25,
+  },
 });
