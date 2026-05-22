@@ -1,0 +1,95 @@
+# Inalpha · System Architecture (D-8a snapshot)
+# Style: docs/03 三层架构 风格（去 apps/web、对齐 D-8a 现状）
+#
+# 节点 label 精简原则：模块名 + phase 标签为第一行，第二行一句话说"干嘛用的"
+# 状态：实色 = 已落地；虚线灰 = 后续 phase；不用 emoji
+#
+# Regenerate via:
+#   d2 assets/agent-runtime.d2 assets/agent-runtime.svg --theme 0 --pad 32
+
+direction: down
+grid-rows: 4
+grid-gap: 40
+
+classes: {
+  user:     { style: { fill: "#dbeafe"; stroke: "#2563eb"; font-color: "#0c1a3a"; border-radius: 8 } }
+  agent:    { style: { fill: "#ede9fe"; stroke: "#7c3aed"; font-color: "#1e1b4b"; border-radius: 8 } }
+  tool:     { style: { fill: "#dcfce7"; stroke: "#16a34a"; font-color: "#052e16"; border-radius: 8 } }
+  mid:      { style: { fill: "#fef3c7"; stroke: "#d97706"; font-color: "#451a03"; border-radius: 8 } }
+  store:    { style: { fill: "#e5e7eb"; stroke: "#4b5563"; font-color: "#111827"; border-radius: 4 } }
+  svc-done: { style: { fill: "#dcfce7"; stroke: "#16a34a"; font-color: "#052e16"; border-radius: 8 } }
+  svc-todo: { style: { fill: "transparent"; stroke: "#94a3b8"; stroke-dash: 3; font-color: "#64748b"; border-radius: 8 } }
+  evo:      { style: { fill: "#fce7f3"; stroke: "#db2777"; font-color: "#500724"; border-radius: 8 } }
+  ext:      { style: { fill: "#f8fafc"; stroke: "#64748b"; font-color: "#1e293b"; border-radius: 8 } }
+  layer: {
+    style: {
+      fill: "transparent"
+      stroke: "#cbd5e1"
+      stroke-width: 1
+      stroke-dash: 5
+      font-color: "#64748b"
+    }
+  }
+  layer-orch: {
+    style: {
+      fill: "#fafaf9"
+      stroke: "#a3a3a3"
+      stroke-width: 1
+      font-color: "#52525b"
+      border-radius: 12
+    }
+  }
+}
+
+# ──────────────── Layer 1 · 用户入口 ────────────────
+L1: "Layer 1 · User entry" {
+  class: layer
+  user: "User\nvia Mastra dev / CLI" { class: user }
+}
+
+# ──────────────── Layer 2 · 编排层 ────────────────
+L2: "Layer 2 · packages/orchestration · Mastra" {
+  class: layer-orch
+  grid-columns: 3
+
+  agents: "agents/  (D-8a)\norchestrator + trader + risk" { class: agent }
+  tools:  "tools/  (D-8a)\nplan/exec + data/paper reads" { class: tool }
+  mid:    "middleware/  (D-8a)\nhooks · permissions · stop" { class: mid }
+  plans:  "plan-store/  (D-8a)\napproval tokens" { class: store; shape: cylinder }
+  mem:    "memory/  (D-8a)\nMastra + PostgresStore" { class: store; shape: cylinder }
+  evt:    "telemetry/  (Phase E+)\nADR-0015" { class: svc-todo }
+}
+
+# ──────────────── Layer 3 · Python kernel services ────────────────
+L3: "Layer 3 · Python kernel services (FastAPI)" {
+  class: layer
+  grid-columns: 4
+
+  data:     "services/data  (D-8a)\nmarket data ingest" { class: svc-done }
+  paper:    "services/paper  (D-8a)\nkernel · backtest · paper · live" { class: svc-done }
+  research: "services/research  (Phase E)\nmulti-agent debate" { class: svc-todo }
+  evo:      "Strategy Evolution  (Phase E+)\ncode evolution loop" { class: evo }
+}
+
+# ──────────────── Layer 4 · 持久化 + 外部 ────────────────
+L4: "Layer 4 · Persistence & external" {
+  class: layer
+  grid-columns: 3
+
+  db:      "Postgres + TimescaleDB" { class: store; shape: cylinder }
+  markets: "Exchanges & Markets\nvia CCXT (multi-venue)" { class: ext }
+  llm:     "LLM Provider" { class: ext }
+}
+
+# ──────────────── Connections（只画相邻层主路径）────────────────
+L1.user  -> L2.agents: "mastra dev / direct"
+L2.tools -> L3.data:   "HTTP + WS"
+L2.tools -> L3.paper:  "HTTP + WS"
+L3.data  -> L4.db
+L3.paper -> L4.db
+L3.data  -> L4.markets
+# 跨层关系靠 README 文字段补充：
+#   - L2.agents ↔ L4.llm (所有 LLM call)
+#   - L2.agents → L3.research (Phase E)
+#   - L2.agents → L3.evo (MCP tool, E4+)
+#   - L3.evo → L3.paper (promote winners)

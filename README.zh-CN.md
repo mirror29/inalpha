@@ -43,95 +43,32 @@ Inalpha 是一个**面向严肃研究的开源量化交易框架**。它把多 a
 
 ---
 
-## Agent Runtime
+## 系统架构
 
-```mermaid
-graph TB
-    User["User"]
-    Slash["Slash command - bypass LLM"]
-    Status["Statusline - side channel"]
+<p align="center">
+  <img src="assets/agent-runtime.svg" alt="Inalpha 系统架构" width="720" />
+</p>
 
-    subgraph SG_AGENTS ["Mastra agents"]
-        Orch["Orchestrator"]
-        Trader["Trader - intent only"]
-        Risk["Risk - deny by default"]
-        Orch -.->|delegate| Trader
-        Orch -.->|delegate| Risk
-    end
+四层，自顶向下：
 
-    subgraph SG_MID ["Tool middleware"]
-        Pre["1 - PreToolUse hook"]
-        Perm{"2 - Permission Engine - allow / ask / deny"}
-        Post["4 - PostToolUse hook"]
-        Stop["Stop hook - pending plan check"]
-    end
+- **L1 · 用户入口。** 当前通过 `mastra dev` playground 或直接调 tool CLI 跟系统交互。专门的 Web UI 推迟到 Phase E+。
+- **L2 · `packages/orchestration`（Mastra · TypeScript）。** agents、tools、hook/permission middleware、in-memory plan store、对话 memory、telemetry 6 个子模块并列。**LLM 只在这一层跑**。
+- **L3 · Python kernel services（FastAPI）。** 每个 service 是独立的有状态进程。已落地：`services/data`（行情接入）与 `services/paper`（事件驱动内核，回测 = 模拟盘 = 实盘同代码）。占位：`services/research`（多 agent 辩论）与 `Strategy Evolution` 循环。
+- **L4 · 持久化 + 外部依赖。** Postgres + TimescaleDB 承载全部时序与业务状态。外部：**任何 CCXT 可达的交易所与市场**（当前 crypto；未来按项目演进可扩到期货、美股等），以及 LLM provider。
 
-    Ask["3 - AskUserQuestion tool"]
-    PS["Plan Store + approval tokens"]
-    Paper["paper service - POST /orders/submit"]
-    Data["data service - CCXT and WS"]
-    Reject["rejected with reason"]
+**LLM 没有直接下单路径**。所有下单意图必须走 `trade.create_plan → approve → execute_plan`，`approval_token` 一次性、默认 5 分钟过期。Trader agent 只产出 intent；Risk agent 默认拒绝、必要时派发 token；token 通过后才由 PostToolUse 转发到 `paper · POST /orders/submit`。这条规则落在 middleware 层——不是 agent 的 prompt 里——因而**可版本化、可单测、不可绕过**。
 
-    subgraph SG_EVO ["Strategy Evolution - async loop - Phase E+"]
-        Mutator["LLM Mutator - diff-based"]
-        SBox["3 sandbox gates"]
-        MAPE["MAP-Elites + Island Model"]
-        Mutator --> SBox
-        SBox --> MAPE
-        MAPE -.->|seed next gen| Mutator
-    end
+为保持线条整洁，主图有三条关系靠文字描述而非画在图里：agents 直接调用 **LLM Provider**（跨层）；orchestrator 后续接入 `services/research`（Phase E）与 `Strategy Evolution` 循环（MCP tool · E4+）走同一种方式；进化循环胜出的策略推回 `services/paper` 跑回测。另有两条 IO 通道未入图：**slash command**（绕过 LLM 的确定性入口）与只读 **Statusline**（实时持仓 / 待批 plans / 数据 staleness 等用户常看但 LLM 不需要的信息）。
 
-    User --> Orch
-    Slash -.->|bypass LLM| Pre
+### Strategy Evolution 异步循环（Phase E+）
 
-    Trader -->|tool call| Pre
-    Risk -->|tool call| Pre
+<p align="center">
+  <img src="assets/strategy-evolution.svg" alt="策略进化循环" width="720" />
+</p>
 
-    Pre --> Perm
-    Perm -->|allow| Post
-    Perm -->|ask| Ask
-    Ask -->|user reply| Perm
-    Perm -->|deny| Reject
+一条独立异步循环，与单次 agent turn 解耦：LLM 以 diff 形式变异策略源码，候选代码必须通过三道沙盒门（AST 审查 / 子进程隔离 / `Strategy` protocol 契约），MAP-Elites 网格 × Island Model 维持种群多样性。胜出策略推回 `services/paper` 跑回测评估。自 **E4** 起以 MCP tool 形式暴露给 orchestrator，agent runtime 可主动触发并消费进化结果。
 
-    Post -.->|trade tool| PS
-    Post --> Paper
-    Post --> Data
-
-    Paper -.->|tool_result| Orch
-    Data -.->|tool_result| Orch
-
-    Orch -->|turn end| Stop
-    Stop -->|force continue| Orch
-    Stop -->|done| Status
-    Status -.->|read-only| User
-
-    Orch -.->|evolve - MCP tool E4+| Mutator
-    MAPE -.->|promote winners| Paper
-
-    classDef io fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px
-    classDef agent fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px
-    classDef mid fill:#fef3c7,stroke:#d97706,stroke-width:1.5px
-    classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px
-    classDef store fill:#e5e7eb,stroke:#4b5563,stroke-width:1.5px
-    classDef reject fill:#fee2e2,stroke:#dc2626,stroke-width:1.5px
-    classDef evo fill:#fce7f3,stroke:#db2777,stroke-width:1.5px
-
-    class User,Slash,Status io
-    class Orch,Trader,Risk agent
-    class Pre,Perm,Post,Stop mid
-    class Ask,Paper,Data tool
-    class PS store
-    class Reject reject
-    class Mutator,SBox,MAPE evo
-```
-
-每次 agent turn 都流经一条确定性中间件：**PreToolUse → Permission Engine → PostToolUse**，turn 结束前由 **Stop hook** 检查有无未处理的 trade plan。用户有两条输入路径——自然对话（经 LLM）或 **slash command**（绕过 LLM，走确定性意图）；两条输出通道——agent 回复 + 只读 **Statusline**。
-
-**LLM 没有直接下单路径**。所有下单意图必须走 `trade.create_plan → approve → execute_plan`，`approval_token` 一次性、默认 5 分钟过期。`ask` 分支以 **AskUserQuestion** tool 形式呈现，让用户确认成为一类 first-class 事件——而不是自由文本提问。
-
-**Strategy Evolution**（粉色，ADR-0020）是一条独立异步循环，与单次 agent turn 解耦：LLM 以 diff 形式变异策略源码，候选代码必须通过三道沙盒门（AST 审查 / 子进程隔离 / Strategy protocol 契约），MAP-Elites 网格 + Island Model 维持种群多样性。胜出的策略推回 `paper` 跑回测评估；自 E4 起以 MCP tool 形式暴露给 orchestrator，agent loop 可主动触发并消费进化结果。
-
-当前已落地的模块清单、未完成项、决策链路 sequence diagram 见 [`docs/04-current-state.md`](docs/04-current-state.md)。
+两张图由 D2 源文件渲染——[`assets/agent-runtime.d2`](assets/agent-runtime.d2) / [`assets/strategy-evolution.d2`](assets/strategy-evolution.d2)。当前已落地的模块清单、未完成项、决策链路 sequence diagram 见 [`docs/04-current-state.md`](docs/04-current-state.md)。
 
 ---
 

@@ -43,95 +43,32 @@ The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha*
 
 ---
 
-## Agent Runtime
+## System Architecture
 
-```mermaid
-graph TB
-    User["User"]
-    Slash["Slash command - bypass LLM"]
-    Status["Statusline - side channel"]
+<p align="center">
+  <img src="assets/agent-runtime.svg" alt="Inalpha system architecture" width="720" />
+</p>
 
-    subgraph SG_AGENTS ["Mastra agents"]
-        Orch["Orchestrator"]
-        Trader["Trader - intent only"]
-        Risk["Risk - deny by default"]
-        Orch -.->|delegate| Trader
-        Orch -.->|delegate| Risk
-    end
+Four layers, top to bottom:
 
-    subgraph SG_MID ["Tool middleware"]
-        Pre["1 - PreToolUse hook"]
-        Perm{"2 - Permission Engine - allow / ask / deny"}
-        Post["4 - PostToolUse hook"]
-        Stop["Stop hook - pending plan check"]
-    end
+- **L1 · User entry.** Today the user drives the system through the `mastra dev` playground or direct CLI tool calls. A dedicated web UI is deferred to Phase E+.
+- **L2 · `packages/orchestration` (Mastra · TypeScript).** Where agents, tools, hook/permission middleware, the in-memory plan store, conversation memory, and telemetry live side by side. This is the only layer LLMs run in.
+- **L3 · Python kernel services (FastAPI).** Each service is an independent, stateful process. Today: `services/data` (market data ingest) and `services/paper` (event-driven kernel running backtest, paper, and live on the same code). Slotted: `services/research` (multi-agent debate) and a `Strategy Evolution` loop.
+- **L4 · Persistence & external.** Postgres + TimescaleDB stores all time-series and business state. External: any **exchange or market reachable through CCXT** (crypto today; futures, US equities, and other venues as the project grows) and the LLM provider.
 
-    Ask["3 - AskUserQuestion tool"]
-    PS["Plan Store + approval tokens"]
-    Paper["paper service - POST /orders/submit"]
-    Data["data service - CCXT and WS"]
-    Reject["rejected with reason"]
+**LLM has no direct path to placing an order.** Trade intents must travel `trade.create_plan → approve → execute_plan` with a one-shot `approval_token`. The Trader agent only emits intent; the Risk agent defaults to deny and issues the token; only then does PostToolUse forward to `paper · POST /orders/submit`. This rule lives in the middleware layer — not agent prompts — so it's versioned, unit-tested, and bypass-proof.
 
-    subgraph SG_EVO ["Strategy Evolution - async loop - Phase E+"]
-        Mutator["LLM Mutator - diff-based"]
-        SBox["3 sandbox gates"]
-        MAPE["MAP-Elites + Island Model"]
-        Mutator --> SBox
-        SBox --> MAPE
-        MAPE -.->|seed next gen| Mutator
-    end
+To keep the line work clean, three relationships are described in text rather than drawn: agents call the **LLM Provider** directly (cross-layer); the orchestrator will reach `services/research` (Phase E) and the `Strategy Evolution` loop (MCP tool, E4+) the same way; and winners from the evolution loop are promoted back into `services/paper` for backtest. Two additional IO channels are also out of frame: **slash commands** as a deterministic, LLM-bypassing entry, and a read-only **Statusline** for live portfolio state.
 
-    User --> Orch
-    Slash -.->|bypass LLM| Pre
+### Strategy Evolution loop (Phase E+)
 
-    Trader -->|tool call| Pre
-    Risk -->|tool call| Pre
+<p align="center">
+  <img src="assets/strategy-evolution.svg" alt="Strategy evolution loop" width="720" />
+</p>
 
-    Pre --> Perm
-    Perm -->|allow| Post
-    Perm -->|ask| Ask
-    Ask -->|user reply| Perm
-    Perm -->|deny| Reject
+An async loop, independent of any single agent turn: an LLM mutates strategy source code (diff-based), candidates pass three sandbox gates (AST audit, subprocess isolation, `Strategy` protocol contract), and a MAP-Elites grid × Island Model preserves population diversity. Winners are promoted back into `services/paper` for backtest evaluation. Starting at tier **E4**, the loop is exposed to the orchestrator as a single MCP tool, so the agent runtime can both trigger and consume evolution runs.
 
-    Post -.->|trade tool| PS
-    Post --> Paper
-    Post --> Data
-
-    Paper -.->|tool_result| Orch
-    Data -.->|tool_result| Orch
-
-    Orch -->|turn end| Stop
-    Stop -->|force continue| Orch
-    Stop -->|done| Status
-    Status -.->|read-only| User
-
-    Orch -.->|evolve - MCP tool E4+| Mutator
-    MAPE -.->|promote winners| Paper
-
-    classDef io fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px
-    classDef agent fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px
-    classDef mid fill:#fef3c7,stroke:#d97706,stroke-width:1.5px
-    classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px
-    classDef store fill:#e5e7eb,stroke:#4b5563,stroke-width:1.5px
-    classDef reject fill:#fee2e2,stroke:#dc2626,stroke-width:1.5px
-    classDef evo fill:#fce7f3,stroke:#db2777,stroke-width:1.5px
-
-    class User,Slash,Status io
-    class Orch,Trader,Risk agent
-    class Pre,Perm,Post,Stop mid
-    class Ask,Paper,Data tool
-    class PS store
-    class Reject reject
-    class Mutator,SBox,MAPE evo
-```
-
-Every agent turn flows through a deterministic middleware: **PreToolUse → Permission Engine → PostToolUse**, with a **Stop hook** catching pending trade plans before the turn ends. Users have two input paths — natural conversation (through the LLM) or **slash commands** (bypassing the LLM for deterministic intents) — and two output channels — the agent reply and a **read-only Statusline**.
-
-**LLM has no direct path to placing an order.** Every trade intent must travel through `trade.create_plan → approve → execute_plan` with a one-shot `approval_token` (default 5-min TTL). The `ask` branch surfaces as an `AskUserQuestion` tool call, so user confirmations are first-class events — not free-form prompts.
-
-**Strategy Evolution** (pink, ADR-0020) is an async loop that runs independently of any single agent turn: an LLM mutates strategy source code (diff-based), candidates pass three sandbox gates, and MAP-Elites + Island Model preserve diversity. Winners are promoted into `paper` for live backtest evaluation. Starting at tier E4 it is exposed to the orchestrator as a single MCP tool, so the agent loop can trigger and consume evolution runs.
-
-See [`docs/04-current-state.md`](docs/04-current-state.md) for what's implemented today and what's still in flight.
+Both diagrams are rendered from D2 sources at [`assets/agent-runtime.d2`](assets/agent-runtime.d2) and [`assets/strategy-evolution.d2`](assets/strategy-evolution.d2). See [`docs/04-current-state.md`](docs/04-current-state.md) for the live D-8a module inventory and what's still in flight.
 
 ---
 

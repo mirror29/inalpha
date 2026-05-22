@@ -1,0 +1,62 @@
+# Inalpha · Strategy Evolution loop (ADR-0020)
+# Generate via:
+#   d2 assets/strategy-evolution.d2 assets/strategy-evolution.svg --theme 0 --pad 30
+
+direction: right
+
+classes: {
+  agent: {
+    style: {
+      fill: "#ede9fe"
+      stroke: "#7c3aed"
+      font-color: "#1e1b4b"
+      border-radius: 8
+    }
+  }
+  tool: {
+    style: {
+      fill: "#dcfce7"
+      stroke: "#16a34a"
+      font-color: "#052e16"
+      border-radius: 8
+    }
+  }
+  evo: {
+    style: {
+      fill: "#fce7f3"
+      stroke: "#db2777"
+      font-color: "#500724"
+      border-radius: 8
+    }
+  }
+}
+
+orch: "Orchestrator\n(agent runtime)" { class: agent }
+
+loop: "Strategy Evolution loop\nasync · independent of any single agent turn" {
+  style: {
+    fill: "transparent"
+    stroke: "#db2777"
+    stroke-width: 1
+    stroke-dash: 3
+    font-color: "#831843"
+  }
+
+  mutator: "LLM Mutator\ndiff-based code edit\non strategy source" { class: evo }
+
+  sbox: "3 Sandbox Gates\n1. AST audit\n2. subprocess isolation\n3. Strategy protocol contract" { class: evo }
+
+  mape: "MAP-Elites grid\n× Island Model\n(diversity preservation)" {
+    class: evo
+    shape: cylinder
+  }
+
+  mutator -> sbox: "candidate"
+  sbox -> mape: "scored survivor"
+  mape -> mutator: "seed next gen" { style.stroke-dash: 3 }
+}
+
+paper: "paper service\nbacktest = paper = live" { class: tool }
+
+orch -> loop.mutator: "evolve(strategy_id)\nMCP tool · E4+" { style.stroke-dash: 3 }
+loop.mape -> paper: "promote winners" { style.stroke-dash: 3 }
