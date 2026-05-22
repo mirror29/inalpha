@@ -236,7 +236,7 @@ def _compose_buy_hold(
 def _coerce_int(value: Any, lo: int, hi: int, *, default: int) -> int:
     """把 LLM 给的任意值转 int 并 clip 到 [lo, hi]。失败用 default。"""
     try:
-        x = int(round(float(value))) if value is not None else default
+        x = round(float(value)) if value is not None else default
     except (TypeError, ValueError):
         x = default
     return max(lo, min(hi, x))
