@@ -162,8 +162,8 @@ def test_deep_dive_returns_research_plan(
     analysts = {b["analyst"] for b in body["briefs"]}
     assert analysts == {"technical", "fundamental", "sentiment", "risk", "macro"}
 
-    # LLM 共 6 次（5 analyst + 1 manager）
-    assert len(fake_llm_singleton.calls) == 6
+    # LLM 共 ≥ 6 次（5 analyst + 1 manager；含可选 Bull/Bear 辩论 2N 轮）
+    assert len(fake_llm_singleton.calls) >= 6
 
 
 # ────────────────────────────────────────────────────────────────────

@@ -65,8 +65,8 @@ async def test_deep_dive_runs_full_chain(fake_llm: FakeLLMClient) -> None:
     # 5 个 brief 都该在
     analysts_seen = {b.analyst for b in plan.briefs}
     assert analysts_seen == {"technical", "fundamental", "sentiment", "risk", "macro"}
-    # LLM 调 6 次（5 analyst + 1 manager）
-    assert len(fake_llm.calls) == 6
+    # LLM 调 ≥ 6 次（5 analyst + 1 manager；可能含 Bull/Bear 辩论的 2N 轮）
+    assert len(fake_llm.calls) >= 6
 
 
 @respx.mock
@@ -123,6 +123,69 @@ async def test_deep_dive_continues_when_some_analysts_fail() -> None:
         b = next(b for b in plan.briefs if b.analyst == failed_type)
         assert b.confidence == 0.0
         assert b.summary.startswith("(analyst failed)")
+
+
+@respx.mock
+async def test_deep_dive_with_debate_includes_bull_bear_log(
+    fake_llm: FakeLLMClient,
+    monkeypatch: Any,
+) -> None:
+    """开启 1 轮辩论：5 analyst + Bull + Bear + manager = 8 次 LLM 调用，
+    且 ``plan.debate_log`` 落 2 条 turn。"""
+    from inalpha_research.config import get_research_settings
+
+    monkeypatch.setenv("RESEARCH_MAX_DEBATE_ROUNDS", "1")
+    get_research_settings.cache_clear()
+    try:
+        bars = [
+            make_bar_row((_as_of() - timedelta(hours=60 - i)).isoformat(), close=100 + i * 0.1)
+            for i in range(60)
+        ]
+        respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=bars))
+        respx.get("https://api.alternative.me/fng/").mock(
+            return_value=Response(
+                200,
+                json={
+                    "data": [
+                        {"value": "22", "value_classification": "Extreme Fear", "timestamp": "1716163200"},
+                        *[
+                            {"value": str(30 + i % 10), "value_classification": "Fear", "timestamp": str(1716163200 - i * 86400)}
+                            for i in range(1, 30)
+                        ],
+                    ]
+                },
+            )
+        )
+
+        req = DeepDiveRequest(
+            venue="binance",
+            symbol="BTC/USDT",
+            timeframe="1h",
+            as_of=_as_of(),
+            lookback_days=7,
+        )
+
+        async with DataClient("http://data-mock.test", "t") as data:
+            plan = await run_deep_dive(req, llm=fake_llm, data=data)
+
+        # 8 = 5 analyst + Bull + Bear + manager
+        assert len(fake_llm.calls) == 8
+        # 辩论日志落进 plan
+        assert len(plan.debate_log) == 2
+        assert plan.debate_log[0].role == "bull"
+        assert plan.debate_log[0].round == 1
+        assert plan.debate_log[1].role == "bear"
+        assert plan.debate_log[1].round == 1
+        # manager user prompt 应含 "debate_log"
+        manager_call = next(
+            c for c in fake_llm.calls if "research manager" in c["system"].lower()
+        )
+        assert "debate_log" in manager_call["user"]
+        assert "Round 1 BULL" in manager_call["user"]
+        assert "Round 1 BEAR" in manager_call["user"]
+    finally:
+        # 还原 env 避免污染后续测试
+        get_research_settings.cache_clear()
 
 
 @respx.mock
