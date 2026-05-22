@@ -45,29 +45,74 @@ Inalpha 是一个**面向严肃研究的开源量化交易框架**。它把多 a
 
 ## Architecture
 
-```
-       ┌─────────────────────────────────────────────────┐
-       │  Conversational UI  ·  Next.js + CopilotKit     │
-       └──────────────────────┬──────────────────────────┘
-                              │
-       ┌──────────────────────▼──────────────────────────┐
-       │  Orchestration  ·  Mastra (TypeScript)           │
-       │  Agents · Tools · Workflows · Hooks · MCP        │
-       └──────────────────────┬──────────────────────────┘
-                              │
-       ┌──────────────────────▼──────────────────────────┐
-       │  Kernel Services  ·  Python (FastAPI)            │
-       │  data  │  paper  │  factor  │  live  │  evolver  │
-       └──────────────────────┬──────────────────────────┘
-                              │
-       ┌──────────────────────▼──────────────────────────┐
-       │  Strategy (your code, written once)              │
-       │   →  Backtest Gateway  /  Paper Gateway  /       │
-       │      Live Gateway  (interchangeable)             │
-       └──────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    User([User])
+
+    subgraph UI["apps/web · Next.js 16 + CopilotKit"]
+        Chat[Conversational UI]
+    end
+
+    subgraph Orch["packages/orchestration · Mastra (TypeScript)"]
+        Orchestrator{{"Orchestrator<br/>supervisor"}}
+
+        subgraph Agents["Sub-agents"]
+            Trader["Trader<br/>(intent only)"]
+            Risk["Risk<br/>(deny by default)"]
+            ResearchHub["research-hub<br/>(analysts + bull/bear/risk debate)"]
+        end
+
+        subgraph Middleware["Tool middleware"]
+            Hooks["Hooks<br/>PreToolUse · PostToolUse · Stop · SessionStart"]
+            Perm["Permission Engine<br/>allow · ask · deny"]
+        end
+
+        subgraph Tools["Tools"]
+            PlanTool["trade.create_plan<br/>trade.approve_plan<br/>trade.execute_plan"]
+            ReadTool["data.* · paper.get_* · research.deep_dive"]
+        end
+
+        PlanStore[("Plan Store<br/>trade_plans + approval_tokens")]
+    end
+
+    subgraph Kernel["Python services · FastAPI"]
+        Data["services/data<br/>CCXT · WS · history"]
+        Paper["services/paper<br/>Clock · MessageBus · Strategy · RiskEngine · Gateway"]
+        Research["services/research<br/>multi-agent debate"]
+        Factor["services/factor<br/>qlib (Phase F+)"]
+    end
+
+    DB[("Postgres 17<br/>+ TimescaleDB")]
+    Binance[("Binance API<br/>via CCXT")]
+    LLM[("LLM Provider<br/>OpenAI / Anthropic")]
+
+    User --> Chat
+    Chat --> Orchestrator
+    Orchestrator -.delegates.-> Trader
+    Orchestrator -.delegates.-> Risk
+    Orchestrator -.delegates.-> ResearchHub
+
+    Trader --> PlanTool
+    Risk --> PlanTool
+    PlanTool --> Hooks
+    ReadTool --> Hooks
+    Hooks --> Perm
+    Perm -->|allow / approved| PlanStore
+    PlanStore -->|execute<br/>w/ approval_token| Paper
+
+    ReadTool --> Data
+    ResearchHub --> Research
+    Orchestrator --> LLM
+    ResearchHub --> LLM
+    Data --> Binance
+    Data --> DB
+    Paper --> DB
+    PlanStore -.future Postgres-.-> DB
 ```
 
 三层各自独立、协议清晰：UI 通过对话表达意图，编排层调度 agent 与 tool，内核服务在 Python 中保持事件驱动的确定性。
+
+**LLM 没有直接下单路径**。所有下单意图必须走 `trade.create_plan → trade.approve_plan → trade.execute_plan` 三段式，外层由 Hooks 中间件（5 类生命周期事件）与声明式 Permission Engine（allow / ask / deny）双层拦截；`approval_token` 一次性，默认 5 分钟过期。当前已落地的模块清单、未完成项、决策链路 sequence diagram 见 [`docs/04-current-state.md`](docs/04-current-state.md)。
 
 ---
 

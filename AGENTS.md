@@ -63,8 +63,11 @@ bash scripts/check-consistency.sh
 
 ## 6. 当前 Phase 状态
 
-Phase **D-7**：Mastra tool 层骨架已起包；下一里程碑 D-8 trader agent + Plan/Exec
-端到端。详见 `CLAUDE.md` §3 / 仓库根 `README.md`。
+Phase **D-8a**：Plan/Exec in-memory 闭环 + orchestrator/trader/risk 三 agent +
+hooks + permissions 已落地；下一里程碑 D-8b（trade_plans / approval_tokens
+Postgres 持久化）/ D-9（RiskEngine 规则化 + paper-service 真接入）。
+详见 [`docs/04-current-state.md`](docs/04-current-state.md) / `CLAUDE.md` §3 /
+仓库根 `README.md`。
 
 > Phase 状态可能漂移——以 `scripts/check-consistency.sh` 的检查结果为准。
 

@@ -60,6 +60,21 @@ paper-engine（同代码 = backtest=live）下模拟单
 - ❌ Swarm 跑批回测（仅做单 strategy）
 - ❌ Mastra workflow 长任务 suspend-resume
 
+### D-8a 已完成项（2026-05-21）
+
+> 详细模块清单与代码入口见 [`docs/04-current-state.md`](./04-current-state.md)。
+
+- ✅ `services/data`：CCXT Binance + Postgres / TimescaleDB
+- ✅ `services/paper`：内核 + 3 策略（`buy_and_hold` / `sma_cross` / `mean_reversion`）+ `POST /orders/submit` 单笔下单端点 + `RiskEngine` 基础
+- ✅ `packages/orchestration`：
+  - 三 agent（`orchestrator` / `trader` / `risk`）拆分（Mastra supervisor 模式）
+  - Hooks runner（`PreToolUse` / `PostToolUse` / `PostToolUseFailure` / `SessionStart` / Stop）
+  - Permission Engine（allow / ask / deny 三态 + 参数 predicate）
+  - Plan/Exec 三 tool（`createTradePlan` / `approveTradePlan` / `executeTradePlan`）+ Plan Store（in-memory，含 `approval_token` 派发）
+
+**D-8b / D-9 在做**：`trade_plans` / `approval_tokens` Postgres 表 + Alembic migration；
+RiskEngine 规则化（max notional / 价格偏离 / 日损上限）+ paper-service 真接入。
+
 ---
 
 ## 三层架构
@@ -352,9 +367,11 @@ export const traderAgent = new Agent({
 // agents/risk.ts
 export const riskAgent = new Agent({
   name: 'risk',
-  instructions: `你的立场和 trader 对立 —— 默认拒绝，直到证据充分...`,
-  tools: { riskCheckOrder, riskGetExposure },
+  instructions: `你的立场和 trader 对立 —— 默认拒绝，直到证据充分。
+                 审批通过时调 trade.approve_plan 派发一次性 approval_token。`,
+  tools: { riskCheckOrder, riskGetExposure, approveTradePlan },
 })
+// 详见 docs/04-current-state.md 决策链路 sequence diagram。
 ```
 
 ### Workflow
@@ -403,10 +420,17 @@ export const strategyLifecycle = createWorkflow({ id: 'strategy-lifecycle' })
 | `paper.start_strategy` | `paper-service` `POST /strategy/start` | 上模拟盘 |
 | `paper.stop_strategy` | `paper-service` `POST /strategy/stop` | 停模拟盘 |
 | `paper.get_positions` | `paper-service` `GET /positions` | 查持仓 |
-| `paper.submit_order_intent` | `paper-service` `POST /orders/intent` | 提交下单意图（经 risk） |
+| `trade.create_plan` | orchestration 内部 + 写 Plan Store | 创建下单计划，状态 `pending_approval`，**不下单** |
+| `trade.approve_plan` | orchestration 内部 + 改 Plan Store | Risk Agent / 用户审批，派发一次性 `approval_token` |
+| `trade.execute_plan` | `paper-service` `POST /orders/submit` | 消费 token + 真撮合下单（**唯一**有 side-effect 的下单 tool） |
 | `risk.check_order` | `paper-service` `POST /risk/check` | 风控预检 |
 | `research.deep_dive` | `research-service` `POST /deep_dive` | 单次跑 TradingAgents 风格流程 |
 | `factor.compute_alpha` | `factor-service` `POST /alpha` | 算因子（Phase F+） |
+
+> **执行链路**：`trade.* → Hooks (PreToolUse) → Permission Engine → Plan Store → /orders/submit`。
+> LLM 视野里**没有**直接 `submit_order` 路径——旧 `paper.submit_order_intent` /
+> `live.submit_order` 全部 `deny` 或 `modelInvocable:false`。详见
+> [`docs/04-current-state.md`](./04-current-state.md)。
 
 ---
 

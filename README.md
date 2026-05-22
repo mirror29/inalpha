@@ -45,29 +45,74 @@ The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha*
 
 ## Architecture
 
-```
-       ┌─────────────────────────────────────────────────┐
-       │  Conversational UI  ·  Next.js + CopilotKit     │
-       └──────────────────────┬──────────────────────────┘
-                              │
-       ┌──────────────────────▼──────────────────────────┐
-       │  Orchestration  ·  Mastra (TypeScript)           │
-       │  Agents · Tools · Workflows · Hooks · MCP        │
-       └──────────────────────┬──────────────────────────┘
-                              │
-       ┌──────────────────────▼──────────────────────────┐
-       │  Kernel Services  ·  Python (FastAPI)            │
-       │  data  │  paper  │  factor  │  live  │  evolver  │
-       └──────────────────────┬──────────────────────────┘
-                              │
-       ┌──────────────────────▼──────────────────────────┐
-       │  Strategy (your code, written once)              │
-       │   →  Backtest Gateway  /  Paper Gateway  /       │
-       │      Live Gateway  (interchangeable)             │
-       └──────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    User([User])
+
+    subgraph UI["apps/web · Next.js 16 + CopilotKit"]
+        Chat[Conversational UI]
+    end
+
+    subgraph Orch["packages/orchestration · Mastra (TypeScript)"]
+        Orchestrator{{"Orchestrator<br/>supervisor"}}
+
+        subgraph Agents["Sub-agents"]
+            Trader["Trader<br/>(intent only)"]
+            Risk["Risk<br/>(deny by default)"]
+            ResearchHub["research-hub<br/>(analysts + bull/bear/risk debate)"]
+        end
+
+        subgraph Middleware["Tool middleware"]
+            Hooks["Hooks<br/>PreToolUse · PostToolUse · Stop · SessionStart"]
+            Perm["Permission Engine<br/>allow · ask · deny"]
+        end
+
+        subgraph Tools["Tools"]
+            PlanTool["trade.create_plan<br/>trade.approve_plan<br/>trade.execute_plan"]
+            ReadTool["data.* · paper.get_* · research.deep_dive"]
+        end
+
+        PlanStore[("Plan Store<br/>trade_plans + approval_tokens")]
+    end
+
+    subgraph Kernel["Python services · FastAPI"]
+        Data["services/data<br/>CCXT · WS · history"]
+        Paper["services/paper<br/>Clock · MessageBus · Strategy · RiskEngine · Gateway"]
+        Research["services/research<br/>multi-agent debate"]
+        Factor["services/factor<br/>qlib (Phase F+)"]
+    end
+
+    DB[("Postgres 17<br/>+ TimescaleDB")]
+    Binance[("Binance API<br/>via CCXT")]
+    LLM[("LLM Provider<br/>OpenAI / Anthropic")]
+
+    User --> Chat
+    Chat --> Orchestrator
+    Orchestrator -.delegates.-> Trader
+    Orchestrator -.delegates.-> Risk
+    Orchestrator -.delegates.-> ResearchHub
+
+    Trader --> PlanTool
+    Risk --> PlanTool
+    PlanTool --> Hooks
+    ReadTool --> Hooks
+    Hooks --> Perm
+    Perm -->|allow / approved| PlanStore
+    PlanStore -->|execute<br/>w/ approval_token| Paper
+
+    ReadTool --> Data
+    ResearchHub --> Research
+    Orchestrator --> LLM
+    ResearchHub --> LLM
+    Data --> Binance
+    Data --> DB
+    Paper --> DB
+    PlanStore -.future Postgres-.-> DB
 ```
 
 Three independent layers with explicit protocols between them: the UI expresses intent through conversation, the orchestration layer schedules agents and tools, and the kernel services preserve event-driven determinism in Python.
+
+**LLM has no direct path to placing an order.** Every trade intent must travel through `trade.create_plan → trade.approve_plan → trade.execute_plan`, layered behind a Hooks middleware (5 lifecycle events) and a declarative Permission Engine (allow / ask / deny). The `approval_token` is one-shot and expires by default after 5 minutes. See [`docs/04-current-state.md`](docs/04-current-state.md) for the live implementation status, including which modules have landed and what is still in flight.
 
 ---
 
