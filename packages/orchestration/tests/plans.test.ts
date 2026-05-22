@@ -364,8 +364,9 @@ describe("executeTradePlanTool", () => {
       side: "BUY",
       type: "MARKET",
       quantity: 0.01,
-      ref_price: 50_000,
     });
+    // D-8a' 后 refPrice 由 paper 服务端自取，不再由 client 携带
+    expect(body.ref_price).toBeUndefined();
 
     // 二次 execute 必须失败（token 已消费）
     const exec2 = await executeTradePlanTool.execute!(

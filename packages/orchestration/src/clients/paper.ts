@@ -46,7 +46,8 @@ export type SubmitOrderParams = {
   type: "MARKET" | "LIMIT";
   quantity: number;
   price?: number;
-  refPrice: number;
+  /** D-8a' 后 optional：省略则 paper 服务端调 data /ticker 自取 */
+  refPrice?: number;
   feeRate?: number;
 };
 

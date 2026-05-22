@@ -25,12 +25,10 @@ import { Mastra } from "@mastra/core/mastra";
 import { PinoLogger } from "@mastra/loggers";
 
 import { orchestrator } from "./agents/orchestrator.js";
-import { risk } from "./agents/risk.js";
-import { trader } from "./agents/trader.js";
 
 export const mastra = new Mastra({
-  // D-8a：3 个 agent（orchestrator supervisor + trader + risk）
-  // 所有 agent 都在 Mastra 顶层注册，方便 playground 单独调测
-  agents: { orchestrator, trader, risk },
+  // D-8a'：只剩 orchestrator 一个 agent；trader/risk subagent 已废弃
+  // 安全护栏从"agent prompt + tool 集隔离"下沉到"plan store + permissions deny"
+  agents: { orchestrator },
   logger: new PinoLogger({ name: "inalpha", level: "info" }),
 });

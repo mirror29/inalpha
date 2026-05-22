@@ -68,12 +68,11 @@ export const createTradePlanTool = createTool({
     - 还在分析策略可行性（先回测，不要创建实盘 plan）
 
     坑：
-    - **rationale 必填**：必须解释"为什么要下这单"，给 Risk Agent 判断 + 复盘审计
-    - 返回 'planId' 后必须先 trade.approve_plan，再 trade.execute_plan
-    - **不要**自己 approve 自己（trader agent 应该只 create + execute，approve 由 risk agent 做）
+    - **rationale 必填**：必须解释"为什么要下这单"，给审计 / 风控用
+    - 返回 'planId' 后顺序调 trade.approve_plan → trade.execute_plan 即可走完
     - 默认 5 分钟过期；行情快变化的 plan 别批太久才执行
     - LIMIT 必须给 price，MARKET 必须不给 price
-    - refPrice 是撮合参考价（D-8a 必填）；调用前可先用 data.get_bars 拿最近的 close 当 refPrice
+    - **refPrice 不再由 LLM 提供**：paper /orders/submit 服务端调 data /ticker 自取最新价
   `.trim(),
   inputSchema: z.object({
     intent: IntentSchema.describe("交易意图：open_long / open_short / close / rebalance"),
@@ -83,11 +82,10 @@ export const createTradePlanTool = createTool({
     orderType: TypeSchema.default("MARKET").describe("MARKET / LIMIT"),
     quantity: z.number().positive().describe("下单数量（base 资产单位，例如 BTC 数量）"),
     price: z.number().positive().optional().describe("LIMIT 必填；MARKET 必须省略"),
-    refPrice: z.number().positive().describe("撮合参考价（用 data.get_bars 拿最近 close 价）"),
     rationale: z
       .string()
       .min(1)
-      .describe("解释为什么要下这单——给 Risk Agent / 用户审计用，必填"),
+      .describe("解释为什么要下这单——审计 / 风控用，必填"),
     expireInSeconds: z
       .number()
       .int()
@@ -107,7 +105,7 @@ export const createTradePlanTool = createTool({
           type: inputData.orderType ?? "MARKET",
           quantity: inputData.quantity,
           price: inputData.price,
-          refPrice: inputData.refPrice,
+          // refPrice 不再携带——paper /orders/submit 服务端自取
         },
         rationale: inputData.rationale,
         expireInSeconds: inputData.expireInSeconds ?? 300,
@@ -280,6 +278,7 @@ export const executeTradePlanTool = createTool({
       type: plan.orderParams.type,
       quantity: plan.orderParams.quantity,
       price: plan.orderParams.price,
+      // refPrice 由 paper 服务端自取（调 data /ticker），不再从客户端传
       refPrice: plan.orderParams.refPrice,
     });
 

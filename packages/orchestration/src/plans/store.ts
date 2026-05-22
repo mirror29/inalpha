@@ -24,13 +24,18 @@ export type PlanStatus =
   | "executed"
   | "expired";
 
-/** 订单参数（与 paper /orders/submit 的字段对齐）。 */
+/** 订单参数（与 paper /orders/submit 的字段对齐）。
+ *
+ * D-8a' 起：``refPrice`` 不再由 LLM/orchestration 携带——paper 服务端调
+ * data /ticker 自取。若 caller 显式传（测试 / 压测）可保留，但生产路径不传。
+ */
 export type OrderParams = {
   side: "BUY" | "SELL";
   type: "MARKET" | "LIMIT";
   quantity: number;
   price?: number;
-  refPrice: number;
+  /** D-8a' 后已 deprecated；保留 optional 给单测显式注入用 */
+  refPrice?: number;
 };
 
 /** 风险参数（D-8a 占位，executeTradePlan 阶段不强制校验）。 */
