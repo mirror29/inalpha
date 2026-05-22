@@ -114,22 +114,51 @@ export class HttpClient {
       try {
         parsed = JSON.parse(text);
       } catch {
-        parsed = { message: text };
+        // 非 JSON body（HTML 错误页等）截断到 1KB 后塞 message 字段
+        // （review 高风险 #7：大 response 整个塞进 HttpClientError.details → 进 audit log
+        //  可能炸内存 / 泄漏敏感片段）
+        parsed = { message: truncateForError(text) };
       }
     }
 
     if (!response.ok) {
       const body = parsed as { code?: string; message?: string; details?: Record<string, unknown> } | null;
       throw new HttpClientError(
-        `upstream ${response.status}: ${body?.message ?? response.statusText}`,
+        `upstream ${response.status}: ${truncateForError(body?.message ?? response.statusText, 200)}`,
         {
           code: body?.code ?? `HTTP_${response.status}`,
           status: response.status,
-          details: body?.details ?? {},
+          // details 也截断，避免上游返几 MB JSON 全部进 audit log
+          details: truncateDetailsForError(body?.details),
         },
       );
     }
 
     return parsed as T;
   }
+}
+
+/** 截断字符串到 N 字符（默认 1KB），加省略号；非 string 原样返回。 */
+function truncateForError(s: string | undefined, max = 1024): string {
+  if (!s) return "";
+  return s.length > max ? `${s.slice(0, max)}…[truncated ${s.length - max}ch]` : s;
+}
+
+/** 把 details dict 序列化后截断到 1KB，避免几 MB JSON 进 audit log。 */
+function truncateDetailsForError(
+  details: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!details) return {};
+  let json: string;
+  try {
+    json = JSON.stringify(details);
+  } catch {
+    return { _serializationError: "details not JSON-serializable" };
+  }
+  if (json.length <= 1024) return details;
+  return {
+    _truncated: true,
+    _originalLength: json.length,
+    preview: json.slice(0, 1024),
+  };
 }

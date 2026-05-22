@@ -250,12 +250,20 @@ function looseEq(a: unknown, b: unknown): boolean {
   return String(a) === String(b);
 }
 
+/** 危险字段名 —— 取这些 key 会拿到 Object 原型链上的属性，触发 prototype pollution
+ *  攻击面（review B11）。 predicate 可来自配置文件，禁掉以策安全。
+ */
+const _FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 function getField(obj: unknown, path: string): unknown {
   if (obj === null || typeof obj !== "object") return undefined;
   const parts = path.split(".");
   let cur: unknown = obj;
   for (const p of parts) {
     if (cur === null || typeof cur !== "object") return undefined;
+    if (_FORBIDDEN_KEYS.has(p)) return undefined;
+    // 只取 own property，避免走原型链拿到 Object.prototype 上的东西
+    if (!Object.prototype.hasOwnProperty.call(cur, p)) return undefined;
     cur = (cur as Record<string, unknown>)[p];
   }
   return cur;

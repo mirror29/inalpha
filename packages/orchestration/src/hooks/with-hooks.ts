@@ -112,86 +112,98 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
   const wrapped: GenericTool = {
     ...tool,
     execute: async (input: unknown, ctx?: unknown) => {
+      // 兜底 try/catch —— hook runner / permission resolver 自身抛错时不该把异常
+      // 冒到 Mastra 上层（review B16）。本文件头注释承诺过 "hook 异常一律不抛出
+      // 到上层"，旧实现没真兜住 PreToolUse 阶段的异常。
       const toolName = tool.id;
-      const sessionId = getSessionId(ctx);
-
-      // 1. PreToolUse
-      const pre = await opts.runner.run("PreToolUse", {
-        toolName,
-        toolInput: input,
-        sessionId,
-      });
-
-      if (pre.permissionOverride === "deny") {
-        return {
-          isError: true,
-          message: pre.message ?? `tool ${toolName} blocked by hook`,
-          deniedBy: "hook",
-          appliedHookIds: pre.appliedHookIds,
-        };
-      }
-
-      const effectiveInput = pre.updatedInput !== undefined ? pre.updatedInput : input;
-
-      // 2. permission engine（hook 没 override 时才查）
-      let permDecision: "allow" | "ask" | "deny" = pre.permissionOverride ?? "allow";
-      if (!pre.permissionOverride && opts.permissionResolver) {
-        permDecision = await opts.permissionResolver(toolName, effectiveInput);
-      }
-
-      if (permDecision === "deny") {
-        return {
-          isError: true,
-          message: `tool ${toolName} denied by permission engine`,
-          deniedBy: "permission",
-        };
-      }
-
-      if (permDecision === "ask") {
-        // D-8 阶段：没有 ask 实现（用户审批 / Risk Agent 路径，task #5 起接入）。
-        // 暂时把 ask 当 deny + 提示信息，让 LLM 知道这条路需要人工。
-        return {
-          isError: true,
-          message: `tool ${toolName} requires approval (ask path not yet wired; see ADR-0011)`,
-          deniedBy: "permission-ask-pending",
-        };
-      }
-
-      // 3. execute
-      let output: unknown;
-      let isError = false;
       try {
-        output = await original(effectiveInput, ctx);
+        const sessionId = getSessionId(ctx);
+
+        // 1. PreToolUse
+        const pre = await opts.runner.run("PreToolUse", {
+          toolName,
+          toolInput: input,
+          sessionId,
+        });
+
+        if (pre.permissionOverride === "deny") {
+          return {
+            isError: true,
+            message: pre.message ?? `tool ${toolName} blocked by hook`,
+            deniedBy: "hook",
+            appliedHookIds: pre.appliedHookIds,
+          };
+        }
+
+        const effectiveInput = pre.updatedInput !== undefined ? pre.updatedInput : input;
+
+        // 2. permission engine（hook 没 override 时才查）
+        let permDecision: "allow" | "ask" | "deny" = pre.permissionOverride ?? "allow";
+        if (!pre.permissionOverride && opts.permissionResolver) {
+          permDecision = await opts.permissionResolver(toolName, effectiveInput);
+        }
+
+        if (permDecision === "deny") {
+          return {
+            isError: true,
+            message: `tool ${toolName} denied by permission engine`,
+            deniedBy: "permission",
+          };
+        }
+
+        if (permDecision === "ask") {
+          // D-8 阶段：没有 ask 实现（用户审批 / Risk Agent 路径，task #5 起接入）。
+          // 暂时把 ask 当 deny + 提示信息，让 LLM 知道这条路需要人工。
+          return {
+            isError: true,
+            message: `tool ${toolName} requires approval (ask path not yet wired; see ADR-0011)`,
+            deniedBy: "permission-ask-pending",
+          };
+        }
+
+        // 3. execute
+        let output: unknown;
+        let isError = false;
+        try {
+          output = await original(effectiveInput, ctx);
+        } catch (err) {
+          output = formatToolError(err);
+          isError = true;
+        }
+
+        // 4. PostToolUse (success) / PostToolUseFailure (error)
+        const postEvent = isError ? "PostToolUseFailure" : "PostToolUse";
+        const post = await opts.runner.run(postEvent, {
+          toolName,
+          toolInput: effectiveInput,
+          toolOutput: output,
+          isError,
+          sessionId,
+        });
+
+        if (post.forceError) {
+          isError = true;
+        }
+
+        // 把 hook 的 message 前置到 tool_result，让 LLM 能读到
+        const finalMessage = combineMessages(pre.message, post.message);
+        if (finalMessage) {
+          output = prependMessage(output, finalMessage, isError);
+        }
+
+        // 错误路径统一加 isError 标记（不破坏成功路径原 output 结构）
+        if (isError) {
+          return { isError: true, output };
+        }
+        return output;
       } catch (err) {
-        output = formatToolError(err);
-        isError = true;
+        // 最后一道防线：runner / resolver / 内部包装代码意外抛错时兜成 isError result
+        return {
+          isError: true,
+          message: `tool ${toolName} middleware error: ${formatToolError(err).message}`,
+          deniedBy: "middleware-error",
+        };
       }
-
-      // 4. PostToolUse (success) / PostToolUseFailure (error)
-      const postEvent = isError ? "PostToolUseFailure" : "PostToolUse";
-      const post = await opts.runner.run(postEvent, {
-        toolName,
-        toolInput: effectiveInput,
-        toolOutput: output,
-        isError,
-        sessionId,
-      });
-
-      if (post.forceError) {
-        isError = true;
-      }
-
-      // 把 hook 的 message 前置到 tool_result，让 LLM 能读到
-      const finalMessage = combineMessages(pre.message, post.message);
-      if (finalMessage) {
-        output = prependMessage(output, finalMessage, isError);
-      }
-
-      // 错误路径统一加 isError 标记（不破坏成功路径原 output 结构）
-      if (isError) {
-        return { isError: true, output };
-      }
-      return output;
     },
   };
 

@@ -11,18 +11,22 @@
  * - 回测 + 策略 lifecycle allow
  * - plan-exec 三件套全部 allow（approval_token 自身就是凭证；不再叠加 permission ask）
  *
- * defaultMode = ``allow`` 是 D-8a 开发友好选择（绿场，没有未知 tool 会自动跑进 ask 卡住）。
- * 上 prod 时按 ADR-0011 §关键约定 2 切到 ``ask``（守保守原则）。
+ * defaultMode = ``ask``：保守 fail-closed（D-8b' review B7 切换）。旧 ``allow``
+ * 默认 + predicate 缺字段返 false 会让 ``live.submit_order(notional<1000)`` 缺
+ * notional 时绕过 ask 走 allow，大单意外通过。fail-closed 后未列名 tool 必须
+ * 显式声明。
  */
 import type { PermissionConfig } from "./types.js";
 
 export const DEFAULT_PERMISSIONS: PermissionConfig = {
-  defaultMode: "allow",
+  defaultMode: "ask",
 
   allow: [
     // 只读 / 信息查询
     "data.*",
     "paper.list_strategies",
+    "paper.list_orders",
+    "paper.list_positions",
     "paper.run_backtest",
     "paper.health",
     "paper.get_*",

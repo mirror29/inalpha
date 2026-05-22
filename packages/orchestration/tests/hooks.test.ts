@@ -168,6 +168,38 @@ describe("HookRunner", () => {
     expect(d.message).toContain("timed out after 30ms");
   });
 
+  it("hook resolved AFTER timeout does not throw unhandled rejection (review B12)", async () => {
+    // 测延迟 reject 被 runner 静默吞掉：
+    // 1) runner timeout → 返 deny
+    // 2) 50ms 后 handler 才 reject —— 不应触发 unhandledRejection
+    const runner = new HookRunner();
+    runner.register({
+      id: "late-reject",
+      event: "PreToolUse",
+      handler: () =>
+        new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error("late!")), 50);
+        }),
+      timeoutMs: 10,
+      blocking: true,
+    });
+
+    let unhandled: unknown = null;
+    const onUnhandled = (e: Error | unknown): void => {
+      unhandled = e;
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const d = await runner.run("PreToolUse", { toolName: "x" });
+      expect(d.permissionOverride).toBe("deny");
+      // 等延迟 reject 触发
+      await new Promise((r) => setTimeout(r, 80));
+      expect(unhandled).toBeNull();
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("updatedInput from later hook overrides earlier", async () => {
     const runner = new HookRunner();
     runner.register({
@@ -353,6 +385,26 @@ describe("withHooks", () => {
     expect(out.isError).toBe(true);
     // 原 output 仍然保留在 ``output`` 字段
     expect(out.output).toMatchObject({ ok: true, hookMessage: "reconcile mismatch" });
+  });
+
+  it("permissionResolver throw → middleware-error result (review B16)", async () => {
+    const runner = new HookRunner();
+    const tool = makeTool(() => ({ ok: true }));
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => {
+        throw new Error("resolver bug");
+      },
+    });
+
+    const out = (await wrapped.execute!({})) as {
+      isError: boolean;
+      deniedBy: string;
+      message: string;
+    };
+    expect(out.isError).toBe(true);
+    expect(out.deniedBy).toBe("middleware-error");
+    expect(out.message).toContain("resolver bug");
   });
 
   it("hook message is prepended to dict output as hookMessage", async () => {

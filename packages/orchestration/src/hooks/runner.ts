@@ -38,7 +38,13 @@ class HookTimeoutError extends Error {
   }
 }
 
-/** 用 Promise.race 给单个 handler 套超时；超时按"取消"处理（保守）。 */
+/** 用 Promise.race 给单个 handler 套超时；超时按"取消"处理（保守）。
+ *
+ * 注意：timeout 后**handler 仍在挂着** —— JS 没原生取消机制，handler 自己不响应
+ * AbortSignal 就只能等它自生自灭。本函数保证 handler 后续 resolve / reject **不
+ * 再影响 runner 决策**（即使是 unhandledRejection 也只是 log，由 process 兜底）。
+ * 这是 D-8b' review B12 想表达的核心：超时即 abandon，不要再相信延迟的结果。
+ */
 async function runWithTimeout(
   id: string,
   handler: HookHandler,
@@ -46,11 +52,24 @@ async function runWithTimeout(
   timeoutMs: number,
 ): Promise<ReturnType<HookHandler>> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let abandoned = false;
   const timeoutP = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new HookTimeoutError(id, timeoutMs)), timeoutMs);
+    timer = setTimeout(() => {
+      abandoned = true;
+      reject(new HookTimeoutError(id, timeoutMs));
+    }, timeoutMs);
+  });
+  // 给 handler promise 装个 no-throw catch，避免超时后它 reject 触发
+  // unhandledRejection（被 abandon 的结果不应影响 process / runner）
+  const handlerP = Promise.resolve(handler(ctx)).catch((err) => {
+    if (abandoned) {
+      // 静默吞掉延迟 reject —— runner 已经返回 timeout 决策
+      return undefined;
+    }
+    throw err;
   });
   try {
-    return await Promise.race([Promise.resolve(handler(ctx)), timeoutP]);
+    return await Promise.race([handlerP, timeoutP]);
   } finally {
     if (timer) clearTimeout(timer);
   }

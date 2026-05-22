@@ -311,6 +311,44 @@ describe("DEFAULT_PERMISSIONS · 关键 forbidden-path / golden-path", () => {
     expect(engine.authorize("data.backfill_bars", {}).decision).toBe("allow");
     expect(engine.authorize("paper.run_backtest", {}).decision).toBe("allow");
     expect(engine.authorize("paper.list_strategies", {}).decision).toBe("allow");
+    expect(engine.authorize("paper.list_orders", {}).decision).toBe("allow");
+    expect(engine.authorize("paper.list_positions", {}).decision).toBe("allow");
     expect(engine.authorize("paper.health", {}).decision).toBe("allow");
+  });
+
+  it("defaultMode is 'ask' (fail-closed; review B7 fix)", () => {
+    // 未列名 tool 必须显式声明才能跑；默认 ask 防 D-8a defaultMode=allow 的
+    // "缺 notional 字段时大单意外通过" trip
+    expect(engine.authorize("unknown.tool", {}).decision).toBe("ask");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// __proto__ / constructor 防御（review B11 prototype pollution）
+// ────────────────────────────────────────────────────────────────────
+
+describe("predicate getField · prototype pollution guard", () => {
+  it("treats __proto__ path as undefined", () => {
+    const p = parsePredicate('__proto__ == "polluted"');
+    expect(p).not.toBeNull();
+    // payload 没有 __proto__ own property → predicate 取到 undefined → 不命中
+    expect(evaluatePredicate(p!, {})).toBe(false);
+  });
+
+  it("treats constructor path as undefined", () => {
+    const p = parsePredicate('constructor == "Object"');
+    expect(p).not.toBeNull();
+    expect(evaluatePredicate(p!, {})).toBe(false);
+  });
+
+  it("treats prototype path as undefined", () => {
+    const p = parsePredicate("prototype == 1");
+    expect(evaluatePredicate(p!, {})).toBe(false);
+  });
+
+  it("only own properties resolve via dotted path", () => {
+    // Object.prototype.toString 存在但不是 own property → 取不到
+    const p = parsePredicate("toString == 'function'");
+    expect(evaluatePredicate(p!, { actual: "value" })).toBe(false);
   });
 });
