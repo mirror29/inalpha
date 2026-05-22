@@ -8,53 +8,121 @@
  *
  * - 非阻塞（``blocking: false``）—— audit 失败不影响业务
  * - 默认 matcher：``"paper.* | live.* | factor.* | research.*"``（业务 tool）
- * - 输出敏感字段裁剪（``apiKey`` / ``secret`` / ``token`` 等做 mask）
+ * - 敏感字段脱敏 —— 凭据（apiKey / token / secret / password / approval_token）+
+ *   PII（email / phone / address / wallet / ssn / credit card 等）一起 mask
+ * - 字段名匹配**忽略大小写 + 下划线**（``api_key`` / ``apiKey`` / ``API_KEY`` 一视同仁）
  */
 import type { HookHandler, HookRegistration } from "../types.js";
 
-const SENSITIVE_KEYS = new Set([
+/**
+ * 默认脱敏键集合 —— 凭据 + 常见 PII。
+ *
+ * 全部小写、去下划线后存入；运行时同样 normalize 后比对。这样
+ * ``apiKey`` / ``api_key`` / ``API_KEY`` / ``API-KEY`` 都命中同一条规则。
+ */
+const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
+  // 凭据
   "apikey",
-  "api_key",
   "secret",
   "token",
   "password",
   "passwd",
+  "passphrase",
   "approvaltoken",
-  "approval_token",
-]);
+  "privatekey",
+  "private_key",
+  "accesskey",
+  "refreshtoken",
+  "sessionsecret",
+  // 个人 PII
+  "email",
+  "phone",
+  "phonenumber",
+  "mobile",
+  "address",
+  "homeaddress",
+  "walletaddress",
+  "wallet",
+  "ssn",
+  "socialsecurity",
+  "passport",
+  "idnumber",
+  // 支付
+  "creditcard",
+  "cardnumber",
+  "cvv",
+  "cvc",
+  "iban",
+  "swift",
+];
 
-function maskSensitive(value: unknown): unknown {
+const DEFAULT_NORMALIZED = new Set<string>(
+  DEFAULT_SENSITIVE_KEYS.map((k) => normalizeKey(k)),
+);
+
+/** 大小写 + 下划线 / 短横线无关的字段名 normalize（``API_KEY`` → ``apikey``）。 */
+function normalizeKey(s: string): string {
+  return s.replace(/[_\-]/g, "").toLowerCase();
+}
+
+/**
+ * 检查字段名是否被 normalized 集合覆盖。
+ */
+function isSensitive(key: string, extra: Set<string>): boolean {
+  const norm = normalizeKey(key);
+  return DEFAULT_NORMALIZED.has(norm) || extra.has(norm);
+}
+
+function maskSensitive(value: unknown, extra: Set<string>): unknown {
   if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(maskSensitive);
+  if (Array.isArray(value)) return value.map((v) => maskSensitive(v, extra));
 
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) {
-    if (SENSITIVE_KEYS.has(k.toLowerCase())) {
+    if (isSensitive(k, extra)) {
       out[k] = "[REDACTED]";
     } else {
-      out[k] = maskSensitive(v);
+      out[k] = maskSensitive(v, extra);
     }
   }
   return out;
 }
 
+export type AuditLogOptions = {
+  /** 自定义 sink（默认 console.log JSON 行）。 */
+  sink?: (record: Record<string, unknown>) => void;
+  /**
+   * 额外脱敏字段名（在默认集合之外加）。同样会按 normalize 处理：
+   * ``["walletId", "user_address"]`` 都会变成 ``walletid`` / ``useraddress``。
+   */
+  extraSensitiveKeys?: readonly string[];
+};
+
 /**
  * 创建 audit-log handler。可注入自定义 sink（默认 console.log）便于测试。
+ *
+ * 兼容旧签名 ``createAuditLogHandler(sink)`` 直接传 sink 函数。
  */
 export function createAuditLogHandler(
-  sink: (record: Record<string, unknown>) => void = (r) => {
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify(r));
-  },
+  sinkOrOpts?: ((record: Record<string, unknown>) => void) | AuditLogOptions,
 ): HookHandler {
+  const opts: AuditLogOptions =
+    typeof sinkOrOpts === "function" ? { sink: sinkOrOpts } : (sinkOrOpts ?? {});
+  const sink =
+    opts.sink ??
+    ((r: Record<string, unknown>) => {
+      console.log(JSON.stringify(r));
+    });
+  const extra = new Set<string>((opts.extraSensitiveKeys ?? []).map((k) => normalizeKey(k)));
+
   return async (ctx) => {
     const record = {
       event: ctx.event,
       tool: ctx.toolName,
       sessionId: ctx.sessionId,
       isError: ctx.isError ?? false,
-      input: maskSensitive(ctx.toolInput),
-      output: maskSensitive(ctx.toolOutput),
+      input: maskSensitive(ctx.toolInput, extra),
+      output: maskSensitive(ctx.toolOutput, extra),
       ts: new Date().toISOString(),
     };
     sink(record);
@@ -64,15 +132,17 @@ export function createAuditLogHandler(
 
 /**
  * 默认审计 hook 注册项（仅 PostToolUse；失败链一般还要单独的告警 handler）。
+ *
+ * 接受 ``sink`` 函数或完整的 ``AuditLogOptions``（含 ``extraSensitiveKeys``）。
  */
 export function defaultAuditRegistration(
-  sink?: (record: Record<string, unknown>) => void,
+  sinkOrOpts?: ((record: Record<string, unknown>) => void) | AuditLogOptions,
 ): HookRegistration {
   return {
     id: "audit-log",
     event: "PostToolUse",
     matcher: "paper.* | live.* | factor.* | research.* | data.backfill_bars",
-    handler: createAuditLogHandler(sink),
+    handler: createAuditLogHandler(sinkOrOpts),
     blocking: false,
   };
 }

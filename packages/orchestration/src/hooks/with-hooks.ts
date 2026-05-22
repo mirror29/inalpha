@@ -43,6 +43,40 @@ type GenericTool = {
 };
 
 /**
+ * 默认 sessionId 抽取器：按优先级从 Mastra runtime context 取 ID 字段。
+ *
+ * Mastra 1.x ``ToolExecutionContext`` 会带 ``threadId`` / ``runId`` / ``agentId``
+ * （详见 @mastra/core/tools）；本项目自有的 ``requestContext.sessionId`` 作为兜底
+ * （任何手动构造的 ctx 走这条）。
+ *
+ * 优先级：``threadId`` > ``runId`` > ``requestContext.sessionId`` > ``sessionId``
+ * （顶层）。命中即停。
+ *
+ * 这样 audit-log 拿到的 sessionId 既覆盖 Mastra playground 调用，也覆盖测试 / 手
+ * 工脚本。
+ */
+export function defaultGetSessionId(ctx: unknown): string | undefined {
+  if (!ctx || typeof ctx !== "object") return undefined;
+  const c = ctx as Record<string, unknown>;
+  const threadId = pickString(c.threadId);
+  if (threadId) return threadId;
+  const runId = pickString(c.runId);
+  if (runId) return runId;
+  const rc = c.requestContext;
+  if (rc && typeof rc === "object") {
+    const sid = pickString((rc as Record<string, unknown>).sessionId);
+    if (sid) return sid;
+  }
+  const sid = pickString(c.sessionId);
+  if (sid) return sid;
+  return undefined;
+}
+
+function pickString(v: unknown): string | undefined {
+  return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+/**
  * 可选的权限解析器（task #3 / ADR-0011 接入）。返回值 deny / ask 走对应路径。
  *
  * 现阶段不传时视作"allow"，所有 tool 都直接执行。
@@ -73,11 +107,13 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
     return tool;
   }
 
+  const getSessionId = opts.getSessionId ?? defaultGetSessionId;
+
   const wrapped: GenericTool = {
     ...tool,
     execute: async (input: unknown, ctx?: unknown) => {
       const toolName = tool.id;
-      const sessionId = opts.getSessionId?.(ctx);
+      const sessionId = getSessionId(ctx);
 
       // 1. PreToolUse
       const pre = await opts.runner.run("PreToolUse", {

@@ -8,10 +8,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   HookRunner,
+  defaultAuditRegistration,
+  defaultGetSessionId,
+  createAuditLogHandler,
   toolMatches,
   withHooks,
-  defaultAuditRegistration,
-  createAuditLogHandler,
 } from "../src/hooks/index.js";
 
 // ────────────────────────────────────────────────────────────────────
@@ -398,11 +399,128 @@ describe("audit-log handler", () => {
     expect(input.symbol).toBe("BTC/USDT");
   });
 
+  it("redacts PII keys (email / wallet_address / phone / ssn)", async () => {
+    const captured: Record<string, unknown>[] = [];
+    const handler = createAuditLogHandler((r) => captured.push(r));
+
+    await handler({
+      event: "PostToolUse",
+      toolName: "trade.create_plan",
+      toolInput: {
+        email: "alice@example.com",
+        walletAddress: "0xabcdef",
+        nested: {
+          phone_number: "+1-555-1234",
+          ssn: "123-45-6789",
+        },
+        symbol: "BTC/USDT", // 不该 redact
+      },
+      isError: false,
+    });
+
+    const rec = captured[0]!;
+    const input = rec.input as Record<string, unknown>;
+    expect(input.email).toBe("[REDACTED]");
+    expect(input.walletAddress).toBe("[REDACTED]");
+    const nested = input.nested as Record<string, unknown>;
+    expect(nested.phone_number).toBe("[REDACTED]");
+    expect(nested.ssn).toBe("[REDACTED]");
+    expect(input.symbol).toBe("BTC/USDT");
+  });
+
+  it("redaction is case-insensitive and underscore-insensitive", async () => {
+    const captured: Record<string, unknown>[] = [];
+    const handler = createAuditLogHandler((r) => captured.push(r));
+
+    await handler({
+      event: "PostToolUse",
+      toolName: "x",
+      toolInput: {
+        API_KEY: "k1",       // 大写
+        "api-key": "k2",      // 短横线
+        Phone_Number: "p1",   // 大小写混合
+      },
+      isError: false,
+    });
+
+    const input = captured[0]!.input as Record<string, unknown>;
+    expect(input.API_KEY).toBe("[REDACTED]");
+    expect(input["api-key"]).toBe("[REDACTED]");
+    expect(input.Phone_Number).toBe("[REDACTED]");
+  });
+
+  it("extraSensitiveKeys lets caller add custom fields", async () => {
+    const captured: Record<string, unknown>[] = [];
+    const handler = createAuditLogHandler({
+      sink: (r) => captured.push(r),
+      extraSensitiveKeys: ["internalNote", "client_id"],
+    });
+
+    await handler({
+      event: "PostToolUse",
+      toolName: "x",
+      toolInput: { internalNote: "secret", client_id: "c-1", symbol: "BTC/USDT" },
+      isError: false,
+    });
+
+    const input = captured[0]!.input as Record<string, unknown>;
+    expect(input.internalNote).toBe("[REDACTED]");
+    expect(input.client_id).toBe("[REDACTED]");
+    expect(input.symbol).toBe("BTC/USDT");
+  });
+
   it("defaultAuditRegistration registers non-blocking PostToolUse hook", () => {
     const reg = defaultAuditRegistration();
     expect(reg.event).toBe("PostToolUse");
     expect(reg.blocking).toBe(false);
     expect(reg.matcher).toContain("paper.*");
     expect(reg.matcher).toContain("live.*");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// defaultGetSessionId · Mastra runtime context 字段抽取
+// ────────────────────────────────────────────────────────────────────
+
+describe("defaultGetSessionId", () => {
+  it("prefers threadId (Mastra native)", () => {
+    expect(defaultGetSessionId({ threadId: "t-1", runId: "r-1" })).toBe("t-1");
+  });
+
+  it("falls back to runId when no threadId", () => {
+    expect(defaultGetSessionId({ runId: "r-1" })).toBe("r-1");
+  });
+
+  it("falls back to requestContext.sessionId", () => {
+    expect(defaultGetSessionId({ requestContext: { sessionId: "s-1" } })).toBe("s-1");
+  });
+
+  it("falls back to top-level sessionId (test ctx)", () => {
+    expect(defaultGetSessionId({ sessionId: "s-2" })).toBe("s-2");
+  });
+
+  it("returns undefined for empty / malformed ctx", () => {
+    expect(defaultGetSessionId(undefined)).toBeUndefined();
+    expect(defaultGetSessionId(null)).toBeUndefined();
+    expect(defaultGetSessionId({})).toBeUndefined();
+    expect(defaultGetSessionId({ threadId: "" })).toBeUndefined();
+    expect(defaultGetSessionId({ threadId: 123 })).toBeUndefined();
+  });
+
+  it("withHooks wires defaultGetSessionId into HookContext by default", async () => {
+    const runner = new HookRunner();
+    let seenSessionId: string | undefined;
+    runner.register({
+      id: "spy",
+      event: "PreToolUse",
+      handler: (ctx) => {
+        seenSessionId = ctx.sessionId;
+      },
+    });
+    const tool = { id: "t", description: "", execute: async () => ({}) };
+    const wrapped = withHooks(tool, { runner });
+
+    await wrapped.execute!({}, { threadId: "thr-42" });
+    expect(seenSessionId).toBe("thr-42");
   });
 });
