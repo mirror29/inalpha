@@ -30,7 +30,7 @@ labels: enhancement
 - [ ] 只涉及 crypto 市场，不引入 A 股 / 美股逻辑
 - [ ] 不让 LLM 获得直接下单路径
 - [ ] 不动 `services/_shared/`
-- [ ] 不引入新的非 PolyForm 兼容依赖（注意 LICENSE 是 PolyForm Noncommercial）
+- [ ] 不引入与 AGPL-3.0 不兼容的依赖（注意 LICENSE 是 AGPL-3.0）
 
 ## 其他
 

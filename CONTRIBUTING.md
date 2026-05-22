@@ -7,7 +7,7 @@
 
 ## 1. 开始之前
 
-- **License**：本项目采用 [PolyForm Noncommercial 1.0.0](LICENSE)。提交 PR 即表示你同意你的贡献以同样的许可证发布，且**不**用于商业用途。
+- **License**：本项目采用 [GNU AGPL-3.0](LICENSE)。提交 PR 即表示你同意你的贡献以同样的许可证发布（含 AGPL 的网络 copyleft 条款）。
 - **行为准则**：见 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。
 - **协作硬约束**：参见 [`AGENTS.md §3`](AGENTS.md) 与 [`AGENTS.md §8`](AGENTS.md) 红线条款。
 - **安全漏洞**：**不要**开 public issue。流程见 [`SECURITY.md`](SECURITY.md)。
@@ -59,7 +59,7 @@ bash scripts/check-consistency.sh  # 提交前必须 pass
 - 引入 A 股 / 美股 / 港股相关逻辑（仅 crypto）
 - 让 LLM 获得直接下单路径的改动（破坏核心安全模型）
 - 商业化 / 收费 / 引流到付费服务的代码或文档
-- 引入 GPL / AGPL 等与 PolyForm Noncommercial 冲突的依赖
+- 引入与 AGPL-3.0 不兼容的依赖（例如纯专有 / 不可重分发的库；与 GPL/AGPL 系本身兼容）
 - "顺手清理"型大规模重构（先 issue 讨论）
 
 ## 8. 不确定？

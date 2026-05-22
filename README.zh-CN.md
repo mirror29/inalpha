@@ -13,7 +13,7 @@
 </p>
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--NC%201.0.0-C8463C.svg" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-C8463C.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--8a-9E7B4B.svg" alt="Phase" />
   <img src="https://img.shields.io/badge/built%20with-Mastra%20%2B%20FastAPI-D4A744.svg" alt="Built with" />
   <img src="https://img.shields.io/badge/python-3.12+-1A1714.svg" alt="Python" />
@@ -240,11 +240,11 @@ Inalpha 站在巨人的肩膀上。向以下项目、作者与社区致以诚挚
 
 ## License
 
-**[PolyForm Noncommercial 1.0.0](LICENSE)** — 开源但**禁止商业用途**。
+**[GNU AGPL-3.0](LICENSE)** — 自由软件，带强网络 copyleft。
 
-- 允许：个人研究、学术、教育、非营利组织、开源项目集成
-- 禁止：任何商业用途（含商业咨询、SaaS 化、商业内部使用）
-- 商用授权：请提 issue 单独洽谈
+- 允许：任何用途（个人研究、学术、商业内部使用、与 AGPL 兼容的开源项目集成）
+- 要求：如果你修改 Inalpha 并以网络服务形式提供给他人，必须按 AGPL-3.0 公开完整对应源码
+- 商业授权（闭源 / 不愿公开源码的托管 SaaS）：请提 issue 单独洽谈双重许可
 
 ---
 

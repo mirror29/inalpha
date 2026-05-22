@@ -13,7 +13,7 @@
 </p>
 
 <p>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--NC%201.0.0-C8463C.svg" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-C8463C.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--8a-9E7B4B.svg" alt="Phase" />
   <img src="https://img.shields.io/badge/built%20with-Mastra%20%2B%20FastAPI-D4A744.svg" alt="Built with" />
   <img src="https://img.shields.io/badge/python-3.12+-1A1714.svg" alt="Python" />
@@ -240,11 +240,11 @@ May Inalpha, in time, give back.
 
 ## License
 
-**[PolyForm Noncommercial 1.0.0](LICENSE)** — open source, but **commercial use is prohibited**.
+**[GNU AGPL-3.0](LICENSE)** — free software with a strong network copyleft.
 
-- Allowed: personal research, academic, educational, nonprofit, and open-source integration
-- Prohibited: any commercial use (including commercial consulting, SaaS, and commercial internal use)
-- Commercial licensing: please open an issue to discuss
+- Allowed: any use (personal research, academic, commercial in-house, integration into AGPL-compatible projects)
+- Required: if you modify Inalpha and offer it as a network service, you must release the complete corresponding source under AGPL-3.0
+- Commercial licensing (proprietary / closed-source / hosted SaaS without source release): please open an issue to discuss a dual license
 
 ---
 

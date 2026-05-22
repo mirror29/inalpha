@@ -1,6 +1,6 @@
 <!--
 感谢贡献！提交 PR 前请确认以下事项。
-本项目 LICENSE 是 PolyForm Noncommercial 1.0.0，你的贡献也将以同样许可发布。
+本项目 LICENSE 是 GNU AGPL-3.0，你的贡献也将以同样许可发布。
 -->
 
 ## 这个 PR 做了什么
@@ -19,7 +19,7 @@
 - [ ] 已跑 `bash scripts/check-consistency.sh`，全部 pass
 - [ ] 如果改了 tool description，遵循三段式：「功能 + 何时用 + 何时不用 + 坑」
 - [ ] 如果改了硬约束相关代码（permissions / hooks / LLM 下单路径），已在 PR 描述中说明
-- [ ] 如果引入新依赖，已确认许可证与 PolyForm Noncommercial 兼容
+- [ ] 如果引入新依赖，已确认许可证与 AGPL-3.0 兼容
 - [ ] 没有动 `services/_shared/`、`.mastra/`、`docs/miro/`
 
 ## 测试
