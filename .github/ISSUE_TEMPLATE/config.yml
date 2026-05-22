@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 设计讨论 / Open-ended design discussion
+    url: https://github.com/{OWNER}/{REPO}/discussions
+    about: 设计问题、开放性讨论、"这样做对吗"——请去 GitHub Discussions，不要开 issue。
+  - name: 安全漏洞 / Security vulnerability
+    url: https://github.com/{OWNER}/{REPO}/blob/main/SECURITY.md
+    about: 请通过 SECURITY.md 指定的渠道私下报告，不要开 public issue。

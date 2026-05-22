@@ -14,10 +14,13 @@
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--NC%201.0.0-C8463C.svg" alt="License" /></a>
+  <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--8a-9E7B4B.svg" alt="Phase" />
   <img src="https://img.shields.io/badge/built%20with-Mastra%20%2B%20FastAPI-D4A744.svg" alt="Built with" />
   <img src="https://img.shields.io/badge/python-3.12+-1A1714.svg" alt="Python" />
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
 </p>
+
+<p><em>Claude Code–grade engineering discipline (hooks · permissions · plan-exec · subagent), applied to a unified quant kernel where backtest = paper = live.</em></p>
 
 </div>
 
@@ -28,6 +31,8 @@
 Inalpha is an **open-source quant trading framework designed for serious research**. It brings together multi-agent LLM collaboration, a unified trading kernel, and a declarative engineering harness in a single system. Backtest, paper, and live execution share one strategy codebase. Research, decision-making, and risk control are carried out by agents holding opposing positions — not by treating the LLM as an opaque signal source.
 
 The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha** (the quant term for excess return) — *find alpha with a fox's eye.*
+
+> **Status:** Inalpha is in **alpha** (Phase D-8a — Plan/Exec in-memory closed loop). Read the code, weigh in on design — **do not run this against real money yet**. A hosted version is on the roadmap; if you want to be notified when it's ready, leave your email in the **[waitlist (coming soon)](#)**.
 
 ---
 
@@ -179,16 +184,17 @@ Strategies, data, and decision records live locally. LLM calls go to external pr
 ## Quick Start
 
 ```bash
-pnpm i                                  # Node packages (packages/orchestration)
-uv sync                                 # Python packages (services/_shared, data, paper)
+pnpm i                          # Node packages (packages/orchestration)
+uv sync                         # Python packages (services/_shared, data, paper)
 
-# Start services (in separate terminals)
-cd services/data  && uv run python -m inalpha_data.main
-cd services/paper && uv run python -m inalpha_paper.main
-cd packages/orchestration && pnpm dev   # mastra dev
+bash scripts/dev.sh             # one shot — starts data (8001) + paper (8002) + mastra (4111)
+bash scripts/dev.sh logs        # follow service logs
+bash scripts/dev.sh stop        # stop everything
 ```
 
-Open the `mastra dev` playground to start a conversation with the orchestrator agent.
+Then open the `mastra dev` playground at `http://127.0.0.1:4111` to start a conversation with the orchestrator agent.
+
+Prefer the manual three-terminal flow? See [`AGENTS.md §4`](AGENTS.md).
 
 ---
 

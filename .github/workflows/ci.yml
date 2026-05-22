@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  consistency:
+    name: 跨文件一致性检验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run check-consistency.sh
+        run: bash scripts/check-consistency.sh
+
+  orchestration-typecheck:
+    name: orchestration · typecheck + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/orchestration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+      - name: Type check
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+
+  python-services-lint:
+    name: python services · ruff + mypy
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [data, paper, research]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Sync dependencies
+        working-directory: services/${{ matrix.service }}
+        run: uv sync --frozen
+      - name: Ruff
+        working-directory: services/${{ matrix.service }}
+        run: uv run ruff check .
+      - name: Mypy (best-effort, allow failure)
+        working-directory: services/${{ matrix.service }}
+        run: uv run mypy . || true

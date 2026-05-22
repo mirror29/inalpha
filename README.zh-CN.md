@@ -14,10 +14,13 @@
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--NC%201.0.0-C8463C.svg" alt="License" /></a>
+  <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--8a-9E7B4B.svg" alt="Phase" />
   <img src="https://img.shields.io/badge/built%20with-Mastra%20%2B%20FastAPI-D4A744.svg" alt="Built with" />
   <img src="https://img.shields.io/badge/python-3.12+-1A1714.svg" alt="Python" />
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
 </p>
+
+<p><em>把 Claude Code 级别的工程纪律（hooks · permissions · plan-exec · subagent）搬进量化框架，让多 Agent 在真实约束下协作研究、回测、交易。</em></p>
 
 </div>
 
@@ -28,6 +31,8 @@
 Inalpha 是一个**面向严肃研究的开源量化交易框架**。它把多 agent 大语言模型协作、统一的交易内核、以及一套声明式工程护栏融合为同一个系统——回测、模拟盘与实盘共用一份策略代码，研究、决策、风控由立场对抗的 agent 协同完成，而不是把 LLM 当作黑箱信号源使用。
 
 项目命名取自日本稻荷狐神 **Ina**ri 与量化术语 **alpha**，承袭"狐眼洞察、稳健致远"之意。
+
+> **当前状态：** Inalpha 处于 **alpha** 阶段（Phase D-8a，Plan/Exec 内存闭环已完成）。欢迎读代码、参与设计——**暂不建议用真实资金跑。** 未来会推出 hosted 版本，想在上线时收到通知，请在 **[waitlist（待启用）](#)** 留邮箱。
 
 ---
 
@@ -179,16 +184,17 @@ Hooks 在 `config/hooks.yaml` 声明、permissions 在 `permissions.yaml` 声明
 ## Quick Start
 
 ```bash
-pnpm i                                  # Node 包（packages/orchestration）
-uv sync                                 # Python 包（services/_shared, data, paper）
+pnpm i                          # Node 包（packages/orchestration）
+uv sync                         # Python 包（services/_shared, data, paper）
 
-# 起 services（分别开 terminal）
-cd services/data  && uv run python -m inalpha_data.main
-cd services/paper && uv run python -m inalpha_paper.main
-cd packages/orchestration && pnpm dev   # mastra dev
+bash scripts/dev.sh             # 一键起 data(8001) + paper(8002) + mastra(4111)
+bash scripts/dev.sh logs        # 跟随日志
+bash scripts/dev.sh stop        # 停止全部
 ```
 
-打开 `mastra dev` 的 playground 即可与 orchestrator agent 对话。
+随后打开 `http://127.0.0.1:4111` 的 `mastra dev` playground，与 orchestrator agent 对话。
+
+想用 3 个独立 terminal 手动起？见 [`AGENTS.md §4`](AGENTS.md)。
 
 ---
 
