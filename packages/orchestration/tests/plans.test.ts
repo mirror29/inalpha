@@ -58,7 +58,7 @@ describe("PlanStore state machine", () => {
     const plan = store.create({
       intent: "open_long",
       symbol: "BTC/USDT",
-      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01, refPrice: 50_000 },
+      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01 },
       rationale: "测试用例：短线突破",
     });
     expect(plan.status).toBe("pending_approval");
@@ -84,7 +84,7 @@ describe("PlanStore state machine", () => {
       store.create({
         intent: "open_long",
         symbol: "BTC/USDT",
-        orderParams: { side: "BUY", type: "MARKET", quantity: 0.01, refPrice: 50_000 },
+        orderParams: { side: "BUY", type: "MARKET", quantity: 0.01 },
         rationale: "   ", // 仅空白
       }),
     ).toThrow(PlanError);
@@ -96,7 +96,7 @@ describe("PlanStore state machine", () => {
       store.create({
         intent: "open_long",
         symbol: "BTC/USDT",
-        orderParams: { side: "BUY", type: "LIMIT", quantity: 0.01, refPrice: 50_000 },
+        orderParams: { side: "BUY", type: "LIMIT", quantity: 0.01 },
         rationale: "限价测试",
       }),
     ).toThrow(PlanError);
@@ -108,7 +108,7 @@ describe("PlanStore state machine", () => {
           side: "BUY",
           type: "MARKET",
           quantity: 0.01,
-          refPrice: 50_000,
+          
           price: 50_000,
         },
         rationale: "市价测试",
@@ -121,7 +121,7 @@ describe("PlanStore state machine", () => {
     const plan = store.create({
       intent: "open_long",
       symbol: "BTC/USDT",
-      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01, refPrice: 50_000 },
+      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01 },
       rationale: "重复审批测试",
     });
     store.approve({ planId: plan.planId, approver: "risk-agent" });
@@ -135,7 +135,7 @@ describe("PlanStore state machine", () => {
     const plan = store.create({
       intent: "open_long",
       symbol: "BTC/USDT",
-      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01, refPrice: 50_000 },
+      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01 },
       rationale: "token 一次性测试",
     });
     const approval = store.approve({ planId: plan.planId, approver: "risk-agent" });
@@ -151,7 +151,7 @@ describe("PlanStore state machine", () => {
     const plan = store.create({
       intent: "open_long",
       symbol: "BTC/USDT",
-      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01, refPrice: 50_000 },
+      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01 },
       rationale: "拒绝测试",
     });
     store.reject({ planId: plan.planId, reason: "超出仓位", rejector: "risk-agent" });
@@ -166,7 +166,7 @@ describe("PlanStore state machine", () => {
     const plan = store.create({
       intent: "open_long",
       symbol: "BTC/USDT",
-      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01, refPrice: 50_000 },
+      orderParams: { side: "BUY", type: "MARKET", quantity: 0.01 },
       rationale: "过期测试",
       expireInSeconds: 1,
     });
@@ -198,7 +198,7 @@ describe("createTradePlanTool", () => {
         side: "BUY",
         orderType: "MARKET",
         quantity: 0.01,
-        refPrice: 50_000,
+        
         rationale: "突破前高 + 量能配合",
         expireInSeconds: 300,
       } as never,
@@ -218,7 +218,7 @@ describe("createTradePlanTool", () => {
         side: "BUY",
         orderType: "MARKET",
         quantity: 0.01,
-        refPrice: 50_000,
+        
         rationale: "  ",
         expireInSeconds: 300,
       } as never,
@@ -239,7 +239,7 @@ describe("approveTradePlanTool", () => {
         side: "BUY",
         orderType: "MARKET",
         quantity: 0.01,
-        refPrice: 50_000,
+        
         rationale: "测试",
         expireInSeconds: 300,
       } as never,
@@ -277,7 +277,7 @@ describe("rejectTradePlanTool", () => {
         side: "BUY",
         orderType: "MARKET",
         quantity: 0.01,
-        refPrice: 50_000,
+        
         rationale: "拒绝测试",
         expireInSeconds: 300,
       } as never,
@@ -333,7 +333,7 @@ describe("executeTradePlanTool", () => {
         side: "BUY",
         orderType: "MARKET",
         quantity: 0.01,
-        refPrice: 50_000,
+        
         rationale: "突破",
         expireInSeconds: 300,
       } as never,
@@ -385,7 +385,7 @@ describe("executeTradePlanTool", () => {
         side: "BUY",
         orderType: "MARKET",
         quantity: 0.01,
-        refPrice: 50_000,
+        
         rationale: "无审批测试",
         expireInSeconds: 300,
       } as never,
@@ -416,7 +416,7 @@ describe("getTradePlanTool", () => {
         side: "BUY",
         orderType: "MARKET",
         quantity: 0.01,
-        refPrice: 50_000,
+        
         rationale: "查询测试",
         expireInSeconds: 300,
       } as never,
