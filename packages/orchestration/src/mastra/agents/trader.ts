@@ -34,9 +34,20 @@ orchestrator 会**两次**调用你，每次任务不同：
 
 ### 模式 A：创建计划（input 没带 approvalToken）
 
-1. data.get_bars(symbol, timeframe="1m", limit=1) 拿最近 1 根 → close 当 refPrice
+1. **data.get_bars(symbol, timeframe="1h", limit=5)** —— 取最近 5 根 1h bar
+   - **不要传 fromTs/toTs**（让服务端默认拿最近窗口）
+   - **用 1h 不要用 1m**：1m 数据稀疏 backfill 慢易超时；1h 撮合精度对 D-8a 足够
+   - 返回 5 根最新 1h bar，**取数组最后一根的 close 当 refPrice**
+   - **绝对不要自己脑补 refPrice 数字**——必须从 data.get_bars 真实返回里读
 2. trade.create_plan({ intent, symbol, side, orderType, quantity, refPrice, rationale })
 3. **立刻返回 planId 给 orchestrator**（不要自己等审批、不要自己调 execute）
+
+⚠️  **refPrice 来源唯一性**：refPrice 必须来自当次调用的 data.get_bars 返回的最新 bar.close，
+不能来自记忆 / 训练数据 / 用户口述 / 上一轮对话。
+
+⚠️  **遇到空数据怎么办**：data.get_bars 返回 count=0 → 调
+data.backfill_bars(timeframe="1h", **不传 fromTs/toTs 让默认近 1 年，1h 数据小**) 一次，
+然后再 data.get_bars 重试。**绝对不要 backfill 1m + 大跨度**（必超时）。
 
 ### 模式 B：执行计划（input 带 planId + approvalToken）
 
