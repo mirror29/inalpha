@@ -76,6 +76,40 @@ async def test_query_filters_time_range(venue_symbol_tf: tuple[str, str, str]) -
 
 
 @pytest.mark.usefixtures("db_pool")
+async def test_limit_returns_most_recent_not_earliest(
+    venue_symbol_tf: tuple[str, str, str],
+) -> None:
+    """limit 截断时取**时间窗口内最新 N 根**，返回时仍是时间正序（ASC）。
+
+    这条测试卡的是 D-8a 修过的真 bug：原实现 ``ORDER BY ts ASC LIMIT N`` 取的是最早 N 根，
+    导致 ``data.get_bars(limit=1)`` 拿到 1 年前的 bar 当 refPrice，价格离谱。
+    """
+    venue, symbol, tf = venue_symbol_tf
+    base = datetime(2026, 4, 1, tzinfo=UTC)
+    # 10 根 bar，close 价用 hour 区分，便于断言
+    bars = [
+        (base.replace(hour=h), 100.0, 101.0, 99.0, 100.0 + h, 1.0) for h in range(10)
+    ]
+
+    async with get_conn() as conn:
+        await insert_bars(conn, venue, symbol, tf, bars)
+
+        # limit=3 应当取最后 3 根（hour 7/8/9），返回时按 ASC 排
+        rows = await query_bars(
+            conn, venue=venue, symbol=symbol, timeframe=tf,
+            from_ts=base,
+            to_ts=base.replace(hour=23),
+            limit=3,
+        )
+        assert len(rows) == 3
+        # 时间正序
+        ts_list = [r["ts"] for r in rows]
+        assert ts_list == sorted(ts_list)
+        # close 价对应 hour 7/8/9（不是 0/1/2）
+        assert [float(r["close"]) for r in rows] == [107.0, 108.0, 109.0]
+
+
+@pytest.mark.usefixtures("db_pool")
 async def test_count_bars(venue_symbol_tf: tuple[str, str, str]) -> None:
     venue, symbol, tf = venue_symbol_tf
     base = datetime(2026, 3, 1, tzinfo=UTC)
