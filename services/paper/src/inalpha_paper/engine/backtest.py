@@ -88,6 +88,8 @@ class BacktestEngine:
                 f"{bar.instrument_id.symbol}.{bar.timeframe}"
             )
             self.msgbus.publish(topic, bar)
+            # 5. 记 equity curve（含本根 bar 上策略发单后的最新 mark；下一根 bar 撮合后会再更新一次同 ts 的快照）
+            self.portfolio.snapshot(bar.ts_event)
 
             self._num_bars += 1
 
@@ -97,16 +99,13 @@ class BacktestEngine:
         return self._build_report(bars_list)
 
     def _build_report(self, bars: list[Bar]) -> BacktestReport:
-        return BacktestReport(
-            initial_cash=self.portfolio.initial_cash,
-            final_equity=self.portfolio.equity(),
-            total_return_pct=self.portfolio.total_return_pct(),
-            num_trades=self.portfolio.trade_count,
-            total_fees=self.portfolio.total_fees,
-            num_bars_processed=self._num_bars,
+        timeframe = bars[0].timeframe if bars else "1h"
+        return BacktestReport.from_portfolio(
+            portfolio=self.portfolio,
+            num_bars=self._num_bars,
             period_start=_ts_to_dt(bars[0].ts_event) if bars else None,
             period_end=_ts_to_dt(bars[-1].ts_event) if bars else None,
-            positions=self.portfolio.positions(),
+            timeframe=timeframe,
         )
 
 

@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 
 def _assume_utc_if_naive(v: datetime) -> datetime:
@@ -48,6 +49,13 @@ class PositionSnapshot(BaseModel):
     generation: int
 
 
+class EquityPoint(BaseModel):
+    """equity_curve 单点。``ts`` 是 ISO 8601；``equity`` 是该 bar close 后的账户权益。"""
+
+    ts: datetime
+    equity: float
+
+
 class BacktestResponse(BaseModel):
     """``POST /backtest`` 响应。"""
 
@@ -67,6 +75,28 @@ class BacktestResponse(BaseModel):
     period_start: datetime
     period_end: datetime
 
+    # ─── 绩效指标（D-7+）───
+    sharpe: float | None = Field(
+        default=None,
+        description="年化 Sharpe；样本不足或波动率为 0 时为 null",
+    )
+    sortino: float | None = Field(
+        default=None,
+        description="年化 Sortino；样本不足或无下行时为 null",
+    )
+    max_drawdown_pct: float = Field(
+        default=0.0,
+        description="最大回撤百分比（正数）",
+    )
+    win_rate: float | None = Field(
+        default=None,
+        description="round-trip 胜率（百分比）；无 round-trip 时为 null",
+    )
+    equity_curve: list[EquityPoint] = Field(
+        default_factory=list,
+        description="每根 bar 的 (ts, equity)；前端可直接画图",
+    )
+
     final_positions: list[PositionSnapshot]
 
 
@@ -74,3 +104,70 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     service: str
     version: str
+
+
+# ────────────────────────────────────────────────────────────────────
+# 单笔下单（D-8a 起步，in-memory）
+# ────────────────────────────────────────────────────────────────────
+
+
+class SubmitOrderRequest(BaseModel):
+    """``POST /orders/submit`` 请求体。
+
+    D-8a 范围：**单笔、同步、in-memory** —— 收到请求后立即按 ``ref_price`` 撮合，
+    不维持持仓 / 不写库。给 orchestration 层的 ``executeTradePlan`` tool 用。
+    """
+
+    venue: str = Field(default="binance")
+    symbol: str = Field(..., examples=["BTC/USDT"])
+    side: Literal["BUY", "SELL"]
+    order_type: Literal["MARKET", "LIMIT"] = Field(default="MARKET", alias="type")
+    quantity: float = Field(..., gt=0, examples=[0.001])
+    price: float | None = Field(
+        default=None,
+        description="LIMIT 必填；MARKET 必须为空",
+    )
+
+    # D-8a 暂时不接 data-service 拉实时价，调用方显式传参考价（撮合用）
+    ref_price: float = Field(
+        ...,
+        gt=0,
+        description="撮合参考价（D-8a 必填，由调用方传入 / 后续版本可省略由服务端拉最新 bar）",
+    )
+
+    fee_rate: float = Field(default=0.001, ge=0, lt=1)
+
+    @model_validator(mode="after")
+    def _check_price_for_type(self) -> SubmitOrderRequest:
+        # 用 PydanticCustomError 而不是 ValueError —— 后者会把 exception 对象塞进
+        # error.ctx，FastAPI 的统一错误响应里 errors() 无法 JSON 序列化（trip TypeError）
+        if self.order_type == "LIMIT" and self.price is None:
+            raise PydanticCustomError("limit_requires_price", "LIMIT order requires price")
+        if self.order_type == "MARKET" and self.price is not None:
+            raise PydanticCustomError(
+                "market_no_price", "MARKET order must not specify price"
+            )
+        return self
+
+    model_config = {"populate_by_name": True}
+
+
+class SubmitOrderResponse(BaseModel):
+    """``POST /orders/submit`` 响应。"""
+
+    client_order_id: str
+    venue: str
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    order_type: Literal["MARKET", "LIMIT"]
+    requested_quantity: float
+    requested_price: float | None
+
+    status: Literal["FILLED", "REJECTED"]
+    filled_quantity: float = 0.0
+    avg_fill_price: float | None = None
+    fee: float = 0.0
+    notional: float = 0.0
+    rejection_reason: str | None = None
+
+    ts_event: datetime

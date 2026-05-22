@@ -143,6 +143,18 @@ def test_backtest_e2e_with_mocked_data(
     assert body["num_trades"] >= 2
     # equity 接近初始值（振荡市 + 手续费稍亏，不会爆赚爆亏）
     assert 9_000 <= body["final_equity"] <= 11_000
+    # 绩效字段（D-7+ 新加）应该全部出现在响应里
+    assert "sharpe" in body
+    assert "sortino" in body
+    assert "max_drawdown_pct" in body
+    assert "win_rate" in body
+    assert "equity_curve" in body
+    assert len(body["equity_curve"]) == body["num_bars_processed"]
+    # 每个 equity 点结构正确
+    p0 = body["equity_curve"][0]
+    assert "ts" in p0 and "equity" in p0
+    # 振荡市必然有回撤
+    assert body["max_drawdown_pct"] > 0.0
 
 
 @respx.mock

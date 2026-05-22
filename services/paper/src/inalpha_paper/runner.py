@@ -13,7 +13,7 @@ from .data_client import DataClient
 from .engine.backtest import BacktestEngine
 from .kernel.identifiers import InstrumentId
 from .model.data import Bar
-from .schemas import BacktestRequest, BacktestResponse, PositionSnapshot
+from .schemas import BacktestRequest, BacktestResponse, EquityPoint, PositionSnapshot
 from .strategies import get_strategy_class
 
 
@@ -80,6 +80,14 @@ async def run_backtest(
         if not pos.is_flat
     ]
 
+    equity_points = [
+        EquityPoint(
+            ts=datetime.fromtimestamp(ts_ns / 1_000_000_000, tz=UTC),
+            equity=eq,
+        )
+        for ts_ns, eq in report.equity_curve
+    ]
+
     return BacktestResponse(
         strategy_id=req.strategy_id,
         venue=req.venue,
@@ -93,6 +101,11 @@ async def run_backtest(
         num_bars_processed=report.num_bars_processed,
         period_start=report.period_start or req.from_ts,
         period_end=report.period_end or req.to_ts,
+        sharpe=report.sharpe,
+        sortino=report.sortino,
+        max_drawdown_pct=report.max_drawdown_pct,
+        win_rate=report.win_rate,
+        equity_curve=equity_points,
         final_positions=final_positions,
     )
 

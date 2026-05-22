@@ -42,6 +42,12 @@ class Portfolio:
         # 累计手续费、累计成交笔数
         self._total_fees: float = 0.0
         self._trade_count: int = 0
+        # equity curve: list of (ts_ns, equity)；BacktestEngine 每根 bar 调 snapshot() 追加
+        self._equity_curve: list[tuple[int, float]] = []
+        # round-trip 单笔盈亏（仅在 position 完全平仓时记一笔），用于胜率
+        self._closed_trade_pnls: list[float] = []
+        # 上一次 close 时 position.realized_pnl 的快照，便于算单笔增量
+        self._last_realized_pnl: dict[InstrumentId, float] = {}
 
         # 订阅所有 fill（通配）
         self._msgbus.subscribe("events.fills.*", self._handle_fill)
@@ -91,6 +97,31 @@ class Portfolio:
     def total_return_pct(self) -> float:
         return (self.equity() - self._initial_cash) / self._initial_cash * 100.0
 
+    @property
+    def equity_curve(self) -> list[tuple[int, float]]:
+        """(ts_ns, equity) 序列；BacktestEngine 每根 bar 追加一个点。"""
+        return list(self._equity_curve)
+
+    @property
+    def closed_trade_pnls(self) -> list[float]:
+        """每次完整平仓记一笔的 round-trip 盈亏（已扣手续费？否，**仅价差盈亏**）。
+
+        实现注：用 ``Position.realized_pnl`` 的增量。手续费在 ``_handle_fill`` 单独累加进
+        ``total_fees``，不进 round-trip pnl —— 这样净收益与持仓 PnL 解耦，胜率更纯粹。
+        """
+        return list(self._closed_trade_pnls)
+
+    def snapshot(self, ts_ns: int) -> None:
+        """记录当前 equity 到曲线。BacktestEngine 每根 bar 调一次。
+
+        实现注：同一个 ts_ns 重复调以最后一次为准（用于 bar close 那个点最终更新）。
+        """
+        eq = self.equity()
+        if self._equity_curve and self._equity_curve[-1][0] == ts_ns:
+            self._equity_curve[-1] = (ts_ns, eq)
+        else:
+            self._equity_curve.append((ts_ns, eq))
+
     # ─── 事件处理 ───
 
     def _handle_fill(self, msg: object) -> None:
@@ -123,8 +154,13 @@ class Portfolio:
         event_cls: type[PositionOpened] | type[PositionChanged] | type[PositionClosed]
         if was_flat and not now_flat:
             event_cls = PositionOpened
+            self._last_realized_pnl[instrument_id] = pos.realized_pnl
         elif not was_flat and now_flat:
             event_cls = PositionClosed
+            # 单笔 round-trip 盈亏 = 这次 close 后的 realized_pnl 减去开仓时 baseline
+            baseline = self._last_realized_pnl.get(instrument_id, 0.0)
+            self._closed_trade_pnls.append(pos.realized_pnl - baseline)
+            self._last_realized_pnl[instrument_id] = pos.realized_pnl
         else:
             event_cls = PositionChanged
 

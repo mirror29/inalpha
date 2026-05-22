@@ -79,6 +79,20 @@ def test_backtest_sma_cross_on_oscillating_prices() -> None:
     # 至少有一次 BUY 信号被发出
     assert strat.signal_count >= 2
 
+    # 绩效指标字段（D-7+ 新加）
+    assert len(report.equity_curve) == report.num_bars_processed
+    # 每个点都是 (ts_ns, equity)
+    assert all(isinstance(p[0], int) and isinstance(p[1], float) for p in report.equity_curve)
+    # 振荡市最大回撤应该 > 0（有交易必然有回撤）
+    assert report.max_drawdown_pct > 0.0
+    # Sharpe 应有值（≥2 笔交易 + 100 bar，必然非平稳）
+    assert report.sharpe is not None
+    # Sortino 同理
+    assert report.sortino is not None
+    # 振荡市 → 至少有完整 round-trip，胜率有值
+    assert report.win_rate is not None
+    assert 0.0 <= report.win_rate <= 100.0
+
 
 # ─── 上涨趋势：买入持有 ───
 
@@ -131,6 +145,12 @@ def test_backtest_downtrend_no_buy_signals() -> None:
 
     assert report.num_trades == 0
     assert report.final_equity == 10_000.0
+    # 没交易 → 没 round-trip → win_rate=None
+    assert report.win_rate is None
+    # equity 全程平稳 → 0 回撤
+    assert report.max_drawdown_pct == 0.0
+    # equity 全程平稳 → Sharpe=None（std=0）
+    assert report.sharpe is None
 
 
 # ─── 空 bars 报错 ───

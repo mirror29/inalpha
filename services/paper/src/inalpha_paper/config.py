@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
 from inalpha_shared.config import Settings as BaseSettings
+from pydantic import Field
 
 
 class PaperSettings(BaseSettings):

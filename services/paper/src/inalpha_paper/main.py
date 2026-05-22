@@ -15,7 +15,7 @@ from inalpha_shared import (
 )
 
 from . import __version__
-from .api import backtest, health
+from .api import backtest, health, orders
 from .config import get_paper_settings
 
 _settings = get_paper_settings()
@@ -39,3 +39,4 @@ install_error_handler(app)
 
 app.include_router(health.router)
 app.include_router(backtest.router)
+app.include_router(orders.router)

@@ -1,4 +1,4 @@
 """FastAPI 路由。"""
-from . import backtest, health
+from . import backtest, health, orders
 
-__all__ = ["backtest", "health"]
+__all__ = ["backtest", "health", "orders"]
