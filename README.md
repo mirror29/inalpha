@@ -61,7 +61,7 @@ Four layers, top to bottom:
 - **L3 · Python kernel services (FastAPI).** Each service is an independent, stateful process. Today: `services/data` (market data ingest) and `services/paper` (event-driven kernel running backtest, paper, and live on the same code). Slotted: `services/research` (multi-agent debate) and a `Strategy Evolution` loop.
 - **L4 · Persistence & external.** Postgres + TimescaleDB stores all time-series and business state. External: any **exchange or market reachable through CCXT** (crypto today; futures, US equities, and other venues as the project grows) and the LLM provider.
 
-**LLM has no direct path to placing an order.** Trade intents must travel `trade.create_plan → approve → execute_plan` with a one-shot `approval_token`. The Trader agent only emits intent; the Risk agent defaults to deny and issues the token; only then does PostToolUse forward to `paper · POST /orders/submit`. This rule lives in the middleware layer — not agent prompts — so it's versioned, unit-tested, and bypass-proof.
+**LLM has no direct path to placing an order.** Trade intents must travel `trade.create_plan → approve → execute_plan` with a one-shot `approval_token`. The orchestrator emits a plan with rationale; the plan store's state machine enforces approval before execution; the `approval_token` is single-use with a short TTL; `permissions` denies `paper.submit_order*` directly. This rule lives in the middleware layer — not agent prompts — so it's versioned, unit-tested, and bypass-proof.
 
 To keep the line work clean, three relationships are described in text rather than drawn: agents call the **LLM Provider** directly (cross-layer); the orchestrator will reach `services/research` (Phase E) and the `Strategy Evolution` loop (MCP tool, E4+) the same way; and winners from the evolution loop are promoted back into `services/paper` for backtest. Two additional IO channels are also out of frame: **slash commands** as a deterministic, LLM-bypassing entry, and a read-only **Statusline** for live portfolio state.
 
@@ -131,7 +131,7 @@ Inalpha is not invented from scratch. It selectively inherits proven designs fro
 | [**Nautilus Trader**](https://github.com/nautechsystems/nautilus_trader) | The `backtest = paper = live` invariant; event-driven kernel; unified Clock / MessageBus abstractions | Rust implementation (Python first for ecosystem depth; revisit critical paths in Rust later) |
 | [**vnpy**](https://github.com/vnpy/vnpy) | Gateway abstraction and multi-market access philosophy | CTP / XTP-style domestic Chinese venues (crypto-focused for now) |
 | [**Microsoft qlib**](https://github.com/microsoft/qlib) | Factor expression DSL, the Alpha158 paradigm, point-in-time universe design | End-to-end ML training pipeline (we use qlib as a factor lab, not a replacement) |
-| [**TradingAgents**](https://github.com/TauricResearch/TradingAgents) | Multi-agent opposing stances (bull / bear / risk), debate-driven decisions | Demo-grade prompt scaffolding (we engineer the same pattern through hooks and plan-exec) |
+| [**TradingAgents**](https://github.com/TauricResearch/TradingAgents) | Multi-agent opposing stances (bull / bear / risk) for **research** debate — slotted into `services/research` (Phase E+) | Putting the same pattern on the execution path (we route execution through a state machine + permissions instead) |
 | [**Anthropic Claude Code**](https://claude.com/claude-code) | Hooks (PreToolUse / PostToolUse / Stop), declarative permissions, Plan/Exec separation, MCP, subagent isolation, prompt-cache engineering | Coding-specific tools like Bash / file editing (tool set redesigned for trading) |
 | [**Mastra**](https://mastra.ai) | TypeScript agent orchestration scaffolding, `createTool` / `createWorkflow` primitives | — |
 
@@ -145,9 +145,11 @@ Inalpha's edge is not "more features" — it is "several things done right at th
 
 Strategy classes are written once and execute against three interchangeable Gateways. When backtest and live behavior diverge, the cause is no longer "two different code paths" — it can be isolated to genuine physical differences: matching slippage, latency, data precision.
 
-### 2. Opposing agents that cooperate
+### 2. Multi-agent where it earns its keep, state machines where they belong
 
-The Trader wants to place an order. The Risk agent rejects by default. The Research agent supplies independent evidence. The Portfolio agent considers correlations. This is the TradingAgents paradigm — but **engineered**: all inter-agent messages flow through the MessageBus, all decisions are replayable, and every order intent passes a two-phase Plan/Exec approval.
+Multi-agent collaboration is the right primitive for **research** — bull / bear / fundamental / sentiment / risk are genuinely independent stances that benefit from separate LLM calls and structured debate. That's where `services/research` (Phase E+) is heading.
+
+Execution is a different shape. `trade.create_plan → approve → execute_plan` is a process, not a cast of characters — so a deterministic state machine plus a one-shot `approval_token` plus permissions deny is more reliable than a "Trader vs Risk" LLM exchange. The agent runtime hosts the conversation; the middleware enforces the guarantees.
 
 ### 3. Declarative guardrails, not vibe-coding
 

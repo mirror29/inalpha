@@ -24,11 +24,11 @@
 
 > 内部设计文档、决策记录、思考过程留在私人空间，不入开源仓库。
 
-## 3. 当前 Phase（D-8a）
+## 3. 当前 Phase（D-8a'）
 
-- 已起包：`services/data`（CCXT Binance + Postgres）、`services/paper`（回测 + 3 策略 + `/orders/submit` 单笔下单）、`packages/orchestration`（Mastra tool 层 + hooks + permissions + plan store + 3 agent）
-- **D-8a 完成**：Plan/Exec in-memory 端到端（`trade.create_plan` → risk `approve` → trader `execute` → paper 真撮合），orchestrator/trader/risk 三 agent 拆分，工程硬约束"LLM 没有直接下单路径"已落地（tool 集 + permissions deny 双层）
-- 下一里程碑：D-8b 持久化（trade_plans + approval_tokens Postgres 表）、D-9 risk 规则化 + 真 Risk Engine 接入
+- 已起包：`services/data`（CCXT + Postgres）、`services/paper`（回测 + 3 策略 + `/orders/submit`）、`packages/orchestration`（Mastra tool + hooks + permissions + plan store + 单 orchestrator）
+- **D-8a' 完成**：单 orchestrator + plan/exec 三件套（`create_plan`→`approve_plan`→`execute_plan`），三层中间件保证 "LLM 无直接下单"：状态机 + 一次性 approval_token + permissions deny `paper.submit_order*`。multi-agent 立场对抗的故事留给 `services/research`（Phase E+）
+- 下一里程碑：D-8b（trade_plans / approval_tokens Postgres 持久化）、D-9（RiskEngine 规则化：max notional / 价格偏离）
 
 ## 4. 协作硬约束
 
@@ -63,7 +63,8 @@ bash scripts/check-consistency.sh
 
 - [ ] 填回 §5 端到端 smoke test 最小命令
 - [x] D-8a 完成（2026-05-21）：Plan/Exec in-memory + agent 三分
-- [x] 运营基础设施 P0（2026-05-22）：.github 模板 + CONTRIBUTING/COC/SECURITY + scripts/dev.sh + README 钩子段；运营策略归档至 `docs/miro/运营/`
+- [x] D-8a' refactor（2026-05-22）：去 supervisor，详 §3
+- [x] 运营基础设施 P0（2026-05-22）：.github + CONTRIBUTING/COC/SECURITY + dev.sh + README D-8a' 叙事
 - [ ] D-8b：trade_plans / approval_tokens Postgres 表 + alembic migration
 - [ ] D-9：Risk agent 规则化（max notional / 价格偏离）+ paper RiskEngine 真接入
 - [ ] 运营 P1：2 篇深度博客 + Demo 录屏（依赖 D-8b 完成后再启动）

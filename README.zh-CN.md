@@ -61,7 +61,7 @@ Inalpha 是一个**面向严肃研究的开源量化交易框架**。它把多 a
 - **L3 · Python kernel services（FastAPI）。** 每个 service 是独立的有状态进程。已落地：`services/data`（行情接入）与 `services/paper`（事件驱动内核，回测 = 模拟盘 = 实盘同代码）。占位：`services/research`（多 agent 辩论）与 `Strategy Evolution` 循环。
 - **L4 · 持久化 + 外部依赖。** Postgres + TimescaleDB 承载全部时序与业务状态。外部：**任何 CCXT 可达的交易所与市场**（当前 crypto；未来按项目演进可扩到期货、美股等），以及 LLM provider。
 
-**LLM 没有直接下单路径**。所有下单意图必须走 `trade.create_plan → approve → execute_plan`，`approval_token` 一次性、默认 5 分钟过期。Trader agent 只产出 intent；Risk agent 默认拒绝、必要时派发 token；token 通过后才由 PostToolUse 转发到 `paper · POST /orders/submit`。这条规则落在 middleware 层——不是 agent 的 prompt 里——因而**可版本化、可单测、不可绕过**。
+**LLM 没有直接下单路径**。所有下单意图必须走 `trade.create_plan → approve → execute_plan`，`approval_token` 一次性、默认 5 分钟过期。orchestrator 产出 plan + rationale；plan store 的状态机强制 approve 之后才能 execute；`approval_token` 一次性短 TTL；`permissions` 直接 deny `paper.submit_order*`。这条规则落在 middleware 层——不是 agent 的 prompt 里——因而**可版本化、可单测、不可绕过**。
 
 为保持线条整洁，主图有三条关系靠文字描述而非画在图里：agents 直接调用 **LLM Provider**（跨层）；orchestrator 后续接入 `services/research`（Phase E）与 `Strategy Evolution` 循环（MCP tool · E4+）走同一种方式；进化循环胜出的策略推回 `services/paper` 跑回测。另有两条 IO 通道未入图：**slash command**（绕过 LLM 的确定性入口）与只读 **Statusline**（实时持仓 / 待批 plans / 数据 staleness 等用户常看但 LLM 不需要的信息）。
 
@@ -131,7 +131,7 @@ Inalpha 不是从零发明——它有选择地继承前人的最优解，并明
 | [**Nautilus Trader**](https://github.com/nautechsystems/nautilus_trader) | `backtest = paper = live` 同代码不变量；事件驱动内核；统一的 Clock / MessageBus 抽象 | Rust 实现（MVP 选择 Python 优先生态厚度，未来评估关键路径下沉 Rust） |
 | [**vnpy**](https://github.com/vnpy/vnpy) | Gateway 抽象层与多市场接入哲学 | CTP / XTP 这类国内通道（现阶段聚焦 crypto） |
 | [**Microsoft qlib**](https://github.com/microsoft/qlib) | 因子表达 DSL、Alpha158 范式、point-in-time universe 设计 | 端到端的 ML 训练 pipeline（qlib 作为 factor-lab 而非替代） |
-| [**TradingAgents**](https://github.com/TauricResearch/TradingAgents) | Multi-agent 立场对抗（bull / bear / risk）、辩论决策流程 | Demo 级 prompt 实现（我们把这套模式工程化为 hooks 与 plan-exec） |
+| [**TradingAgents**](https://github.com/TauricResearch/TradingAgents) | Multi-agent 立场对抗（bull / bear / risk）作为**研究**辩论——slotted 进 `services/research`（Phase E+） | 把这套模式放到执行路径（我们把执行交给状态机 + permissions） |
 | [**Anthropic Claude Code**](https://claude.com/claude-code) | Hooks（PreToolUse / PostToolUse / Stop）、声明式 permissions、Plan/Exec 分离、MCP 协议、subagent 隔离、prompt cache 工程化 | Bash / file 这类 coding 域特有的 tool（交易场景重新设计 tool 集） |
 | [**Mastra**](https://mastra.ai) | TypeScript agent 编排骨架、`createTool` / `createWorkflow` 原语 | — |
 
@@ -145,9 +145,11 @@ Inalpha 的差异化不在"功能多"，而在"几件事一起做对了"：
 
 策略类只写一次，三种 Gateway 切换跑——回测与实盘出现行为分歧时，根因不再"代码不一样"，而能聚焦到"撮合滑点 / 延迟 / 数据精度"等真正的物理差异。
 
-### 2. Agent 之间的对抗与协作
+### 2. Multi-agent 用在该用的地方，状态机用在该用的地方
 
-Trader agent 想下单，Risk agent 默认拒绝，Research agent 给独立证据，Portfolio agent 看相关性——这是 TradingAgents 的范式，但**经过工程化**：所有 agent 间消息走 MessageBus、所有决策可回放、所有下单意图经 Plan/Exec 二阶段批准。
+Multi-agent 协作适合**研究**——bull / bear / fundamental / sentiment / risk 这些立场天然不同，独立的 LLM call 和结构化辩论才能真正产生不同视角。这是 `services/research`（Phase E+）的方向。
+
+执行是另一种形态。`trade.create_plan → approve → execute_plan` 是一条流程而不是几个角色——确定性状态机 + 一次性 `approval_token` + permissions deny，比让 "Trader vs Risk" 的 LLM 对话兜底更可靠。Agent runtime 负责对话；middleware 负责保证。
 
 ### 3. 声明式护栏，不是 vibe-coding
 

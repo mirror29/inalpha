@@ -68,9 +68,11 @@ bash scripts/check-consistency.sh
 
 ## 6. 当前 Phase 状态
 
-Phase **D-8a**：Plan/Exec in-memory 闭环 + orchestrator/trader/risk 三 agent +
-hooks + permissions 已落地；下一里程碑 D-8b（trade_plans / approval_tokens
-Postgres 持久化）/ D-9（RiskEngine 规则化 + paper-service 真接入）。
+Phase **D-8a'**：单 orchestrator + plan/exec 三件套（create_plan / approve_plan /
+execute_plan），hooks + permissions deny + approval_token 状态机已落地。
+multi-agent 立场对抗的故事留给 `services/research`（Phase E+）。
+下一里程碑 D-8b（trade_plans / approval_tokens Postgres 持久化）/ D-9
+（RiskEngine 规则化 + paper-service 真接入）。
 详见 [`docs/04-current-state.md`](docs/04-current-state.md) / `CLAUDE.md` §3 /
 仓库根 `README.md`。
 
