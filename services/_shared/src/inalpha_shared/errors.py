@@ -15,7 +15,17 @@ from fastapi import HTTPException
 
 
 class InalphaError(HTTPException):
-    """业务错误基类。"""
+    """业务错误基类。
+
+    实例属性约定（**code / status_code 一定要走 instance attr**）：
+
+    - 子类用 class attr 设默认 ``code`` / ``status_code``
+    - 构造器 ``code=...`` / ``status_code=...`` 会**写到 self**（不仅写到 detail dict）
+    - 这样 caller 的 ``except InalphaError as e: log(e.code)`` 拿到的是真实运行时 code，
+      不是父类默认值（D-8b' review 找到的高风险 bug 修复）
+
+    HTTP body 仍按 ADR-0002 格式：``{code, message, details}`` 进 ``self.detail``。
+    """
 
     code: str = "INTERNAL_ERROR"
     status_code: int = 500
@@ -28,12 +38,21 @@ class InalphaError(HTTPException):
         status_code: int | None = None,
         details: dict[str, Any] | None = None,
     ) -> None:
+        # 1) 把 override 写到 self（实例 attr 覆盖 class attr）
+        effective_code = code if code is not None else self.code
+        effective_status = status_code if status_code is not None else self.status_code
+        self.code = effective_code
+        # HTTPException 内部也保留 status_code 字段，super().__init__ 会再设一次
+        self.message = message
+        self.details = details or {}
+
+        # 2) 调父类构造把 status_code + detail body 装好
         super().__init__(
-            status_code=status_code or self.status_code,
+            status_code=effective_status,
             detail={
-                "code": code or self.code,
+                "code": effective_code,
                 "message": message,
-                "details": details or {},
+                "details": self.details,
             },
         )
 

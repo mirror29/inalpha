@@ -34,8 +34,8 @@ async def test_fake_no_match_raises_with_code() -> None:
     fake = FakeLLMClient({})
     with pytest.raises(LLMError) as ei:
         await fake.complete_json(system="nothing here", user="x")
-    # InalphaError stash code 在 detail dict 里（构造器把 code 塞进 detail），
-    # 不是 class attribute；所以走 .detail["code"] 才能拿到 runtime override
+    # D-8b' review 修复后构造器会把 code 写到 self；现在双轨都能查
+    assert ei.value.code == "LLM_FAKE_NO_MATCH"
     assert ei.value.detail["code"] == "LLM_FAKE_NO_MATCH"
 
 
