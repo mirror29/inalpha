@@ -1,25 +1,29 @@
 /**
- * Plan / Exec 两阶段 trade tool —— D-8a 起步形态。
+ * Plan / Exec 两阶段 trade tool —— D-8b 形态（全部走 paper service HTTP API）。
  *
  * 按 [ADR-0012](../../../../docs/decisions/0012-plan-exec-separation.md)：
  *
- * 1. ``createTradePlan`` —— LLM 把"想下单"翻成持久化 plan，状态 pending_approval
- * 2. ``approveTradePlan`` —— Risk Agent / 用户审批，发放一次性 approval_token
- * 3. ``executeTradePlan`` —— 凭 token 真正调 paper /orders/submit 下单
+ * 1. ``trade.create_plan`` —— POST /plans
+ * 2. ``trade.approve_plan`` —— POST /plans/{id}/approve（拿一次性 approval_token）
+ * 3. ``trade.reject_plan``  —— POST /plans/{id}/reject
+ * 4. ``trade.execute_plan`` —— POST /plans/{id}/execute（凭 token 在 paper 内一把
+ *                              撮合 + 落 orders / positions / cash）
+ * 5. ``trade.get_plan``     —— GET /plans/{id}
  *
- * **关键约束**：LLM 没有"直接下单"路径（``paper.submit_order`` tool 不存在）。
- * 唯一可达路径就是 createPlan → approve → execute。
+ * **关键约束**（不变）：LLM 没有"直接下单"路径，唯一可达就是 create → approve → execute。
  *
- * D-8a 是 in-memory store + 同步链路（approve 立刻发 token、execute 立刻拿到成交）。
- * D-8b 升级到 Postgres + askUserChoice 中断让用户审。
+ * D-8b 改动：
+ * - 之前的本地 PlanStore（进程内 Map）已删除，全部状态在 paper service 的 trade_plans 表
+ * - 接口契约不变：tool 名 / inputSchema / 返回 ``{ ok: true|false, ... }`` 形态保持
+ * - 按 account 隔离由 JWT forward + paper 服务端 ``account_id_from_user`` 实现
  */
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 import { mintServiceToken } from "../auth.js";
+import { HttpClientError } from "../clients/http.js";
 import { PaperClient } from "../clients/paper.js";
 import { getSettings } from "../config.js";
-import { PlanError, planStore } from "../plans/store.js";
 
 const SymbolSchema = z
   .string()
@@ -31,23 +35,30 @@ const IntentSchema = z.enum(["open_long", "open_short", "close", "rebalance"]);
 
 type ToolRequestContext = { authToken?: string };
 
-async function getPaperClient(ctx?: ToolRequestContext): Promise<PaperClient> {
+async function getClient(ctx?: ToolRequestContext): Promise<PaperClient> {
   const settings = getSettings();
   const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
   return new PaperClient({ baseUrl: settings.paperServiceUrl, token });
 }
 
 /**
- * PlanError 兼容输出：所有 plan tool 都把 PlanError 翻成 ``{ ok: false, code, message }``
- * 返回，LLM 拿到 ``ok: false`` 就知道该改路径而不是抛异常。
+ * 把 paper 返回的业务错误（HttpClientError code in {PLAN_NOT_FOUND, INVALID_STATE,
+ * PLAN_EXPIRED, RATIONALE_REQUIRED, ...}）翻成 ``{ ok: false, code, message }``。
  *
- * 非 PlanError（如网络故障）继续 throw —— 让 Mastra / HttpClientError 中间件处理。
+ * 非业务错误（5xx / 网络）继续 throw，让 Mastra runtime / hook layer 处理。
  */
-function planErrorToResult(err: unknown): { ok: false; code: string; message: string; details: Record<string, unknown> } | null {
-  if (err instanceof PlanError) {
-    return { ok: false, code: err.code, message: err.message, details: err.details };
-  }
-  return null;
+function httpErrorToResult(
+  err: unknown,
+): { ok: false; code: string; message: string; details: Record<string, unknown> } | null {
+  if (!(err instanceof HttpClientError)) return null;
+  // 4xx 视为业务错误，5xx 视为系统错误重新抛
+  if (err.status < 400 || err.status >= 500) return null;
+  return {
+    ok: false,
+    code: err.code,
+    message: err.message,
+    details: err.details,
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -57,74 +68,83 @@ function planErrorToResult(err: unknown): { ok: false; code: string; message: st
 export const createTradePlanTool = createTool({
   id: "trade.create_plan",
   description: `
-    把"想下单"的意图落成一个持久化 plan，状态 = pending_approval。**本工具不下单**。
+    把"想下单"的意图落成持久化 plan（PG 表，按 account 隔离）。**本工具不下单**。
 
     何时用：
-    - 用户 / 策略要执行一笔交易（开仓 / 平仓 / 调仓）
-    - 任何 paper / live 下单都必须走这个，没有"直接下单"的快捷路径
+    - 用户要执行一笔交易（开仓 / 平仓 / 调仓）
 
     何时不用：
     - 只是回测 / 查行情（走 paper.run_backtest / data.get_bars）
-    - 还在分析策略可行性（先回测，不要创建实盘 plan）
 
     坑：
-    - **rationale 必填**：必须解释"为什么要下这单"，给审计 / 风控用
-    - 返回 'planId' 后顺序调 trade.approve_plan → trade.execute_plan 即可走完
-    - 默认 5 分钟过期；行情快变化的 plan 别批太久才执行
+    - rationale 必填
+    - 返回 'planId' 后顺序调 trade.approve_plan → trade.execute_plan 即可
+    - 默认 5 分钟过期
     - LIMIT 必须给 price，MARKET 必须不给 price
-    - **refPrice 不再由 LLM 提供**：paper /orders/submit 服务端调 data /ticker 自取最新价
+    - **refPrice 不再由 LLM 提供**：paper /orders/submit 服务端自取
+
+    D-8c 起：可传 researchId / backtestRunId 把"分析→回测→下单"血缘链上。这两个字段
+    会被 prefix 进 rationale（["research:<uuid>", "backtest:<uuid>"] + 用户 rationale），
+    后续审计 / 复盘可直接 grep。
   `.trim(),
   inputSchema: z.object({
     intent: IntentSchema.describe("交易意图：open_long / open_short / close / rebalance"),
     venue: z.string().default("binance"),
     symbol: SymbolSchema,
-    side: SideSchema.describe("BUY / SELL"),
-    orderType: TypeSchema.default("MARKET").describe("MARKET / LIMIT"),
-    quantity: z.number().positive().describe("下单数量（base 资产单位，例如 BTC 数量）"),
+    side: SideSchema,
+    orderType: TypeSchema.default("MARKET"),
+    quantity: z.number().positive(),
     price: z.number().positive().optional().describe("LIMIT 必填；MARKET 必须省略"),
-    rationale: z
+    rationale: z.string().min(1).describe("解释下单动机——审计 / 风控用，必填"),
+    researchId: z
       .string()
-      .min(1)
-      .describe("解释为什么要下这单——审计 / 风控用，必填"),
-    expireInSeconds: z
-      .number()
-      .int()
-      .positive()
-      .max(3600)
-      .default(300)
-      .describe("plan 过期时间秒数；默认 300（5 分钟）"),
+      .uuid()
+      .optional()
+      .describe("D-8c 血缘：上游 research.deep_dive 的 research_id"),
+    backtestRunId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe("D-8c 血缘：触发本次下单的 paper.run_backtest 的 run_id"),
+    expireInSeconds: z.number().int().positive().max(3600).default(300),
   }),
-  execute: async (inputData) => {
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    // 拼血缘前缀。例如 rationale = "[research:<id>] [backtest:<id>] 用户原因"。
+    const prefixParts: string[] = [];
+    if (inputData.researchId) prefixParts.push(`[research:${inputData.researchId}]`);
+    if (inputData.backtestRunId) prefixParts.push(`[backtest:${inputData.backtestRunId}]`);
+    const rationaleWithLineage = prefixParts.length
+      ? `${prefixParts.join(" ")} ${inputData.rationale}`
+      : inputData.rationale;
     try {
-      const plan = planStore.create({
+      const plan = await client.createPlan({
         intent: inputData.intent,
         venue: inputData.venue ?? "binance",
         symbol: inputData.symbol,
-        orderParams: {
-          side: inputData.side,
-          type: inputData.orderType ?? "MARKET",
-          quantity: inputData.quantity,
-          price: inputData.price,
-          // refPrice 不再携带——paper /orders/submit 服务端自取
-        },
-        rationale: inputData.rationale,
+        side: inputData.side,
+        orderType: inputData.orderType ?? "MARKET",
+        quantity: inputData.quantity,
+        price: inputData.price,
+        rationale: rationaleWithLineage,
         expireInSeconds: inputData.expireInSeconds ?? 300,
       });
       return {
         ok: true as const,
-        planId: plan.planId,
+        planId: plan.plan_id,
         status: plan.status,
         intent: plan.intent,
         symbol: plan.symbol,
         venue: plan.venue,
-        orderParams: plan.orderParams,
+        orderParams: plan.order_params,
         rationale: plan.rationale,
-        createdAt: plan.createdAt.toISOString(),
-        expireAt: plan.expireAt.toISOString(),
+        createdAt: plan.created_at,
+        expireAt: plan.expire_at,
         approvalRequiredBy: "risk-agent-or-user",
       };
     } catch (err) {
-      const r = planErrorToResult(err);
+      const r = httpErrorToResult(err);
       if (r) return r;
       throw err;
     }
@@ -138,43 +158,35 @@ export const createTradePlanTool = createTool({
 export const approveTradePlanTool = createTool({
   id: "trade.approve_plan",
   description: `
-    审批一个 pending plan，发放一次性 approval_token（给 trade.execute_plan 用）。
+    审批一个 pending plan，paper 服务端发放一次性 approval_token。
 
     何时用：
-    - 你是 Risk Agent，刚审完一个 plan 觉得安全可放行
-    - 用户在 UI 上点了"批准"
-
-    何时不用：
-    - **不要自己 create + approve 自己的 plan**（角色对抗失效）
-    - plan 已是 approved / executed / rejected / expired → 拒绝
+    - 自动化路径：orchestrator 调完 create_plan 立刻调本工具批准（小额）
+    - 用户在 UI 上点"批准"
 
     坑：
-    - approval_token 一次性，executed 后立刻作废（防重放）
-    - 风险审查必须在调用本 tool 之前完成（本 tool 不做风控）
-    - approver 字符串建议带"risk-agent" / "user:<id>" 前缀，便于审计
+    - approval_token 一次性，executed 后立刻作废
+    - 风险审查应在调用本工具之前完成（本工具不做风控，仅发 token）
+    - approver 字符串建议带 'risk-agent' / 'user:<id>' 前缀，便于审计
   `.trim(),
   inputSchema: z.object({
-    planId: z.string().uuid().describe("trade.create_plan 返回的 planId"),
-    approver: z
-      .string()
-      .min(1)
-      .describe("批准者标识，建议 'risk-agent' 或 'user:<id>'，落审计 log"),
+    planId: z.string().uuid(),
+    approver: z.string().min(1),
   }),
-  execute: async (inputData) => {
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
     try {
-      const result = planStore.approve({
-        planId: inputData.planId,
-        approver: inputData.approver,
-      });
+      const plan = await client.approvePlan(inputData.planId, inputData.approver);
       return {
         ok: true as const,
-        planId: result.planId,
-        status: result.status,
-        approvalToken: result.approvalToken,
-        approvedAt: result.approvedAt.toISOString(),
+        planId: plan.plan_id,
+        status: plan.status,
+        approvalToken: plan.approval_token,
+        approvedAt: plan.approved_at,
       };
     } catch (err) {
-      const r = planErrorToResult(err);
+      const r = httpErrorToResult(err);
       if (r) return r;
       throw err;
     }
@@ -188,40 +200,32 @@ export const approveTradePlanTool = createTool({
 export const rejectTradePlanTool = createTool({
   id: "trade.reject_plan",
   description: `
-    拒绝一个 pending plan（终态）。Risk Agent 觉得不安全用这个。
+    拒绝一个 pending plan（终态）。
 
-    何时用：
-    - Risk Agent 审计后决定拒绝（违反风控 / 与持仓冲突 / 行情异常）
-    - 用户在 UI 上点"拒绝"
-
-    何时不用：
-    - 想要"稍后再批"：让 plan 自然过期即可
-    - plan 已是终态：noop
-
-    坑：
-    - reason 必填，给复盘 / 投诉用
-    - 一旦 reject，同样意图想下单必须新建一个 plan（不能复用 planId）
+    坑：reason 必填；终态不可改。
   `.trim(),
   inputSchema: z.object({
     planId: z.string().uuid(),
-    reason: z.string().min(1).describe("拒绝原因，给复盘审计用"),
-    rejector: z.string().min(1).describe("'risk-agent' 或 'user:<id>'"),
+    reason: z.string().min(1),
+    rejector: z.string().min(1),
   }),
-  execute: async (inputData) => {
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
     try {
-      const plan = planStore.reject({
-        planId: inputData.planId,
-        reason: inputData.reason,
-        rejector: inputData.rejector,
-      });
+      const plan = await client.rejectPlan(
+        inputData.planId,
+        inputData.reason,
+        inputData.rejector,
+      );
       return {
         ok: true as const,
-        planId: plan.planId,
+        planId: plan.plan_id,
         status: plan.status,
-        rejectionReason: plan.rejectionReason,
+        rejectionReason: plan.rejection_reason,
       };
     } catch (err) {
-      const r = planErrorToResult(err);
+      const r = httpErrorToResult(err);
       if (r) return r;
       throw err;
     }
@@ -235,117 +239,88 @@ export const rejectTradePlanTool = createTool({
 export const executeTradePlanTool = createTool({
   id: "trade.execute_plan",
   description: `
-    凭 approval_token 真正下单：调 paper /orders/submit 并把 plan 标记为 executed。
+    凭 approval_token 真下单：paper 服务端原子完成 consume_token + 撮合 + 落 orders + 更新 positions/cash + 切 plan=executed。
 
     何时用：
-    - trader agent 拿到 risk agent 发的 approval_token 后下单
-    - plan 仍在过期前
-
-    何时不用：
-    - 没有 approval_token → 先 trade.approve_plan
-    - plan 已 executed / rejected / expired → 拒绝
-    - 想"只看一下不真下" → 不需要这步（plan 本身已落库审计）
+    - 拿到 trade.approve_plan 返回的 approvalToken 后
 
     坑：
-    - approval_token 一次性，执行成功后立刻作废，**不能重试**
-    - 若 paper 返 REJECTED（LIMIT 未触发等），plan 仍标记为 executed（订单已尝试），
-      result.status="REJECTED"——LLM 必须新建 plan 重试，不能复用旧 plan
-    - 网络故障导致 paper /orders/submit 抛 HttpClientError 时，**plan 状态保持 approved**，
-      token 没消费（caller 可重试同样的 execute 调用）
+    - approval_token 一次性
+    - 若 paper 返回 status=REJECTED（LIMIT 未触发等），plan 仍标 executed
+    - 网络故障时 paper 事务会回滚，token 不消费，可重试
   `.trim(),
   inputSchema: z.object({
     planId: z.string().uuid(),
-    approvalToken: z.string().uuid().describe("trade.approve_plan 返回的 token"),
+    approvalToken: z.string().min(1),
   }),
   execute: async (inputData, ctx) => {
-    // 1. 校验 token + plan 状态 + 消费 token（in-memory 原子）
-    let plan;
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
     try {
-      plan = planStore.consumeApproval(inputData.planId, inputData.approvalToken);
+      const r = await client.executePlan(inputData.planId, inputData.approvalToken);
+      return {
+        ok: true as const,
+        planId: r.plan_id,
+        planStatus: r.plan_status,
+        order: {
+          clientOrderId: r.order.client_order_id,
+          status: r.order.status,
+          filledQuantity: r.order.filled_quantity,
+          avgFillPrice: r.order.avg_fill_price,
+          fee: r.order.fee,
+          notional: r.order.notional,
+          rejectionReason: r.order.rejection_reason,
+        },
+      };
     } catch (err) {
-      const r = planErrorToResult(err);
-      if (r) return r;
+      const errResult = httpErrorToResult(err);
+      if (errResult) return errResult;
       throw err;
     }
-
-    // 2. 调 paper /orders/submit
-    const tc = ctx?.requestContext as ToolRequestContext | undefined;
-    const client = await getPaperClient(tc);
-    const orderResult = await client.submitOrder({
-      venue: plan.venue,
-      symbol: plan.symbol,
-      side: plan.orderParams.side,
-      type: plan.orderParams.type,
-      quantity: plan.orderParams.quantity,
-      price: plan.orderParams.price,
-      // refPrice 由 paper 服务端自取（调 data /ticker），不再从客户端传
-      refPrice: plan.orderParams.refPrice,
-    });
-
-    // 3. 回写订单 ID + 状态切到 executed（即使 order 被 venue REJECTED 也是 executed
-    //    —— 因为"已尝试下单"是事实；REJECTED 由 result.status 表达）
-    planStore.recordExecution(plan.planId, orderResult.client_order_id);
-
-    return {
-      ok: true as const,
-      planId: plan.planId,
-      planStatus: "executed" as const,
-      order: {
-        clientOrderId: orderResult.client_order_id,
-        status: orderResult.status,
-        filledQuantity: orderResult.filled_quantity,
-        avgFillPrice: orderResult.avg_fill_price,
-        fee: orderResult.fee,
-        notional: orderResult.notional,
-        rejectionReason: orderResult.rejection_reason,
-      },
-    };
   },
 });
 
 // ────────────────────────────────────────────────────────────────────
-// getTradePlan（dev / 调试）
+// getTradePlan
 // ────────────────────────────────────────────────────────────────────
 
 export const getTradePlanTool = createTool({
   id: "trade.get_plan",
   description: `
-    按 planId 查 plan 状态。Risk Agent 审批前用一下、或用户问"我那个 plan 怎么样了"用。
-
-    何时用：
-    - Risk Agent 拿到 planId 后先 get 看完整内容再决策
-    - 用户问"我那个 plan 还在不在"
-
-    何时不用：
-    - 已经手里有完整 plan dict（create 刚返回） → 不需要再 get
+    按 planId 查 plan 状态。用户问"我那个 plan 怎么样了"时调。
   `.trim(),
   inputSchema: z.object({
     planId: z.string().uuid(),
   }),
-  execute: async (inputData) => {
-    const plan = planStore.get(inputData.planId);
-    if (!plan) {
-      return { ok: false as const, code: "PLAN_NOT_FOUND", message: `plan ${inputData.planId} not found` };
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    try {
+      const plan = await client.getPlan(inputData.planId);
+      return {
+        ok: true as const,
+        plan: {
+          planId: plan.plan_id,
+          intent: plan.intent,
+          venue: plan.venue,
+          symbol: plan.symbol,
+          orderParams: plan.order_params,
+          rationale: plan.rationale,
+          status: plan.status,
+          approvedBy: plan.approved_by,
+          rejectionReason: plan.rejection_reason,
+          createdAt: plan.created_at,
+          approvedAt: plan.approved_at,
+          executedAt: plan.executed_at,
+          expireAt: plan.expire_at,
+          resultingOrderId: plan.resulting_order_id,
+        },
+      };
+    } catch (err) {
+      const r = httpErrorToResult(err);
+      if (r) return r;
+      throw err;
     }
-    return {
-      ok: true as const,
-      plan: {
-        planId: plan.planId,
-        intent: plan.intent,
-        venue: plan.venue,
-        symbol: plan.symbol,
-        orderParams: plan.orderParams,
-        rationale: plan.rationale,
-        status: plan.status,
-        approvedBy: plan.approvedBy,
-        rejectionReason: plan.rejectionReason,
-        createdAt: plan.createdAt.toISOString(),
-        approvedAt: plan.approvedAt?.toISOString() ?? null,
-        executedAt: plan.executedAt?.toISOString() ?? null,
-        expireAt: plan.expireAt.toISOString(),
-        resultingOrderId: plan.resultingOrderId,
-      },
-    };
   },
 });
 

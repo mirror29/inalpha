@@ -118,18 +118,39 @@ def test_build_plan_empty_thesis_gets_placeholder() -> None:
     assert plan.confidence == 0.5
 
 
-def test_build_plan_clamps_confidence_via_pydantic() -> None:
-    from pydantic import ValidationError
+def test_build_plan_clamps_confidence_to_unit_range() -> None:
+    """LLM 返 1.5 / -0.3 时 _clamp_unit 兜底（review B2 fix）。"""
+    plan = build_plan_from_raw(
+        {"confidence": 1.5, "rating": "neutral"},
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[],
+    )
+    assert plan.confidence == 1.0
 
-    with pytest.raises(ValidationError):
-        build_plan_from_raw(
-            {"confidence": 1.5, "rating": "neutral"},
-            venue="binance",
-            symbol="BTC/USDT",
-            timeframe="1h",
-            as_of=_as_of(),
-            briefs=[],
-        )
+    plan2 = build_plan_from_raw(
+        {"confidence": -0.3, "rating": "neutral"},
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[],
+    )
+    assert plan2.confidence == 0.0
+
+
+def test_build_plan_non_numeric_confidence_falls_back() -> None:
+    plan = build_plan_from_raw(
+        {"confidence": "very-high", "rating": "neutral"},
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[],
+    )
+    assert plan.confidence == 0.5  # fallback default
 
 
 def test_briefs_to_compact_text_is_json() -> None:

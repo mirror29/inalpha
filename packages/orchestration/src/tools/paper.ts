@@ -81,7 +81,7 @@ export const paperRunBacktestTool = createTool({
   inputSchema: z.object({
     strategyId: z
       .string()
-      .describe("已注册策略 ID（用 paper.list_strategies 查；目前只有 'sma_cross'）"),
+      .describe("已注册策略 ID（用 paper.list_strategies 查；目前 sma_cross / mean_reversion / buy_and_hold）"),
     params: z
       .record(z.string(), z.unknown())
       .default({})
@@ -101,6 +101,19 @@ export const paperRunBacktestTool = createTool({
       .describe("ISO 8601 结束时间；**省略时默认 = 当前时间**"),
     initialCash: z.number().positive().default(10_000),
     feeRate: z.number().min(0).lt(1).default(0.001),
+    researchId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe(
+        "D-8c 起：若本次回测由 research.deep_dive 驱动，把对应 research_id 透传过来；后续 trade.create_plan 可用同 research_id 关联血缘。",
+      ),
+    strategyHint: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "D-8c 起：触发本次回测的 strategy_hint（来自 compose_strategy.reasoning 上游）",
+      ),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
@@ -122,6 +135,125 @@ export const paperRunBacktestTool = createTool({
       toTs,
       initialCash: inputData.initialCash ?? 10_000,
       feeRate: inputData.feeRate ?? 0.001,
+      researchId: inputData.researchId,
+      strategyHint: inputData.strategyHint,
+    });
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────
+// D-8c · paper.compose_strategy + paper.list_backtest_runs
+// ────────────────────────────────────────────────────────────────────
+
+const StrategyHintSchema = z.object({
+  family: z.enum(["trend", "mean_reversion", "buy_hold", "none"]),
+  params: z.record(z.string(), z.unknown()).default({}),
+  reasoning: z.string().default(""),
+});
+
+const FactorInputSchema = z.object({
+  name: z.string(),
+  kind: z.enum(["momentum", "mean_reversion", "volatility", "macro", "sentiment"]),
+  value: z.union([z.number(), z.string()]),
+  strength: z.number().min(0).max(1),
+  horizon: z.enum(["intraday", "swing", "position"]).default("swing"),
+  explanation: z.string().default(""),
+});
+
+export const paperComposeStrategyTool = createTool({
+  id: "paper.compose_strategy",
+  description: `
+    把 research.deep_dive 输出的 strategy_hint + factors 路由到具体 strategy_id + 正规化参数。
+
+    何时用：
+    - 拿到 research.deep_dive 的产物后，**先 compose** 再 paper.run_backtest
+    - 用户问"基于这个研究跑回测"——你不需要自己脑补参数，让 compose 翻译
+
+    何时不用：
+    - 用户明确指定了 strategy_id + params → 直接 run_backtest，不必 compose
+    - hint.family === "none" → compose 会拒绝（rejected_reason 非空），需要换思路或不跑回测
+
+    返回字段：
+    - strategy_id：'sma_cross' / 'mean_reversion' / 'buy_and_hold'，或 null（拒绝）
+    - params：可直接喂给 paper.run_backtest 的 params
+    - reasoning：组装解释（reasonable 链路）
+    - rejected_reason：non-null 表示拒绝，研究结果不足以驱动策略
+  `.trim(),
+  inputSchema: z.object({
+    hint: StrategyHintSchema,
+    factors: z.array(FactorInputSchema).default([]),
+    timeframe: TimeframeSchema.default("1h"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    // zod `.default()` 在 input 类型上保留 optional —— 显式补齐让 client 类型严格
+    const hint = {
+      family: inputData.hint.family,
+      params: inputData.hint.params ?? {},
+      reasoning: inputData.hint.reasoning ?? "",
+    };
+    const factors = (inputData.factors ?? []).map((f) => ({
+      name: f.name,
+      kind: f.kind,
+      value: f.value,
+      strength: f.strength,
+      horizon: f.horizon ?? "swing",
+      explanation: f.explanation ?? "",
+    }));
+    return await client.composeStrategy({
+      hint,
+      factors,
+      timeframe: inputData.timeframe ?? "1h",
+    });
+  },
+});
+
+export const paperListBacktestRunsTool = createTool({
+  id: "paper.list_backtest_runs",
+  description: `
+    查历史回测记录（按 research_id 或 strategy_code 过滤）。
+
+    何时用：
+    - 拿到 research 产物后想看"有没有人在同 research 下跑过回测"——避免重复算
+    - 用户问"上次这个研究的回测结果"
+    - 复盘策略表现，按 strategy_code 拉历史所有跑
+
+    何时不用：
+    - 想跑新回测 → paper.run_backtest（直接跑，run_id 落库自动产出）
+
+    必须至少给 research_id 或 strategy_code 一个；同时给 → 优先用 research_id。
+
+    返回字段：
+    - run_id / params_hash：可作下游 trade.create_plan 的血缘锚点
+    - metrics：{ sharpe, max_drawdown_pct, win_rate, total_return_pct, ... }
+    - config：原回测请求参数
+    - strategy_hint：触发本次回测的 hint dict（审计）
+  `.trim(),
+  inputSchema: z.object({
+    researchId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe("research.deep_dive 返回的 research_id"),
+    strategyCode: z
+      .string()
+      .optional()
+      .describe("策略注册表 key（如 'sma_cross'）"),
+    limit: z.number().int().min(1).max(100).default(20),
+  }),
+  execute: async (inputData, ctx) => {
+    if (!inputData.researchId && !inputData.strategyCode) {
+      throw new Error(
+        "paper.list_backtest_runs: must provide researchId or strategyCode (research_id 或 strategy_code 至少给一个)",
+      );
+    }
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listBacktestRuns({
+      researchId: inputData.researchId,
+      strategyCode: inputData.strategyCode,
+      limit: inputData.limit ?? 20,
     });
   },
 });
@@ -143,8 +275,96 @@ export const paperHealthTool = createTool({
   },
 });
 
+// ────────────────────────────────────────────────────────────────────
+// D-8b 查询 tool
+// ────────────────────────────────────────────────────────────────────
+
+export const paperListOrdersTool = createTool({
+  id: "paper.list_orders",
+  description: `
+    列出当前用户的订单流水（按 ts_event DESC，最近的在前）。
+
+    何时用：
+    - 用户问"我下过哪些单 / 今天交易记录 / 上次买 BTC 多少钱"
+    - 复盘策略表现
+
+    何时不用：
+    - 查持仓 → paper.list_positions
+    - 查账户总余额 → paper.get_account
+
+    坑：
+    - 按 account 隔离（用户身份从 JWT 提）
+    - status 可选过滤：'FILLED' | 'REJECTED' | ...（不传则全部）
+  `.trim(),
+  inputSchema: z.object({
+    symbol: SymbolSchema.optional().describe("可选按品种过滤，例如 'BTC/USDT'"),
+    status: z.string().optional().describe("可选按 status 过滤"),
+    limit: z.number().int().min(1).max(500).default(50),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listOrders({
+      symbol: inputData.symbol,
+      status: inputData.status,
+      limit: inputData.limit ?? 50,
+    });
+  },
+});
+
+export const paperListPositionsTool = createTool({
+  id: "paper.list_positions",
+  description: `
+    列出当前用户的活跃持仓（quantity != 0）。
+
+    何时用：
+    - 用户问"我现在持仓 / 我有多少 BTC / 我手上还有什么"
+
+    返回：
+    - quantity > 0 = 多头；< 0 = 空头
+    - avg_open_price 是加权平均成本（已 reduce 过反向 fill）
+    - realized_pnl 是历史已平仓累计盈亏
+
+    何时不用：
+    - 想看具体某笔单 → paper.list_orders
+  `.trim(),
+  inputSchema: z.object({
+    includeFlat: z.boolean().default(false).describe("是否包含已平掉的（quantity=0 的历史持仓行）"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listPositions(inputData.includeFlat ?? false);
+  },
+});
+
+export const paperGetAccountTool = createTool({
+  id: "paper.get_account",
+  description: `
+    当前账户快照：现金 / 初始本金 / 持仓估值 / 总权益 / 累计实现 PnL。
+
+    何时用：
+    - 用户问"我账户余额 / 我赚了多少 / 我账户总权益"
+
+    坑：
+    - 持仓估值用 avg_open_price 兜底（D-8b 不接实时 mark）；实际权益略偏保守
+    - 默认初始 10000 USDT，首次下单时 lazy create
+  `.trim(),
+  inputSchema: z.object({}),
+  execute: async (_input, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.getAccount();
+  },
+});
+
 export const paperTools = [
   paperListStrategiesTool,
   paperRunBacktestTool,
   paperHealthTool,
+  paperListOrdersTool,
+  paperListPositionsTool,
+  paperGetAccountTool,
+  paperComposeStrategyTool,
+  paperListBacktestRunsTool,
 ] as const;

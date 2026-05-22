@@ -22,22 +22,44 @@ def _as_of() -> datetime:
 
 @pytest.fixture
 def fake_llm_singleton() -> FakeLLMClient:
-    """整次测试共享同一个 fake instance，便于断言 .calls。"""
+    """整次测试共享同一个 fake instance，便于断言 .calls。
+
+    5 个 analyst + 1 manager 全套 canned 响应；key 用 "You are a X" 前缀
+    保证无交叉匹配（详见 conftest.fake_llm）。
+    """
     return FakeLLMClient(
         {
-            "technical analyst": {
+            "you are a technical analyst": {
                 "stance": "bullish",
                 "confidence": 0.7,
                 "summary": "T",
                 "key_points": ["sma cross"],
             },
-            "fundamental": {
+            "you are a fundamental / macro analyst": {
                 "stance": "neutral",
                 "confidence": 0.4,
                 "summary": "M",
                 "key_points": ["macro mixed"],
             },
-            "research manager": {
+            "you are a sentiment analyst": {
+                "stance": "bullish",
+                "confidence": 0.6,
+                "summary": "S",
+                "key_points": ["FNG extreme fear"],
+            },
+            "you are a risk analyst": {
+                "stance": "neutral",
+                "confidence": 0.55,
+                "summary": "R",
+                "key_points": ["ATR normal"],
+            },
+            "you are a macro analyst": {
+                "stance": "neutral",
+                "confidence": 0.5,
+                "summary": "Mc",
+                "key_points": ["fomc post-window"],
+            },
+            "you are a research manager": {
                 "rating": "overweight",
                 "confidence": 0.6,
                 "thesis": "tech bullish, macro neutral; net positive bias",
@@ -100,6 +122,21 @@ def test_deep_dive_returns_research_plan(
         for i in range(60)
     ]
     respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=bars))
+    # sentiment 走真路径需要 FNG 200
+    respx.get("https://api.alternative.me/fng/").mock(
+        return_value=Response(
+            200,
+            json={
+                "data": [
+                    {"value": "22", "value_classification": "Extreme Fear", "timestamp": "1716163200"},
+                    *[
+                        {"value": str(30 + i), "value_classification": "Fear", "timestamp": str(1716163200 - i * 86400)}
+                        for i in range(1, 30)
+                    ],
+                ]
+            },
+        )
+    )
 
     r = client.post(
         "/deep_dive",
@@ -121,12 +158,12 @@ def test_deep_dive_returns_research_plan(
     assert body["confidence"] == 0.6
     assert body["suggested_action"] == "open_long 0.02"
     assert body["horizon"] == "swing"
-    # 2 个 analyst brief 都该在响应里
+    # 5 个 analyst brief 都在
     analysts = {b["analyst"] for b in body["briefs"]}
-    assert analysts == {"technical", "fundamental"}
+    assert analysts == {"technical", "fundamental", "sentiment", "risk", "macro"}
 
-    # LLM 共 3 次（2 analyst + 1 manager）
-    assert len(fake_llm_singleton.calls) == 3
+    # LLM 共 6 次（5 analyst + 1 manager）
+    assert len(fake_llm_singleton.calls) == 6
 
 
 # ────────────────────────────────────────────────────────────────────

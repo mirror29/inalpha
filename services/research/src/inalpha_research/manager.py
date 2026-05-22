@@ -6,24 +6,39 @@
   analyst 自己判断（防"双 LLM 互相同意"风险，[ADR-0012 Alt D](../../../docs/miro/decisions/0012-plan-exec-separation.md)）
 - 容错：LLM 返回的字段缺失 / 不符 schema 时用默认值兜底，不抛错（避免一次 LLM
   抽风就让整条 deep_dive 链路 500）
+- D-8c 起：manager 额外产出 ``factors`` / ``signals`` / ``strategy_hint`` 三段
+  结构化字段，作为 research → strategy 机器路径的契约。LLM 没给齐时由
+  ``_derive_strategy_hint`` 从 analyst briefs 兜底推断。
 """
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime
 from typing import Any
 
 from .llm.client import LLMClient
-from .schemas import AnalystBrief, ResearchPlan
+from .schemas import (
+    AnalystBrief,
+    Factor,
+    ResearchPlan,
+    Signal,
+    StrategyFamily,
+    StrategyHint,
+)
 
 _SYSTEM = """
 You are a research manager synthesizing analyst briefs into a final research plan.
 
-You receive 1+ analyst briefs (each has stance / confidence / summary / key_points).
+You receive 1+ analyst briefs. Each brief has stance / confidence / summary /
+key_points and may include structured "factors" (kind / value / strength / explanation).
+
 Your job is to:
 1. Reconcile disagreements between analysts (favor the one with more concrete evidence)
 2. Output a final rating, thesis, risks, and a suggested action for the trader
-3. Stay **grounded in the briefs** — do not invent reasoning beyond what analysts said
+3. **Synthesize factors and pick a strategy family** —— machine-readable hand-off to the
+   downstream `paper.compose_strategy` engine
+4. Stay **grounded in the briefs** — do not invent factors that no analyst raised
 
 Return ONLY a JSON object with this exact shape:
 
@@ -33,11 +48,53 @@ Return ONLY a JSON object with this exact shape:
   "thesis": "3-5 sentences of core conclusion",
   "risks": ["risk 1", "risk 2", ...],
   "suggested_action": "open_long 0.X | open_short 0.X | hold | reduce | wait",
-  "horizon": "intraday" | "swing" | "position"
+  "horizon": "intraday" | "swing" | "position",
+
+  "factors": [                                  // dedup + merge of analyst factors (3-6)
+    {
+      "name": "rsi_14_neutral",
+      "kind": "momentum" | "mean_reversion" | "volatility" | "macro" | "sentiment",
+      "value": 58.2,
+      "strength": 0.5,
+      "horizon": "swing",
+      "explanation": "RSI 58 - room to upside, not overbought"
+    }
+  ],
+
+  "signals": [                                  // 1-3 directional signals from factors
+    {
+      "direction": "long" | "short" | "flat",
+      "strength": 0.6,
+      "timeframe": "1h" | "4h" | "1d",
+      "derived_from": ["factor.name", ...]
+    }
+  ],
+
+  "strategy_hint": {
+    "family": "trend" | "mean_reversion" | "buy_hold" | "none",
+    "params": {                                 // recommended starting params (compose engine may tighten)
+      "fast_period": 10,
+      "slow_period": 30,
+      "trade_size": 0.02
+    },
+    "reasoning": "1-2 sentence why this family fits the factor mix"
+  }
 }
 
-Rules:
-- If analysts disagree strongly, prefer "neutral" + low confidence over picking sides
+Rules for strategy_hint:
+- "trend"          — pick when momentum factors dominate (SMA cross, breakout, MACD)
+- "mean_reversion" — pick when oscillator extremes + low recent trend (RSI extreme, BB squeeze)
+- "buy_hold"      — pick for strong long-horizon macro thesis + no near-term technical edge
+- "none"          — pick when factors disagree too much or rating is "neutral" with low confidence
+
+Rules for params:
+- trend          : { fast_period: 5-20, slow_period: 20-60, trade_size: 0.01-0.05 }
+- mean_reversion : { period: 10-30, num_std: 1.5-2.5, trade_size: 0.01-0.05 }
+- buy_hold       : { trade_size: 0.5-1.0 (fraction of cash) }
+- Pick concrete numbers, not ranges. trade_size should scale with confidence and signal strength.
+
+Reconciliation rules:
+- If analysts disagree strongly, prefer "neutral" + low confidence + strategy_hint.family == "none"
 - Be specific in suggested_action (sizing hint, even if rough)
 - risks must be concrete (not "market may fall"); reference the analyst points
 """.strip()
@@ -78,6 +135,19 @@ class ResearchManager:
         )
 
 
+def _clamp_unit(v: Any, default: float = 0.5) -> float:
+    """confidence clamp 到 [0, 1]；非数值兜底 default。D-8b' review B2 fix。"""
+    try:
+        x = float(v) if v is not None else default
+    except (TypeError, ValueError):
+        return default
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
+
+
 def _format_user_prompt(
     *,
     venue: str,
@@ -96,10 +166,18 @@ def _format_user_prompt(
     ]
     for b in briefs:
         kp = "\n    - ".join(b.key_points) if b.key_points else "(no key points)"
+        factors_block = ""
+        if b.factors:
+            factor_lines = [
+                f"      - {f.name} ({f.kind}, strength={f.strength:.2f}): {f.value}"
+                for f in b.factors
+            ]
+            factors_block = "\n    factors:\n" + "\n".join(factor_lines)
         parts.append(
             f"  [{b.analyst}] stance={b.stance} confidence={b.confidence:.2f}\n"
             f"    summary: {b.summary}\n"
             f"    key_points:\n    - {kp}"
+            f"{factors_block}"
         )
     if user_question:
         parts.append("")
@@ -127,21 +205,147 @@ def _build_plan(
     if horizon not in ("intraday", "swing", "position"):
         horizon = "swing"
 
+    # D-8b' review B2 fix: confidence clamp 到 [0, 1]，避免 LLM 抽风返 1.5
+    # 让 pydantic 抛 → 整条 deep_dive 500（manager 声称"兜底不抛"打脸）
+    confidence = _clamp_unit(raw.get("confidence"))
+
+    factors = _merge_factors(raw.get("factors"), briefs)
+    signals = _parse_signals(raw.get("signals"))
+    strategy_hint = _parse_strategy_hint(
+        raw.get("strategy_hint"),
+        rating=rating,
+        confidence=confidence,
+        factors=factors,
+    )
+
     payload = {
         "venue": venue,
         "symbol": symbol,
         "timeframe": timeframe,
         "as_of": as_of,
         "rating": rating,
-        "confidence": float(raw.get("confidence", 0.5)),
+        "confidence": confidence,
         "thesis": str(raw.get("thesis", "")).strip() or "(no thesis)",
         "risks": [str(r) for r in (raw.get("risks") or [])],
         "suggested_action": str(raw.get("suggested_action", "wait")).strip() or "wait",
+        "factors": [f.model_dump(mode="json") for f in factors],
+        "signals": [s.model_dump(mode="json") for s in signals],
+        "strategy_hint": strategy_hint.model_dump(mode="json"),
         "briefs": briefs,
         "horizon": horizon,
     }
     # 用 model_validate 而不是构造器，让 Pydantic 把 dict→model 一次校验
     return ResearchPlan.model_validate(payload)
+
+
+# ────────────────────────────────────────────────────────────────────
+# 兜底 helpers —— LLM 不输出 / 输出残缺时 fallback
+# ────────────────────────────────────────────────────────────────────
+
+
+def _merge_factors(
+    raw_factors: Any,
+    briefs: list[AnalystBrief],
+) -> list[Factor]:
+    """优先用 LLM 给的 factors；缺失或解析失败则从 briefs 收集兜底。
+
+    兜底保证下游 compose 引擎永远拿得到至少 0 个 factor（空列表也接受），
+    不会因为 LLM 漏字段而报 KeyError。
+    """
+    merged: list[Factor] = []
+    if isinstance(raw_factors, list):
+        for item in raw_factors:
+            if not isinstance(item, dict):
+                continue
+            try:
+                merged.append(Factor.model_validate(item))
+            except Exception:
+                continue
+    if merged:
+        return merged[:6]
+    # 兜底：直接复用 analyst factor（已经在 base._parse 校验过）
+    out: list[Factor] = []
+    for b in briefs:
+        out.extend(b.factors)
+    return out[:6]
+
+
+def _parse_signals(raw_signals: Any) -> list[Signal]:
+    out: list[Signal] = []
+    if not isinstance(raw_signals, list):
+        return out
+    for item in raw_signals:
+        if not isinstance(item, dict):
+            continue
+        try:
+            out.append(Signal.model_validate(item))
+        except Exception:
+            continue
+    return out[:3]
+
+
+def _parse_strategy_hint(
+    raw_hint: Any,
+    *,
+    rating: str,
+    confidence: float,
+    factors: list[Factor],
+) -> StrategyHint:
+    """LLM 没给 strategy_hint 时由因子大类 + rating 推断兜底。
+
+    规则（保守）：
+    - rating == "neutral" 且 confidence < 0.6   → family = none
+    - factor 主导类 = momentum                  → trend
+    - factor 主导类 = mean_reversion            → mean_reversion
+    - factor 主导类 = macro / sentiment         → buy_hold
+    - 其它                                       → none
+    """
+    if isinstance(raw_hint, dict):
+        try:
+            return StrategyHint.model_validate(raw_hint)
+        except Exception:
+            pass
+
+    if rating == "neutral" and confidence < 0.6:
+        return StrategyHint(
+            family="none",
+            params={},
+            reasoning="neutral rating with low confidence — no strategy suggested",
+        )
+
+    dominant = _dominant_kind(factors)
+    family: StrategyFamily
+    params: dict[str, Any]
+    reasoning: str
+    if dominant == "momentum":
+        family = "trend"
+        params = {"fast_period": 10, "slow_period": 30, "trade_size": 0.02}
+        reasoning = "fallback: momentum-dominant factors → trend family"
+    elif dominant == "mean_reversion":
+        family = "mean_reversion"
+        params = {"period": 20, "num_std": 2.0, "trade_size": 0.02}
+        reasoning = "fallback: mean_reversion-dominant factors → mean_reversion family"
+    elif dominant in ("macro", "sentiment"):
+        family = "buy_hold"
+        params = {"trade_size": 0.5}
+        reasoning = f"fallback: {dominant}-dominant factors → buy_hold family"
+    else:
+        family = "none"
+        params = {}
+        reasoning = "fallback: no factors / disagreement → none"
+    return StrategyHint(family=family, params=params, reasoning=reasoning)
+
+
+def _dominant_kind(factors: list[Factor]) -> str | None:
+    """按 strength 加权的 factor.kind majority vote。"""
+    if not factors:
+        return None
+    weights: Counter[str] = Counter()
+    for f in factors:
+        weights[f.kind] += f.strength
+    if not weights:
+        return None
+    return weights.most_common(1)[0][0]
 
 
 # 给测试用：直接走 _build_plan 不调 LLM

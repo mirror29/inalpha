@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
@@ -35,6 +36,16 @@ class BacktestRequest(BaseModel):
     initial_cash: float = Field(default=10_000.0, gt=0)
     fee_rate: float = Field(default=0.001, ge=0, lt=1)
 
+    # D-8c 起：可选血缘 —— 把这次回测和上游 research 产物链上
+    research_id: UUID | None = Field(
+        default=None,
+        description="触发本次回测的 research ID（来自 research.deep_dive 响应）",
+    )
+    strategy_hint: dict[str, Any] | None = Field(
+        default=None,
+        description="触发本次回测的原始 strategy_hint（审计用，可空）",
+    )
+
     @field_validator("from_ts", "to_ts", mode="after")
     @classmethod
     def _ensure_aware(cls, v: datetime) -> datetime:
@@ -58,6 +69,19 @@ class EquityPoint(BaseModel):
 
 class BacktestResponse(BaseModel):
     """``POST /backtest`` 响应。"""
+
+    run_id: UUID | None = Field(
+        default=None,
+        description="D-8c 起：落库后的 run_id；DB 不可用 / 写库失败时为 None",
+    )
+    research_id: UUID | None = Field(
+        default=None,
+        description="D-8c 起：上游 research 血缘（透传 request.research_id）",
+    )
+    params_hash: str | None = Field(
+        default=None,
+        description="D-8c 起：sha256(strategy_code|params) 前 16 位，便于去重",
+    )
 
     strategy_id: str
     venue: str
@@ -104,6 +128,20 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     service: str
     version: str
+
+
+class BacktestRunSummary(BaseModel):
+    """D-8c · ``GET /backtest_runs`` 响应里的一行。"""
+
+    run_id: UUID
+    strategy_code: str
+    params_hash: str | None = None
+    research_id: UUID | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    strategy_hint: dict[str, Any] | None = None
+    status: str
+    created_at: datetime
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -172,3 +210,122 @@ class SubmitOrderResponse(BaseModel):
     rejection_reason: str | None = None
 
     ts_event: datetime
+
+
+# ────────────────────────────────────────────────────────────────────
+# D-8b 查询响应 schema
+# ────────────────────────────────────────────────────────────────────
+
+
+class OrderRecord(BaseModel):
+    """单笔订单流水（GET /orders 响应里的元素）。"""
+
+    client_order_id: str
+    venue: str | None = None
+    symbol: str | None = None
+    side: Literal["BUY", "SELL"]
+    type: str  # MARKET / LIMIT / ... (schema CHECK)
+    quantity: float
+    price: float | None = None
+    status: str
+    filled_quantity: float = 0.0
+    avg_fill_price: float | None = None
+    fee: float | None = None
+    notional: float | None = None
+    ts_event: datetime
+    ts_init: datetime
+    trade_plan_id: str | None = None
+
+
+class PositionRecord(BaseModel):
+    """单个持仓行（GET /positions 响应里的元素）。"""
+
+    venue: str
+    symbol: str
+    quantity: float
+    avg_open_price: float
+    realized_pnl: float
+    generation: int
+    updated_at: datetime
+
+
+class AccountSnapshot(BaseModel):
+    """GET /accounts/me 响应。"""
+
+    account_id: str
+    initial_cash: float
+    cash: float
+    positions_value: float = Field(
+        default=0.0,
+        description="所有持仓按 avg_open_price 估值（D-8b 不接实时 mark）",
+    )
+    total_equity: float = Field(default=0.0, description="cash + positions_value")
+    realized_pnl: float = Field(default=0.0, description="所有持仓累计实现 PnL")
+    created_at: datetime
+    updated_at: datetime
+
+
+# ────────────────────────────────────────────────────────────────────
+# Plan API schema
+# ────────────────────────────────────────────────────────────────────
+
+
+class CreatePlanRequest(BaseModel):
+    """``POST /plans`` 请求体。
+
+    refPrice 不需要——paper 服务端 execute 时调 data /ticker 自取。
+    """
+
+    intent: Literal["open_long", "open_short", "close", "rebalance"]
+    venue: str = Field(default="binance")
+    symbol: str = Field(..., examples=["BTC/USDT"])
+    side: Literal["BUY", "SELL"]
+    order_type: Literal["MARKET", "LIMIT"] = Field(default="MARKET", alias="type")
+    quantity: float = Field(..., gt=0)
+    price: float | None = Field(default=None, description="LIMIT 必填；MARKET 必须省略")
+    rationale: str = Field(..., min_length=1)
+    expire_in_seconds: int = Field(default=300, ge=1, le=3600)
+
+    model_config = {"populate_by_name": True}
+
+
+class PlanRecord(BaseModel):
+    """trade_plan 完整视图。"""
+
+    plan_id: str
+    account_id: str | None = None
+    intent: str
+    venue: str
+    symbol: str
+    order_params: dict[str, Any]
+    risk_params: dict[str, Any] = Field(default_factory=dict)
+    rationale: str
+    status: str
+    approval_token: str | None = None
+    approved_by: str | None = None
+    rejection_reason: str | None = None
+    created_at: datetime
+    approved_at: datetime | None = None
+    executed_at: datetime | None = None
+    expire_at: datetime
+    resulting_order_id: str | None = None
+
+
+class ApprovePlanRequest(BaseModel):
+    approver: str = Field(..., min_length=1)
+
+
+class RejectPlanRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+    rejector: str = Field(..., min_length=1)
+
+
+class ExecutePlanRequest(BaseModel):
+    approval_token: str = Field(..., min_length=1, alias="approvalToken")
+    model_config = {"populate_by_name": True}
+
+
+class ExecutePlanResponse(BaseModel):
+    plan_id: str
+    plan_status: str
+    order: SubmitOrderResponse

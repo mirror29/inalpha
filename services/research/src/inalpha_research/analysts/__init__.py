@@ -1,16 +1,37 @@
 """Analyst 集合：单视角研究员。
 
-D-8b 起 2 个 analyst：
+D-8c 起 5 个 analyst：
 
-- ``technical``：技术分析，吃 K 线 + 简单指标，输出短期立场
-- ``fundamental``：基本面 / 宏观叙事，纯 LLM（无外部数据），输出中长期立场
+- ``technical``   ：吃 K 线 + 简单指标（SMA / RSI），短期立场
+- ``fundamental`` ：标的自身叙事（halving / ETF flows / on-chain），纯 LLM
+- ``sentiment``   ：Fear & Greed Index 反向推理，外部 API
+- ``risk``        ：波动率 / 回撤，给 manager 一票否决信号
+- ``macro``       ：宏观环境（FOMC / CPI / DXY）+ 近期日程
 
-未来扩展：``sentiment``（社媒）/ ``news``（新闻），结构相同，加进 ``ALL_ANALYSTS``。
+新增 analyst 加进 ``ALL_ANALYSTS`` 自动并行；schema 端只需在 ``AnalystBrief.analyst``
+Literal 里加值。
 """
 from .base import Analyst
 from .fundamental import FundamentalAnalyst
+from .macro import MacroAnalyst
+from .risk import RiskAnalyst
+from .sentiment import SentimentAnalyst
 from .technical import TechnicalAnalyst
 
-ALL_ANALYSTS: list[type[Analyst]] = [TechnicalAnalyst, FundamentalAnalyst]
+ALL_ANALYSTS: list[type[Analyst]] = [
+    TechnicalAnalyst,
+    FundamentalAnalyst,
+    SentimentAnalyst,
+    RiskAnalyst,
+    MacroAnalyst,
+]
 
-__all__ = ["ALL_ANALYSTS", "Analyst", "FundamentalAnalyst", "TechnicalAnalyst"]
+__all__ = [
+    "ALL_ANALYSTS",
+    "Analyst",
+    "FundamentalAnalyst",
+    "MacroAnalyst",
+    "RiskAnalyst",
+    "SentimentAnalyst",
+    "TechnicalAnalyst",
+]

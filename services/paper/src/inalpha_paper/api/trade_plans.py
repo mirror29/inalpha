@@ -138,15 +138,25 @@ async def approve_plan(
     db: DBConn,
     user: Annotated[User, Depends(get_current_user)],
 ) -> PlanRecord:
+    """审批 plan，返回含 approval_token 的完整行。
+
+    实现细节：``plans_store.approve`` 已经做了 UPDATE...RETURNING + 返回新 token；
+    我们直接补 get 来拿完整字段，但**保留 approve 返回的 approval_token**
+    （get 的 SELECT 不返这一列，避免在响应里泄露给非 approve 路径的调用方）。
+    """
     account_id = account_id_from_user(user)
     try:
-        await plans_store.approve(db, account_id=account_id, plan_id=plan_id, approver=req.approver)
+        approved = await plans_store.approve(
+            db, account_id=account_id, plan_id=plan_id, approver=req.approver
+        )
     except PlanError as e:
         _raise_plan_http(e)
+        raise  # mypy
 
-    # 拿完整最新行返
+    # 拿完整字段后再把 token 合并回来（approve 返回的 dict 不包含 venue/symbol/...）
     row = await plans_store.get(db, account_id=account_id, plan_id=plan_id)
     assert row is not None
+    row = {**row, "approval_token": approved["approval_token"]}
     return _row_to_plan_record(row)
 
 

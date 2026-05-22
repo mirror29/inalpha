@@ -15,18 +15,6 @@ from .conftest import make_bar_row
 pytestmark = pytest.mark.integration
 
 
-def _make_app() -> Any:
-    """每次返回 fresh app 避免 lifespan / state 干扰。"""
-    from inalpha_paper.main import app
-
-    return app
-
-
-@pytest.fixture
-def client() -> TestClient:
-    return TestClient(_make_app())
-
-
 def _bars_for_oscillating(n: int = 100) -> list[dict[str, Any]]:
     """合成 sin 波价格的 bars JSON list（data-service 风格）。"""
     base = datetime(2026, 1, 1, tzinfo=UTC)

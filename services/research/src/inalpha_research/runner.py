@@ -29,6 +29,9 @@ async def run_deep_dive(
     - analyst 之间是 ``asyncio.gather`` 并行 —— LLM 调用是 IO bound，并行能省总时长
     - 单个 analyst 失败用 ``return_exceptions=True`` 不阻断整链；fail 的 brief
       被替换成 ``_failed_brief()`` 标记，manager 仍能综合可见信息
+    - **review B13 fix**：``isinstance(result, Exception)`` 而非 BaseException —— 后者
+      会把 KeyboardInterrupt / SystemExit 也吞成 neutral brief，dev Ctrl-C 不响应；
+      Py 3.11+ ``gather(return_exceptions=True)`` 本就不捕 BaseException，写它是误导
     """
     analysts = [cls(llm=llm, data=data) for cls in ALL_ANALYSTS]
 
@@ -46,7 +49,7 @@ async def run_deep_dive(
 
     briefs: list[AnalystBrief] = []
     for analyst, result in zip(analysts, results, strict=True):
-        if isinstance(result, BaseException):
+        if isinstance(result, Exception):
             briefs.append(_failed_brief(analyst.type_id, repr(result)))
         else:
             briefs.append(result)
@@ -63,10 +66,13 @@ async def run_deep_dive(
     return plan
 
 
+_VALID_ANALYST_TYPES = ("technical", "fundamental", "sentiment", "risk", "macro")
+
+
 def _failed_brief(analyst_type: str, error: str) -> AnalystBrief:
     """analyst 失败时塞一个 neutral / low-confidence brief 给 manager。"""
-    # 限制 analyst 字段值（schema literal）
-    type_id = analyst_type if analyst_type in ("technical", "fundamental") else "technical"
+    # 限制 analyst 字段值（schema literal）；未识别类型回落到 'technical' 防爆
+    type_id = analyst_type if analyst_type in _VALID_ANALYST_TYPES else "technical"
     return AnalystBrief(
         analyst=type_id,  # type: ignore[arg-type]
         stance="neutral",

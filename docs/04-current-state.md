@@ -92,15 +92,37 @@ sequenceDiagram
 
 ---
 
+## D-8c（2026-05-22）研究 → 策略 → 回测 闭环
+
+把 `research.deep_dive` 产物和"跑回测"打通的 MVP：
+
+- **research 输出结构化**：`ResearchPlan` 加 `research_id` / `factors` / `signals` /
+  `strategy_hint`（家族 + 参数 + reasoning）。analyst brief 也加 `factors` 列表。
+  文件 `services/research/src/inalpha_research/{schemas.py,manager.py,analysts/}`。
+- **compose 引擎**：`services/paper/src/inalpha_paper/strategies/compose.py` +
+  `POST /strategies/compose`。把 `strategy_hint` 路由到 `sma_cross /
+  mean_reversion / buy_and_hold` 之一并 clip 参数到合法区间；`family='none'` 直接拒绝。
+- **回测落库**：migration `0003_backtest_lineage.py` 给 `backtest_runs` 加
+  `research_id` / `params_hash` / `strategy_code` / `strategy_hint`；每次回测完
+  写一行。新增 `storage/backtest_runs.py` + `GET /backtest_runs?research_id=...`。
+- **Orchestration 串起来**：新 tool `paper.compose_strategy` /
+  `paper.list_backtest_runs`；`paper.run_backtest` 入参加可选 `researchId` /
+  `strategyHint`；`trade.create_plan` 入参加 `researchId` / `backtestRunId`，
+  自动 prefix 进 rationale（`[research:<id>] [backtest:<id>] 用户原因`）。
+- **orchestrator prompt 重写**：4 步标准链路 `deep_dive → compose_strategy →
+  (list_backtest_runs 或 run_backtest) → 报告 / create_plan`。
+
+不在范围（下一阶段）：LLM 自动变异（ADR-0020 E1）、walk-forward、模拟盘 → 实盘升级。
+
+---
+
 ## 未完成 / 下一步
 
-- **D-8b**：`trade_plans` / `approval_tokens` Postgres 表 + Alembic migration
-  （目前 in-memory，进程重启状态丢失）
 - **D-8b**：`permissions.yaml` 配置文件化（目前在 `defaults.ts` 硬编码）
 - **D-9**：RiskEngine 规则化（max notional / 价格偏离 / 日损上限）+ paper-service 真接入
 - **delegation hop**（ADR-0012 补丁）：sub-strategy 派生计划的转授权链
-- **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate）尚未落地，
-  当前 orchestrator 只接 trader / risk
+- **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate）尚未落地
+- **E1 进化**（ADR-0020）：LLM 改写策略源码 + 3 道沙盒
 
 ---
 

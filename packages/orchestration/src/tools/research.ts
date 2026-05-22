@@ -42,13 +42,20 @@ export const researchDeepDiveTool = createTool({
     - 高频 / loop 内调用 —— 单次成本 3 次 LLM 调用，**不要在 N 个标的上循环**
 
     返回字段:
+    - research_id: UUID，本次研究的唯一标识；**透传给 paper.run_backtest / paper.list_backtest_runs / trade.create_plan 建立血缘**
     - rating: overweight / neutral / underweight
     - confidence: 0-1
     - thesis: 3-5 句核心论点（人类可读）
     - risks: 主要风险点（给 risk agent 提示重点）
     - suggested_action: 给 trader 的执行建议（"open_long 0.02 with stop below X"）
-    - briefs: 原始 analyst briefs（technical + fundamental）
+    - factors: 结构化影响因子列表（kind / value / strength / horizon / explanation）
+    - signals: 因子合成的方向性信号（direction / strength / timeframe / derived_from）
+    - **strategy_hint**: { family, params, reasoning }——**机器消费**，喂给 paper.compose_strategy
+    - briefs: 原始 analyst briefs（technical + fundamental + sentiment）
     - horizon: intraday / swing / position 持仓周期
+
+    典型链路：deep_dive → compose_strategy(strategy_hint, factors) → run_backtest(strategyId, params, researchId)
+    → list_backtest_runs(researchId) 看历史 → create_plan(researchId, backtestRunId)
 
     坑：
     - asOf 必须是 ISO 8601 字符串；建议传 "现在 - 1 分钟" 避免 K 线还没落库

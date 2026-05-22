@@ -62,22 +62,49 @@ def make_bar_row(ts_iso: str, close: float = 100.0) -> dict[str, Any]:
 
 @pytest.fixture
 def fake_llm() -> FakeLLMClient:
-    """三角全套预设：technical / fundamental / manager。"""
+    """5 analyst + manager 全套预设。
+
+    ``FakeLLMClient`` 按 system prompt 子串匹配，**key 必须是唯一锚定的**：
+
+    - 不能用 ``"technical analyst"``  ── fundamental.py 里写了
+      "(the technical analyst handles that)" 会误中
+    - 不能用 ``"macro analyst"``      ── fundamental.py opening 是
+      "You are a fundamental / macro analyst" 会误中
+    - 都用 ``"You are a X"`` 全开头前缀，互相不交叉
+    """
     return FakeLLMClient(
         {
-            "technical analyst": {
+            "you are a technical analyst": {
                 "stance": "bullish",
                 "confidence": 0.7,
                 "summary": "20-bar SMA upcrossed 50-bar; RSI 58 not overbought.",
                 "key_points": ["SMA20 > SMA50", "RSI 58", "5-bar +3.2%"],
             },
-            "fundamental": {
+            "you are a fundamental / macro analyst": {
                 "stance": "neutral",
                 "confidence": 0.5,
                 "summary": "Macro environment mixed, halving tailwind partly priced in.",
                 "key_points": ["halving priced", "rate-cut delays"],
             },
-            "research manager": {
+            "you are a sentiment analyst": {
+                "stance": "bullish",
+                "confidence": 0.6,
+                "summary": "FNG 22 (Extreme Fear) — contrarian bullish bias.",
+                "key_points": ["FNG=22", "30d avg 35", "sustained fear 5d"],
+            },
+            "you are a risk analyst": {
+                "stance": "neutral",
+                "confidence": 0.55,
+                "summary": "ATR 2.1%, DD 9% — normal vol band, no fragility.",
+                "key_points": ["ATR/close 2.1%", "max_dd 9%", "vol z 0.3"],
+            },
+            "you are a macro analyst": {
+                "stance": "neutral",
+                "confidence": 0.5,
+                "summary": "FOMC in 4 weeks; calendar light near-term.",
+                "key_points": ["no imminent FOMC", "post-CPI window"],
+            },
+            "you are a research manager": {
                 "rating": "overweight",
                 "confidence": 0.65,
                 "thesis": (

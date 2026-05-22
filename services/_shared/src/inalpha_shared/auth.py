@@ -25,14 +25,37 @@ class User(BaseModel):
     roles: list[str] = []
 
 
+# JWT 算法白名单（D-8b' review B1：alg=none / alg=RS256 downgrade 防护）。
+# 配置层 jwt_algorithm 即使被恶改也不能跑出本集合；MVP 只用 HMAC 对称密钥。
+_ALLOWED_ALGORITHMS = frozenset({"HS256", "HS384", "HS512"})
+
+# 时钟漂移容忍秒数（D-8b' review B1：跨机微小漂移让 TOKEN_EXPIRED 误报）
+_JWT_LEEWAY_SECONDS = 30
+
+
 def verify_jwt(token: str, secret: str, algorithm: str = "HS256") -> dict[str, Any]:
     """验签 + 检查过期 + 返回 payload。
 
-    抛 ``UnauthorizedError``（子类 ``TOKEN_EXPIRED``）。
-    所有调用方 raise 后由 ``install_error_handler`` 统一处理。
+    安全约束（D-8b' review B1 修后强制）：
+
+    - 算法白名单：仅 ``HS256/384/512``，``none`` / RS256 downgrade attack 不通过
+    - 即使 ``settings.jwt_algorithm`` 被误配也不能突破白名单
+    - 30s leeway 容忍跨机时钟漂移
+
+    抛 ``UnauthorizedError``（子类 ``TOKEN_EXPIRED`` / ``INVALID_ALGORITHM``）。
     """
+    if algorithm not in _ALLOWED_ALGORITHMS:
+        raise UnauthorizedError(
+            f"jwt algorithm {algorithm!r} not in allowed set {sorted(_ALLOWED_ALGORITHMS)}",
+            code="INVALID_ALGORITHM",
+        )
     try:
-        payload = jwt.decode(token, secret, algorithms=[algorithm])
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=[algorithm],
+            leeway=_JWT_LEEWAY_SECONDS,
+        )
     except jwt.ExpiredSignatureError as e:
         raise UnauthorizedError("token expired", code="TOKEN_EXPIRED") from e
     except jwt.InvalidTokenError as e:

@@ -26,11 +26,24 @@ Return ONLY a JSON object with this exact shape:
   "stance": "bullish" | "bearish" | "neutral",
   "confidence": float in [0, 1],
   "summary": "1-2 sentence core thesis",
-  "key_points": ["bullet 1", "bullet 2", ...]  // up to 5 items
+  "key_points": ["bullet 1", "bullet 2", ...],   // up to 5 items
+  "factors": [                                    // 1-3 macro / sentiment factors
+    {
+      "name": "halving_cycle_phase",              // snake_case identifier
+      "kind": "macro" | "sentiment",
+      "value": "post_halving" | 0.62,             // string label or number
+      "strength": 0.5,                            // 0-1
+      "horizon": "swing" | "position",
+      "explanation": "Within 12 months of last halving, historically bullish"
+    }
+  ]
 }
 
-If you lack any specific recent data, say so explicitly in summary; do not invent
-prices, dates, or specific events. Confidence should reflect data freshness.
+Rules for factors:
+- Output 1-3 factors. Each must be a real macro / on-chain / regulatory driver — not invented prices or events.
+- "kind" should be "macro" for monetary / regulation / structural; "sentiment" for adoption / narrative.
+- If you lack any specific recent data, lower the strength, do not invent.
+- Confidence and factor.strength should reflect data freshness.
 """.strip()
 
 

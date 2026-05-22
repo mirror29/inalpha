@@ -6,7 +6,17 @@
  * - D-8b：research 1 个（deep_dive）
  */
 import { dataBackfillBarsTool, dataGetBarsTool, dataTools } from "./data.js";
-import { paperHealthTool, paperListStrategiesTool, paperRunBacktestTool, paperTools } from "./paper.js";
+import {
+  paperComposeStrategyTool,
+  paperGetAccountTool,
+  paperHealthTool,
+  paperListBacktestRunsTool,
+  paperListOrdersTool,
+  paperListPositionsTool,
+  paperListStrategiesTool,
+  paperRunBacktestTool,
+  paperTools,
+} from "./paper.js";
 import { researchDeepDiveTool, researchTools } from "./research.js";
 import {
   approveTradePlanTool,
@@ -24,7 +34,12 @@ export {
   dataGetBarsTool,
   executeTradePlanTool,
   getTradePlanTool,
+  paperComposeStrategyTool,
+  paperGetAccountTool,
   paperHealthTool,
+  paperListBacktestRunsTool,
+  paperListOrdersTool,
+  paperListPositionsTool,
   paperListStrategiesTool,
   paperRunBacktestTool,
   rejectTradePlanTool,
@@ -81,12 +96,19 @@ export const orchestratorToolList = [
   paperHealthTool,
   // 研究
   researchDeepDiveTool,
+  // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
+  paperComposeStrategyTool,
+  paperListBacktestRunsTool,
   // Plan/Exec 五件套（D-8a' 直接挂到 orchestrator）
   createTradePlanTool,
   approveTradePlanTool,
   rejectTradePlanTool,
   executeTradePlanTool,
   getTradePlanTool,
+  // D-8b 用户回溯查询
+  paperListOrdersTool,
+  paperListPositionsTool,
+  paperGetAccountTool,
 ] as const;
 
 /** 名字 → tool 索引，给 framework 路由用。 */

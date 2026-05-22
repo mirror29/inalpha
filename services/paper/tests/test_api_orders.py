@@ -1,7 +1,8 @@
-"""``POST /orders/submit`` API + ``OrderExecutor`` 单测。"""
-from __future__ import annotations
+"""``POST /orders/submit`` API + ``OrderExecutor`` 单测。
 
-from typing import Any
+D-8b 起：API 测试用 conftest 的 ``client`` fixture（启 lifespan + DB pool）。
+"""
+from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,17 +10,6 @@ from fastapi.testclient import TestClient
 from inalpha_paper.execution.order_executor import OrderExecutor
 
 pytestmark = pytest.mark.integration
-
-
-def _make_app() -> Any:
-    from inalpha_paper.main import app
-
-    return app
-
-
-@pytest.fixture
-def client() -> TestClient:
-    return TestClient(_make_app())
 
 
 # ─── OrderExecutor 纯函数单测 ───

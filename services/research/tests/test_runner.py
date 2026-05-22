@@ -21,12 +21,30 @@ def _as_of() -> datetime:
 
 @respx.mock
 async def test_deep_dive_runs_full_chain(fake_llm: FakeLLMClient) -> None:
-    """2 个 analyst 并行 + manager 综合 → ResearchPlan。"""
+    """5 个 analyst 并行 + manager 综合 → ResearchPlan。
+
+    sentiment 这条因为不 mock api.alternative.me 会失败兜底，但仍计入 briefs。
+    """
     bars = [
         make_bar_row((_as_of() - timedelta(hours=60 - i)).isoformat(), close=100 + i * 0.1)
         for i in range(60)
     ]
     respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=bars))
+    # 给 sentiment 也提供成功路径 —— 让全 5 analyst 都成功
+    respx.get("https://api.alternative.me/fng/").mock(
+        return_value=Response(
+            200,
+            json={
+                "data": [
+                    {"value": "22", "value_classification": "Extreme Fear", "timestamp": "1716163200"},
+                    *[
+                        {"value": str(30 + i % 10), "value_classification": "Fear", "timestamp": str(1716163200 - i * 86400)}
+                        for i in range(1, 30)
+                    ],
+                ]
+            },
+        )
+    )
 
     req = DeepDiveRequest(
         venue="binance",
@@ -44,32 +62,43 @@ async def test_deep_dive_runs_full_chain(fake_llm: FakeLLMClient) -> None:
     assert plan.symbol == "BTC/USDT"
     assert plan.rating in ("overweight", "neutral", "underweight")
     assert plan.confidence == 0.65  # conftest fixture
-    # 2 个 brief 都该在
+    # 5 个 brief 都该在
     analysts_seen = {b.analyst for b in plan.briefs}
-    assert analysts_seen == {"technical", "fundamental"}
-    # LLM 至少被调 3 次（2 analyst + 1 manager）
-    assert len(fake_llm.calls) == 3
+    assert analysts_seen == {"technical", "fundamental", "sentiment", "risk", "macro"}
+    # LLM 调 6 次（5 analyst + 1 manager）
+    assert len(fake_llm.calls) == 6
 
 
 @respx.mock
-async def test_deep_dive_continues_when_one_analyst_fails() -> None:
-    """data-service 500 让 technical 失败，但 fundamental 仍能跑 + manager 综合。"""
+async def test_deep_dive_continues_when_some_analysts_fail() -> None:
+    """data-service 500 + 无 FNG mock 让 technical/risk/sentiment 失败，
+    fundamental + macro 仍能跑（不依赖外部数据），manager 综合不抛。"""
     respx.get("http://data-mock.test/bars").mock(
         return_value=Response(500, json={"code": "DB_DOWN", "message": "down"})
+    )
+    # FNG 故意 500 让 sentiment 失败
+    respx.get("https://api.alternative.me/fng/").mock(
+        return_value=Response(500, json={"error": "down"})
     )
 
     llm = FakeLLMClient(
         {
-            "fundamental": {
+            # macro / fundamental 共用一份预设（两个 system prompt 都含 'fundamental' 子串）
+            "you are a fundamental / macro analyst": {
                 "stance": "neutral",
                 "confidence": 0.4,
                 "summary": "macro mixed",
             },
-            "research manager": {
+            "you are a macro analyst": {
+                "stance": "neutral",
+                "confidence": 0.4,
+                "summary": "macro calendar quiet",
+            },
+            "you are a research manager": {
                 "rating": "neutral",
                 "confidence": 0.4,
-                "thesis": "only fundamental usable",
-                "risks": ["technical analyst failed → reduced visibility"],
+                "thesis": "limited visibility — technical / risk / sentiment all down",
+                "risks": ["data-service down → reduced visibility"],
                 "suggested_action": "wait",
                 "horizon": "swing",
             },
@@ -89,10 +118,11 @@ async def test_deep_dive_continues_when_one_analyst_fails() -> None:
 
     # 仍然返 plan，不抛
     assert plan.rating == "neutral"
-    # 失败的 technical analyst 留下 placeholder brief
-    technical = next(b for b in plan.briefs if b.analyst == "technical")
-    assert technical.confidence == 0.0
-    assert technical.summary.startswith("(analyst failed)")
+    # 失败的 analyst 都留 placeholder brief
+    for failed_type in ("technical", "risk", "sentiment"):
+        b = next(b for b in plan.briefs if b.analyst == failed_type)
+        assert b.confidence == 0.0
+        assert b.summary.startswith("(analyst failed)")
 
 
 @respx.mock

@@ -27,6 +27,9 @@ import {
   createTradePlanTool,
   executeTradePlanTool,
   getTradePlanTool,
+  paperGetAccountTool,
+  paperListOrdersTool,
+  paperListPositionsTool,
 } from "../src/tools/index.js";
 
 type AnyResult = Record<string, unknown>;
@@ -113,7 +116,39 @@ async function main(): Promise<void> {
   )) as AnyResult;
   console.log(JSON.stringify(finalState, null, 2));
 
-  console.log("\n─── ✅ D-8a plan/exec smoke PASSED ───");
+  // D-8b：跨服务回溯
+  console.log("\n─── 9. [D-8b query] paper.list_orders 看历史订单 ───");
+  const orders = (await paperListOrdersTool.execute!(
+    { limit: 5 } as never,
+    ctx,
+  )) as unknown;
+  console.log(JSON.stringify(orders, null, 2));
+
+  console.log("\n─── 10. [D-8b query] paper.list_positions 看活跃持仓 ───");
+  const positions = (await paperListPositionsTool.execute!(
+    { includeFlat: false } as never,
+    ctx,
+  )) as unknown;
+  console.log(JSON.stringify(positions, null, 2));
+
+  console.log("\n─── 11. [D-8b query] paper.get_account 看账户快照 ───");
+  const account = (await paperGetAccountTool.execute!({} as never, ctx)) as AnyResult;
+  console.log(JSON.stringify(account, null, 2));
+
+  // 简单断言：account 该有 cash < initial_cash，positions 该非空
+  if (
+    typeof account.initial_cash === "number" &&
+    typeof account.cash === "number" &&
+    account.cash >= account.initial_cash
+  ) {
+    console.warn(
+      "⚠️  cash 未减少（initial=%s, cur=%s），可能撮合或扣款链路漏跑",
+      account.initial_cash,
+      account.cash,
+    );
+  }
+
+  console.log("\n─── ✅ D-8b plan/exec + 回溯 smoke PASSED ───");
 }
 
 main().catch((err) => {

@@ -25,10 +25,13 @@ import { Mastra } from "@mastra/core/mastra";
 import { PinoLogger } from "@mastra/loggers";
 
 import { orchestrator } from "./agents/orchestrator.js";
+import { helloSpikeWorkflow } from "./workflows/_hello.js";
 
 export const mastra = new Mastra({
   // D-8a'：只剩 orchestrator 一个 agent；trader/risk subagent 已废弃
   // 安全护栏从"agent prompt + tool 集隔离"下沉到"plan store + permissions deny"
   agents: { orchestrator },
+  // ADR-0025 spike：hello_spike 验证 Mastra 1.36 workflow API（动 swarm 前先确认 API 没变）
+  workflows: { hello_spike: helloSpikeWorkflow },
   logger: new PinoLogger({ name: "inalpha", level: "info" }),
 });
