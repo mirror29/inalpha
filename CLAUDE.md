@@ -50,10 +50,10 @@
 pnpm i                                  # Node 包
 uv sync                                 # Python 包
 
-# 起 services（分别开 terminal）
-cd services/data  && uv run python -m inalpha_data.main
-cd services/paper && uv run python -m inalpha_paper.main
-cd packages/orchestration && pnpm dev   # mastra dev
+# 一键起所有 service（推荐）
+bash scripts/dev.sh                     # data:8001 + paper:8002 + mastra:4111
+
+# 手动起：见 AGENTS.md §4 的 3-terminal 写法
 
 # 跨文件一致性检验
 bash scripts/check-consistency.sh
@@ -63,8 +63,10 @@ bash scripts/check-consistency.sh
 
 - [ ] 填回 §5 端到端 smoke test 最小命令
 - [x] D-8a 完成（2026-05-21）：Plan/Exec in-memory + agent 三分
+- [x] 运营基础设施 P0（2026-05-22）：.github 模板 + CONTRIBUTING/COC/SECURITY + scripts/dev.sh + README 钩子段；运营策略归档至 `docs/miro/运营/`
 - [ ] D-8b：trade_plans / approval_tokens Postgres 表 + alembic migration
 - [ ] D-9：Risk agent 规则化（max notional / 价格偏离）+ paper RiskEngine 真接入
+- [ ] 运营 P1：2 篇深度博客 + Demo 录屏（依赖 D-8b 完成后再启动）
 - [ ] 多设备 / 多人协作时启用 user 层 memory（`~/.inalpha/CLAUDE.md`）
 
 ---

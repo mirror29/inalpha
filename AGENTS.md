@@ -42,10 +42,15 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**，重度
 pnpm i                                  # Node 包（packages/orchestration）
 uv sync                                 # Python 包（services/*）
 
-# 起 services（分别开 terminal）
-cd services/data  && uv run python -m inalpha_data.main
-cd services/paper && uv run python -m inalpha_paper.main
-cd packages/orchestration && pnpm dev   # mastra dev
+# 一键起所有 service（推荐）
+bash scripts/dev.sh                     # data:8001 + paper:8002 + mastra:4111
+bash scripts/dev.sh logs                # 跟随日志
+bash scripts/dev.sh stop                # 停止全部
+
+# 手动起（如果想要 3 个独立 terminal）
+cd services/data  && uv run uvicorn inalpha_data.main:app  --port 8001 --reload
+cd services/paper && uv run uvicorn inalpha_paper.main:app --port 8002 --reload
+cd packages/orchestration && pnpm dev
 
 # 跨文件一致性检验（提交前跑一次）
 bash scripts/check-consistency.sh

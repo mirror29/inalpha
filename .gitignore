@@ -51,6 +51,7 @@ Cargo.lock
 /checkpoints/
 /mlruns/
 /tmp/
+.tmp/
 .cache/
 *.parquet
 *.feather
