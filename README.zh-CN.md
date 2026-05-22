@@ -43,76 +43,95 @@ Inalpha 是一个**面向严肃研究的开源量化交易框架**。它把多 a
 
 ---
 
-## Architecture
+## Agent Runtime
 
 ```mermaid
-flowchart TB
-    User([User])
+graph TB
+    User["User"]
+    Slash["Slash command - bypass LLM"]
+    Status["Statusline - side channel"]
 
-    subgraph UI["apps/web · Next.js 16 + CopilotKit"]
-        Chat[Conversational UI]
+    subgraph SG_AGENTS ["Mastra agents"]
+        Orch["Orchestrator"]
+        Trader["Trader - intent only"]
+        Risk["Risk - deny by default"]
+        Orch -.->|delegate| Trader
+        Orch -.->|delegate| Risk
     end
 
-    subgraph Orch["packages/orchestration · Mastra (TypeScript)"]
-        Orchestrator{{"Orchestrator<br/>supervisor"}}
-
-        subgraph Agents["Sub-agents"]
-            Trader["Trader<br/>(intent only)"]
-            Risk["Risk<br/>(deny by default)"]
-            ResearchHub["research-hub<br/>(analysts + bull/bear/risk debate)"]
-        end
-
-        subgraph Middleware["Tool middleware"]
-            Hooks["Hooks<br/>PreToolUse · PostToolUse · Stop · SessionStart"]
-            Perm["Permission Engine<br/>allow · ask · deny"]
-        end
-
-        subgraph Tools["Tools"]
-            PlanTool["trade.create_plan<br/>trade.approve_plan<br/>trade.execute_plan"]
-            ReadTool["data.* · paper.get_* · research.deep_dive"]
-        end
-
-        PlanStore[("Plan Store<br/>trade_plans + approval_tokens")]
+    subgraph SG_MID ["Tool middleware"]
+        Pre["1 - PreToolUse hook"]
+        Perm{"2 - Permission Engine - allow / ask / deny"}
+        Post["4 - PostToolUse hook"]
+        Stop["Stop hook - pending plan check"]
     end
 
-    subgraph Kernel["Python services · FastAPI"]
-        Data["services/data<br/>CCXT · WS · history"]
-        Paper["services/paper<br/>Clock · MessageBus · Strategy · RiskEngine · Gateway"]
-        Research["services/research<br/>multi-agent debate"]
-        Factor["services/factor<br/>qlib (Phase F+)"]
+    Ask["3 - AskUserQuestion tool"]
+    PS["Plan Store + approval tokens"]
+    Paper["paper service - POST /orders/submit"]
+    Data["data service - CCXT and WS"]
+    Reject["rejected with reason"]
+
+    subgraph SG_EVO ["Strategy Evolution - async loop - Phase E+"]
+        Mutator["LLM Mutator - diff-based"]
+        SBox["3 sandbox gates"]
+        MAPE["MAP-Elites + Island Model"]
+        Mutator --> SBox
+        SBox --> MAPE
+        MAPE -.->|seed next gen| Mutator
     end
 
-    DB[("Postgres 17<br/>+ TimescaleDB")]
-    Binance[("Binance API<br/>via CCXT")]
-    LLM[("LLM Provider<br/>OpenAI / Anthropic")]
+    User --> Orch
+    Slash -.->|bypass LLM| Pre
 
-    User --> Chat
-    Chat --> Orchestrator
-    Orchestrator -.delegates.-> Trader
-    Orchestrator -.delegates.-> Risk
-    Orchestrator -.delegates.-> ResearchHub
+    Trader -->|tool call| Pre
+    Risk -->|tool call| Pre
 
-    Trader --> PlanTool
-    Risk --> PlanTool
-    PlanTool --> Hooks
-    ReadTool --> Hooks
-    Hooks --> Perm
-    Perm -->|allow / approved| PlanStore
-    PlanStore -->|execute<br/>w/ approval_token| Paper
+    Pre --> Perm
+    Perm -->|allow| Post
+    Perm -->|ask| Ask
+    Ask -->|user reply| Perm
+    Perm -->|deny| Reject
 
-    ReadTool --> Data
-    ResearchHub --> Research
-    Orchestrator --> LLM
-    ResearchHub --> LLM
-    Data --> Binance
-    Data --> DB
-    Paper --> DB
-    PlanStore -.future Postgres-.-> DB
+    Post -.->|trade tool| PS
+    Post --> Paper
+    Post --> Data
+
+    Paper -.->|tool_result| Orch
+    Data -.->|tool_result| Orch
+
+    Orch -->|turn end| Stop
+    Stop -->|force continue| Orch
+    Stop -->|done| Status
+    Status -.->|read-only| User
+
+    Orch -.->|evolve - MCP tool E4+| Mutator
+    MAPE -.->|promote winners| Paper
+
+    classDef io fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px
+    classDef agent fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px
+    classDef mid fill:#fef3c7,stroke:#d97706,stroke-width:1.5px
+    classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px
+    classDef store fill:#e5e7eb,stroke:#4b5563,stroke-width:1.5px
+    classDef reject fill:#fee2e2,stroke:#dc2626,stroke-width:1.5px
+    classDef evo fill:#fce7f3,stroke:#db2777,stroke-width:1.5px
+
+    class User,Slash,Status io
+    class Orch,Trader,Risk agent
+    class Pre,Perm,Post,Stop mid
+    class Ask,Paper,Data tool
+    class PS store
+    class Reject reject
+    class Mutator,SBox,MAPE evo
 ```
 
-三层各自独立、协议清晰：UI 通过对话表达意图，编排层调度 agent 与 tool，内核服务在 Python 中保持事件驱动的确定性。
+每次 agent turn 都流经一条确定性中间件：**PreToolUse → Permission Engine → PostToolUse**，turn 结束前由 **Stop hook** 检查有无未处理的 trade plan。用户有两条输入路径——自然对话（经 LLM）或 **slash command**（绕过 LLM，走确定性意图）；两条输出通道——agent 回复 + 只读 **Statusline**。
 
-**LLM 没有直接下单路径**。所有下单意图必须走 `trade.create_plan → trade.approve_plan → trade.execute_plan` 三段式，外层由 Hooks 中间件（5 类生命周期事件）与声明式 Permission Engine（allow / ask / deny）双层拦截；`approval_token` 一次性，默认 5 分钟过期。当前已落地的模块清单、未完成项、决策链路 sequence diagram 见 [`docs/04-current-state.md`](docs/04-current-state.md)。
+**LLM 没有直接下单路径**。所有下单意图必须走 `trade.create_plan → approve → execute_plan`，`approval_token` 一次性、默认 5 分钟过期。`ask` 分支以 **AskUserQuestion** tool 形式呈现，让用户确认成为一类 first-class 事件——而不是自由文本提问。
+
+**Strategy Evolution**（粉色，ADR-0020）是一条独立异步循环，与单次 agent turn 解耦：LLM 以 diff 形式变异策略源码，候选代码必须通过三道沙盒门（AST 审查 / 子进程隔离 / Strategy protocol 契约），MAP-Elites 网格 + Island Model 维持种群多样性。胜出的策略推回 `paper` 跑回测评估；自 E4 起以 MCP tool 形式暴露给 orchestrator，agent loop 可主动触发并消费进化结果。
+
+当前已落地的模块清单、未完成项、决策链路 sequence diagram 见 [`docs/04-current-state.md`](docs/04-current-state.md)。
 
 ---
 
