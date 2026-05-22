@@ -137,8 +137,20 @@ class Portfolio:
             self._positions[instrument_id] = pos
 
         was_flat = pos.is_flat
+        prev_qty = pos.quantity  # apply_fill 前的方向，用于 flip 检测
         pos.apply_fill(msg.side, msg.fill_quantity, msg.fill_price, msg.ts_event)
         now_flat = pos.is_flat
+        new_qty = pos.quantity
+
+        # 反向开仓（flip）：prev 与 new 都非零、方向相反；逻辑上等价于"先平掉旧 leg，
+        # 再用剩余 quantity 开新 leg"。Position.apply_fill 已经把被平那部分的 PnL
+        # 累计到 pos.realized_pnl 里（model/positions.py:82-90），这里只需 round-trip
+        # 入账 + 更新 baseline。**不 detect 的话 win_rate / round-trip 计数会长期错算**。
+        flipped = (
+            not was_flat
+            and not now_flat
+            and (prev_qty > 0) != (new_qty > 0)
+        )
 
         # 现金 + 手续费
         notional = msg.fill_quantity * msg.fill_price
@@ -150,7 +162,7 @@ class Portfolio:
         self._total_fees += fee
         self._trade_count += 1
 
-        # 选择对应的 PositionEvent 类型
+        # 选择对应的 PositionEvent 类型 + round-trip 入账
         event_cls: type[PositionOpened] | type[PositionChanged] | type[PositionClosed]
         if was_flat and not now_flat:
             event_cls = PositionOpened
@@ -163,6 +175,11 @@ class Portfolio:
             self._last_realized_pnl[instrument_id] = pos.realized_pnl
         else:
             event_cls = PositionChanged
+            if flipped:
+                # 旧 leg 被平掉的 PnL 入账，baseline 重置到新 leg 起点
+                baseline = self._last_realized_pnl.get(instrument_id, 0.0)
+                self._closed_trade_pnls.append(pos.realized_pnl - baseline)
+                self._last_realized_pnl[instrument_id] = pos.realized_pnl
 
         pos_evt = event_cls(
             instrument_id=instrument_id,
