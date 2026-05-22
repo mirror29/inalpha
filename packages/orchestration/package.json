@@ -22,19 +22,20 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",
-    "@mastra/core": "^1.35.0",
+    "@mastra/core": "^1.36.0",
     "@mastra/libsql": "^1.11.1",
     "@mastra/loggers": "^1.1.1",
     "@mastra/memory": "^1.19.0",
-    "jose": "^5.9.0",
-    "zod": "^3.23.8"
+    "jose": "^6.2.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "mastra": "^1.9.3",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "@types/node": "^25.9.1",
+    "mastra": "^1.10.0",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vitest": "^4.1.7"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
