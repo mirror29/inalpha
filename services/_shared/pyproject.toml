@@ -2,6 +2,7 @@
 name = "inalpha-shared"
 version = "0.1.0"
 description = "Inalpha 各 service 共享的 FastAPI 基础设施（middleware / auth / db / errors）"
+license = "AGPL-3.0-only"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.136.0",

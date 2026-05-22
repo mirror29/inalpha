@@ -2,6 +2,7 @@
 name = "inalpha-research"
 version = "0.1.0"
 description = "Inalpha research service: 多 agent LLM 决策（TradingAgents 风格）"
+license = "AGPL-3.0-only"
 requires-python = ">=3.12"
 dependencies = [
     "inalpha-shared",

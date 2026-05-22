@@ -2,6 +2,7 @@
 name = "inalpha-paper"
 version = "0.1.0"
 description = "Inalpha paper / live / backtest 三合一引擎：内核（Clock + MessageBus + Strategy）+ Gateway + Engine"
+license = "AGPL-3.0-only"
 requires-python = ">=3.12"
 dependencies = [
     "inalpha-shared",
