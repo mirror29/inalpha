@@ -27,6 +27,7 @@ beforeEach(() => {
   setSettings({
     dataServiceUrl: "http://data-mock.test",
     paperServiceUrl: "http://paper-mock.test",
+    researchServiceUrl: "http://research-mock.test",
     jwtSecret: "test-secret-32-chars-or-more-xxxxxxx",
     jwtAlgorithm: "HS256",
   });

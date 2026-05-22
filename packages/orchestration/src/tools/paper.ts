@@ -83,7 +83,7 @@ export const paperRunBacktestTool = createTool({
       .string()
       .describe("已注册策略 ID（用 paper.list_strategies 查；目前只有 'sma_cross'）"),
     params: z
-      .record(z.unknown())
+      .record(z.string(), z.unknown())
       .default({})
       .describe("策略参数；sma_cross: { fast_period, slow_period, trade_size }"),
     venue: z.string().default("binance"),

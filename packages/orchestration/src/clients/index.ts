@@ -8,5 +8,11 @@ export type {
   SubmitOrderParams,
   SubmitOrderResult,
 } from "./paper.js";
+export { ResearchClient } from "./research.js";
+export type {
+  AnalystBrief,
+  DeepDiveParams,
+  ResearchPlan,
+} from "./research.js";
 export { HttpClient, HttpClientError } from "./http.js";
 export type { HttpClientOptions } from "./http.js";

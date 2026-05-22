@@ -18,26 +18,9 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { Agent } from "@mastra/core/agent";
 
 import { sharedMemory } from "../memory.js";
-import { wireToolList } from "../wired-tools.js";
-import {
-  dataBackfillBarsTool,
-  dataGetBarsTool,
-  paperHealthTool,
-  paperListStrategiesTool,
-  paperRunBacktestTool,
-} from "../../tools/index.js";
+import { wiredOrchestratorTools } from "../wired-tools.js";
 import { risk } from "./risk.js";
 import { trader } from "./trader.js";
-
-// 把 orchestrator 自己用的 tool 套上 hooks + permissions（与 trader / risk 共享同
-// 一个 runner / engine 实例——见 wired-tools.ts 单例约定）。
-const orchestratorTools = wireToolList([
-  dataGetBarsTool,
-  dataBackfillBarsTool,
-  paperListStrategiesTool,
-  paperRunBacktestTool,
-  paperHealthTool,
-]);
 
 const deepseek = createDeepSeek({
   apiKey: process.env.DEEPSEEK_API_KEY,
@@ -51,6 +34,8 @@ const INSTRUCTIONS = `
 - data.get_bars / data.backfill_bars —— 行情数据
 - paper.list_strategies / paper.run_backtest —— 回测查询
 - paper.health —— 健康检查
+- research.deep_dive —— 多 analyst LLM 研究，返 ResearchPlan（rating + thesis +
+  risks + suggested_action）；用户问 "BTC 现在能买吗" / "X 币观点" 时用
 
 ## 你必须委派的事（subagent）
 
@@ -108,8 +93,8 @@ export const orchestrator = new Agent({
   model: deepseek("deepseek-v4-pro"),
   // supervisor pattern：subagent 自动暴露成 tool 给 LLM 调
   agents: { trader, risk },
-  // 保留路由层级 tool（不含 trade-plan 系列，强制走 trader）
-  tools: Object.fromEntries(orchestratorTools.map((t) => [t.id, t])),
+  // 保留路由层级 tool（不含 trade-plan 系列，强制走 trader）+ research.deep_dive
+  tools: Object.fromEntries(wiredOrchestratorTools.map((t) => [t.id, t])),
   // 跨 turn 上下文：playground 第二轮"审批完了吗"能看到之前的 planId
   memory: sharedMemory,
   // supervisor pattern 单 turn 内会嵌套调 trader / risk，每个 subagent 又调多个 tool；

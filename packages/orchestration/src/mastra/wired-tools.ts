@@ -20,7 +20,12 @@ import {
 } from "../hooks/index.js";
 import { DEFAULT_PERMISSIONS, PermissionEngine } from "../permissions/index.js";
 import type { Decision } from "../permissions/index.js";
-import { allTools, riskTools, traderTools } from "../tools/index.js";
+import {
+  allTools,
+  orchestratorToolList,
+  riskTools,
+  traderTools,
+} from "../tools/index.js";
 
 /** 默认 hook runner —— 仅 audit-log（D-8a 起步）。 */
 function buildDefaultRunner(
@@ -105,3 +110,6 @@ export const wiredTraderTools = wireToolList(traderTools, sharedOpts);
 
 /** Risk subagent 用的 wrapped 子集。 */
 export const wiredRiskTools = wireToolList(riskTools, sharedOpts);
+
+/** orchestrator 用的 wrapped 子集（路由层级 tool + research.deep_dive）。 */
+export const wiredOrchestratorTools = wireToolList(orchestratorToolList, sharedOpts);

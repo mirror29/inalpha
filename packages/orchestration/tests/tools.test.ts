@@ -12,6 +12,7 @@ import {
   dataGetBarsTool,
   paperListStrategiesTool,
   paperRunBacktestTool,
+  researchDeepDiveTool,
 } from "../src/tools/index.js";
 
 const TEST_TOKEN = "test-token-doesnt-need-to-be-real";
@@ -20,6 +21,7 @@ beforeEach(() => {
   setSettings({
     dataServiceUrl: "http://data-mock.test",
     paperServiceUrl: "http://paper-mock.test",
+    researchServiceUrl: "http://research-mock.test",
     jwtSecret: "test-secret-32-chars-or-more-xxxxxxx",
     jwtAlgorithm: "HS256",
   });
@@ -270,5 +272,78 @@ describe("paper.run_backtest", () => {
         ctx(),
       ),
     ).rejects.toMatchObject({ code: "NO_BARS_AVAILABLE", status: 400 });
+  });
+});
+
+
+// ────────────────────────────────────────────────────────────────────
+// research.deep_dive
+// ────────────────────────────────────────────────────────────────────
+
+describe("research.deep_dive", () => {
+  it("posts to research-service /deep_dive and returns plan", async () => {
+    let capturedUrl = "";
+    let capturedBody = "";
+    mockFetch(async (url, init) => {
+      capturedUrl = url;
+      capturedBody = (init?.body as string) ?? "";
+      return new Response(
+        JSON.stringify({
+          venue: "binance",
+          symbol: "BTC/USDT",
+          timeframe: "1h",
+          as_of: "2026-05-21T12:00:00Z",
+          rating: "overweight",
+          confidence: 0.7,
+          thesis: "Clean upcross + neutral macro.",
+          risks: ["fast RSI overbought"],
+          suggested_action: "open_long 0.02",
+          briefs: [],
+          horizon: "swing",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const result = (await researchDeepDiveTool.execute!(
+      {
+        venue: "binance",
+        symbol: "BTC/USDT",
+        timeframe: "1h",
+        asOf: "2026-05-21T12:00:00Z",
+        lookbackDays: 30,
+        userQuestion: "should I buy BTC?",
+      } as never,
+      ctx(),
+    )) as { rating: string; suggested_action: string };
+
+    expect(capturedUrl).toContain("/deep_dive");
+    expect(capturedUrl).toContain("research-mock.test");
+    // 字段名 snake_case（与 services/research schemas.py 对齐）
+    const body = JSON.parse(capturedBody);
+    expect(body.as_of).toBe("2026-05-21T12:00:00Z");
+    expect(body.lookback_days).toBe(30);
+    expect(body.user_question).toBe("should I buy BTC?");
+
+    expect(result.rating).toBe("overweight");
+    expect(result.suggested_action).toBe("open_long 0.02");
+  });
+
+  it("rejects bad symbol via schema", () => {
+    const r = researchDeepDiveTool.inputSchema!.safeParse({
+      symbol: "BTCUSDT", // 缺斜杠
+      timeframe: "1h",
+      asOf: "2026-05-21T12:00:00Z",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects bad asOf via schema", () => {
+    const r = researchDeepDiveTool.inputSchema!.safeParse({
+      symbol: "BTC/USDT",
+      timeframe: "1h",
+      asOf: "not a datetime",
+    });
+    expect(r.success).toBe(false);
   });
 });
