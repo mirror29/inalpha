@@ -14,6 +14,29 @@ def test_test_clock_now() -> None:
     assert c.now().year >= 1970  # aware datetime
 
 
+def test_now_high_resolution_no_float_rounding() -> None:
+    """ts_ns 走整数路径，不丢精度（D-8b' review 高风险 #5）。
+
+    2026 年 ts_ns ≈ 1.7e18 超 float64 mantissa，旧版 fromtimestamp(ns / 1e9)
+    会丢 ~100ns。修复后保留到 microsecond 精度。
+    """
+    # 2026-05-22 12:34:56.123456 → 1747917296123456000 ns
+    ns_2026 = 1_747_917_296_123_456_000
+    c = TestClock(initial_ns=ns_2026)
+    dt = c.now()
+    assert dt.year == 2025  # epoch + 1747917296s 落在 2025-05 (UTC)
+    assert dt.microsecond == 123_456  # 微秒精度必须保留
+
+
+def test_now_handles_microsecond_round_up_carry() -> None:
+    """999_500ns 部分四舍五入到 1us，但 1_000_000us 必须进位到下一秒。"""
+    # 1 秒 + 999_999_500ns = 应进位到 2 秒整
+    c = TestClock(initial_ns=1_999_999_500)
+    dt = c.now()
+    assert dt.second == 2 % 60
+    assert dt.microsecond == 0
+
+
 def test_set_time_forward_only() -> None:
     c = TestClock(initial_ns=100)
     c.set_time(200)

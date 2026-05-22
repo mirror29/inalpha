@@ -11,14 +11,23 @@ from inalpha_paper.engine import metrics
 
 
 def test_periods_per_year_known_timeframes() -> None:
+    """常用 + CCXT 全覆盖（review 高风险 #4：metrics 缺 timeframe 让回测 500）。"""
     assert metrics.periods_per_year("1d") == 365
     assert metrics.periods_per_year("1h") == 8_760
     assert metrics.periods_per_year("1m") == 525_600
+    # 之前缺失的几个 timeframe，data-service connectors 都支持
+    assert metrics.periods_per_year("2h") == 12 * 365
+    assert metrics.periods_per_year("3m") == 20 * 24 * 365
+    assert metrics.periods_per_year("8h") == 3 * 365
+    assert metrics.periods_per_year("12h") == 2 * 365
+    assert metrics.periods_per_year("3d") == 365 // 3
+    assert metrics.periods_per_year("1w") == 52
+    assert metrics.periods_per_year("1M") == 12
 
 
 def test_periods_per_year_unknown_raises() -> None:
     with pytest.raises(ValueError, match="unknown timeframe"):
-        metrics.periods_per_year("2h")
+        metrics.periods_per_year("13m")  # 不是 CCXT 标准 timeframe
 
 
 # ─── bar_returns ───

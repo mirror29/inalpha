@@ -17,21 +17,38 @@ import math
 import statistics
 from typing import Final
 
-#: timeframe -> 每年 bar 数（用于年化）
+#: timeframe -> 每年 bar 数（crypto 24/7，按 365 天算）
 #:
-#: 1m=525600  5m=105120  15m=35040  1h=8760  4h=2190  1d=365
+#: 覆盖 CCXT / Binance 常见 timeframe；data-service connectors 支持哪些
+#: 这里必须都列出，否则 backtest 直接 500（D-8b' review 高风险 #4）。
 PERIODS_PER_YEAR: Final[dict[str, int]] = {
-    "1m": 525_600,
-    "5m": 105_120,
-    "15m": 35_040,
-    "1h": 8_760,
-    "4h": 2_190,
+    # 分钟级
+    "1m": 60 * 24 * 365,
+    "3m": 20 * 24 * 365,
+    "5m": 12 * 24 * 365,
+    "15m": 4 * 24 * 365,
+    "30m": 2 * 24 * 365,
+    # 小时级
+    "1h": 24 * 365,
+    "2h": 12 * 365,
+    "4h": 6 * 365,
+    "6h": 4 * 365,
+    "8h": 3 * 365,
+    "12h": 2 * 365,
+    # 日级及以上
     "1d": 365,
+    "3d": 365 // 3,
+    "1w": 52,
+    "1M": 12,
 }
 
 
 def periods_per_year(timeframe: str) -> int:
-    """timeframe 字符串 -> 年化系数。未知 timeframe 抛 ``ValueError``。"""
+    """timeframe 字符串 -> 年化系数。未知 timeframe 抛 ``ValueError``。
+
+    支持 CCXT / Binance 全部常见 timeframe（crypto 24/7 假设）。如果上游加新
+    timeframe，必须在这里同步登记，否则 metrics 算不出会把 backtest 整链路炸 500。
+    """
     if timeframe not in PERIODS_PER_YEAR:
         raise ValueError(
             f"unknown timeframe {timeframe!r}; supported: {sorted(PERIODS_PER_YEAR)}"

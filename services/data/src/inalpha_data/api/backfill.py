@@ -20,6 +20,11 @@ _logger = get_logger(__name__)
 # 单次 fetch 上限（Binance 默认 500，可调到 1000）
 _BATCH_LIMIT = 1000
 
+# 跨度硬限：跨度 * timeframe 太大就拒绝
+# D-8b' review 高风险 #6：长跨度同步 backfill 会卡死请求线程（1 年 1m ≈ 525k 条 / batch
+# = 525 次顺序 fetch_ohlcv × 200ms = ~105 秒），caller 30s 早熔断但 connector 还跑
+_MAX_BARS_PER_REQUEST = 50_000
+
 
 @router.post("/backfill/bars", response_model=BackfillResponse)
 async def backfill_bars(
@@ -31,6 +36,9 @@ async def backfill_bars(
     """从 Binance 拉指定时段的 K 线，幂等写入 TimescaleDB。
 
     实现：分批 ``fetch_ohlcv`` + ``executemany`` ON CONFLICT DO UPDATE。
+
+    **硬限**：``(to_ts - from_ts) / timeframe`` 估算 bar 数 > 50k 时直接拒绝
+    （提示用户拆窗口或换 timeframe）。避免一次请求几分钟级阻塞。
     """
     if req.from_ts > req.to_ts:
         raise ValidationError("from_ts must be <= to_ts")
@@ -43,6 +51,21 @@ async def backfill_bars(
         raise ValidationError(
             f"only binance is supported in MVP, got {req.venue!r}",
             details={"venue": req.venue},
+        )
+
+    span_seconds = (req.to_ts - req.from_ts).total_seconds()
+    estimated_bars = int(span_seconds / TIMEFRAME_SECONDS[req.timeframe])
+    if estimated_bars > _MAX_BARS_PER_REQUEST:
+        raise ValidationError(
+            f"requested span too large: ~{estimated_bars} bars > limit {_MAX_BARS_PER_REQUEST}; "
+            f"split into smaller windows or use larger timeframe",
+            code="BACKFILL_SPAN_TOO_LARGE",
+            details={
+                "estimated_bars": estimated_bars,
+                "max_bars": _MAX_BARS_PER_REQUEST,
+                "timeframe": req.timeframe,
+                "span_seconds": int(span_seconds),
+            },
         )
 
     tf_seconds = TIMEFRAME_SECONDS[req.timeframe]

@@ -36,8 +36,20 @@ class Clock(ABC):
         """当前时间（纳秒 since UTC epoch）。"""
 
     def now(self) -> datetime:
-        """当前时间（aware datetime, UTC）。"""
-        return datetime.fromtimestamp(self.now_ns() / 1_000_000_000, tz=UTC)
+        """当前时间（aware datetime, UTC）。
+
+        实现注：用整除把秒、纳秒拆开再合 microsecond，避免 float 损失精度
+        （ts_ns ≈ 1.7e18 已超 float64 mantissa 精度，2026 年起 / 1e9 会丢 ~100ns）。
+        """
+        ns = self.now_ns()
+        secs, ns_rem = divmod(ns, 1_000_000_000)
+        # datetime 只到 microsecond，纳秒精度做四舍五入到 us
+        micros = (ns_rem + 500) // 1_000
+        # 进位（999_500ns → 1_000_000us 需要顺延到下一秒）
+        if micros >= 1_000_000:
+            secs += 1
+            micros -= 1_000_000
+        return datetime.fromtimestamp(secs, tz=UTC).replace(microsecond=micros)
 
     @abstractmethod
     def set_timer(self, name: str, interval_ns: int, callback: TimerCallback) -> None:

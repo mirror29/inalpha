@@ -29,6 +29,29 @@ def test_backfill_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_backfill_rejects_oversized_span(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """跨度 > 50k bars 直接拒绝（D-8b' review 高风险 #6 防止请求线程卡死）。"""
+    # 1 年 1m = 525k bars，远超 50k 上限
+    r = client.post(
+        "/backfill/bars",
+        headers=auth_headers,
+        json={
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1m",
+            "from_ts": "2025-01-01T00:00:00Z",
+            "to_ts": "2026-01-01T00:00:00Z",
+        },
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert body["code"] == "BACKFILL_SPAN_TOO_LARGE"
+    assert body["details"]["estimated_bars"] > 500_000
+    assert body["details"]["max_bars"] == 50_000
+
+
 def test_backfill_then_query_round_trip(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:

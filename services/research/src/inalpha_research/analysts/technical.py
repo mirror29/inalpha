@@ -19,10 +19,27 @@ Return ONLY a JSON object with this exact shape:
   "stance": "bullish" | "bearish" | "neutral",
   "confidence": float in [0, 1],
   "summary": "1-2 sentence core conclusion",
-  "key_points": ["bullet 1", "bullet 2", ...]  // up to 5 items
+  "key_points": ["bullet 1", "bullet 2", ...],   // up to 5 items
+  "factors": [                                    // 2-4 structured factors
+    {
+      "name": "sma20_above_sma50",                // snake_case identifier
+      "kind": "momentum" | "mean_reversion" | "volatility" | "macro" | "sentiment",
+      "value": 1.02,                              // numeric, OR "high"/"medium"/"low"
+      "strength": 0.7,                            // 0-1, how strong this factor is
+      "horizon": "intraday" | "swing" | "position",
+      "explanation": "20-bar SMA crossed above 50-bar by 2%"
+    }
+  ]
 }
 
-Be terse. Refuse to fabricate indicators that weren't given.
+Rules for factors:
+- Output 2-4 factors. Each must be derivable from the indicator snapshot or bars given.
+- "kind" classifies the factor mechanism:
+    momentum         = trend / breakout / cross  (e.g. SMA cross, MACD up)
+    mean_reversion   = RSI extreme, distance from moving average, BB squeeze
+    volatility       = ATR spike, range expansion / contraction
+- Numeric "value" is preferred; only use the string buckets when no number applies.
+- Be terse. Refuse to fabricate indicators that weren't given.
 """.strip()
 
 
@@ -76,8 +93,10 @@ def _build_indicator_snapshot(closes: list[float]) -> dict[str, Any]:
         return {"available": False}
 
     last = closes[-1]
-    sma20 = sum(closes[-20:]) / min(n, 20)
-    sma50 = sum(closes[-50:]) / min(n, 50) if n >= 20 else None
+    # SMA：样本不够时返 None 而不是"半段平均"（D-8b' review B14：旧版 n>=20 时也
+    # 算 sma50，LLM 误把短期均值当 50 周期均线判断）
+    sma20 = sum(closes[-20:]) / 20 if n >= 20 else None
+    sma50 = sum(closes[-50:]) / 50 if n >= 50 else None
 
     # 简化 RSI(14)：n < 15 直接 None
     rsi14: float | None = None

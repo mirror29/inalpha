@@ -21,20 +21,20 @@ Portfolio。当前文件**只关心一次成交结算**。
 """
 from __future__ import annotations
 
-import itertools
+import secrets
 from datetime import UTC, datetime
-from threading import Lock
 from typing import Literal
-
-_counter = itertools.count(1)
-_lock = Lock()
 
 
 def _next_client_order_id(prefix: str = "ord") -> str:
-    """进程内单调自增的 ``client_order_id``。线程安全（FastAPI sync route 也安全）。"""
-    with _lock:
-        n = next(_counter)
-    return f"{prefix}-{n:08d}"
+    """``client_order_id`` —— 12 字符 hex 随机后缀，跨进程 / 跨 worker 唯一。
+
+    旧实现是 ``itertools.count`` 进程级单调，``uvicorn --workers N>1`` 会让多个
+    worker 都从 1 开始 → **client_order_id 重复**，撮合 / 审计混乱（review C3）。
+    改用 ``secrets.token_hex(6)``（48-bit 随机熵），D-8a' stateless 撮合够用；
+    D-8b 持久化后改用 DB sequence 或 UUIDv7 保单调。
+    """
+    return f"{prefix}-{secrets.token_hex(6)}"
 
 
 class OrderExecutor:
