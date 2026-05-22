@@ -39,6 +39,34 @@ export type BacktestParams = {
   feeRate?: number;
 };
 
+export type SubmitOrderParams = {
+  venue?: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  type: "MARKET" | "LIMIT";
+  quantity: number;
+  price?: number;
+  refPrice: number;
+  feeRate?: number;
+};
+
+export type SubmitOrderResult = {
+  client_order_id: string;
+  venue: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  order_type: "MARKET" | "LIMIT";
+  requested_quantity: number;
+  requested_price: number | null;
+  status: "FILLED" | "REJECTED";
+  filled_quantity: number;
+  avg_fill_price: number | null;
+  fee: number;
+  notional: number;
+  rejection_reason: string | null;
+  ts_event: string;
+};
+
 export class PaperClient {
   private readonly http: HttpClient;
 
@@ -64,6 +92,19 @@ export class PaperClient {
       from_ts: params.fromTs,
       to_ts: params.toTs,
       initial_cash: params.initialCash ?? 10_000,
+      fee_rate: params.feeRate ?? 0.001,
+    });
+  }
+
+  async submitOrder(params: SubmitOrderParams): Promise<SubmitOrderResult> {
+    return await this.http.post<SubmitOrderResult>("/orders/submit", {
+      venue: params.venue ?? "binance",
+      symbol: params.symbol,
+      side: params.side,
+      type: params.type,
+      quantity: params.quantity,
+      price: params.price,
+      ref_price: params.refPrice,
       fee_rate: params.feeRate ?? 0.001,
     });
   }

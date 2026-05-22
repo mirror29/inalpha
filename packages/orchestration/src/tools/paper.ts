@@ -71,6 +71,12 @@ export const paperRunBacktestTool = createTool({
       （报错 NO_BARS_AVAILABLE 时按 hint 操作）
     - params 是策略特定 dict，sma_cross 支持 fast_period / slow_period / trade_size
     - 报告里 num_trades=0 不一定是 bug，可能是趋势单边没触发交叉
+
+    报告字段（D-7+）：
+    - 基础：total_return_pct / num_trades / total_fees / final_equity / num_bars_processed
+    - 绩效：sharpe / sortino / max_drawdown_pct / win_rate（数据不足时为 null）
+    - equity_curve：[(ts, equity)] 序列，前端可直接画图
+    - final_positions：结束时残留持仓（趋势策略可能持有到尾盘）
   `.trim(),
   inputSchema: z.object({
     strategyId: z
