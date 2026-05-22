@@ -73,3 +73,33 @@ class HealthResponse(BaseModel):
     service: str
     version: str
     db: str = "ok"
+
+
+# ────────────────────────────────────────────────────────────────────
+# Ticker（D-8a' 加：给 paper /orders/submit 服务端取 refPrice 用）
+# ────────────────────────────────────────────────────────────────────
+
+
+class TickerQuery(BaseModel):
+    """``GET /ticker`` 的 query 参数。"""
+
+    venue: str = Field(default="binance", description="交易所标识")
+    symbol: str = Field(..., examples=["BTC/USDT"])
+
+
+class TickerResponse(BaseModel):
+    """单次最新价。
+
+    取值优先级：
+    1. DB 里最新一根 1m bar.close（若 stale_seconds < 阈值）
+    2. fallback：DB 里最新一根 1h bar.close
+    3. 都没有 → 返回 404 NO_PRICE_AVAILABLE（让 caller 决定 backfill 还是失败）
+    """
+
+    venue: str
+    symbol: str
+    price: float
+    ts: datetime
+    source: str = Field(description="数据源：'db_1m' | 'db_1h' | 'binance_ticker'（未来）")
+    is_stale: bool = Field(description="距离当前是否超过 5 分钟")
+    stale_seconds: int = Field(description="数据相对 now 的秒数")

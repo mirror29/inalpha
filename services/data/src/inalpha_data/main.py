@@ -17,7 +17,7 @@ from inalpha_shared import (
 )
 
 from . import __version__
-from .api import backfill, bars, health
+from .api import backfill, bars, health, ticker
 from .config import get_data_settings
 from .connectors.binance import close_connector, init_connector
 
@@ -52,3 +52,4 @@ install_error_handler(app)
 app.include_router(health.router)
 app.include_router(bars.router)
 app.include_router(backfill.router)
+app.include_router(ticker.router)
