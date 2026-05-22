@@ -1,16 +1,16 @@
 /**
- * D-8a plan/exec 真服务 e2e smoke test。
+ * D-8a' plan/exec 真服务 e2e smoke test。
  *
  * 前置：services/data + services/paper 都在跑。
  *
  *   pnpm tsx scripts/smoke-plan.ts
  *
- * 这个脚本不调 LLM，**直接调 tool 函数模拟 agent 行为**：
+ * 这个脚本不调 LLM，**直接调 tool 函数模拟 orchestrator 行为**：
  *
- * 1. trader 角度：data.get_bars 拿 refPrice → trade.create_plan
- * 2. risk 角度：trade.get_plan 看内容 → trade.approve_plan 发 token
- * 3. trader 角度：trade.execute_plan(planId, token) → paper /orders/submit → 拿 order result
- * 4. 跑一遍"未审批就执行"的拒绝路径，确认护栏生效
+ * 1. trade.create_plan（不传 refPrice，paper 服务端自取）
+ * 2. trade.get_plan / trade.approve_plan → 发 token
+ * 3. trade.execute_plan(planId, token) → paper /orders/submit → 拿 order result
+ * 4. 跑两条反例路径：未审批就 execute、token 重放——确认护栏生效
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -25,7 +25,6 @@ import { mintServiceToken } from "../src/auth.js";
 import {
   approveTradePlanTool,
   createTradePlanTool,
-  dataGetBarsTool,
   executeTradePlanTool,
   getTradePlanTool,
 } from "../src/tools/index.js";
@@ -36,24 +35,8 @@ async function main(): Promise<void> {
   const token = await mintServiceToken({ sub: "service:smoke" });
   const ctx = { requestContext: { authToken: token } } as never;
 
-  console.log("─── 1. [trader] 取最近 1 根 BTC/USDT 1h bar 当 refPrice ───");
-  const bars = (await dataGetBarsTool.execute!(
-    {
-      venue: "binance",
-      symbol: "BTC/USDT",
-      timeframe: "1h",
-      limit: 1,
-    } as never,
-    ctx,
-  )) as { bars: { close: number; ts: string }[]; count: number };
-  if (bars.count === 0) {
-    throw new Error("no bars in DB; run `pnpm smoke` first to backfill");
-  }
-  const latest = bars.bars[bars.bars.length - 1];
-  const refPrice = latest.close;
-  console.log(`refPrice = ${refPrice} @ ${latest.ts}`);
-
-  console.log("\n─── 2. [trader] trade.create_plan(open_long, 0.0001 BTC, MARKET) ───");
+  // D-8a'：不再需要 LLM/smoke 自取 refPrice——paper /orders/submit 服务端调 data /ticker 自取
+  console.log("─── 1. trade.create_plan(open_long, 0.0001 BTC, MARKET) ───");
   const planResult = (await createTradePlanTool.execute!(
     {
       intent: "open_long",
@@ -62,8 +45,7 @@ async function main(): Promise<void> {
       side: "BUY",
       orderType: "MARKET",
       quantity: 0.0001,
-      refPrice,
-      rationale: "smoke test：MARKET 单跑 plan/exec 链路",
+      rationale: "smoke test：MARKET 单跑 plan/exec 链路（refPrice 服务端自取）",
       expireInSeconds: 300,
     } as never,
     ctx,
@@ -74,7 +56,7 @@ async function main(): Promise<void> {
   }
   const planId = planResult.planId as string;
 
-  console.log("\n─── 3. [trader, 反例] 不审批直接 execute → 应被拒 ───");
+  console.log("\n─── 3. [反例] 不审批直接 execute → 应被拒 ───");
   const earlyExec = (await executeTradePlanTool.execute!(
     { planId, approvalToken: "00000000-0000-0000-0000-000000000000" } as never,
     ctx,
@@ -88,11 +70,11 @@ async function main(): Promise<void> {
   }
   console.log("✓ 护栏生效：未审批的 plan 拒绝执行");
 
-  console.log("\n─── 4. [risk] trade.get_plan 查看 plan 内容 ───");
+  console.log("\n─── 4. [approve] trade.get_plan 查看 plan 内容 ───");
   const got = (await getTradePlanTool.execute!({ planId } as never, ctx)) as AnyResult;
   console.log(JSON.stringify(got, null, 2));
 
-  console.log("\n─── 5. [risk] trade.approve_plan → 拿 token ───");
+  console.log("\n─── 5. [approve] trade.approve_plan → 拿 token ───");
   const approval = (await approveTradePlanTool.execute!(
     { planId, approver: "risk-agent" } as never,
     ctx,
@@ -103,7 +85,7 @@ async function main(): Promise<void> {
   }
   const approvalToken = approval.approvalToken as string;
 
-  console.log("\n─── 6. [trader] trade.execute_plan(planId, token) ───");
+  console.log("\n─── 6. [exec] trade.execute_plan(planId, token) ───");
   const exec = (await executeTradePlanTool.execute!(
     { planId, approvalToken } as never,
     ctx,
@@ -113,7 +95,7 @@ async function main(): Promise<void> {
     throw new Error(`execute failed: ${JSON.stringify(exec)}`);
   }
 
-  console.log("\n─── 7. [trader, 反例] 二次 execute 同 token → 应被拒（token 一次性） ───");
+  console.log("\n─── 7. [反例] 二次 execute 同 token → 应被拒（token 一次性） ───");
   const replay = (await executeTradePlanTool.execute!(
     { planId, approvalToken } as never,
     ctx,
@@ -124,7 +106,7 @@ async function main(): Promise<void> {
   }
   console.log("✓ token 一次性护栏生效");
 
-  console.log("\n─── 8. [trader] trade.get_plan 看终态 ───");
+  console.log("\n─── 8. [exec] trade.get_plan 看终态 ───");
   const finalState = (await getTradePlanTool.execute!(
     { planId } as never,
     ctx,
