@@ -35,7 +35,7 @@ def test_verify_jwt_valid() -> None:
 
 
 def test_verify_jwt_expired() -> None:
-    token = make_token({}, exp_offset=-10)
+    token = make_token({}, exp_offset=-120)
     with pytest.raises(UnauthorizedError) as exc_info:
         verify_jwt(token, SECRET)
     assert exc_info.value.detail["code"] == "TOKEN_EXPIRED"
@@ -99,7 +99,7 @@ def test_get_current_user_wrong_scheme(app_with_auth: FastAPI) -> None:
 
 def test_get_current_user_expired_token(app_with_auth: FastAPI) -> None:
     client = TestClient(app_with_auth)
-    token = make_token({}, exp_offset=-10)
+    token = make_token({}, exp_offset=-120)
     r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401
     assert r.json()["code"] == "TOKEN_EXPIRED"
@@ -112,3 +112,49 @@ def test_get_current_user_no_sub(app_with_auth: FastAPI) -> None:
     r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401
     assert r.json()["code"] == "INVALID_TOKEN_CLAIMS"
+
+
+# ---------- review B1：算法白名单 + leeway ----------
+
+
+def test_verify_jwt_rejects_none_algorithm() -> None:
+    """alg=none downgrade attack 必须被拒（review B1）。"""
+    token = make_token({})
+    with pytest.raises(UnauthorizedError) as exc_info:
+        verify_jwt(token, SECRET, algorithm="none")
+    assert exc_info.value.code == "INVALID_ALGORITHM"
+
+
+def test_verify_jwt_rejects_rs256_when_secret_is_hmac() -> None:
+    """alg=RS256 攻击（公开 RSA pubkey 当 HMAC key 签）必须被拒。"""
+    token = make_token({})
+    with pytest.raises(UnauthorizedError) as exc_info:
+        verify_jwt(token, SECRET, algorithm="RS256")
+    assert exc_info.value.code == "INVALID_ALGORITHM"
+
+
+def test_verify_jwt_leeway_accepts_recently_expired() -> None:
+    """30s leeway 容忍跨机微小时钟漂移（review B1）。"""
+    # 过期 5 秒前 —— 在 leeway 范围内
+    token = make_token({}, exp_offset=-5)
+    payload = verify_jwt(token, SECRET)
+    assert payload["sub"] == "user-123"
+
+
+def test_verify_jwt_long_expired_still_rejected() -> None:
+    """leeway 不应让真正过期的 token 通过 —— 30s 之外必须拒。"""
+    token = make_token({}, exp_offset=-120)
+    with pytest.raises(UnauthorizedError) as exc_info:
+        verify_jwt(token, SECRET)
+    assert exc_info.value.code == "TOKEN_EXPIRED"
+
+
+def test_verify_jwt_code_via_self_attr() -> None:
+    """配合 errors.py 修复：UnauthorizedError 子类的 code 走 self（review #1）。"""
+    token = make_token({}, exp_offset=-120)
+    try:
+        verify_jwt(token, SECRET)
+    except UnauthorizedError as e:
+        assert e.code == "TOKEN_EXPIRED"
+    else:
+        raise AssertionError("should have raised")
