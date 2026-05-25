@@ -88,7 +88,7 @@ def test_missing_side_field_raises() -> None:
 
 
 def test_invalid_side_raises() -> None:
-    with pytest.raises(ValueError, match="BUY.*SELL"):
+    with pytest.raises(ValueError, match=r"BUY.*SELL"):
         _build([{"ts": 1000, "side": "HOLD", "qty": 0.01}])
 
 
