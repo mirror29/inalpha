@@ -23,15 +23,46 @@ if (existsSync(envPath)) {
 
 import { Mastra } from "@mastra/core/mastra";
 import { PinoLogger } from "@mastra/loggers";
+import { ConsoleExporter, Observability, SamplingStrategyType } from "@mastra/observability";
 
+import { getSettings } from "../config.js";
+import { schedulerApiRoutes } from "../scheduler/api.js";
+import { bootstrapScheduler } from "../scheduler/index.js";
 import { orchestrator } from "./agents/orchestrator.js";
 import { helloSpikeWorkflow } from "./workflows/_hello.js";
+import { backtestGridWorkflow } from "./workflows/backtest-grid.js";
+
+// D-9：observability —— 追踪 agent / tool / workflow 全链路。
+// dev 用 ConsoleExporter 把 trace 直接打到 stdout，零额外存储依赖；
+// prod 可换 MastraStorageExporter（落 libsql / postgres）或 OTLP exporter（→ Jaeger / Tempo）。
+const observability = new Observability({
+  configs: {
+    default: {
+      serviceName: "inalpha-orchestration",
+      sampling: { type: SamplingStrategyType.ALWAYS },
+      exporters: [new ConsoleExporter()],
+    },
+  },
+});
 
 export const mastra = new Mastra({
   // D-8a'：只剩 orchestrator 一个 agent；trader/risk subagent 已废弃
   // 安全护栏从"agent prompt + tool 集隔离"下沉到"plan store + permissions deny"
   agents: { orchestrator },
-  // ADR-0025 spike：hello_spike 验证 Mastra 1.36 workflow API（动 swarm 前先确认 API 没变）
-  workflows: { hello_spike: helloSpikeWorkflow },
+  // ADR-0025 spike：hello_spike 验证 Mastra 1.36 workflow API（保留作为活的 API 参考）
+  // ADR-0025 §D3：backtest_grid Swarm S1
+  workflows: {
+    hello_spike: helloSpikeWorkflow,
+    backtest_grid: backtestGridWorkflow,
+  },
   logger: new PinoLogger({ name: "inalpha", level: "info" }),
+  observability,
+  // D-9：scheduler HTTP 管理面（与 mastra dev 共用 4111 端口）
+  server: { apiRoutes: schedulerApiRoutes },
 });
+
+// D-9：类 Hermes 定时 agent 模式。默认关闭，需在 .env 设 `SCHEDULER_ENABLED=true` 才启动。
+// 避免本地 dev 反复触发污染 paper 账户；进程退出时 SIGTERM/SIGINT hook 自动释放 advisory lock。
+if (getSettings().schedulerEnabled) {
+  bootstrapScheduler(mastra);
+}
