@@ -27,11 +27,16 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "paper.list_strategies",
     "paper.list_orders",
     "paper.list_positions",
+    "paper.list_backtest_runs",
     "paper.run_backtest",
+    "paper.compose_strategy",
     "paper.health",
     "paper.get_*",
     "research.deep_dive",
     "factor.*",
+
+    // Swarm 批量回测（ADR-0025）：只读，无下单路径
+    "swarm.*",
 
     // 策略 lifecycle（D-8b 起会有）
     "paper.start_strategy",

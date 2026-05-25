@@ -12,6 +12,8 @@ const SettingsSchema = z.object({
   researchServiceUrl: z.string().url().default("http://localhost:8003"),
   jwtSecret: z.string().min(16, "JWT_SECRET must be at least 16 chars"),
   jwtAlgorithm: z.literal("HS256").default("HS256"),
+  schedulerEnabled: z.coerce.boolean().default(false),
+  databaseUrl: z.string().min(1).optional(),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -32,6 +34,8 @@ export function getSettings(): Settings {
     researchServiceUrl: process.env.RESEARCH_SERVICE_URL,
     jwtSecret: process.env.JWT_SECRET,
     jwtAlgorithm: process.env.JWT_ALGORITHM,
+    schedulerEnabled: process.env.SCHEDULER_ENABLED,
+    databaseUrl: process.env.DATABASE_URL,
   });
 
   if (!parsed.success) {

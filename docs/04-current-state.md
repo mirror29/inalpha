@@ -120,6 +120,11 @@ sequenceDiagram
 
 - **D-8b**：`permissions.yaml` 配置文件化（目前在 `defaults.ts` 硬编码）
 - **D-9**：RiskEngine 规则化（max notional / 价格偏离 / 日损上限）+ paper-service 真接入
+- **D-9 · 定时 agent 模式**：类 Hermes cron 接入已落地 — `packages/orchestration/src/scheduler/`
+  + `scheduler_jobs` / `scheduler_runs` 两张表（migration 0004）+ croner 调度 + advisory lock
+  + `/api/scheduler/*` HTTP 管理面 + `scripts/scheduler-admin.html`。
+  默认 `SCHEDULER_ENABLED=false`；种子两个 job（`daily_btc_deep_dive` / `hourly_btc_backfill`）
+  enabled=false，需手动开启。
 - **delegation hop**（ADR-0012 补丁）：sub-strategy 派生计划的转授权链
 - **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate）尚未落地
 - **E1 进化**（ADR-0020）：LLM 改写策略源码 + 3 道沙盒

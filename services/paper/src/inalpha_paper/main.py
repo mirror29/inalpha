@@ -19,6 +19,8 @@ from inalpha_shared import (
 from . import __version__
 from .api import backtest, health, orders, strategies, trade_plans
 from .config import get_paper_settings
+from .engine.pool import init_pool as init_backtest_pool
+from .engine.pool import shutdown_pool as shutdown_backtest_pool
 
 _settings = get_paper_settings()
 configure_logging(level=_settings.log_level, service_name=_settings.service_name)
@@ -26,11 +28,17 @@ configure_logging(level=_settings.log_level, service_name=_settings.service_name
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """D-8b 起连 DB pool —— 持久化 orders / positions / trade_plans / accounts。"""
+    """启动 / 停机钩子。
+
+    - **DB pool**（D-8b）：持久化 orders / positions / trade_plans / accounts
+    - **Backtest ProcessPool**（Swarm S1, ADR-0025）：CPU 重活子进程池 + 预热 + rlimit
+    """
     await init_pool(_settings.database_url)
+    init_backtest_pool(_settings)
     try:
         yield
     finally:
+        shutdown_backtest_pool()
         await close_pool()
 
 

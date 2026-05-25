@@ -82,12 +82,38 @@ const INSTRUCTIONS = `
 任何市场任何 ticker（crypto / 美股 / A股 / 港股 / 日韩澳印巴英德 / 指数 / 宏观序列）
 都走同一条链路；具体 venue 由 step 1 前查表自动选。
 
-**0. 数据预检（D-9 multi-market 必做，crypto 可跳过）**：
-   非 binance venue（yfinance / akshare / fred 等）的标的，DB 里大概率**没数据**。
-   先调 data.get_bars({venue, symbol, timeframe, limit:5}) 探测——
-   - 返非空 → 跳过 backfill 直接进 step 1
-   - 返空（或少于 30 根）→ 先 data.backfill_bars({venue, symbol, timeframe, fromTs: <现在-45天>, toTs: <现在>})，再 step 1
-   - ⚠️ akshare 仅 1d/1wk/1mo；yfinance 1h 只能拿近 60 天；不确定时用 1d + lookbackDays=180，最稳
+**金融时效性硬约束（D-9）**：
+
+Inalpha 是金融 agent —— "数据 stale 几天" 等于"建议过时"。任何回测 / 研究 / 报价前
+必须确保数据 fresh 到 **as_of（当前时刻）**。下游 service 已内置：
+- services/{research,paper} 的 DataClient.get_bars 默认 fresh=True，内部先 backfill 再读 DB
+- paper.run_backtest 自动经过这层（拿到的就是最新）
+
+但你（orchestrator）还要做到：
+- 报告回测区间时，**核对 toTs == 当前日期**（如截止在 N 天前必须显式说明 "数据源截止 X，距今 N 天，原因 …"）
+- 用户问 "最新行情" / "现价" 时用 data.get_ticker 而非 get_bars
+- 用 research.deep_dive 时永远传当前 asOf（不是过去日期）
+
+**0. 数据预检（D-9 multi-market 必做）**：
+   非 binance venue（yfinance / akshare / fred 等）的标的，DB 数据**可能过时几天**。
+   关键：**不能只看 bar 数量判断 freshness**——5 根全是上周的数据也叫"返非空"，
+   但 deep_dive 拿到的就是 stale 数据 → analyst 输出过时观点。
+
+   正确做法（任选其一，**推荐 a**）：
+   - **a. 用 fresh=true 让 get_bars 内部自动 backfill**（最简、最稳）：
+     data.get_bars({venue, symbol, timeframe, limit:5, **fresh: true**})
+     → 内部先调 backfill 补到现在，再读 DB；返回的最新 bar 一定是当前最新
+   - b. 自己检查 freshness：
+     先 data.get_bars({...limit:5}) 看 bars[-1].ts；
+     如果 (现在 - bars[-1].ts) > 3 天 → 必须 data.backfill_bars 补到现在；
+     如果 ≤ 3 天 → 数据可用
+
+   **反例（不要犯）**：
+   - ❌ 看 "返非空 5 根" 就以为数据齐 —— 5 根可能全是 7 天前的，已经 stale
+   - ❌ 看 "bars 数量 >= 30 根" 就跳过 backfill —— 30 根可能是 1 个月前的历史
+   - ❌ 用 limit=5 + fresh=false 探测 + 跳过 backfill —— 等价"我连数据有多新都不知道就开始分析"
+
+   ⚠️ akshare 仅 1d/1wk/1mo；yfinance 1h 只能拿近 60 天；不确定时用 1d + lookbackDays=180，最稳
 
 1. **研究**：research.deep_dive({ symbol, timeframe, asOf: <现在>, lookbackDays: 30 })
    → 拿 ResearchPlan，**记下 research_id**；关注 strategy_hint / factors / thesis
@@ -225,10 +251,39 @@ data.* / paper.run_backtest 的 fromTs / toTs 都是 optional，省略时默认"
 - 工具不确定的参数不要瞎猜——先 ask 或先用 schema 默认值，不要凭印象编
 `.trim();
 
+/**
+ * Dynamic instructions —— 每次 invoke 重算，把今天日期注入 system prompt 头部。
+ *
+ * 原因（D-9 fix）：DeepSeek 训练 cutoff 通常落后真实时间 6-12 个月。问"近 30 天"时
+ * LLM 用记忆里的"以为现在"算时间窗口，跟用户真实当下错位。靠静态 system prompt
+ * 无解——module 加载时刻的日期会被冻结，dev 偶尔重启刷新但生产长期没用。
+ *
+ * **走 dynamic instructions 而不是 SessionStart hook**：Mastra 1.36 的 SessionStart
+ * 事件目前没有自动 fire 入口；改 dynamic 是更直接的修法，且每次 turn 都新鲜。
+ */
+function buildInstructions(): string {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  const isoFull = now.toISOString();
+  const runtimeFacts =
+    `<runtime_facts>\n` +
+    `Today (UTC) is ${dateStr}. Full ISO: ${isoFull}.\n\n` +
+    `**Date handling rules**:\n` +
+    `- Your training cutoff is months in the past; do NOT use your internal sense of "now".\n` +
+    `- When the user says "近 30 天 / last 30 days / 最近 / 这周 / 本月" — **omit** ` +
+    `\`from_ts\` / \`to_ts\` in tool inputs whenever the schema allows them to be optional. ` +
+    `Server uses the real \`now\` as default.\n` +
+    `- When the user gives an absolute date ("跑 2024 全年" / "from May 1 to today"), ` +
+    `compute the range relative to ${dateStr}.\n` +
+    `</runtime_facts>\n\n`;
+  return runtimeFacts + INSTRUCTIONS;
+}
+
 export const orchestrator = new Agent({
   id: "orchestrator",
   name: "orchestrator",
-  instructions: INSTRUCTIONS,
+  // dynamic instructions：每次 invoke 重算今天日期（D-9 fix）
+  instructions: buildInstructions,
   model: deepseek("deepseek-v4-pro"),
   // D-8a'：不挂 subagent，全部能力 tool 化直接调
   tools: Object.fromEntries(wiredOrchestratorTools.map((t) => [t.id, t])),

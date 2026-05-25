@@ -7,10 +7,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  DEFAULT_GRID_MAX,
   HookRunner,
+  createAuditLogHandler,
+  createGridSizeCapHandler,
+  createToolIdempotencyHandlers,
   defaultAuditRegistration,
   defaultGetSessionId,
-  createAuditLogHandler,
+  defaultGridSizeCapRegistration,
+  defaultIdempotencyRegistrations,
   toolMatches,
   withHooks,
 } from "../src/hooks/index.js";
@@ -574,5 +579,260 @@ describe("defaultGetSessionId", () => {
 
     await wrapped.execute!({}, { threadId: "thr-42" });
     expect(seenSessionId).toBe("thr-42");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// grid-size-cap (ADR-0025 §D4)
+// ────────────────────────────────────────────────────────────────────
+
+describe("grid-size-cap", () => {
+  const handler = createGridSizeCapHandler();
+
+  it("allows grid under default max (20)", async () => {
+    const r = await handler({
+      event: "PreToolUse",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: { strategies: ["a", "b", "c"], symbols: ["BTC", "ETH"] },
+    });
+    expect(r).toBeUndefined();
+  });
+
+  it("allows boundary case (exactly max)", async () => {
+    // 4 × 5 = 20
+    const r = await handler({
+      event: "PreToolUse",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: {
+        strategies: ["a", "b", "c", "d"],
+        symbols: ["BTC", "ETH", "SOL", "BNB", "AVAX"],
+      },
+    });
+    expect(r).toBeUndefined();
+  });
+
+  it("denies grid > max with explicit reason mentioning both dims", async () => {
+    // 5 × 5 = 25 > 20
+    const r = await handler({
+      event: "PreToolUse",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: {
+        strategies: ["a", "b", "c", "d", "e"],
+        symbols: ["BTC", "ETH", "SOL", "BNB", "AVAX"],
+      },
+    });
+    expect(r).toMatchObject({ permissionOverride: "deny" });
+    const msg = (r as { message: string }).message;
+    expect(msg).toMatch(/25/);
+    expect(msg).toMatch(/5 strategies/);
+    expect(msg).toMatch(/5 symbols/);
+    expect(msg).toMatch(/20/); // 含上限值
+  });
+
+  it("custom max override (smaller cap for stricter env)", async () => {
+    const strict = createGridSizeCapHandler({ max: 6 });
+    // 3 × 3 = 9 > 6
+    const r = await strict({
+      event: "PreToolUse",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: { strategies: ["a", "b", "c"], symbols: ["x", "y", "z"] },
+    });
+    expect(r).toMatchObject({ permissionOverride: "deny" });
+  });
+
+  it("ignores missing fields (lets schema layer surface the real error)", async () => {
+    // strategies 缺失 → 不在 hook 层 deny，留给 zod 报清晰错误
+    const r = await handler({
+      event: "PreToolUse",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: { symbols: ["BTC"] },
+    });
+    expect(r).toBeUndefined();
+  });
+
+  it("ignores non-array values (e.g. LLM hallucinated string)", async () => {
+    const r = await handler({
+      event: "PreToolUse",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: { strategies: "sma_cross", symbols: ["BTC"] },
+    });
+    expect(r).toBeUndefined();
+  });
+
+  it("default registration matches only swarm.run_backtest_grid", () => {
+    const reg = defaultGridSizeCapRegistration();
+    expect(reg.event).toBe("PreToolUse");
+    expect(reg.matcher).toBe("swarm.run_backtest_grid");
+    expect(reg.blocking).toBe(true);
+    expect(DEFAULT_GRID_MAX).toBe(20);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// tool-idempotency（fix ADR-0025 LLM 重复 swarm 调用）
+// ────────────────────────────────────────────────────────────────────
+
+describe("tool-idempotency", () => {
+  it("post caches successful output, pre denies repeat with same input", async () => {
+    const { pre, post, cache } = createToolIdempotencyHandlers();
+
+    // 第一次：cache miss → pre 不拦
+    const r1 = await pre({
+      event: "PreToolUse",
+      sessionId: "s-1",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: { strategies: ["sma"], symbols: ["BTC/USDT"] },
+    });
+    expect(r1).toBeUndefined();
+
+    // post 记 cache
+    await post({
+      event: "PostToolUse",
+      sessionId: "s-1",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: { strategies: ["sma"], symbols: ["BTC/USDT"] },
+      toolOutput: { summary: { ok: 1, total: 1 } },
+      isError: false,
+    });
+    expect(cache.size).toBe(1);
+
+    // 第二次：cache hit → pre deny
+    const r2 = await pre({
+      event: "PreToolUse",
+      sessionId: "s-1",
+      toolName: "swarm.run_backtest_grid",
+      toolInput: { strategies: ["sma"], symbols: ["BTC/USDT"] },
+    });
+    expect(r2).toMatchObject({ permissionOverride: "deny" });
+    const msg = (r2 as { message: string }).message;
+    expect(msg).toMatch(/IDEMPOTENT_DUP/);
+    expect(msg).toMatch(/previous_result/);
+    // 摘要包含 ok: 1
+    expect(msg).toMatch(/ok"?:\s*1/);
+  });
+
+  it("different sessionId → no cache hit (per-session isolation)", async () => {
+    const { pre, post } = createToolIdempotencyHandlers();
+    const input = { x: 1 };
+
+    await post({
+      event: "PostToolUse",
+      sessionId: "s-A",
+      toolName: "swarm.x",
+      toolInput: input,
+      toolOutput: { ok: true },
+      isError: false,
+    });
+    const r = await pre({
+      event: "PreToolUse",
+      sessionId: "s-B",
+      toolName: "swarm.x",
+      toolInput: input,
+    });
+    expect(r).toBeUndefined();
+  });
+
+  it("different input (key order swap) still hits — stableStringify keys are sorted", async () => {
+    const { pre, post } = createToolIdempotencyHandlers();
+
+    await post({
+      event: "PostToolUse",
+      sessionId: "s-1",
+      toolName: "swarm.x",
+      toolInput: { a: 1, b: 2 },
+      toolOutput: { ok: true },
+      isError: false,
+    });
+    // 改变 key 顺序，仍应命中（stable stringify）
+    const r = await pre({
+      event: "PreToolUse",
+      sessionId: "s-1",
+      toolName: "swarm.x",
+      toolInput: { b: 2, a: 1 },
+    });
+    expect(r).toMatchObject({ permissionOverride: "deny" });
+  });
+
+  it("does NOT cache errors (failed call → next call still executes)", async () => {
+    const { pre, post, cache } = createToolIdempotencyHandlers();
+
+    await post({
+      event: "PostToolUseFailure",
+      sessionId: "s-1",
+      toolName: "swarm.x",
+      toolInput: { x: 1 },
+      toolOutput: { code: "BOOM" },
+      isError: true,
+    });
+    expect(cache.size).toBe(0);
+
+    const r = await pre({
+      event: "PreToolUse",
+      sessionId: "s-1",
+      toolName: "swarm.x",
+      toolInput: { x: 1 },
+    });
+    expect(r).toBeUndefined();
+  });
+
+  it("TTL expiration purges cache entry", async () => {
+    const { pre, post } = createToolIdempotencyHandlers({ ttlMs: 1 });
+
+    await post({
+      event: "PostToolUse",
+      sessionId: "s-1",
+      toolName: "swarm.x",
+      toolInput: { x: 1 },
+      toolOutput: { ok: true },
+      isError: false,
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    const r = await pre({
+      event: "PreToolUse",
+      sessionId: "s-1",
+      toolName: "swarm.x",
+      toolInput: { x: 1 },
+    });
+    expect(r).toBeUndefined();
+  });
+
+  it("end-to-end via withHooks: 2nd identical call returns isError + IDEMPOTENT_DUP", async () => {
+    const runner = new HookRunner();
+    const idem = defaultIdempotencyRegistrations();
+    runner.register(idem.pre);
+    runner.register(idem.post);
+
+    let executeCount = 0;
+    const tool = {
+      id: "swarm.run_backtest_grid",
+      description: "",
+      execute: async (_input: unknown) => {
+        executeCount++;
+        return { summary: { ok: 1 } };
+      },
+    };
+    const wrapped = withHooks(tool, { runner });
+    const input = { strategies: ["sma"], symbols: ["BTC/USDT"] };
+    const ctx = { threadId: "thr-1" };
+
+    const r1 = await wrapped.execute!(input, ctx);
+    expect(executeCount).toBe(1);
+    expect(r1).toMatchObject({ summary: { ok: 1 } });
+
+    // 二次同 input → 不再执行真 tool；返回 isError + idempotent 消息
+    const r2 = (await wrapped.execute!(input, ctx)) as { isError: boolean; message: string };
+    expect(executeCount).toBe(1); // 没再 +1
+    expect(r2.isError).toBe(true);
+    expect(r2.message).toMatch(/IDEMPOTENT_DUP/);
+  });
+
+  it("default registration: matcher swarm.*, pre blocking, post non-blocking", () => {
+    const { pre, post } = defaultIdempotencyRegistrations();
+    expect(pre.event).toBe("PreToolUse");
+    expect(pre.matcher).toBe("swarm.*");
+    expect(pre.blocking).toBe(true);
+    expect(post.event).toBe("PostToolUse");
+    expect(post.matcher).toBe("swarm.*");
+    expect(post.blocking).toBe(false);
   });
 });

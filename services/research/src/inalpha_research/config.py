@@ -50,6 +50,17 @@ class ResearchSettings(BaseSettings):
         description="单次 LLM 调用超时（秒）",
     )
 
+    # ─── Debate ──────────────────────────────────────────────────────
+    max_debate_rounds: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        alias="RESEARCH_MAX_DEBATE_ROUNDS",
+        description="Bull/Bear 辩论轮数；每轮 Bull 一次 + Bear 一次。"
+        "0 = 跳过辩论（runner 直接 analyst→manager，保留旧 D-8c 行为）。"
+        "默认 1（同 TradingAgents），>1 会成倍增加 LLM 成本",
+    )
+
 
 @lru_cache(maxsize=1)
 def get_research_settings() -> ResearchSettings:

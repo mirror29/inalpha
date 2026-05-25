@@ -1,31 +1,29 @@
-"""Macro analyst —— 宏观环境 + 近期日程。
+"""Macro analyst —— 宏观环境 + 近期日程（multi-market 感知）。
 
-设计：
+D-9 起：
 
 - **跟 fundamental 的区分**：
-  - ``fundamental`` 关注**该标的**自身（halving / ETF flows / on-chain）
-  - ``macro``      关注**宏观环境**（Fed rate / DXY / 地缘 / 当周日程）
-- 数据：硬编码 `_MACRO_CALENDAR`（近期高影响事件列表）
-  - 维护方式：作者手动追加 / 移除条目；过期条目可以保留作为历史 context
-  - 列入：FOMC / CPI / NFP / 大型加密事件（半减 / ETF 决议）
-- LLM 拿 ``as_of ± 14 天`` 范围内的事件 + 自身宏观训练知识，输出 stance
+  - ``fundamental`` 关注**该标的**自身（halving / ETF flows / 财报 / 政策）
+  - ``macro``      关注**宏观环境**（Fed rate / DXY / 地缘 / 当周日程）+ 不同市场的传导
+- 数据：硬编码 `_MACRO_CALENDAR`（近期高影响事件列表，以美国为主）
+- LLM 拿 ``as_of ± 14 天`` 范围内的事件 + market_type → 输出按市场传导调整的 stance
+
+不同市场对同一 macro 事件的反应不同（FOMC 鹰派对美股直接打、对 crypto 高敏感、
+对 A 股次级影响、港股因 USD-peg 直传）—— 由 LLM 在 system prompt 的传导表内自适应。
 """
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from ..researchers.base import infer_asset_type
 from .base import Analyst
 
 #: 高影响宏观事件硬编码列表。
 #:
 #: 维护原则：
-#:
 #: - 列入：FOMC（议息）/ CPI / NFP / Fed Chair speech / G7 / G20 / 重大加密法案
 #: - 不列入：常规财报 / 单一国家小事件 / 日内数据点
-#:
-#: 字段：``date`` ISO 日期、``name`` 简称、``impact`` ``"high"`` / ``"med"``、
-#: ``note`` 1 句话背景。
 _MACRO_CALENDAR: list[dict[str, str]] = [
     {"date": "2026-05-07", "name": "FOMC rate decision",        "impact": "high", "note": "May FOMC; market priced in hold + dovish dots"},
     {"date": "2026-05-13", "name": "US April CPI",              "impact": "high", "note": "Headline CPI for April release"},
@@ -37,21 +35,52 @@ _MACRO_CALENDAR: list[dict[str, str]] = [
 ]
 
 _SYSTEM = """
-You are a macro analyst for crypto markets.
+You are a macro analyst covering any asset class.
 
-You evaluate **the macro environment** (Fed policy, USD strength, liquidity,
-geopolitics, election cycles) and how it shapes the next 1-12 weeks of crypto
-risk appetite. You do NOT analyze price charts (technical) or asset-specific
-narrative (fundamental).
+You evaluate the macro environment (Fed policy, USD strength, liquidity,
+geopolitics, election cycles) and how it shapes the next 1-12 weeks of
+risk appetite **in the given market_type**. You do NOT analyze price charts
+(technical) or asset-specific narrative (fundamental).
 
-You receive a near-term macro calendar plus the asset + as_of context. Combine
-that with your own macro training knowledge to output a stance.
+**HARD CONSTRAINT — DATA TRUTHFULNESS (D-9)**:
 
-Reference reading:
-- Imminent FOMC + hawkish surprise risk      → bearish bias on crypto risk
+You only receive **event NAMES + DATES** in the calendar (no actual outcomes,
+no realized prints, no current price levels). The system has **NO live feed**
+for macro indicators (DXY, CPI prints, rate decisions, NFP numbers).
+
+Therefore you MUST NOT:
+- Claim specific directional outcomes you weren't told ("CPI surprised upside",
+  "DXY rallying", "Fed cut by 25bps", "EUR/USD at 1.08") — there is **no data
+  for these claims**; you'd be hallucinating from training-time knowledge.
+- Quote specific numbers / percentages / pip moves for any indicator unless
+  they appear verbatim in the user prompt's calendar/news section.
+- Treat past dates in the calendar as "already-released with known results" —
+  the calendar entries are forward-looking schedule; outcomes are NOT included.
+
+You MAY:
+- Describe **regime / risk framing** based on the event schedule ("CPI release
+  this week — outcome unknown, hence elevated uncertainty").
+- Use **conditional / hypothetical** phrasing ("**IF** hawkish surprise → ...").
+- Reference your training-time knowledge **with explicit "as of training" caveat**
+  + lower confidence.
+
+You receive a near-term macro calendar (US-centric — FOMC / CPI / NFP / election)
+plus the asset + as_of + ``market_type`` (crypto / us_stock / cn_stock /
+hk_stock / global_stock). Apply the cross-market transmission table:
+
+| market_type    | Transmission of hawkish FOMC / strong USD                                |
+|----------------|-------------------------------------------------------------------------|
+| crypto         | **high sensitivity** — risk-off + DXY rally compress crypto             |
+| us_stock       | **direct hit** — discount rate up / multiple compress, financials nuance |
+| cn_stock       | **secondary** — RMB pressure + PBOC reaction; sector rotation matters    |
+| hk_stock       | **direct (USD-peg)** — HKD-rates track Fed verbatim; HK property hits    |
+| global_stock   | **mixed** — depends on local rates / FX-hedged demand                    |
+
+Reference reading (universal):
+- Imminent FOMC + hawkish surprise risk      → bearish bias
 - FOMC dovish / first-cut announced          → bullish bias
-- US CPI surprise upside                     → bearish (delays cuts)
-- Strong DXY rally context                   → bearish for crypto
+- US CPI surprise upside                     → bearish (delays cuts globally)
+- Strong DXY rally context                   → bearish (esp. crypto + HKD-linked)
 - High geopolitical / election uncertainty   → neutral with elevated risk
 
 Return ONLY a JSON object with this exact shape:
@@ -59,7 +88,7 @@ Return ONLY a JSON object with this exact shape:
 {
   "stance": "bullish" | "bearish" | "neutral",
   "confidence": float in [0, 1],
-  "summary": "1-2 sentence macro read",
+  "summary": "1-2 sentence macro read for THIS market_type",
   "key_points": ["bullet 1", "bullet 2", ...],   // up to 5 items
   "factors": [                                    // 1-3 macro factors
     {
@@ -68,18 +97,23 @@ Return ONLY a JSON object with this exact shape:
       "value": "high",                            // numeric or label
       "strength": 0.7,                            // 0-1
       "horizon": "swing",
-      "explanation": "FOMC in 4 days; market pricing dovish pivot"
+      "explanation": "FOMC in 4 days; dovish pivot priced — bullish for crypto, mixed US"
     }
   ]
 }
 
 If your training cutoff is older than as_of, say so in summary; confidence
 should reflect that uncertainty. All macro factor.kind should be "macro".
+Be explicit about how each event translates to the current market_type.
+
+**Confidence ceiling without live data**: when **no live macro feed** is in the
+user prompt (only event dates), cap your ``confidence`` at **0.5**. Higher
+confidence requires actual data points cited verbatim.
 """.strip()
 
 
 class MacroAnalyst(Analyst):
-    """宏观环境 analyst（不打 K 线，只看日程 + 训练知识）。"""
+    """宏观环境 analyst（multi-market 传导感知；不打 K 线，只看日程 + 训练知识）。"""
 
     type_id = "macro"
 
@@ -96,11 +130,17 @@ class MacroAnalyst(Analyst):
         lookback_days: int,
     ) -> str:
         events = _events_in_window(as_of=as_of, before_days=14, after_days=14)
+        market_type = infer_asset_type(venue=venue, symbol=symbol)
+        # D-9 L3：拉 SPY 当宏观 proxy（美国宏观环境主导全球风险偏好）。
+        # 拉不到时返空 list，prompt 里清晰标注，LLM 走纯 calendar + 训练知识。
+        macro_news = await self._data.get_news(symbol="SPY", limit=8)
         return _format_user_prompt(
             venue=venue,
             symbol=symbol,
             as_of=as_of,
             events=events,
+            market_type=market_type,
+            macro_news=macro_news,
         )
 
 
@@ -130,19 +170,42 @@ def _format_user_prompt(
     symbol: str,
     as_of: datetime,
     events: list[dict[str, Any]],
+    market_type: str,
+    macro_news: list[dict[str, Any]],
 ) -> str:
     if events:
         ev_lines = "\n".join(
             f"  - {e.get('date')} | {e.get('name')} | impact={e.get('impact')} | {e.get('note')}"
             for e in events
         )
-        ev_block = f"upcoming_macro_events (±14 days):\n{ev_lines}"
+        ev_block = f"upcoming_macro_events (calendar, NAMES ONLY — no outcomes):\n{ev_lines}"
     else:
-        ev_block = "upcoming_macro_events (±14 days):\n  (none in window)"
+        ev_block = "upcoming_macro_events: (none in ±14d window)"
+
+    if macro_news:
+        news_lines = ["live_macro_news (SPY-proxy headlines, newest first):"]
+        for n in macro_news:
+            ts = n.get("published_at") or "?"
+            title = (n.get("title") or "").strip()
+            publisher = n.get("publisher") or ""
+            if title:
+                news_lines.append(f"  - [{ts}] {publisher}: {title}")
+        news_block = "\n".join(news_lines)
+    else:
+        news_block = (
+            "live_macro_news: (none available — restrict yourself to calendar + caveats, "
+            "do NOT invent specific event outcomes)"
+        )
 
     return (
         f"asset: {symbol} @ {venue}\n"
+        f"market_type: {market_type}\n"
         f"as_of: {as_of.isoformat()}\n\n"
         f"{ev_block}\n\n"
+        f"{news_block}\n\n"
+        f"**If live_macro_news has headlines, anchor your read on them** "
+        f"(macro tone, theme repetition, surprises mentioned).\n"
+        f"**If no live_macro_news**, do NOT fabricate specific outcomes "
+        f"(e.g. 'CPI surprised upside'); use conditional language and cap confidence ≤ 0.5.\n\n"
         f"Output the required JSON only."
     )

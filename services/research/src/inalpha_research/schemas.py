@@ -109,6 +109,25 @@ class StrategyHint(BaseModel):
 # ────────────────────────────────────────────────────────────────────
 
 
+# ────────────────────────────────────────────────────────────────────
+# 辩论日志 —— D-9 引入，记录 Bull/Bear 多轮对喷
+# ────────────────────────────────────────────────────────────────────
+
+
+class DebateTurn(BaseModel):
+    """Bull 或 Bear 一轮发言。
+
+    辩论协调器轮换调用 Bull/Bear；每次发言追加一条 ``DebateTurn`` 到
+    ``ResearchPlan.debate_log``，按时间顺序组成完整辩论史。
+    """
+
+    role: Literal["bull", "bear"] = Field(
+        ..., description="发言角色：bull 看多 / bear 看空"
+    )
+    round: int = Field(..., ge=1, description="第几轮（1-based）；同轮内 bull 先 bear 后")
+    content: str = Field(..., min_length=1, description="LLM 该轮发言原文")
+
+
 class AnalystBrief(BaseModel):
     """单个 analyst 的输出 —— 1 视角研究简报。"""
 
@@ -201,6 +220,11 @@ class ResearchPlan(BaseModel):
     briefs: list[AnalystBrief] = Field(
         default_factory=list,
         description="原始 analyst briefs（manager 综合时引用过的）",
+    )
+    debate_log: list[DebateTurn] = Field(
+        default_factory=list,
+        description="D-9 起：Bull/Bear 辩论日志（每轮 2 条），manager 综合时已读过；"
+        "下游 trader / UI 可重现辩论过程",
     )
     horizon: Horizon = Field(
         default="swing",

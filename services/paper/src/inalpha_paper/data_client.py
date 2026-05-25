@@ -98,8 +98,29 @@ class DataClient:
         from_ts: datetime,
         to_ts: datetime,
         limit: int = 10_000,
+        fresh: bool = True,
     ) -> list[dict[str, Any]]:
-        """``GET /bars`` —— 返回 list of bar dicts（schema 见 data-service.BarResponse）。"""
+        """``GET /bars`` —— 返回 list of bar dicts（schema 见 data-service.BarResponse）。
+
+        Args:
+            fresh: **金融时效性默认 True (D-9)**——先 POST /backfill/bars 把 ``to_ts``
+                之前的最新 K 线补上，再读。避免回测 / 实时分析拿到 stale 数据。
+                历史回测明确不需要最新数据时传 ``fresh=False``。
+
+        Backfill 失败时静默继续（不抛）。
+        """
+        if fresh:
+            try:
+                await self.backfill_bars(
+                    venue=venue,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    from_ts=from_ts,
+                    to_ts=to_ts,
+                )
+            except Exception:  # noqa: BLE001 — best-effort fresh，失败不抛
+                pass
+
         try:
             r = await self._client.get(
                 "/bars",
@@ -133,5 +154,54 @@ class DataClient:
         if not isinstance(result, list):
             raise DataServiceError(
                 f"unexpected response shape from data-service: {type(result).__name__}"
+            )
+        return result
+
+    async def backfill_bars(
+        self,
+        *,
+        venue: str,
+        symbol: str,
+        timeframe: str,
+        from_ts: datetime,
+        to_ts: datetime,
+    ) -> dict[str, Any]:
+        """``POST /backfill/bars`` —— 让 data-service 主动从交易所拉 + 入库。
+
+        用途：``run_backtest`` 检测到空 bars 时自愈用（D-9 fix）。data-service
+        backfill 自带 dedupe + UPSERT，多个 paper 工作流同时触发同 symbol 不会出错。
+        """
+        try:
+            r = await self._client.post(
+                "/backfill/bars",
+                json={
+                    "venue": venue,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "from_ts": from_ts.isoformat(),
+                    "to_ts": to_ts.isoformat(),
+                },
+            )
+        except httpx.RequestError as e:
+            raise DataServiceError(
+                f"failed to reach data-service /backfill/bars: {e}",
+                code="DATA_SERVICE_UNREACHABLE",
+            ) from e
+
+        if r.status_code >= 400:
+            try:
+                detail = r.json()
+            except Exception:
+                detail = {"message": r.text}
+            raise DataServiceError(
+                f"data-service backfill {r.status_code}: {detail.get('message', 'unknown')}",
+                code=detail.get("code", "DATA_BACKFILL_FAILED"),
+                details={"upstream_status": r.status_code, "upstream_body": detail},
+            )
+
+        result = r.json()
+        if not isinstance(result, dict):
+            raise DataServiceError(
+                f"unexpected backfill response shape: {type(result).__name__}"
             )
         return result

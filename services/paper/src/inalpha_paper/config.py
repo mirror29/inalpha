@@ -1,13 +1,25 @@
 """paper service 专属 settings。
 
-继承 ``inalpha_shared.Settings``，加 ``DATA_SERVICE_URL`` 字段（跨服务调用 data 用）。
+继承 ``inalpha_shared.Settings``，加 ``DATA_SERVICE_URL`` 字段（跨服务调用 data 用）
++ Swarm S1（ADR-0025）的 ProcessPool 配置。
 """
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from inalpha_shared.config import Settings as BaseSettings
 from pydantic import Field
+
+
+def _default_pool_size() -> int:
+    """默认 worker 数：``min(os.cpu_count() - 1, 6)``。
+
+    上限 6 是为了 M 系列 P/E 核混搭场景：os.cpu_count 返物理+逻辑总数，
+    给 BLAS / NumPy 子线程留余量，避免反而互相挤。
+    """
+    cpu = os.cpu_count() or 2
+    return min(max(cpu - 1, 1), 6)
 
 
 class PaperSettings(BaseSettings):
@@ -22,6 +34,30 @@ class PaperSettings(BaseSettings):
     )
 
     paper_service_port: int = Field(default=8002, alias="PAPER_SERVICE_PORT")
+
+    # ─── Swarm S1（ADR-0025）·  ProcessPool 配置 ─────────────────────
+
+    pool_size: int = Field(
+        default_factory=_default_pool_size,
+        alias="PAPER_POOL_SIZE",
+        ge=1,
+        le=64,
+        description="backtest ProcessPool worker 数；默认 min(CPU-1, 6)。",
+    )
+    job_timeout_s: int = Field(
+        default=180,
+        alias="PAPER_JOB_TIMEOUT_S",
+        ge=1,
+        le=3600,
+        description="单 backtest job CPU 软上限秒数（RLIMIT_CPU 软值）。硬值 = 软 + 20。",
+    )
+    job_mem_gb: float = Field(
+        default=2.0,
+        alias="PAPER_JOB_MEM_GB",
+        gt=0.0,
+        le=64.0,
+        description="单 backtest job RLIMIT_DATA 上限（GB）。macOS 上 mmap 仍可绕开。",
+    )
 
 
 @lru_cache(maxsize=1)

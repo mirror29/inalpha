@@ -41,6 +41,9 @@ def _ensure_env() -> None:
     # 把默认 LLM provider 切成 fake，避免任何测试不小心打到真 LLM
     os.environ.setdefault("LLM_PROVIDER", "fake")
     os.environ.setdefault("LLM_API_KEY", "test-key-not-used-by-fake")
+    # 默认关辩论 —— 保留 D-8c 流水线行为，让现有测试断言 (calls=6) 不破。
+    # 单测辩论本身请在用例内 monkeypatch 这个 env 再 cache_clear。
+    os.environ.setdefault("RESEARCH_MAX_DEBATE_ROUNDS", "0")
     get_settings.cache_clear()
     get_research_settings.cache_clear()
 
@@ -117,6 +120,25 @@ def fake_llm() -> FakeLLMClient:
                 ],
                 "suggested_action": "open_long 0.02 with stop below SMA50",
                 "horizon": "swing",
+            },
+            # 辩论 researcher 预设 —— 仅在 RESEARCH_MAX_DEBATE_ROUNDS > 0 时被消费
+            "you are a bull analyst": {
+                "argument": (
+                    "The technical analyst's SMA20 over SMA50 with RSI 58 leaves clear "
+                    "headroom before overbought; sentiment FNG at 22 — Extreme Fear — is "
+                    "exactly where contrarian longs get rewarded historically. Bears "
+                    "ignore that risk metrics show ATR ~2% and max DD only 9%, well within "
+                    "normal vol bands; their fragility thesis lacks evidence."
+                ),
+            },
+            "you are a bear analyst": {
+                "argument": (
+                    "Bulls anchor on backward-looking momentum, but the macro analyst flags "
+                    "FOMC + CPI uncertainty in the swing window and rate-cut delays. The "
+                    "fundamental brief admits halving tailwind is already priced; without "
+                    "fresh catalyst, vol z-score can flip negative quickly. RSI 58 is closer "
+                    "to overbought than to the buy-the-dip zone bulls pretend."
+                ),
             },
         }
     )

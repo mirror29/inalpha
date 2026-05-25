@@ -260,9 +260,11 @@ async def test_sentiment_returns_brief(data_client: DataClient) -> None:
     assert brief.stance == "bullish"
 
     user_prompt = llm.calls[0]["user"]
-    assert "latest_fng" in user_prompt
-    assert "value: 22" in user_prompt
+    # D-9 重命名：``latest_fng:`` → ``crypto_fng:``，``value:`` → ``latest_value:``
+    assert "crypto_fng:" in user_prompt
+    assert "latest_value: 22" in user_prompt
     assert "trend_snapshot" in user_prompt
+    assert "market_type: crypto" in user_prompt
 
 
 @respx.mock
@@ -419,11 +421,11 @@ async def test_macro_runs_without_data_fetch(data_client: DataClient) -> None:
     assert "upcoming_macro_events" in user_prompt
     # _as_of() 2026-05-21 的 ±14 天窗口应该包含 FOMC 2026-06-18? 那是 28 天后，不在窗口
     # 但 2026-06-06 NFP（16 天后）也不在。窗口里有 2026-05-13 CPI（8 天前）
-    assert "2026-05-13" in user_prompt or "(none in window)" in user_prompt
+    assert "2026-05-13" in user_prompt or "(none in ±14d window)" in user_prompt
 
 
 async def test_macro_handles_no_events_in_window(data_client: DataClient) -> None:
-    """as_of 远离所有硬编码事件 → 提示 '(none in window)' 但仍跑通。"""
+    """as_of 远离所有硬编码事件 → 提示 '(none in ±14d window)' 但仍跑通。"""
     llm = FakeLLMClient(
         {
             "macro analyst": {
@@ -445,4 +447,4 @@ async def test_macro_handles_no_events_in_window(data_client: DataClient) -> Non
 
     assert brief.stance == "neutral"
     user_prompt = llm.calls[0]["user"]
-    assert "(none in window)" in user_prompt
+    assert "(none in ±14d window)" in user_prompt

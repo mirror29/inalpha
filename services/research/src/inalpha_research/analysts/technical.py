@@ -1,17 +1,34 @@
-"""Technical analyst —— K 线 + 简单指标（SMA / RSI）支撑下的短期立场。"""
+"""Technical analyst —— K 线 + 简单指标（SMA / RSI）支撑下的短期立场。
+
+D-9 起：multi-market 感知——同一个 analyst 在 crypto / 美股 / A 股 / 港股 / 全球 5 类
+资产上自动调整指标解读（market_type 由 ``researchers.base.infer_asset_type`` 推断后
+塞进 user prompt）。计算指标的 Python 代码完全通用（OHLCV 都一样），只在 prompt 上
+做差别提示。
+"""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Any
 
+from ..researchers.base import infer_asset_type
 from .base import Analyst
 
 _SYSTEM = """
-You are a technical analyst for crypto markets.
+You are a technical analyst covering any asset class.
 
-You receive recent OHLCV bars and basic indicator hints. Your job is to output a
-short-term (intraday to swing) stance based **only on price action and technicals**.
-You must not invoke fundamentals or news.
+You receive recent OHLCV bars + indicator snapshot, plus the ``market_type``
+(crypto / us_stock / cn_stock / hk_stock / global_stock). Adjust your reading
+to the market's micro-structure conventions:
+
+| market_type    | Notes                                                                 |
+|----------------|-----------------------------------------------------------------------|
+| crypto         | 24/7 markets, RSI 70/30 hard; gap-less; vol regimes shift fast        |
+| us_stock       | Cash hours; RSI 65/35 useful; pre/post-market gap risk; SPY/VIX peers |
+| cn_stock       | T+1, 涨跌停 ±10% (科创板 ±20%), open-call auction; 成交量 quality      |
+| hk_stock       | T+0 cash; ADR/H-share arbitrage; HK rate sensitivity                  |
+| global_stock   | Local cash hours; FX-translation distort; thinner liquidity tail      |
+
+Use **only price action and technicals** —— do not invoke fundamentals or news.
 
 Return ONLY a JSON object with this exact shape:
 
@@ -44,7 +61,7 @@ Rules for factors:
 
 
 class TechnicalAnalyst(Analyst):
-    """技术分析 analyst。"""
+    """技术分析 analyst（multi-market 感知）。"""
 
     type_id = "technical"
 
@@ -70,10 +87,12 @@ class TechnicalAnalyst(Analyst):
             limit=2_000,
         )
 
-        # 提炼最近 N 根 + 算几个粗指标喂给 LLM（避免直接喂全量 K 线，太长）
-        recent = bars[-60:]  # 最多最近 60 根
+        # 提炼最近 N 根 + 算几个粗指标喂给 LLM
+        recent = bars[-60:]
         closes = [float(b["close"]) for b in recent]
         snapshot = _build_indicator_snapshot(closes)
+
+        market_type = infer_asset_type(venue=venue, symbol=symbol)
 
         return _format_user_prompt(
             venue=venue,
@@ -83,6 +102,7 @@ class TechnicalAnalyst(Analyst):
             num_bars=len(bars),
             recent=recent,
             snapshot=snapshot,
+            market_type=market_type,
         )
 
 
@@ -93,8 +113,7 @@ def _build_indicator_snapshot(closes: list[float]) -> dict[str, Any]:
         return {"available": False}
 
     last = closes[-1]
-    # SMA：样本不够时返 None 而不是"半段平均"（D-8b' review B14：旧版 n>=20 时也
-    # 算 sma50，LLM 误把短期均值当 50 周期均线判断）
+    # SMA：样本不够时返 None 而不是"半段平均"（D-8b' review B14）
     sma20 = sum(closes[-20:]) / 20 if n >= 20 else None
     sma50 = sum(closes[-50:]) / 50 if n >= 50 else None
 
@@ -146,6 +165,7 @@ def _format_user_prompt(
     num_bars: int,
     recent: list[dict[str, Any]],
     snapshot: dict[str, Any],
+    market_type: str,
 ) -> str:
     """简洁、tokens 友好的格式。"""
     last_lines = "\n".join(
@@ -155,6 +175,7 @@ def _format_user_prompt(
     )
     return (
         f"asset: {symbol} @ {venue}\n"
+        f"market_type: {market_type}\n"
         f"timeframe: {timeframe}\n"
         f"as_of: {as_of.isoformat()}\n"
         f"bars_total: {num_bars}\n\n"

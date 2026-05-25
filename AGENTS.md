@@ -54,6 +54,12 @@ cd packages/orchestration && pnpm dev
 
 # 跨文件一致性检验（提交前跑一次）
 bash scripts/check-consistency.sh
+
+# D-9 定时 agent 模式（默认关，需 SCHEDULER_ENABLED=true 起 mastra）
+cd packages/orchestration
+pnpm scheduler:trigger --list                  # 列全部 jobs
+pnpm scheduler:trigger daily_btc_deep_dive     # 手动触发一次
+# admin 页：直接 open scripts/scheduler-admin.html（默认连 4111）
 ```
 
 ## 5. 各工具的额外建议

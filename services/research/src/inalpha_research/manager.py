@@ -20,6 +20,7 @@ from typing import Any
 from .llm.client import LLMClient
 from .schemas import (
     AnalystBrief,
+    DebateTurn,
     Factor,
     ResearchPlan,
     Signal,
@@ -28,17 +29,23 @@ from .schemas import (
 )
 
 _SYSTEM = """
-You are a research manager synthesizing analyst briefs into a final research plan.
+You are a research manager + debate judge synthesizing analyst briefs and a
+Bull/Bear debate into a final research plan.
 
 You receive 1+ analyst briefs. Each brief has stance / confidence / summary /
 key_points and may include structured "factors" (kind / value / strength / explanation).
+You may also receive a debate_log (Bull/Bear turns) — if present, the Bull and Bear
+researchers have already argued over the same briefs; weight the side whose argument
+better withstood the rebuttals.
 
 Your job is to:
 1. Reconcile disagreements between analysts (favor the one with more concrete evidence)
-2. Output a final rating, thesis, risks, and a suggested action for the trader
-3. **Synthesize factors and pick a strategy family** —— machine-readable hand-off to the
+2. Judge the Bull/Bear debate (when present) — note which side conceded points or
+   handled rebuttals better; reflect that in rating + confidence
+3. Output a final rating, thesis, risks, and a suggested action for the trader
+4. **Synthesize factors and pick a strategy family** —— machine-readable hand-off to the
    downstream `paper.compose_strategy` engine
-4. Stay **grounded in the briefs** — do not invent factors that no analyst raised
+5. Stay **grounded in the briefs / debate** — do not invent factors that no analyst raised
 
 Return ONLY a JSON object with this exact shape:
 
@@ -114,6 +121,7 @@ class ResearchManager:
         timeframe: str,
         as_of: datetime,
         briefs: list[AnalystBrief],
+        debate_log: list[DebateTurn] | None = None,
         user_question: str | None = None,
     ) -> ResearchPlan:
         user_prompt = _format_user_prompt(
@@ -122,6 +130,7 @@ class ResearchManager:
             timeframe=timeframe,
             as_of=as_of,
             briefs=briefs,
+            debate_log=debate_log or [],
             user_question=user_question,
         )
         raw = await self._llm.complete_json(system=_SYSTEM, user=user_prompt)
@@ -132,6 +141,7 @@ class ResearchManager:
             timeframe=timeframe,
             as_of=as_of,
             briefs=briefs,
+            debate_log=debate_log or [],
         )
 
 
@@ -155,6 +165,7 @@ def _format_user_prompt(
     timeframe: str,
     as_of: datetime,
     briefs: list[AnalystBrief],
+    debate_log: list[DebateTurn],
     user_question: str | None,
 ) -> str:
     parts: list[str] = [
@@ -179,6 +190,16 @@ def _format_user_prompt(
             f"    key_points:\n    - {kp}"
             f"{factors_block}"
         )
+
+    if debate_log:
+        parts.append("")
+        parts.append("debate_log (Bull/Bear arguments, oldest first):")
+        for turn in debate_log:
+            parts.append(f"  Round {turn.round} {turn.role.upper()}: {turn.content}")
+    else:
+        parts.append("")
+        parts.append("debate_log: (no debate this run — judge briefs only)")
+
     if user_question:
         parts.append("")
         parts.append(f"user_original_question: {user_question}")
@@ -195,8 +216,9 @@ def _build_plan(
     timeframe: str,
     as_of: datetime,
     briefs: list[AnalystBrief],
+    debate_log: list[DebateTurn] | None = None,
 ) -> ResearchPlan:
-    """LLM JSON → ResearchPlan，缺字段兜底。"""
+    """LLM JSON → ResearchPlan，缺字段兜底。``debate_log`` 原样落进 plan 字段。"""
     rating = str(raw.get("rating", "neutral")).lower()
     if rating not in ("overweight", "neutral", "underweight"):
         rating = "neutral"
@@ -232,6 +254,7 @@ def _build_plan(
         "signals": [s.model_dump(mode="json") for s in signals],
         "strategy_hint": strategy_hint.model_dump(mode="json"),
         "briefs": briefs,
+        "debate_log": [t.model_dump(mode="json") for t in (debate_log or [])],
         "horizon": horizon,
     }
     # 用 model_validate 而不是构造器，让 Pydantic 把 dict→model 一次校验
@@ -357,6 +380,7 @@ def build_plan_from_raw(
     timeframe: str,
     as_of: datetime,
     briefs: list[AnalystBrief],
+    debate_log: list[DebateTurn] | None = None,
 ) -> ResearchPlan:
     """测试 entrypoint。生产代码走 ``ResearchManager.synthesize``。"""
     return _build_plan(
@@ -366,6 +390,7 @@ def build_plan_from_raw(
         timeframe=timeframe,
         as_of=as_of,
         briefs=briefs,
+        debate_log=debate_log,
     )
 
 

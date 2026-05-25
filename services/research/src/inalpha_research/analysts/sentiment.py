@@ -1,14 +1,17 @@
-"""Sentiment analyst —— Fear & Greed Index + 反向推理。
+"""Sentiment analyst —— multi-market 感知。
 
-设计：
+D-9 起：
 
-- 数据源：alternative.me 公开 Fear & Greed API（``https://api.alternative.me/fng/``）
-  - 0-25 = Extreme Fear（反向 = 利多）
-  - 75-100 = Extreme Greed（反向 = 利空）
-- analyst 不做硬规则判定，而是把"最新值 + 30 天序列 + 反向 hint"喂给 LLM，
-  让 LLM 在 prompt 框定的范围内自己得出 stance + confidence
-- 外部网络调用：自起 httpx.AsyncClient（tests 用 respx 拦截 ``api.alternative.me``）
-- 失败处理：让异常抛出，由 runner._failed_brief 兜底（标 confidence=0）
+- **crypto**：保留原 Fear & Greed Index（alternative.me）反向逻辑
+- **非 crypto**（us / cn / hk / global stock）：**LLM-only**——不抓外部数据，让 LLM
+  用训练知识 + market_type 推断情绪极端（VIX 历史、SPY 卖单流、A股两融余额、港股
+  Southbound 净流入等可以由 LLM 概念性引用，不强求具体数值）
+
+为什么非 crypto 不接 VIX/恐慌指数：
+
+- alternative.me 只覆盖 crypto；非 crypto 的等价（CNN FNG / VIX 反向）需要 FRED key
+  或网页抓取，复杂度跳级；D-10 真要接的话挂在这层升级
+- LLM-only sentiment 比"硬抛错回 neutral"叙事强得多——dev/demo 足够
 """
 from __future__ import annotations
 
@@ -17,6 +20,7 @@ from typing import Any
 
 import httpx
 
+from ..researchers.base import infer_asset_type
 from .base import Analyst
 
 _FNG_URL = "https://api.alternative.me/fng/"
@@ -24,23 +28,27 @@ _FETCH_TIMEOUT_S = 10.0
 _DEFAULT_LIMIT = 30
 
 _SYSTEM = """
-You are a sentiment analyst for crypto markets, specialized in **contrarian reading**
-of the Fear & Greed Index.
+You are a sentiment analyst covering any asset class.
 
-You receive:
-- The most recent Fear & Greed value (0=Extreme Fear, 100=Extreme Greed)
-- The last 30 daily values for trend context
+You receive the asset + market_type (crypto / us_stock / cn_stock / hk_stock /
+global_stock). Adjust your sentiment framework per market:
 
-Read it **contrarian**:
-- < 25 (Extreme Fear)    → moderate bullish bias (capitulation often near bottoms)
-- 25-45 (Fear)           → mild bullish bias
-- 45-55 (Neutral)        → neutral
-- 55-75 (Greed)          → mild bearish bias
-- > 75 (Extreme Greed)   → moderate bearish bias (euphoria often near tops)
+| market_type    | Sentiment anchors (contrarian where applicable)                            |
+|----------------|----------------------------------------------------------------------------|
+| crypto         | Fear & Greed Index (provided); funding rates; ETF inflow narrative         |
+| us_stock       | VIX regime; AAII bull-bear; put/call ratio; flow-of-funds                  |
+| cn_stock       | 两融余额 / 北向资金 流入流出; 涨停板情绪; 创业板 vs 主板 强弱             |
+| hk_stock       | Southbound 净买入; HKD-rates 紧张度; AH 价差宽窄                            |
+| global_stock   | Local index VIX / volatility regime; sector rotation extremes              |
 
-But adjust by trend:
-- Rapidly rising fear → momentum may continue down before reversal
-- Sticky greed for many days → already late, lean more bearish
+Contrarian heuristic (universal):
+- Extreme fear   → moderate bullish bias  (capitulation often near bottoms)
+- Extreme greed  → moderate bearish bias  (euphoria often near tops)
+- Sustained extreme reading raises strength
+
+When ``crypto_fng`` data is provided in the user prompt, **anchor on it**.
+When absent (non-crypto), use your training-time knowledge of the asset's
+sentiment regime — be honest about uncertainty (lower confidence).
 
 Return ONLY a JSON object with this exact shape:
 
@@ -61,13 +69,13 @@ Return ONLY a JSON object with this exact shape:
   ]
 }
 
-Never claim values you weren't given. Confidence and factor.strength should
-reflect how extreme + how sustained the reading is.
+Never claim numeric values you weren't given. Confidence and factor.strength
+should reflect data freshness and how extreme + sustained the reading is.
 """.strip()
 
 
 class SentimentAnalyst(Analyst):
-    """Fear & Greed 反向 analyst。"""
+    """多市场 sentiment analyst。"""
 
     type_id = "sentiment"
 
@@ -83,28 +91,50 @@ class SentimentAnalyst(Analyst):
         as_of: datetime,
         lookback_days: int,
     ) -> str:
-        entries = await _fetch_fng(limit=_DEFAULT_LIMIT)
-        if not entries:
-            raise RuntimeError("Fear & Greed API returned no entries")
+        market_type = infer_asset_type(venue=venue, symbol=symbol)
 
-        latest = entries[0]
-        recent_values = [int(e["value"]) for e in entries]
-        trend = _summarize_trend(recent_values)
+        # crypto → 拉 FNG；非 crypto → 拉 yfinance news 喂 LLM
+        if market_type == "crypto":
+            entries = await _fetch_fng(limit=_DEFAULT_LIMIT)
+            if not entries:
+                return _format_user_prompt_llm_only(
+                    symbol=symbol,
+                    as_of=as_of,
+                    market_type=market_type,
+                    fng_note="(Fear & Greed API returned empty — fallback to LLM-only)",
+                    news=[],
+                )
+            latest = entries[0]
+            recent_values = [int(e["value"]) for e in entries]
+            trend = _summarize_trend(recent_values)
+            return _format_user_prompt_with_fng(
+                symbol=symbol,
+                as_of=as_of,
+                market_type=market_type,
+                latest=latest,
+                recent_values=recent_values,
+                trend=trend,
+            )
 
-        return _format_user_prompt(
+        # 非 crypto：拉 yfinance ticker news + 用真新闻锚定 sentiment（D-9 L3）
+        # symbol 不一定能直接给 yfinance（akshare 的 sh.600519 等格式不通）；
+        # 这里直接用原 symbol 试一次；data-service 拉不到会返空 list，自然降级 LLM-only。
+        news = await self._data.get_news(symbol=symbol, limit=8)
+        return _format_user_prompt_llm_only(
             symbol=symbol,
             as_of=as_of,
-            latest=latest,
-            recent_values=recent_values,
-            trend=trend,
+            market_type=market_type,
+            fng_note=(
+                f"(non-crypto market — no Fear & Greed; using {len(news)} live news headlines)"
+                if news
+                else "(non-crypto market — no Fear & Greed; news source returned empty)"
+            ),
+            news=news,
         )
 
 
 async def _fetch_fng(*, limit: int) -> list[dict[str, Any]]:
-    """拉 Fear & Greed 序列，最新在 index 0。
-
-    response 形如 ``{"data": [{"value":"42","value_classification":"Fear","timestamp":"..."}, ...]}``
-    """
+    """拉 Fear & Greed 序列，最新在 index 0。"""
     async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT_S, trust_env=False) as client:
         r = await client.get(_FNG_URL, params={"limit": limit})
         r.raise_for_status()
@@ -133,22 +163,61 @@ def _summarize_trend(values: list[int]) -> dict[str, Any]:
     }
 
 
-def _format_user_prompt(
+def _format_user_prompt_with_fng(
     *,
     symbol: str,
     as_of: datetime,
+    market_type: str,
     latest: dict[str, Any],
     recent_values: list[int],
     trend: dict[str, Any],
 ) -> str:
     return (
         f"asset: {symbol}\n"
+        f"market_type: {market_type}\n"
         f"as_of: {as_of.isoformat()}\n\n"
-        f"latest_fng:\n"
-        f"  value: {latest.get('value')}\n"
+        f"crypto_fng:\n"
+        f"  latest_value: {latest.get('value')}\n"
         f"  classification: {latest.get('value_classification')}\n"
-        f"  timestamp: {latest.get('timestamp')}\n\n"
-        f"trend_snapshot:\n  {trend}\n\n"
-        f"recent_30d_values (newest first):\n  {recent_values}\n\n"
+        f"  timestamp: {latest.get('timestamp')}\n"
+        f"  trend_snapshot: {trend}\n"
+        f"  recent_30d_values (newest first): {recent_values}\n\n"
         f"Output the required JSON only."
     )
+
+
+def _format_user_prompt_llm_only(
+    *,
+    symbol: str,
+    as_of: datetime,
+    market_type: str,
+    fng_note: str,
+    news: list[dict[str, Any]],
+) -> str:
+    news_block = _render_news_block(news)
+    return (
+        f"asset: {symbol}\n"
+        f"market_type: {market_type}\n"
+        f"as_of: {as_of.isoformat()}\n\n"
+        f"crypto_fng: {fng_note}\n\n"
+        f"{news_block}\n"
+        f"**Anchor sentiment on the news headlines above when present** "
+        f"(recent / repeated negative-tone → bearish sentiment; positive flow → bullish).\n"
+        f"When news_block is empty, fall back to training knowledge with **lower confidence**.\n\n"
+        f"Output the required JSON only."
+    )
+
+
+def _render_news_block(news: list[dict[str, Any]]) -> str:
+    """把 news items 渲染成 LLM 可读 block；空时返清晰占位。"""
+    if not news:
+        return "live_news: (none available — sentiment must come from training knowledge)\n"
+    lines = ["live_news (newest first):"]
+    for n in news:
+        ts = n.get("published_at") or "?"
+        title = (n.get("title") or "").strip()
+        publisher = n.get("publisher") or ""
+        if not title:
+            continue
+        lines.append(f"  - [{ts}] {publisher}: {title}")
+    return "\n".join(lines) + "\n"

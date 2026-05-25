@@ -1,22 +1,51 @@
-"""Fundamental analyst —— 宏观叙事 / 周期判断（D-8b: LLM-only，无外部数据）。
+"""Fundamental analyst —— 标的自身叙事 / 周期判断（D-8b: LLM-only，无外部数据）。
 
-D-8b 范围：只问 LLM "对 X 资产现在的基本面 / 宏观环境怎么看"。
-后续 D-9+ 接 sentiment / news 数据源时，再加 ``self._data.get_*`` 调用。
+D-9 起：system prompt 升级为**多市场感知**——同一个 analyst 在 crypto / 美股 / A股 /
+港股 / 全球股市 5 类资产上自动切术语（halving vs 10-K vs 年报）。market_type 由
+``researchers.base.infer_asset_type`` 推断后塞进 user prompt。
+
+后续真接外部数据时（D-9+），把 ``self._data.get_*`` / FRED / SEC EDGAR 拉来的事实
+追加进 user prompt 即可，system 不变。
 """
 from __future__ import annotations
 
 from datetime import datetime
 
+from ..researchers.base import infer_asset_type
 from .base import Analyst
 
 _SYSTEM = """
-You are a fundamental / macro analyst for crypto markets.
+You are a fundamental / macro analyst covering ANY asset class. The user prompt
+tells you the ``market_type`` (crypto / us_stock / cn_stock / hk_stock / global_stock);
+pick the right analytical framework from the table below before writing.
 
-You evaluate the medium- to long-term thesis for the given asset based on:
-- macro environment (rates, liquidity, regulation)
-- on-chain / adoption narrative (briefly)
-- supply / demand structure
-- known event risks (forks, halvings, ETF flows)
+**HARD CONSTRAINT — DATA TRUTHFULNESS (D-9)**:
+
+The system currently has **NO live fundamentals feed** (no SEC filings, no
+earnings transcripts, no on-chain real-time data, no analyst consensus pull).
+You must NOT:
+- Quote specific past forecasts as if still valid ("DRAM downturn lasts until
+  mid-2025", "iPhone 16 cycle peaks Q2 2025", "BTC ETF flows hit X this week") —
+  these are **training-time data points**, almost certainly stale relative to as_of.
+- Cite EPS numbers, revenue figures, margin percentages, or product roadmap
+  specifics unless they appear in the user prompt.
+- Treat your training knowledge of "the most recent earnings cycle" as current —
+  multiple quarters have likely passed.
+
+You may:
+- Discuss **structural drivers** in relative terms ("memory chip cycles tend
+  to last 6-18 months; we appear N quarters in but the exact phase is unknown").
+- Use **range / regime** language ("foundry demand has been a structural tailwind
+  in recent years; whether that's still expanding is unknown without live data").
+- Lower confidence (cap at **0.55** without live data) and say so in summary.
+
+| market_type    | What to anchor on                                                          |
+|----------------|----------------------------------------------------------------------------|
+| crypto         | on-chain flows, supply schedule / halving, exchange reserves, ETF / RWA   |
+| us_stock       | 10-K / 10-Q segment revenue, EPS, guidance, FCF, buyback / dilution        |
+| cn_stock       | 年报 / 季报 ROE / 毛利率, 行业政策, 北向资金, 供应链外汇敞口                   |
+| hk_stock       | interim / annual report, Southbound flow, A/H 价差, 监管 / HKD-rate         |
+| global_stock   | local annual / interim, FX exposure, regional regulatory / policy           |
 
 You do NOT use price chart analysis (the technical analyst handles that).
 
@@ -27,7 +56,7 @@ Return ONLY a JSON object with this exact shape:
   "confidence": float in [0, 1],
   "summary": "1-2 sentence core thesis",
   "key_points": ["bullet 1", "bullet 2", ...],   // up to 5 items
-  "factors": [                                    // 1-3 macro / sentiment factors
+  "factors": [                                    // 1-3 fundamental / macro factors
     {
       "name": "halving_cycle_phase",              // snake_case identifier
       "kind": "macro" | "sentiment",
@@ -40,15 +69,19 @@ Return ONLY a JSON object with this exact shape:
 }
 
 Rules for factors:
-- Output 1-3 factors. Each must be a real macro / on-chain / regulatory driver — not invented prices or events.
-- "kind" should be "macro" for monetary / regulation / structural; "sentiment" for adoption / narrative.
+- Output 1-3 factors. Each must be a real fundamental / macro / regulatory driver —
+  not invented prices or events.
+- "kind" should be "macro" for monetary / regulation / structural; "sentiment" for
+  adoption / narrative.
 - If you lack any specific recent data, lower the strength, do not invent.
+- For non-crypto market_types, factor.kind is still macro / sentiment (factor schema
+  does not yet have "earnings" / "policy" sub-kinds; encode them as macro).
 - Confidence and factor.strength should reflect data freshness.
 """.strip()
 
 
 class FundamentalAnalyst(Analyst):
-    """基本面 analyst。"""
+    """基本面 analyst（5 类资产多市场感知）。"""
 
     type_id = "fundamental"
 
@@ -64,11 +97,22 @@ class FundamentalAnalyst(Analyst):
         as_of: datetime,
         lookback_days: int,
     ) -> str:
-        # D-8b 不拉数据；后续 D-9+ 这里会加 sentiment / news 抓取
+        market_type = infer_asset_type(venue=venue, symbol=symbol)
         return (
             f"asset: {symbol} @ {venue}\n"
-            f"as_of: {as_of.isoformat()}\n"
+            f"market_type: {market_type}\n"
+            f"as_of: {as_of.isoformat()}  ← THIS IS NOW (current research time)\n"
             f"window_days: {lookback_days}\n\n"
-            "Output the required JSON only. "
-            "Be cautious about claims beyond your training cutoff."
+            "**IMPORTANT TIME DISCIPLINE**:\n"
+            "- `as_of` above is the TRUE current time of this research.\n"
+            "- Your training cutoff is likely earlier than `as_of`.\n"
+            "- **Do NOT** state outdated specific forecasts as if they still apply\n"
+            "  (e.g. avoid claims like 'DRAM downturn lasts until mid-2025' when "
+            "as_of is 2026+).\n"
+            "- When you reference past-period data (earnings / cycle phase / policy),\n"
+            "  use **relative phrasing** ('the most recent earnings cycle showed...',\n"
+            "  '~12-18 months into the current cycle...').\n"
+            "- If your knowledge of post-cutoff developments is thin, **lower confidence**\n"
+            "  and say so in summary; do not fabricate.\n\n"
+            "Output the required JSON only."
         )

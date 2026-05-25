@@ -1,15 +1,17 @@
 """Risk analyst —— 波动率 / 回撤 / 极端价差，给 manager 一票否决信号。
 
+D-9 起：multi-market 感知——同一个 analyst 在 crypto / 美股 / A 股 / 港股 / 全球 5 类
+资产上自动调整波动率阈值（market_type 由 ``researchers.base.infer_asset_type`` 推断）。
+
 设计：
 
-- 只用 K 线（``self._data``），不调外部 API
-- 算 3 个指标：ATR(14) / 历史最大回撤 / 当前波动率 vs 长期均值（z-score）
-- analyst 的 stance 语义和别人不同：
+- 指标计算（ATR / max DD / vol z-score）完全通用，对任何 OHLCV 都一致
+- 阈值不一样：crypto 4% ATR 算正常，美股 4% 就是 vol spike → prompt 里给 5 类表，
+  LLM 按 market_type 选区间
+- analyst 的 stance 语义跟其他人不同：
   - ``bullish`` = 风险可控（vol 低 / DD 小），管理层可以放心加仓
-  - ``bearish`` = 风险偏高（vol 飙 / 深 DD / 当前接近历史峰值附近），manager 应减仓 / 观望
+  - ``bearish`` = 风险偏高（vol 飙 / 深 DD / 接近历史峰值），manager 应减仓
   - ``neutral`` = 中等
-- 不做硬阈值判断（LLM 看指标自己定 stance + confidence），但 system prompt 给了
-  参考区间，让输出可解释
 """
 from __future__ import annotations
 
@@ -17,25 +19,32 @@ import math
 from datetime import datetime, timedelta
 from typing import Any
 
+from ..researchers.base import infer_asset_type
 from .base import Analyst
 
 _SYSTEM = """
-You are a risk analyst for crypto markets.
+You are a risk analyst covering any asset class.
 
-You receive recent OHLCV bars plus computed risk metrics. Your job is to assess
-whether the current risk environment supports adding exposure or warrants caution.
+You receive recent OHLCV bars + computed risk metrics + ``market_type``
+(crypto / us_stock / cn_stock / hk_stock / global_stock). Use the per-market
+volatility band table to decide whether risk is contained or elevated.
 
 Risk-aware stance semantics (different from technical / sentiment analysts!):
 - "bullish" = **risk is contained** — moderate vol, no fresh deep drawdown
 - "bearish" = **risk is elevated** — vol spike, deep recent drawdown, or fragile structure
 - "neutral" = mixed signals
 
-Reference ranges for crypto (hourly bars):
-- ATR / last_close < 1.5%   → low vol
-- ATR / last_close 1.5-3.5% → normal
-- ATR / last_close > 3.5%   → high vol (lean bearish on risk)
-- max drawdown over window > 15% → fragile structure
-- vol z-score > 2 → outlier, recent vol spike (lean bearish)
+Per-market ATR/close bands (hourly bars; scale for daily by ~sqrt(24x)):
+
+| market_type    | low vol   | normal       | high vol (lean bearish) | fragility DD |
+|----------------|-----------|--------------|-------------------------|---------------|
+| crypto         | < 1.5%    | 1.5 – 3.5%   | > 3.5%                  | > 15%         |
+| us_stock       | < 0.8%    | 0.8 – 2.0%   | > 2.0%                  | > 10%         |
+| cn_stock       | < 1.0%    | 1.0 – 2.5%   | > 2.5%                  | > 12%         |
+| hk_stock       | < 1.0%    | 1.0 – 2.5%   | > 2.5%                  | > 12%         |
+| global_stock   | < 1.0%    | 1.0 – 2.5%   | > 2.5%                  | > 12%         |
+
+Universal: vol z-score (short vs long) > 2 → outlier, recent vol spike (lean bearish).
 
 Return ONLY a JSON object with this exact shape:
 
@@ -51,19 +60,19 @@ Return ONLY a JSON object with this exact shape:
       "value": 2.3,                               // numeric or "high"/"med"/"low"
       "strength": 0.5,                            // 0-1 ; higher = signal is stronger
       "horizon": "swing",
-      "explanation": "ATR/close 2.3% — normal vol band"
+      "explanation": "ATR/close 2.3% — normal vol band for us_stock"
     }
   ]
 }
 
-Never invent numbers not in the snapshot. confidence and factor.strength should
+Never invent numbers not in the snapshot. Confidence and factor.strength should
 be lower when the window is short or signals conflict. All risk factor.kind
 should be "volatility".
 """.strip()
 
 
 class RiskAnalyst(Analyst):
-    """波动率 / 回撤 风险 analyst。"""
+    """波动率 / 回撤 风险 analyst（multi-market 感知）。"""
 
     type_id = "risk"
 
@@ -89,6 +98,7 @@ class RiskAnalyst(Analyst):
             limit=2_000,
         )
         snapshot = _build_risk_snapshot(bars)
+        market_type = infer_asset_type(venue=venue, symbol=symbol)
         return _format_user_prompt(
             venue=venue,
             symbol=symbol,
@@ -96,6 +106,7 @@ class RiskAnalyst(Analyst):
             as_of=as_of,
             num_bars=len(bars),
             snapshot=snapshot,
+            market_type=market_type,
         )
 
 
@@ -159,7 +170,7 @@ def _max_drawdown_pct(closes: list[float]) -> float | None:
 
 
 def _vol_z_score(closes: list[float], *, short: int, long_: int) -> float | None:
-    """短期波动率 vs 长期波动率的 z-score（用 log return 标准差近似）。"""
+    """短期波动率 vs 长期波动率的 z-score。"""
     if len(closes) < long_ + 1 or short >= long_:
         return None
     rets = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes)) if closes[i - 1] > 0]
@@ -173,7 +184,6 @@ def _vol_z_score(closes: list[float], *, short: int, long_: int) -> float | None
     if long_std == 0:
         return None
 
-    # rolling-std-of-std 估个尺度，避免直接拿 long_std 当分母（数量级问题）
     return (short_std - long_std) / long_std
 
 
@@ -194,9 +204,11 @@ def _format_user_prompt(
     as_of: datetime,
     num_bars: int,
     snapshot: dict[str, Any],
+    market_type: str,
 ) -> str:
     return (
         f"asset: {symbol} @ {venue}\n"
+        f"market_type: {market_type}\n"
         f"timeframe: {timeframe}\n"
         f"as_of: {as_of.isoformat()}\n"
         f"bars_total: {num_bars}\n\n"

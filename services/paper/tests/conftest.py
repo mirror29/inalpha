@@ -41,6 +41,10 @@ def _ensure_env() -> None:
     )
     os.environ.setdefault("JWT_SECRET", TEST_JWT_SECRET)
     os.environ.setdefault("DATA_SERVICE_URL", "http://data-mock.test")
+    # Swarm S1：默认关 backtest ProcessPool。每个 TestClient lifespan 都 spawn 6
+    # worker + import numpy 每次 ~2s，会拖慢整套测试到 130s+。runner._run_engine
+    # 自动回落同进程跑，业务路径覆盖率不变。pool 真路径由 test_pool.py 显式打开。
+    os.environ.setdefault("PAPER_POOL_DISABLED", "1")
     get_settings.cache_clear()
 
 

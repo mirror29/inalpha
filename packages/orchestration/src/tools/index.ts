@@ -5,7 +5,12 @@
  * - D-8a：trade-plan 5 个（create / approve / reject / execute / get）
  * - D-8b：research 1 个（deep_dive）
  */
-import { dataBackfillBarsTool, dataGetBarsTool, dataTools } from "./data.js";
+import {
+  dataBackfillBarsTool,
+  dataGetBarsTool,
+  dataGetTickerTool,
+  dataTools,
+} from "./data.js";
 import {
   paperComposeStrategyTool,
   paperGetAccountTool,
@@ -18,6 +23,16 @@ import {
   paperTools,
 } from "./paper.js";
 import { researchDeepDiveTool, researchTools } from "./research.js";
+import {
+  schedulerCreateJobTool,
+  schedulerGetJobTool,
+  schedulerListJobsTool,
+  schedulerListRunsTool,
+  schedulerSetEnabledTool,
+  schedulerTools,
+  schedulerTriggerJobTool,
+} from "./scheduler.js";
+import { swarmRunBacktestGridTool, swarmTools } from "./swarm.js";
 import {
   approveTradePlanTool,
   createTradePlanTool,
@@ -32,6 +47,7 @@ export {
   createTradePlanTool,
   dataBackfillBarsTool,
   dataGetBarsTool,
+  dataGetTickerTool,
   executeTradePlanTool,
   getTradePlanTool,
   paperComposeStrategyTool,
@@ -44,6 +60,13 @@ export {
   paperRunBacktestTool,
   rejectTradePlanTool,
   researchDeepDiveTool,
+  schedulerCreateJobTool,
+  schedulerGetJobTool,
+  schedulerListJobsTool,
+  schedulerListRunsTool,
+  schedulerSetEnabledTool,
+  schedulerTriggerJobTool,
+  swarmRunBacktestGridTool,
 };
 
 /** 所有 tool 数组，给 Mastra Agent 直接挂载。 */
@@ -52,6 +75,8 @@ export const allTools = [
   ...paperTools,
   ...tradePlanTools,
   ...researchTools,
+  ...swarmTools,
+  ...schedulerTools,
 ] as const;
 
 /** 给 trader subagent 用（不含 risk 的 approve/reject）。 */
@@ -91,6 +116,7 @@ export const orchestratorToolList = [
   // 数据 / 回测 / 健康
   dataGetBarsTool,
   dataBackfillBarsTool,
+  dataGetTickerTool,
   paperListStrategiesTool,
   paperRunBacktestTool,
   paperHealthTool,
@@ -99,6 +125,8 @@ export const orchestratorToolList = [
   // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
+  // ADR-0025 Swarm S1：并行批量回测
+  swarmRunBacktestGridTool,
   // Plan/Exec 五件套（D-8a' 直接挂到 orchestrator）
   createTradePlanTool,
   approveTradePlanTool,
@@ -109,6 +137,13 @@ export const orchestratorToolList = [
   paperListOrdersTool,
   paperListPositionsTool,
   paperGetAccountTool,
+  // D-9 类 Hermes 定时管理（让 agent 在对话里跑 scheduler）
+  schedulerCreateJobTool,
+  schedulerListJobsTool,
+  schedulerGetJobTool,
+  schedulerSetEnabledTool,
+  schedulerTriggerJobTool,
+  schedulerListRunsTool,
 ] as const;
 
 /** 名字 → tool 索引，给 framework 路由用。 */

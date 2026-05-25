@@ -120,6 +120,8 @@ Inalpha 是一个**面向严肃研究的开源量化交易框架**。它把多 a
 
 **带来什么。** "用 momentum / mean-reversion / breakout 在 BTC ETH SOL BNB AVAX 上跑 2024 回测" 变成一次 workflow 调用——扇出 15 个回测、聚合结果、把 Pareto 前沿摆给用户。同一组原语也驱动 paper account 批量评估和后续多策略实盘。
 
+> **S1 实现**：单机 ProcessPoolExecutor + Mastra `foreach({concurrency:4})`，单 tool `swarm.run_backtest_grid`，grid 上限 20 由 PreToolUse hook 强制。Smoke：`pnpm tsx packages/orchestration/scripts/smoke-swarm.ts`。设计细节 + graduation 标准见 [ADR-0025](docs/miro/decisions/0025-swarm-s1-implementation.md)（internal）。
+
 ---
 
 ## Built on the shoulders of

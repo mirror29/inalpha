@@ -4,12 +4,17 @@
 
 D-8c 起：可选落库 —— 调用方传 ``conn`` 时把回测结果写 ``backtest_runs`` 表
 并返回 run_id；不传 conn 时退化为旧的"in-memory only"行为（向后兼容）。
+
+Swarm S1（ADR-0025）起：CPU 重活（engine + strategy + ``engine.run(bars)``）抽到
+``run_engine_in_subprocess`` 顶层函数，async ``run_backtest`` 通过 ``ProcessPoolExecutor``
+``loop.run_in_executor`` 提交。HTTP I/O / DB 写仍在 main 协程里。
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from inalpha_shared.errors import ValidationError
@@ -17,11 +22,17 @@ from psycopg import AsyncConnection
 
 from .data_client import DataClient
 from .engine.backtest import BacktestEngine
+from .engine.pool import get_pool
 from .kernel.identifiers import InstrumentId
 from .model.data import Bar
 from .schemas import BacktestRequest, BacktestResponse, EquityPoint, PositionSnapshot
 from .storage import backtest_runs as backtest_runs_store
 from .strategies import get_strategy_class
+
+if TYPE_CHECKING:
+    from concurrent.futures import ProcessPoolExecutor
+
+    from .engine.report import BacktestReport
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +52,8 @@ async def run_backtest(
               落库失败不阻断回测返回（warning log）—— D-8b' 容错原则。
     """
     started_at = datetime.now(tz=UTC)
-    # 1. 拉数据
+    # 1. 拉数据 —— DataClient.get_bars 默认 fresh=True：先 POST /backfill/bars
+    # 把 to_ts 之前最新 K 线补齐，再 GET /bars。新 symbol / 新窗口在这一步自愈。
     raw_bars = await data_client.get_bars(
         venue=req.venue,
         symbol=req.symbol,
@@ -55,8 +67,9 @@ async def run_backtest(
     if not bars:
         raise ValidationError(
             f"data-service returned 0 bars for {req.symbol}@{req.venue} "
-            f"{req.timeframe} [{req.from_ts.isoformat()}, {req.to_ts.isoformat()}]; "
-            f"backfill via data-service /backfill/bars first",
+            f"{req.timeframe} [{req.from_ts.isoformat()}, {req.to_ts.isoformat()}] "
+            f"even after fresh-backfill; symbol may not exist on {req.venue} "
+            f"or the time range is invalid (future / pre-listing)",
             code="NO_BARS_AVAILABLE",
             details={
                 "venue": req.venue,
@@ -67,24 +80,17 @@ async def run_backtest(
             },
         )
 
-    # 2. 实例化 engine + strategy
-    engine = BacktestEngine(initial_cash=req.initial_cash, fee_rate=req.fee_rate)
-    strategy_cls = get_strategy_class(req.strategy_id)
-
-    # strategy_cls 是 type[Strategy] 但具体子类构造签名不同（SMA cross 还要
-    # instrument_id / timeframe / 策略参数）。MVP 不抽 strategy factory，直接 type:ignore。
-    strategy = strategy_cls(  # type: ignore[call-arg]
-        name=f"{req.strategy_id}-{instrument_id.symbol}",
-        clock=engine.clock,
-        msgbus=engine.msgbus,
+    # 2-3. 实例化 engine + strategy + 跑回测（CPU 重活，丢 ProcessPool）
+    # 优先级：pool 已起（生产）→ 走 pool；未起（旧测试 / 同步入口）→ 同进程跑兜底
+    report = await _run_engine(
+        bars=bars,
         instrument_id=instrument_id,
         timeframe=req.timeframe,
-        **req.params,
+        strategy_id=req.strategy_id,
+        params=req.params,
+        initial_cash=req.initial_cash,
+        fee_rate=req.fee_rate,
     )
-    engine.add_strategy(strategy)
-
-    # 3. 跑回测
-    report = engine.run(bars)
 
     # 4. 组装响应
     final_positions = [
@@ -198,6 +204,119 @@ async def _persist_run(
             },
         )
         return None
+
+
+async def _run_engine(
+    *,
+    bars: list[Bar],
+    instrument_id: InstrumentId,
+    timeframe: str,
+    strategy_id: str,
+    params: dict[str, Any],
+    initial_cash: float,
+    fee_rate: float,
+) -> BacktestReport:
+    """调度 engine 执行：pool 已起则丢 ProcessPool，未起则同进程跑兜底。
+
+    pool 未起的情况只剩老单测路径（没走 lifespan）；生产 / 集成测试都该走 pool。
+    """
+    try:
+        pool: ProcessPoolExecutor | None = get_pool()
+    except RuntimeError:
+        pool = None
+
+    if pool is None:
+        # 兜底：同进程跑（不真正 CPU 并行，但函数语义一致）
+        return run_engine_in_subprocess(
+            bars=bars,
+            instrument_id=instrument_id,
+            timeframe=timeframe,
+            strategy_id=strategy_id,
+            params=params,
+            initial_cash=initial_cash,
+            fee_rate=fee_rate,
+        )
+
+    loop = asyncio.get_running_loop()
+    # run_in_executor 不支持 kwargs，包一层 lambda（不能 partial — kwargs 走不到 args）
+    # Python lambda 默认参数延迟求值的问题这里不存在（一次性 closure）
+    fn = _make_pool_call(
+        bars=bars,
+        instrument_id=instrument_id,
+        timeframe=timeframe,
+        strategy_id=strategy_id,
+        params=params,
+        initial_cash=initial_cash,
+        fee_rate=fee_rate,
+    )
+    return await loop.run_in_executor(pool, fn)
+
+
+def _make_pool_call(
+    *,
+    bars: list[Bar],
+    instrument_id: InstrumentId,
+    timeframe: str,
+    strategy_id: str,
+    params: dict[str, Any],
+    initial_cash: float,
+    fee_rate: float,
+) -> Any:
+    """生成一个无参 callable，丢给 ``run_in_executor``。
+
+    需要这层间接因为 ``ProcessPoolExecutor.submit`` 接 ``(*args)`` 不接 kwargs，
+    用 functools.partial 包 kwargs 也行，但闭包写法更显式。
+    """
+    from functools import partial
+
+    return partial(
+        run_engine_in_subprocess,
+        bars=bars,
+        instrument_id=instrument_id,
+        timeframe=timeframe,
+        strategy_id=strategy_id,
+        params=params,
+        initial_cash=initial_cash,
+        fee_rate=fee_rate,
+    )
+
+
+def run_engine_in_subprocess(
+    *,
+    bars: list[Bar],
+    instrument_id: InstrumentId,
+    timeframe: str,
+    strategy_id: str,
+    params: dict[str, Any],
+    initial_cash: float,
+    fee_rate: float,
+) -> BacktestReport:
+    """**Top-level 函数 = 可 pickle**：实例化 engine + strategy + 跑 bars，返 ``BacktestReport``。
+
+    在子进程里跑（ADR-0025 §D1）：
+
+    - 不调任何 async / httpx / DB —— 全部 IO 留在 main 协程
+    - 只接受 picklable 输入（dataclass + 原生 dict / list）
+    - raise 直接通过 future 传回 main，main 翻成 HTTP 5xx 结构化错误
+
+    放在 runner.py 而不是 pool.py：保持调用现场的 import 上下文（``BacktestEngine`` 之类
+    模块在 worker 第一次 fork 后由 pickle 反序列化时按需 import）。
+    """
+    engine = BacktestEngine(initial_cash=initial_cash, fee_rate=fee_rate)
+    strategy_cls = get_strategy_class(strategy_id)
+
+    # strategy 子类构造签名不一（SMA cross 要 lookback、mean_rev 要 threshold 等）；
+    # MVP 不抽 strategy factory，**kwargs 喂参数 + type:ignore
+    strategy = strategy_cls(  # type: ignore[call-arg]
+        name=f"{strategy_id}-{instrument_id.symbol}",
+        clock=engine.clock,
+        msgbus=engine.msgbus,
+        instrument_id=instrument_id,
+        timeframe=timeframe,
+        **params,
+    )
+    engine.add_strategy(strategy)
+    return engine.run(bars)
 
 
 def _datetime_to_ns(dt: datetime) -> int:

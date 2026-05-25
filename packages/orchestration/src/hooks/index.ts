@@ -21,6 +21,19 @@ export {
   createGridSizeCapHandler,
   defaultGridSizeCapRegistration,
 } from "./handlers/grid-size-cap.js";
+export {
+  createToolIdempotencyHandlers,
+  defaultIdempotencyRegistrations,
+} from "./handlers/tool-idempotency.js";
+export type {
+  IdempotencyOptions,
+  IdempotencyPair,
+} from "./handlers/tool-idempotency.js";
+export {
+  createInjectCurrentDateHandler,
+  defaultInjectCurrentDateRegistration,
+} from "./handlers/inject-current-date.js";
+export type { InjectCurrentDateOptions } from "./handlers/inject-current-date.js";
 
 // Stop hook handlers（ADR-0010 §Stop hook 补丁）
 export { createPendingPlanCheckHandler } from "./handlers/pending-plan-check.js";
