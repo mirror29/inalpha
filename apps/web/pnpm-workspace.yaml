@@ -1,0 +1,8 @@
+onlyBuiltDependencies:
+  - '@swc/core'
+  - sharp
+  - esbuild
+  - workerd
+ignoredBuiltDependencies:
+  - '@parcel/watcher'
+verifyDepsBeforeRun: false

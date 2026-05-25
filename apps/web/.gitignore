@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+.turbo/
+.vercel/
+.wrangler/
+
+# build artifacts
+*.tsbuildinfo
+next-env.d.ts.bak
+
+# env
+.env*.local
+
+# logs
+*.log

@@ -1,0 +1,131 @@
+{
+  "meta": {
+    "title": "Inalpha — 量化 AI agent 编排框架",
+    "description": "开源量化交易框架，多 agent LLM 研究，统一内核 backtest = paper = live。"
+  },
+  "nav": {
+    "github": "GitHub",
+    "docs": "文档"
+  },
+  "hero": {
+    "tagline": "以狐之眼，寻 alpha。",
+    "subtitle": "量化使魔 · 回测 = 模拟 = 实盘",
+    "blurb": "对话驱动的量化研究、策略生成与模拟盘交易框架——以 Claude Code 级工程纪律装配。",
+    "cta": {
+      "github": "看代码",
+      "docs": "读文档"
+    }
+  },
+  "loop": {
+    "eyebrow": "闭环",
+    "title": "一个闭环：你 → agent → 内核 → 策略。",
+    "blurb": "一个 orchestrator 把你的 prompt 路由到三个 Python 内核，决策回流到对话——全程可追溯。",
+    "nodes": {
+      "user": "你",
+      "orchestrator": "Orchestrator",
+      "data": "data",
+      "paper": "paper",
+      "research": "research",
+      "strategy": "策略"
+    }
+  },
+  "kernels": {
+    "eyebrow": "三个内核",
+    "title": "三个 Python 服务，一段对话。",
+    "data": {
+      "title": "data",
+      "desc": "多 venue 数据：crypto、美股、A 股、港股、日韩澳印巴英德等单股、全球指数、FRED 宏观。",
+      "code": "from inalpha_data import get_bars"
+    },
+    "paper": {
+      "title": "paper",
+      "desc": "内存撮合 + 回测引擎 + 持久化模拟盘，状态可回放。",
+      "code": "from inalpha_paper import run_backtest"
+    },
+    "research": {
+      "title": "research",
+      "desc": "多分析师 LLM debate，时效性锚定，不把过期数据当洞察。",
+      "code": "from inalpha_research import debate"
+    }
+  },
+  "principles": {
+    "eyebrow": "为什么 Inalpha",
+    "title": "工程纪律，不靠玄学。",
+    "items": {
+      "unified": {
+        "title": "统一内核",
+        "desc": "一份策略代码跑回测 / 模拟 / 实盘。表现必须一致——否则任何一个都没有意义。"
+      },
+      "agents": {
+        "title": "Agent 一等公民",
+        "desc": "研究、决策、风控、复盘各有独立 agent，立场对立、工具不同、决策可追。不是 chat wrapper。"
+      },
+      "transparency": {
+        "title": "透明胜过精确",
+        "desc": "宁可让 agent 说『我不知道』，也不要它装作很确定却拿不出证据。"
+      },
+      "discipline": {
+        "title": "纪律胜过捷径",
+        "desc": "决策记录、测试、声明式护栏优先。聪明代码是 bug 温床。"
+      },
+      "compounding": {
+        "title": "长期复利",
+        "desc": "稳固基建先于花活功能。活得久比跑得快更重要。"
+      }
+    }
+  },
+  "markets": {
+    "eyebrow": "覆盖",
+    "title": "已覆盖市场",
+    "blurb": "Crypto 优先，多 venue 出生即标配。所有市场走同一内核、同一套 agent prompt。",
+    "tags": {
+      "crypto": "Crypto",
+      "us": "美股",
+      "cn": "A 股",
+      "hk": "港股",
+      "jp": "日股",
+      "kr": "韩股",
+      "au": "澳股",
+      "in": "印度",
+      "uk": "英股",
+      "de": "德股",
+      "indices": "全球指数",
+      "macro": "FRED 宏观"
+    }
+  },
+  "discipline": {
+    "eyebrow": "底子不一样",
+    "title": "Claude Code 级工程绑带。",
+    "blurb": "声明式、配置驱动、可 review。不是 chat wrapper。",
+    "chips": {
+      "hooks": "hooks",
+      "permissions": "permissions",
+      "plan-exec": "plan-exec",
+      "subagent": "subagent",
+      "mcp": "MCP",
+      "swarm": "Swarm"
+    },
+    "chipDescs": {
+      "hooks": "每个 tool call 走中间件。",
+      "permissions": "工具权限按角色 scope。",
+      "plan-exec": "先 plan 后 exec，one-shot token。",
+      "subagent": "风控 / 复盘独立子 agent。",
+      "mcp": "Model Context Protocol 原生支持。",
+      "swarm": "并行 worker 跑参数网格回测。"
+    }
+  },
+  "cta": {
+    "eyebrow": "开始",
+    "title": "Star 它，读它，把它撕开。",
+    "blurb": "Inalpha 还在 alpha 阶段，AGPL-3.0。暂时别拿真钱跑——但每一行都在 GitHub 上。",
+    "command": "git clone https://github.com/mirror29/inalpha",
+    "copy": "复制",
+    "copied": "已复制",
+    "github": "GitHub 仓库"
+  },
+  "footer": {
+    "license": "AGPL-3.0",
+    "tagline": "以狐之眼，寻 alpha。",
+    "rights": "Inalpha · 开源 · 2026"
+  }
+}
