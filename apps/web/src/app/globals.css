@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0e1a;
+  --color-bg-elev: #11162a;
+  --color-fg: #f5f5f7;
+  --color-fg-muted: #9ba3b4;
+  --color-cyan: #5fb3ff;
+  --color-cyan-dim: #2a5a7a;
+  --color-border-subtle: #1f2740;
+  --color-fox-red: #c8463c;
+  --color-gold: #d4a744;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    color-scheme: dark;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-cyan) 35%, transparent);
+    color: var(--color-fg);
+  }
+}
+
+@layer utilities {
+  .dot-grid {
+    background-image: radial-gradient(
+      circle at center,
+      color-mix(in oklab, var(--color-cyan) 18%, transparent) 1px,
+      transparent 1px
+    );
+    background-size: 28px 28px;
+  }
+
+  .pulse-glow {
+    animation: pulse-glow 3.2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      filter: drop-shadow(0 0 6px color-mix(in oklab, var(--color-cyan) 30%, transparent));
+      opacity: 0.85;
+    }
+    50% {
+      filter: drop-shadow(0 0 14px color-mix(in oklab, var(--color-cyan) 70%, transparent));
+      opacity: 1;
+    }
+  }
+}

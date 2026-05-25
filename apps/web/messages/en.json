@@ -1,0 +1,131 @@
+{
+  "meta": {
+    "title": "Inalpha — Conversational AI agents for quant",
+    "description": "Open-source quant trading framework. Multi-agent LLM research, unified kernel where backtest = paper = live."
+  },
+  "nav": {
+    "github": "GitHub",
+    "docs": "Docs"
+  },
+  "hero": {
+    "tagline": "Find alpha with a fox's eye.",
+    "subtitle": "The quant familiar · backtest = paper = live",
+    "blurb": "Conversational AI agents for quantitative research, strategy authoring, and paper trading — wired with Claude Code–grade engineering discipline.",
+    "cta": {
+      "github": "View on GitHub",
+      "docs": "Read the docs"
+    }
+  },
+  "loop": {
+    "eyebrow": "The loop",
+    "title": "One loop. User → agents → kernels → strategy.",
+    "blurb": "An orchestrator routes your prompt across three Python kernels. Decisions flow back into the conversation — fully transparent.",
+    "nodes": {
+      "user": "You",
+      "orchestrator": "Orchestrator",
+      "data": "data",
+      "paper": "paper",
+      "research": "research",
+      "strategy": "Strategy"
+    }
+  },
+  "kernels": {
+    "eyebrow": "Three kernels",
+    "title": "Three Python services, one conversation.",
+    "data": {
+      "title": "data",
+      "desc": "Multi-venue feeds: crypto, US, A-share, HK, JP, KR, AU, IN, UK, DE equities, global indices, FRED macro.",
+      "code": "from inalpha_data import get_bars"
+    },
+    "paper": {
+      "title": "paper",
+      "desc": "In-memory matching, backtest engine, and persistent paper trading with replay-able state.",
+      "code": "from inalpha_paper import run_backtest"
+    },
+    "research": {
+      "title": "research",
+      "desc": "Multi-analyst LLM debate. Freshness-anchored. No stale numbers passed off as insight.",
+      "code": "from inalpha_research import debate"
+    }
+  },
+  "principles": {
+    "eyebrow": "Why Inalpha",
+    "title": "Engineering discipline, not vibes.",
+    "items": {
+      "unified": {
+        "title": "Unified kernel",
+        "desc": "One strategy codebase across backtest, paper, and live. Behavior must be identical — or nothing is meaningful."
+      },
+      "agents": {
+        "title": "Agents are first-class",
+        "desc": "Research, decision, risk, and review have dedicated agents — opposing stances, distinct toolsets, traceable decisions."
+      },
+      "transparency": {
+        "title": "Transparency over precision",
+        "desc": "Prefer an agent that says “I don't know” over one that sounds certain but cannot show its evidence."
+      },
+      "discipline": {
+        "title": "Discipline over shortcuts",
+        "desc": "Decision records, tests, declarative guards come first. Clever code is a bug nursery."
+      },
+      "compounding": {
+        "title": "Long-horizon compounding",
+        "desc": "Solid infrastructure before flashy features. Surviving long matters more than running fast."
+      }
+    }
+  },
+  "markets": {
+    "eyebrow": "Coverage",
+    "title": "Markets we already cover.",
+    "blurb": "Crypto-first, multi-venue from day one. Each market routes through the same kernel and the same agent prompts.",
+    "tags": {
+      "crypto": "Crypto",
+      "us": "US Equities",
+      "cn": "A-share",
+      "hk": "Hong Kong",
+      "jp": "Japan",
+      "kr": "Korea",
+      "au": "Australia",
+      "in": "India",
+      "uk": "UK",
+      "de": "Germany",
+      "indices": "Global Indices",
+      "macro": "FRED Macro"
+    }
+  },
+  "discipline": {
+    "eyebrow": "Built different",
+    "title": "Claude Code–grade engineering harness.",
+    "blurb": "Declarative, config-driven, and reviewable. Not a chat wrapper.",
+    "chips": {
+      "hooks": "hooks",
+      "permissions": "permissions",
+      "plan-exec": "plan-exec",
+      "subagent": "subagent",
+      "mcp": "MCP",
+      "swarm": "Swarm"
+    },
+    "chipDescs": {
+      "hooks": "Middleware on every tool call.",
+      "permissions": "Role-scoped tool access.",
+      "plan-exec": "Plan-then-execute with one-shot tokens.",
+      "subagent": "Isolated subagents for risk and review.",
+      "mcp": "Model Context Protocol native.",
+      "swarm": "Parallel workers for grid backtests."
+    }
+  },
+  "cta": {
+    "eyebrow": "Get started",
+    "title": "Star it. Read it. Tear it apart.",
+    "blurb": "Inalpha is alpha-stage and AGPL-3.0. No real money yet — but every line is on GitHub.",
+    "command": "git clone https://github.com/mirror29/inalpha",
+    "copy": "Copy",
+    "copied": "Copied",
+    "github": "View on GitHub"
+  },
+  "footer": {
+    "license": "AGPL-3.0",
+    "tagline": "Find alpha with a fox's eye.",
+    "rights": "Inalpha · open source · 2026"
+  }
+}
