@@ -137,7 +137,7 @@ class DataClient:
                 # backfill 跨度大时 30s 可能不够（yfinance 1d/180d ~5s，akshare 较慢）
                 timeout=60.0,
             )
-        except Exception:  # noqa: BLE001 — 金融 best-effort fresh，失败不抛
+        except Exception:
             pass
 
     async def get_news(
@@ -157,13 +157,13 @@ class DataClient:
                 "/news",
                 params={"venue": venue, "symbol": symbol, "limit": limit},
             )
-        except Exception:  # noqa: BLE001 — news 是 best-effort，任何失败都降级为空
+        except Exception:
             return []
         if r.status_code >= 400:
             return []
         try:
             payload = r.json()
-        except Exception:  # noqa: BLE001
+        except Exception:
             return []
         items = payload.get("items") if isinstance(payload, dict) else None
         return items if isinstance(items, list) else []

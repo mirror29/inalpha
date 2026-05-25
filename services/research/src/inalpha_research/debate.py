@@ -93,7 +93,7 @@ async def _safe_speak(
             history=history,
             round_no=round_no,
         )
-    except Exception as e:  # noqa: BLE001 — 故意宽捕，落败也要让辩论继续
+    except Exception as e:
         _logger.warning(
             "researcher_failed",
             role=researcher.role,

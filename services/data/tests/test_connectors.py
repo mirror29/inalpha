@@ -15,7 +15,6 @@ from inalpha_data.connectors import (
 )
 from inalpha_data.connectors.akshare import _parse_symbol
 
-
 # ────────────────────────────────────────────────────────────────────
 # Registry
 # ────────────────────────────────────────────────────────────────────
@@ -120,7 +119,7 @@ def test_parse_symbol_global_prefixes(raw: str, want_prefix: str, want_code: str
 
 
 def test_parse_symbol_case_insensitive_prefix() -> None:
-    prefix, code = _parse_symbol("SH.600519")
+    prefix, _code = _parse_symbol("SH.600519")
     assert prefix == "sh"
 
 

@@ -118,7 +118,7 @@ class DataClient:
                     from_ts=from_ts,
                     to_ts=to_ts,
                 )
-            except Exception:  # noqa: BLE001 — best-effort fresh，失败不抛
+            except Exception:
                 pass
 
         try:
