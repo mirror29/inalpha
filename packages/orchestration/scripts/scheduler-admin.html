@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<!--
+  Inalpha Scheduler · 极简 admin 界面（D-9）
+
+  用法：
+
+    1. SCHEDULER_ENABLED=true bash scripts/dev.sh   # 起 mastra:4111
+    2. 浏览器打开本文件（直接 open，或 file://）
+    3. 默认连 http://localhost:4111；右上角输入框可改
+
+  为什么不用 Next.js：D-9 阶段仓库还没 apps/web；这是临时管理面。
+
+  特性：列 jobs / 切 enabled / 手动 trigger / 查 runs。
+  没有：编辑 cron 表达式 / 创建 job（用 curl POST + 复杂 JSON 更稳）。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Inalpha Scheduler Admin</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         max-width: 1100px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .meta { color: #888; font-size: 13px; margin-bottom: 16px; }
+  .controls { margin-bottom: 16px; }
+  .controls input { padding: 4px 8px; width: 280px; font-family: monospace; }
+  .controls button { padding: 4px 12px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; }
+  tr.disabled { opacity: 0.5; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 10px;
+          font-size: 11px; font-weight: 600; }
+  .pill.tool { background: #eaf4ff; color: #1769aa; }
+  .pill.agent { background: #fff3cd; color: #856404; }
+  .pill.success { background: #d4edda; color: #155724; }
+  .pill.failed, .pill.timeout { background: #f8d7da; color: #721c24; }
+  .pill.running { background: #cce5ff; color: #004085; }
+  button.action { padding: 2px 8px; margin-right: 4px; font-size: 12px; cursor: pointer; }
+  pre { background: #f9f9f9; padding: 8px; border: 1px solid #eee; max-height: 200px;
+        overflow: auto; font-size: 11px; margin: 0; }
+  #status { margin: 8px 0; padding: 6px 10px; border-radius: 4px; font-size: 12px; }
+  #status.ok { background: #d4edda; color: #155724; }
+  #status.err { background: #f8d7da; color: #721c24; }
+</style>
+</head>
+<body>
+<h1>Inalpha Scheduler · admin</h1>
+<div class="meta">D-9 临时管理面（HTML+fetch，无 build）。每 10s 自动刷新。</div>
+
+<div class="controls">
+  Base URL:
+  <input id="baseUrl" value="http://localhost:4111">
+  <button onclick="loadAll()">刷新</button>
+  <span id="schedRunning" style="margin-left:16px;color:#888;"></span>
+</div>
+<div id="status"></div>
+
+<h2 style="font-size:16px;">Jobs</h2>
+<table id="jobsTable">
+  <thead><tr>
+    <th>job_id</th><th>mode</th><th>cron</th><th>tz</th><th>enabled</th>
+    <th>next fire</th><th>actions</th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2 style="font-size:16px;">Recent Runs (50)</h2>
+<table id="runsTable">
+  <thead><tr>
+    <th>job_id</th><th>status</th><th>trigger</th>
+    <th>scheduled_at</th><th>finished_at</th><th>result / error</th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+
+<script>
+const $ = (q) => document.querySelector(q);
+const base = () => $("#baseUrl").value.replace(/\/$/, "");
+
+function setStatus(msg, ok = true) {
+  const el = $("#status");
+  el.className = ok ? "ok" : "err";
+  el.textContent = msg;
+  if (ok) setTimeout(() => { if (el.textContent === msg) el.textContent = ""; }, 3000);
+}
+
+async function api(path, init = {}) {
+  const url = base() + path;
+  const res = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init.headers || {}) } });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((body && body.message) || `${res.status} ${res.statusText}`);
+  return body;
+}
+
+function fmtDate(s) {
+  if (!s) return "-";
+  return new Date(s).toLocaleString();
+}
+
+function fmtJson(o) {
+  if (o === null || o === undefined) return "";
+  return JSON.stringify(o, null, 2);
+}
+
+async function loadJobs() {
+  const data = await api("/scheduler/jobs");
+  $("#schedRunning").textContent = "scheduler running: " + (data.schedulerRunning ? "yes" : "no");
+  const tbody = $("#jobsTable tbody");
+  tbody.innerHTML = "";
+  for (const j of data.jobs) {
+    const tr = document.createElement("tr");
+    if (!j.enabled) tr.className = "disabled";
+    tr.innerHTML = `
+      <td><b>${j.jobId}</b><div style="color:#888;font-size:11px;">${j.description || ""}</div></td>
+      <td><span class="pill ${j.mode}">${j.mode}</span></td>
+      <td><code>${j.cronExpr}</code></td>
+      <td>${j.timezone}</td>
+      <td>${j.enabled ? "✓" : ""}</td>
+      <td style="font-size:11px;">${fmtDate(j.nextFireAt)}</td>
+      <td>
+        <button class="action" onclick="toggleEnabled('${j.jobId}', ${!j.enabled})">${j.enabled ? "disable" : "enable"}</button>
+        <button class="action" onclick="triggerJob('${j.jobId}')">trigger</button>
+        <button class="action" onclick="deleteJob('${j.jobId}')">delete</button>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadRuns() {
+  const data = await api("/scheduler/runs?limit=50");
+  const tbody = $("#runsTable tbody");
+  tbody.innerHTML = "";
+  for (const r of data.runs) {
+    const tr = document.createElement("tr");
+    const blob = r.status === "success" ? r.result : r.error;
+    tr.innerHTML = `
+      <td>${r.jobId}</td>
+      <td><span class="pill ${r.status}">${r.status}</span></td>
+      <td>${r.trigger}</td>
+      <td style="font-size:11px;">${fmtDate(r.scheduledAt)}</td>
+      <td style="font-size:11px;">${fmtDate(r.finishedAt)}</td>
+      <td><pre>${fmtJson(blob)}</pre></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadAll() {
+  try { await loadJobs(); await loadRuns(); }
+  catch (e) { setStatus("load failed: " + e.message, false); }
+}
+
+async function toggleEnabled(id, enabled) {
+  try {
+    await api(`/scheduler/jobs/${encodeURIComponent(id)}`, {
+      method: "PATCH", body: JSON.stringify({ enabled }),
+    });
+    setStatus(`${id} ${enabled ? "enabled" : "disabled"}`);
+    await loadJobs();
+  } catch (e) { setStatus("toggle failed: " + e.message, false); }
+}
+
+async function triggerJob(id) {
+  setStatus(`triggering ${id}...`);
+  try {
+    const r = await api(`/scheduler/jobs/${encodeURIComponent(id)}/trigger`, { method: "POST" });
+    setStatus(`${id} → ${r.status}`, r.status === "success");
+    await loadRuns();
+  } catch (e) { setStatus("trigger failed: " + e.message, false); }
+}
+
+async function deleteJob(id) {
+  if (!confirm(`delete ${id}? 关联 runs 会级联清除。`)) return;
+  try {
+    await api(`/scheduler/jobs/${encodeURIComponent(id)}`, { method: "DELETE" });
+    setStatus(`${id} deleted`);
+    await loadAll();
+  } catch (e) { setStatus("delete failed: " + e.message, false); }
+}
+
+loadAll();
+setInterval(loadAll, 10000);
+</script>
+</body>
+</html>
