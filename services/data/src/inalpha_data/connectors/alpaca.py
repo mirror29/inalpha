@@ -153,9 +153,9 @@ class AlpacaConnector:
         坑：alpaca IEX free feed **仅 IEX 一个交易所的报价**，非全国合并 NBBO；
             盘前盘后可能 stale 几分钟。下单前如需更准 ref，需付费 SIP feed。
         """
-        from alpaca.data.requests import StockLatestTradeRequest
-
         import asyncio
+
+        from alpaca.data.requests import StockLatestTradeRequest
 
         def _fetch_sync() -> tuple[datetime, float]:
             req = StockLatestTradeRequest(symbol_or_symbols=symbol)

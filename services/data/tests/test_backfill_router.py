@@ -13,8 +13,9 @@ D-9 ``data.backfill_bars`` 工具层解锁后，TS schema 不再卡 venue ——
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest

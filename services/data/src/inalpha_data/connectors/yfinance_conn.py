@@ -207,7 +207,7 @@ def _fetch_news_sync(symbol: str, limit: int) -> list[dict[str, Any]]:
     ticker = yf.Ticker(symbol)
     try:
         raw_news = ticker.news or []
-    except Exception:  # noqa: BLE001 — 反爬偶发，让上层兜底返空
+    except Exception:
         _logger.warning("yfinance_news_fetch_failed", symbol=symbol)
         return []
 
