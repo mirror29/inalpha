@@ -20,6 +20,18 @@ class DataSettings(BaseSettings):
 
     binance_api_secret: str = Field(default="", alias="BINANCE_API_SECRET")
 
+    # D-9 起：扩到美股 + A股/港股
+    alpaca_api_key: str = Field(default="", alias="ALPACA_API_KEY")
+    """alpaca-py SDK 的 API key。注册 alpaca.markets 即免费拿；空字符串时 SDK
+    会走匿名模式拉公开数据，但限速更严。"""
+
+    alpaca_api_secret: str = Field(default="", alias="ALPACA_API_SECRET")
+
+    fred_api_key: str = Field(default="", alias="FRED_API_KEY")
+    """FRED API key（免费）。空字符串时 connector 跳过注册，``venue=fred`` 不可用。
+    注册地址 https://fred.stlouisfed.org/docs/api/api_key.html
+    """
+
     data_service_port: int = Field(default=8001, alias="DATA_SERVICE_PORT")
 
 

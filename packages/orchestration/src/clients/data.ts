@@ -25,6 +25,16 @@ export type BackfillResult = {
   to_ts: string;
 };
 
+export type Ticker = {
+  venue: string;
+  symbol: string;
+  price: number;
+  ts: string;
+  source: string;
+  is_stale: boolean;
+  stale_seconds: number;
+};
+
 export class DataClient {
   private readonly http: HttpClient;
 
@@ -67,6 +77,18 @@ export class DataClient {
       timeframe: params.timeframe,
       from_ts: params.fromTs,
       to_ts: params.toTs,
+    });
+  }
+
+  async getTicker(params: {
+    venue: string;
+    symbol: string;
+    fresh?: boolean;
+  }): Promise<Ticker> {
+    return await this.http.get<Ticker>("/ticker", {
+      venue: params.venue,
+      symbol: params.symbol,
+      fresh: params.fresh ?? false,
     });
   }
 }

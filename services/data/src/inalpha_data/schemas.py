@@ -80,11 +80,58 @@ class HealthResponse(BaseModel):
 # ────────────────────────────────────────────────────────────────────
 
 
+# ────────────────────────────────────────────────────────────────────
+# News（D-9 加：给 research macro/sentiment analyst 喂真新闻）
+# ────────────────────────────────────────────────────────────────────
+
+
+class NewsQuery(BaseModel):
+    """``GET /news`` 的 query 参数。"""
+
+    venue: str = Field(
+        default="yfinance",
+        description="新闻数据源 venue。当前仅支持 yfinance（零 key）；其它 venue 返 422。",
+    )
+    symbol: str = Field(
+        ...,
+        examples=["AAPL", "^GSPC", "005930.KS"],
+        description="Yahoo ticker；指数（^GSPC）拿宏观新闻，个股拿 ticker-specific。",
+    )
+    limit: int = Field(default=10, ge=1, le=30, description="最多返回多少条")
+
+
+class NewsItem(BaseModel):
+    """单条新闻头条。"""
+
+    title: str
+    publisher: str = ""
+    link: str = ""
+    published_at: datetime | None = None
+    summary: str = ""
+
+
+class NewsResponse(BaseModel):
+    """``GET /news`` 响应：按发布时间倒序（最新在 items[0]）。"""
+
+    venue: str
+    symbol: str
+    items: list[NewsItem]
+
+
 class TickerQuery(BaseModel):
     """``GET /ticker`` 的 query 参数。"""
 
     venue: str = Field(default="binance", description="交易所标识")
     symbol: str = Field(..., examples=["BTC/USDT"])
+    fresh: bool = Field(
+        default=False,
+        description=(
+            "true 时绕过 DB 缓存，直接调外部市场实时 ticker。"
+            "支持 venue：binance / yfinance / alpaca；akshare / fred 不支持，"
+            "会返 422 FRESH_NOT_SUPPORTED_FOR_VENUE 并提示切 fresh=false。"
+            "适合 scheduler 周期性拉真·最新价的场景。"
+        ),
+    )
 
 
 class TickerResponse(BaseModel):

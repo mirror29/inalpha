@@ -8,6 +8,16 @@ dependencies = [
     "inalpha-shared",
     "ccxt>=4.5.0",
     "uvicorn[standard]>=0.47.0",
+    # P1：扩到美股 + A股/港股
+    # alpaca-py 走 IEX free feed（注册即免费，无信用卡）
+    "alpaca-py>=0.30.0",
+    # akshare 走东方财富 / 同花顺等公开页，零 key；同步库，需 asyncio.to_thread 包装
+    "akshare>=1.13.0",
+    # yfinance 全球兜底（韩 / 澳 / 印 / 巴西 / 全球指数等 akshare 没覆盖的）
+    # 零 key，反爬偶发；同步库
+    "yfinance>=0.2.40",
+    # FRED 全球宏观（圣路易斯联储），免费 key 注册；80 万+ 经济序列
+    "fredapi>=0.5.2",
 ]
 
 [dependency-groups]
@@ -51,5 +61,10 @@ python_version = "3.12"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["ccxt", "ccxt.*"]
+module = [
+    "ccxt", "ccxt.*",
+    "akshare", "akshare.*",
+    "yfinance", "yfinance.*",
+    "fredapi", "fredapi.*",
+]
 ignore_missing_imports = true

@@ -93,10 +93,12 @@ describe("data.get_bars", () => {
   it("inputSchema rejects bad symbol format", () => {
     // Mastra createTool 在 LLM dispatch 时校验 inputSchema；手动调 execute 不走 schema。
     // 这里直接断言 schema 本身的拒绝行为，不通过 execute。
+    // D-9 multi-market：放宽后接受 BTCUSDT / not-a-valid-symbol / BRK-B 等
+    // （真实 ticker 含 hyphen 如 BRK-B），只拒空 / 空格 / 中文等真无效输入。
     const schema = dataGetBarsTool.inputSchema!;
     const result = schema.safeParse({
       venue: "binance",
-      symbol: "not-a-valid-symbol",
+      symbol: "bad symbol with space",
       timeframe: "1h",
       fromTs: "2026-01-01T00:00:00Z",
       toTs: "2026-01-02T00:00:00Z",
@@ -172,6 +174,56 @@ describe("data.backfill_bars", () => {
     });
     expect((result as { bars_inserted: number }).bars_inserted).toBe(169);
   });
+
+  /**
+   * D-9 multi-venue 解锁回归：venue schema 从 z.literal("binance") 放宽到 z.string()，
+   * 验证 yfinance / alpaca / akshare / fred 四种 venue 都能透传到后端 POST body，
+   * 不再被 zod 卡掉 —— 这是用户问"特斯拉还能买吗"报错的根因修复测试。
+   */
+  it.each([
+    { venue: "yfinance", symbol: "TSLA", timeframe: "1d" as const },
+    { venue: "alpaca", symbol: "AAPL", timeframe: "1h" as const },
+    { venue: "akshare", symbol: "sh.600519", timeframe: "1d" as const },
+    { venue: "fred", symbol: "DFF", timeframe: "1d" as const },
+  ])(
+    "transparently forwards venue=$venue symbol=$symbol to /backfill/bars",
+    async ({ venue, symbol, timeframe }) => {
+      let capturedBody = "";
+      mockFetch(async (url, init) => {
+        if (url.includes("/backfill/bars")) {
+          capturedBody = (init?.body as string) ?? "";
+          return new Response(
+            JSON.stringify({
+              venue,
+              symbol,
+              timeframe,
+              bars_fetched: 30,
+              bars_inserted: 30,
+              from_ts: "2026-04-25T00:00:00Z",
+              to_ts: "2026-05-25T00:00:00Z",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response("not found", { status: 404 });
+      });
+
+      const result = await dataBackfillBarsTool.execute!(
+        {
+          venue,
+          symbol,
+          timeframe,
+          fromTs: "2026-04-25T00:00:00Z",
+          toTs: "2026-05-25T00:00:00Z",
+        } as never,
+        ctx(),
+      );
+
+      expect(JSON.parse(capturedBody)).toMatchObject({ venue, symbol, timeframe });
+      expect((result as { venue: string; bars_inserted: number }).venue).toBe(venue);
+      expect((result as { bars_inserted: number }).bars_inserted).toBe(30);
+    },
+  );
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -330,12 +382,26 @@ describe("research.deep_dive", () => {
   });
 
   it("rejects bad symbol via schema", () => {
+    // D-9 multi-market：BTCUSDT 不再被拒（plain ticker 合法）；改测真 invalid——含空格。
     const r = researchDeepDiveTool.inputSchema!.safeParse({
-      symbol: "BTCUSDT", // 缺斜杠
+      symbol: "bad symbol with space",
       timeframe: "1h",
       asOf: "2026-05-21T12:00:00Z",
     });
     expect(r.success).toBe(false);
+  });
+
+  it("accepts multi-market symbol formats", () => {
+    // D-9：4 类 venue 全支持
+    const cases = ["BTC/USDT", "AAPL", "^N225", "sh.600519", "005930.KS", "DFF", "BRK-B"];
+    for (const symbol of cases) {
+      const r = researchDeepDiveTool.inputSchema!.safeParse({
+        symbol,
+        timeframe: "1d",
+        asOf: "2026-05-21T12:00:00Z",
+      });
+      expect(r.success, `should accept ${symbol}`).toBe(true);
+    }
   });
 
   it("rejects bad asOf via schema", () => {

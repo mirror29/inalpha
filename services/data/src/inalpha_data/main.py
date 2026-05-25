@@ -17,9 +17,13 @@ from inalpha_shared import (
 )
 
 from . import __version__
-from .api import backfill, bars, health, ticker
+from .api import backfill, bars, health, news, ticker
 from .config import get_data_settings
-from .connectors.binance import close_connector, init_connector
+from .connectors import akshare as akshare_conn
+from .connectors import alpaca as alpaca_conn
+from .connectors import binance as binance_conn
+from .connectors import fred as fred_conn
+from .connectors import yfinance_conn
 
 _settings = get_data_settings()
 configure_logging(level=_settings.log_level, service_name=_settings.service_name)
@@ -27,16 +31,31 @@ configure_logging(level=_settings.log_level, service_name=_settings.service_name
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """startup / shutdown 钩子 —— 起 DB 池 + Binance connector。"""
+    """startup / shutdown 钩子 —— 起 DB 池 + 三个 venue connector。
+
+    每个 connector 都登记到 ``connectors._base`` 注册表，由 ``api/backfill.py``
+    按 ``req.venue`` 取用。关停时反向 close 三个。
+    """
     await init_pool(_settings.database_url)
-    init_connector(
+    binance_conn.init_connector(
         api_key=_settings.binance_api_key,
         api_secret=_settings.binance_api_secret,
     )
+    alpaca_conn.init_connector(
+        api_key=_settings.alpaca_api_key,
+        api_secret=_settings.alpaca_api_secret,
+    )
+    akshare_conn.init_connector()
+    yfinance_conn.init_connector()
+    fred_conn.init_connector(api_key=_settings.fred_api_key)
     try:
         yield
     finally:
-        await close_connector()
+        await fred_conn.close_connector()
+        await yfinance_conn.close_connector()
+        await akshare_conn.close_connector()
+        await alpaca_conn.close_connector()
+        await binance_conn.close_connector()
         await close_pool()
 
 
@@ -53,3 +72,4 @@ app.include_router(health.router)
 app.include_router(bars.router)
 app.include_router(backfill.router)
 app.include_router(ticker.router)
+app.include_router(news.router)

@@ -7,7 +7,11 @@ from typing import Any
 import ccxt.async_support as ccxt
 from inalpha_shared import get_logger
 
+from ._base import register_connector, unregister_connector
+
 _logger = get_logger(__name__)
+
+VENUE = "binance"
 
 # CCXT timeframe 到秒数的映射 —— backfill 推 cursor 时用
 TIMEFRAME_SECONDS: dict[str, int] = {
@@ -86,6 +90,32 @@ class BinanceConnector:
             for ts_ms, o, h, low, c, v in raw
         ]
 
+    async def fetch_ticker(self, symbol: str) -> tuple[datetime, float]:
+        """实时拉 ``symbol`` 的最新成交价（CCXT fetch_ticker）。
+
+        Returns:
+            ``(ts, last_price)``，``ts`` 是 UTC aware（CCXT 给的 timestamp ms）。
+
+        Raises:
+            ccxt.NetworkError / ccxt.ExchangeError —— 让上层翻成 5xx 或选择 fallback。
+
+        何时用：``/ticker?fresh=true`` 路径；普通 backfill 仍走 ``fetch_bars``。
+
+        坑：fetch_ticker 不走 rate-limit 优化的 batch 端点，**不要**在循环里高频调；
+            单次 ~200-500ms 网络抖动可预期。
+        """
+        raw = await self._exchange.fetch_ticker(symbol)
+        ts_ms = raw.get("timestamp")
+        last = raw.get("last") or raw.get("close")
+        if last is None:
+            raise ValueError(f"binance ticker for {symbol} has no last/close price")
+        ts = (
+            datetime.fromtimestamp(int(ts_ms) / 1000, tz=UTC)
+            if ts_ms is not None
+            else datetime.now(UTC)
+        )
+        return ts, float(last)
+
     async def close(self) -> None:
         await self._exchange.close()
 
@@ -96,20 +126,22 @@ _connector: BinanceConnector | None = None
 
 
 def init_connector(api_key: str = "", api_secret: str = "") -> BinanceConnector:
-    """启动时调一次。多次调会抛错。"""
+    """启动时调一次。多次调会抛错。同时登记到 ``_base`` 注册表。"""
     global _connector
     if _connector is not None:
         raise RuntimeError("Binance connector already initialized")
     _connector = BinanceConnector(api_key=api_key, api_secret=api_secret)
+    register_connector(VENUE, _connector)
     return _connector
 
 
 async def close_connector() -> None:
-    """关停时调一次。"""
+    """关停时调一次。同步从注册表移除。"""
     global _connector
     if _connector is None:
         return
     await _connector.close()
+    unregister_connector(VENUE)
     _connector = None
 
 

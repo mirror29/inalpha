@@ -77,11 +77,16 @@ def _make_app() -> Any:
 
 @pytest.fixture
 async def app_with_overrides() -> AsyncIterator[Any]:
-    """启动 app 的 lifespan（DB pool + connector）+ 注入 mock connector。"""
+    """启动 app 的 lifespan（DB pool + connector）+ 注入 mock connector。
+
+    D-9 backfill.py 改成走 ``connectors._base._REGISTRY`` 按 venue 查 connector，
+    不再走 ``Depends(get_connector)``。所以 mock 也得替换 registry 里的实例
+    （直接 monkey-patch ``_REGISTRY`` 是侵入但简单；正式接口会另暴露 testing helper）。
+    """
     app = _make_app()
 
-    # mock connector
-    from inalpha_data.connectors.binance import BinanceConnector, get_connector
+    from inalpha_data.connectors import _base as _connectors_base
+    from inalpha_data.connectors.binance import BinanceConnector
 
     class MockBinanceConnector(BinanceConnector):
         def __init__(self) -> None:
@@ -113,10 +118,12 @@ async def app_with_overrides() -> AsyncIterator[Any]:
         async def close(self) -> None:
             pass
 
-    app.dependency_overrides[get_connector] = lambda: MockBinanceConnector()
-
-    # 跑 lifespan（启动 DB pool 等）
+    # 跑 lifespan（启动 DB pool + 注册真 binance connector）
     async with app.router.lifespan_context(app):
+        # lifespan 已注册真 binance；测试期间替换为 mock
+        _connectors_base._REGISTRY["binance"] = MockBinanceConnector()
+        # venue_symbol_tf fixture 用 "test-venue"，也注册一份 mock 让端到端测试能查
+        _connectors_base._REGISTRY["test-venue"] = MockBinanceConnector()
         yield app
 
     app.dependency_overrides.clear()
