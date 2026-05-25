@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.136.0",
     "uvicorn[standard]>=0.47.0",
     "httpx>=0.28.0",
+    "backtester-mcp>=0.1.0",
 ]
 
 [dependency-groups]

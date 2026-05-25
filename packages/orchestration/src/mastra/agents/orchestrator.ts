@@ -75,6 +75,11 @@ const INSTRUCTIONS = `
   · 只支持 mode='tool' 的 job；mode='agent' 的 job 会返回 rejected（防递归）
 - scheduler.list_runs —— 列执行历史（用户问"X 最近跑成功没"/"scheduler 最近结果"）
 
+**沙盒计算（D-9 spike，ADR-0020 第二道运行隔离）**：
+- sandbox.run_code —— 跑 python / node 小段代码做一次性计算（默认 30s 超时，60s 内 allow，更长 ask）
+  - 何时用：用户给的数学公式 / 临时算法验证 / 算指标
+  - 何时不用：需要数据库 / 外部 API / 跑回测 → 用专用 tool；沙盒 env 是最小化的拿不到 secret
+
 ## 研究驱动决策链路（D-8c 标准 4 步流程）
 
 **触发条件（意图模式，不是固定输入）**：用户对**任一资产**发起带研究性质的提问——

@@ -4,6 +4,7 @@
  * - D-7 起步：data + paper 5 个
  * - D-8a：trade-plan 5 个（create / approve / reject / execute / get）
  * - D-8b：research 1 个（deep_dive）
+ * - D-9 spike：sandbox 1 个（run_code），ADR-0020 第二道运行隔离
  */
 import {
   dataBackfillBarsTool,
@@ -23,6 +24,7 @@ import {
   paperTools,
 } from "./paper.js";
 import { researchDeepDiveTool, researchTools } from "./research.js";
+import { sandboxRunCodeTool, sandboxTools } from "./sandbox.js";
 import {
   schedulerCreateJobTool,
   schedulerGetJobTool,
@@ -60,6 +62,7 @@ export {
   paperRunBacktestTool,
   rejectTradePlanTool,
   researchDeepDiveTool,
+  sandboxRunCodeTool,
   schedulerCreateJobTool,
   schedulerGetJobTool,
   schedulerListJobsTool,
@@ -77,6 +80,7 @@ export const allTools = [
   ...researchTools,
   ...swarmTools,
   ...schedulerTools,
+  ...sandboxTools,
 ] as const;
 
 /** 给 trader subagent 用（不含 risk 的 approve/reject）。 */
@@ -144,6 +148,8 @@ export const orchestratorToolList = [
   schedulerSetEnabledTool,
   schedulerTriggerJobTool,
   schedulerListRunsTool,
+  // D-9 spike：沙盒（ADR-0020 第二道运行隔离）
+  sandboxRunCodeTool,
 ] as const;
 
 /** 名字 → tool 索引，给 framework 路由用。 */

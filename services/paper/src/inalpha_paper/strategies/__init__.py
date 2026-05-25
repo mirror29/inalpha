@@ -14,12 +14,14 @@ D-7 起步 3 个示例：
 from ..strategy.base import Strategy
 from .buy_and_hold import BuyAndHoldStrategy
 from .mean_reversion import MeanReversionStrategy
+from .signal_replay import SignalReplayStrategy
 from .sma_cross import SMACrossStrategy
 
 __all__ = [
     "BuyAndHoldStrategy",
     "MeanReversionStrategy",
     "SMACrossStrategy",
+    "SignalReplayStrategy",
     "get_strategy_class",
     "list_strategies",
 ]
@@ -29,6 +31,8 @@ _REGISTRY: dict[str, type[Strategy]] = {
     "sma_cross": SMACrossStrategy,
     "buy_and_hold": BuyAndHoldStrategy,
     "mean_reversion": MeanReversionStrategy,
+    # D-9 sandbox spike：把 LLM 在沙盒生成的 signals 重放进 BacktestEngine（E1 闭环）
+    "signal_replay": SignalReplayStrategy,
 }
 
 

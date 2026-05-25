@@ -49,6 +49,11 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "trade.execute_plan",
     "trade.reject_plan",
     "trade.get_plan",
+
+    // D-9 spike：沙盒（ADR-0020 第二道运行隔离）
+    // 60s 内的运行允许（spike + 临时计算）；更长走 ask（人工审批）。
+    // 第一道 AST 审计 + 第三道协议契约校验留给 Phase B 接入。
+    "sandbox.run_code(timeoutMs<=60000)",
   ],
 
   ask: [

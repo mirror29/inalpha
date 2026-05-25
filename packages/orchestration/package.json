@@ -20,6 +20,9 @@
     "smoke": "tsx scripts/smoke.ts",
     "smoke:plan": "tsx scripts/smoke-plan.ts",
     "scheduler:trigger": "tsx scripts/scheduler-trigger.ts",
+    "smoke:sandbox": "tsx scripts/smoke-sandbox.ts",
+    "smoke:sandbox-loop": "tsx scripts/smoke-sandbox-loop.ts",
+    "smoke:coingecko": "tsx scripts/smoke-coingecko-mcp.ts",
     "dev": "mastra dev --dir src/mastra"
   },
   "dependencies": {
@@ -29,6 +32,7 @@
     "@mastra/loggers": "^1.1.1",
     "@mastra/memory": "^1.19.0",
     "@mastra/observability": "^1.13.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "croner": "^9.0.0",
     "hono": "^4.12.21",
     "jose": "^6.2.3",
