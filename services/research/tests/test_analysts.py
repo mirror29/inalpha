@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import respx
-from httpx import Response
+from httpx import HTTPStatusError, Response
 
 from inalpha_research.analysts.fundamental import FundamentalAnalyst
 from inalpha_research.analysts.macro import MacroAnalyst
@@ -274,7 +274,7 @@ async def test_sentiment_propagates_fng_api_error(data_client: DataClient) -> No
 
     llm = FakeLLMClient({})
     analyst = SentimentAnalyst(llm=llm, data=data_client)
-    with pytest.raises(Exception):  # httpx HTTPStatusError
+    with pytest.raises(HTTPStatusError):
         await analyst.run(
             venue="binance",
             symbol="BTC/USDT",

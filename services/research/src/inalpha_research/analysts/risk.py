@@ -135,9 +135,9 @@ def _atr(highs: list[float], lows: list[float], closes: list[float], *, period: 
         return None
     trs: list[float] = []
     for i in range(n - period, n):
-        h, l = highs[i], lows[i]
+        h, lo = highs[i], lows[i]
         prev_close = closes[i - 1]
-        tr = max(h - l, abs(h - prev_close), abs(l - prev_close))
+        tr = max(h - lo, abs(h - prev_close), abs(lo - prev_close))
         trs.append(tr)
     return sum(trs) / len(trs)
 

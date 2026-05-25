@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from inalpha_research.llm.client import FakeLLMClient
 from inalpha_research.manager import (
     ResearchManager,
