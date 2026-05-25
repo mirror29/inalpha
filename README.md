@@ -120,7 +120,7 @@ The framework progresses E1 (single-generation closed loop) → E4 (MCP tool exp
 
 **What this enables.** "Run momentum / mean-reversion / breakout across BTC, ETH, SOL, BNB, AVAX for 2024" becomes a single workflow call — fan out 15 backtests, aggregate, present a Pareto frontier. The same primitives drive paper-account batch evaluation and, later, multi-strategy live execution.
 
-> **S1 implementation**: single-host ProcessPoolExecutor + Mastra `foreach({concurrency:4})`, single tool `swarm.run_backtest_grid`, grid cap 20 enforced by PreToolUse hook. Smoke: `pnpm tsx packages/orchestration/scripts/smoke-swarm.ts`. Design + graduation criteria: [ADR-0025](docs/miro/decisions/0025-swarm-s1-implementation.md) (internal).
+> **S1 implementation**: single-host ProcessPoolExecutor + Mastra `foreach({concurrency:4})`, single tool `swarm.run_backtest_grid`, grid cap 20 enforced by PreToolUse hook. Smoke: `pnpm tsx packages/orchestration/scripts/smoke-swarm.ts`. Design + graduation criteria: internal ADR-0025.
 
 ---
 
