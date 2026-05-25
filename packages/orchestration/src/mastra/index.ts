@@ -22,8 +22,14 @@ if (existsSync(envPath)) {
 }
 
 import { Mastra } from "@mastra/core/mastra";
+import { LibSQLStore } from "@mastra/libsql";
 import { PinoLogger } from "@mastra/loggers";
-import { ConsoleExporter, Observability, SamplingStrategyType } from "@mastra/observability";
+import {
+  ConsoleExporter,
+  MastraStorageExporter,
+  Observability,
+  SamplingStrategyType,
+} from "@mastra/observability";
 
 import { getSettings } from "../config.js";
 import { schedulerApiRoutes } from "../scheduler/api.js";
@@ -32,20 +38,28 @@ import { orchestrator } from "./agents/orchestrator.js";
 import { helloSpikeWorkflow } from "./workflows/_hello.js";
 import { backtestGridWorkflow } from "./workflows/backtest-grid.js";
 
+// D-9：observability storage —— traces UI tab 必需。LibSQL file DB 零运维。
+// `.mastra/inalpha.db` 落到 mastra build 目录，dev 启停不污染仓库。
+const observabilityStore = new LibSQLStore({
+  id: "inalpha-traces",
+  url: "file:.mastra/inalpha-traces.db",
+});
+
 // D-9：observability —— 追踪 agent / tool / workflow 全链路。
-// dev 用 ConsoleExporter 把 trace 直接打到 stdout，零额外存储依赖；
-// prod 可换 MastraStorageExporter（落 libsql / postgres）或 OTLP exporter（→ Jaeger / Tempo）。
+// 双 exporter：ConsoleExporter（stdout 实时打印 span）+ MastraStorageExporter（落 storage
+// 让 playground "Traces" tab 能加载历史）。prod 可换 OTLP exporter → Jaeger / Tempo。
 const observability = new Observability({
   configs: {
     default: {
       serviceName: "inalpha-orchestration",
       sampling: { type: SamplingStrategyType.ALWAYS },
-      exporters: [new ConsoleExporter()],
+      exporters: [new ConsoleExporter(), new MastraStorageExporter()],
     },
   },
 });
 
 export const mastra = new Mastra({
+  storage: observabilityStore,
   // D-8a'：只剩 orchestrator 一个 agent；trader/risk subagent 已废弃
   // 安全护栏从"agent prompt + tool 集隔离"下沉到"plan store + permissions deny"
   agents: { orchestrator },
