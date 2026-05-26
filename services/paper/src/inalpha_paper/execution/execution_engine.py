@@ -122,6 +122,7 @@ class ExecutionEngine:
             fill_quantity=fill_qty,
             fill_price=fill_price,
             trade_id=str(d.get("trade_id", "")),
+            tag=order.tag,  # ADR-0007 透传 Order.tag
             is_last_fill=is_last,
         )
         # 给 strategy

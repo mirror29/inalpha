@@ -61,6 +61,8 @@ class OrderFilled(OrderEvent):
     trade_id: str = ""
     is_last_fill: bool = False
     """成交分批：True 时本订单已 FILLED；False 时仍为 PARTIALLY_FILLED。"""
+    tag: str | None = None
+    """ADR-0007：从 Order.tag 透传，Portfolio 写 closed_trades.exit_reason 用。"""
 
 
 @dataclass(frozen=True, slots=True)
