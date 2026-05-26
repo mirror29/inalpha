@@ -62,11 +62,20 @@ class Position:
             return 0.0
         return self.quantity * (mark_price - self.avg_open_price)
 
-    def apply_fill(self, side: OrderSide, fill_quantity: float, fill_price: float, ts: int) -> None:
+    def apply_fill(
+        self,
+        side: OrderSide,
+        fill_quantity: float,
+        fill_price: float,
+        ts: int,
+        *,
+        open_order_id: str | None = None,
+    ) -> None:
         """应用一次成交。
 
-        - 同方向：加仓 → 加权平均更新 ``avg_open_price``
+        - 同方向：加仓 → 加权平均更新 ``avg_open_price``（保留 ``open_order_id``）
         - 反方向：减仓 / 平仓 / 反向开仓 → 结算已实现盈亏
+        - ADR-0007：开仓 / 反向开仓时记录 ``open_order_id``，完全平仓时清空
         """
         if fill_quantity <= 0:
             raise ValueError(f"fill_quantity must be positive, got {fill_quantity}")
@@ -79,8 +88,9 @@ class Position:
             # 开仓
             self.avg_open_price = fill_price
             self.ts_opened = ts
+            self.open_order_id = open_order_id
         elif (prev_qty > 0) == (delta > 0):
-            # 同方向加仓：加权平均
+            # 同方向加仓：加权平均；open_order_id 保留首次开仓的
             total_cost = abs(prev_qty) * self.avg_open_price + abs(delta) * fill_price
             self.avg_open_price = total_cost / abs(new_qty) if new_qty != 0 else 0.0
         else:
@@ -97,10 +107,12 @@ class Position:
                 # 完全平仓
                 self.avg_open_price = 0.0
                 new_qty = 0.0
+                self.open_order_id = None
             elif (new_qty > 0) != (prev_qty > 0):
                 # 反向开仓：剩下的部分以 fill_price 当新成本
                 self.avg_open_price = fill_price
                 self.ts_opened = ts
+                self.open_order_id = open_order_id
 
         self.quantity = new_qty
         self.ts_last_event = ts

@@ -11,11 +11,14 @@
 """
 from __future__ import annotations
 
+from uuid import UUID
+
 from ..kernel.identifiers import InstrumentId
 from ..kernel.msgbus import MessageBus
 from ..model.events import OrderFilled, PositionChanged, PositionClosed, PositionOpened
 from ..model.orders import OrderSide
 from ..model.positions import Position
+from .close_detector import ClosedTradeStaging, detect_close
 
 
 class Portfolio:
@@ -26,7 +29,15 @@ class Portfolio:
         msgbus: MessageBus,
         initial_cash: float = 10_000.0,
         fee_rate: float = 0.001,  # 0.1% 默认（Binance taker 量级）
+        *,
+        account_id: UUID | None = None,
     ) -> None:
+        """初始化。
+
+        Args:
+            account_id: ADR-0007 close 检测的账户 ID。提供时 fill 触发 close 写入
+                内存队列（drain_closed_trades 拉数据写 DB）；None 时不入队（向后兼容）
+        """
         if initial_cash <= 0:
             raise ValueError(f"initial_cash must be positive, got {initial_cash}")
         if not 0 <= fee_rate < 1:
@@ -36,7 +47,10 @@ class Portfolio:
         self._initial_cash = initial_cash
         self._cash = initial_cash
         self._fee_rate = fee_rate
+        self._account_id = account_id
         self._positions: dict[InstrumentId, Position] = {}
+        # ADR-0007：detect_close 入队，待 ClosedTradesWriter 异步写 DB
+        self._close_trade_queue: list[ClosedTradeStaging] = []
         # 最新 mark 价（每根 bar 推进时更新），用于 unrealized PnL
         self._marks: dict[InstrumentId, float] = {}
         # 累计手续费、累计成交笔数
@@ -102,6 +116,15 @@ class Portfolio:
         """(ts_ns, equity) 序列；BacktestEngine 每根 bar 追加一个点。"""
         return list(self._equity_curve)
 
+    def drain_closed_trades(self) -> list[ClosedTradeStaging]:
+        """ADR-0007：拉走 close 队列。`ClosedTradesWriter` 周期调，写 DB 成功后丢弃返回的列表。
+
+        幂等：再次调返空 list（队列已被清空）。**只在 ``account_id`` 提供时有数据**。
+        """
+        out = list(self._close_trade_queue)
+        self._close_trade_queue.clear()
+        return out
+
     @property
     def closed_trade_pnls(self) -> list[float]:
         """每次完整平仓记一笔的 round-trip 盈亏（已扣手续费？否，**仅价差盈亏**）。
@@ -138,7 +161,21 @@ class Portfolio:
 
         was_flat = pos.is_flat
         prev_qty = pos.quantity  # apply_fill 前的方向，用于 flip 检测
-        pos.apply_fill(msg.side, msg.fill_quantity, msg.fill_price, msg.ts_event)
+
+        # ADR-0007：detect close **必须**在 apply_fill 之前，否则 prev_position 已变
+        if self._account_id is not None:
+            staging = detect_close(
+                pos, msg,
+                account_id=self._account_id,
+                order_tag=msg.tag,
+            )
+            if staging is not None:
+                self._close_trade_queue.append(staging)
+
+        pos.apply_fill(
+            msg.side, msg.fill_quantity, msg.fill_price, msg.ts_event,
+            open_order_id=str(msg.client_order_id),
+        )
         now_flat = pos.is_flat
         new_qty = pos.quantity
 
