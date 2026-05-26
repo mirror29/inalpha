@@ -31,7 +31,12 @@ def test_trend_routes_to_sma_cross_with_clean_params() -> None:
     out = compose_strategy(hint, factors)
 
     assert out.strategy_id == "sma_cross"
-    assert out.params == {"fast_period": 12, "slow_period": 36, "trade_size": 0.03}
+    assert out.params == {
+        "fast_period": 12,
+        "slow_period": 36,
+        "trade_size": 0.03,
+        "position_pct": 1.0,
+    }
     assert out.rejected_reason is None
     assert "sma_cross" in out.reasoning
 
@@ -92,7 +97,12 @@ def test_mean_reversion_routes_correctly() -> None:
     )
     out = compose_strategy(hint, [])
     assert out.strategy_id == "mean_reversion"
-    assert out.params == {"period": 15, "std_mult": 2.0, "trade_size": 0.02}
+    assert out.params == {
+        "period": 15,
+        "std_mult": 2.0,
+        "trade_size": 0.02,
+        "position_pct": 1.0,
+    }
 
 
 def test_mean_reversion_accepts_num_std_alias() -> None:
@@ -135,7 +145,9 @@ def test_buy_hold_defaults() -> None:
     hint = StrategyHint(family="buy_hold", params={})
     out = compose_strategy(hint, [])
     assert out.strategy_id == "buy_and_hold"
-    assert out.params["trade_size"] == 0.5
+    # D-9 修复：默认从绝对量语义出发取保守 0.01（旧默认 0.5 被 LLM 误解为
+    # "50% 仓位"触发 -98% bug）。candidate baseline qty 由 runner 预算。
+    assert out.params["trade_size"] == 0.01
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -205,12 +217,22 @@ def test_handles_garbage_param_with_default() -> None:
 def test_sma_cross_params_match_constructor_signature() -> None:
     """compose 输出的 params 必须只含 SMACrossStrategy.__init__ 可接受的字段。"""
     out = compose_strategy(StrategyHint(family="trend", params={}), [])
-    assert set(out.params.keys()) == {"fast_period", "slow_period", "trade_size"}
+    assert set(out.params.keys()) == {
+        "fast_period",
+        "slow_period",
+        "trade_size",
+        "position_pct",
+    }
 
 
 def test_mean_reversion_params_match_constructor_signature() -> None:
     out = compose_strategy(StrategyHint(family="mean_reversion", params={}), [])
-    assert set(out.params.keys()) == {"period", "std_mult", "trade_size"}
+    assert set(out.params.keys()) == {
+        "period",
+        "std_mult",
+        "trade_size",
+        "position_pct",
+    }
 
 
 def test_buy_hold_params_match_constructor_signature() -> None:

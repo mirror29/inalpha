@@ -84,11 +84,42 @@ class Portfolio:
     def trade_count(self) -> int:
         return self._trade_count
 
+    @property
+    def fee_rate(self) -> float:
+        """撮合层撮合前算 notional+fee 守门用。"""
+        return self._fee_rate
+
     def position(self, instrument_id: InstrumentId) -> Position | None:
         return self._positions.get(instrument_id)
 
     def positions(self) -> dict[InstrumentId, Position]:
         return dict(self._positions)
+
+    # ─── 撮合前守门（spot 模式 · 禁透支 / 禁裸 SHORT） ───
+
+    def can_afford_buy(self, qty: float, price: float) -> bool:
+        """BUY 前问 portfolio：现金够不够 ``notional + fee``。
+
+        撮合层（``SimulatedExchange._try_fill``）在确认 fill 价格后调用本方法；
+        返 False 则拒单，避免 cash 变负（旧 BTC -98% bug 同源）。
+        """
+        if qty <= 0 or price <= 0:
+            return False
+        notional = qty * price
+        fee = notional * self._fee_rate
+        return self._cash >= notional + fee
+
+    def can_afford_sell(self, instrument_id: InstrumentId, qty: float) -> bool:
+        """SELL 前问 portfolio：当前 LONG 仓位够不够卖出 ``qty``。
+
+        spot 模式禁裸 SHORT：``flat`` 仓位下 SELL 必拒（避免凭空增加 cash）。
+        D-11+ 接合约 / margin 后此约束可通过 risk rule 配置放宽。
+        """
+        if qty <= 0:
+            return False
+        pos = self._positions.get(instrument_id)
+        current = pos.quantity if pos is not None else 0.0
+        return current >= qty
 
     def update_mark(self, instrument_id: InstrumentId, mark_price: float) -> None:
         """BacktestEngine 每根 bar 调一次，更新 mark-to-market 估值用的最新价。"""
