@@ -27,6 +27,7 @@ from datetime import datetime
 from ..execution.exchange import SimulatedExchange
 from ..execution.execution_engine import ExecutionEngine
 from ..execution.risk_engine import RiskEngine
+from ..execution.risk_rules import LockStore, RiskRule
 from ..kernel.clock import TestClock
 from ..kernel.msgbus import MessageBus
 from ..model.data import Bar
@@ -42,7 +43,20 @@ class BacktestEngine:
         self,
         initial_cash: float = 10_000.0,
         fee_rate: float = 0.001,
+        *,
+        rules: list[RiskRule] | None = None,
+        lock_store: LockStore | None = None,
     ) -> None:
+        """初始化。
+
+        Args:
+            initial_cash: 账户起始现金（也作为 RiskEngine ``starting_balance``，
+                让 MaxDrawdownRule 等 global rule 用正确基准）
+            fee_rate: 撮合手续费率
+            rules: ADR-0006 RiskRule 列表。``None`` 时 RiskEngine 退化为 pass-through
+                （向后兼容 D-5 ~ D-8 调用方）
+            lock_store: 风控锁存储。None 时 RiskEngine 自动创建 InMemoryLockStore
+        """
         # 内核
         self.clock = TestClock(0)
         self.msgbus = MessageBus()
@@ -50,7 +64,14 @@ class BacktestEngine:
         # 执行链（注册顺序：endpoint 先注册，否则 RiskEngine forward 会抛 KeyError）
         self.exchange = SimulatedExchange(self.msgbus, self.clock)
         self.execution_engine = ExecutionEngine(self.msgbus, self.exchange)
-        self.risk_engine = RiskEngine(self.msgbus)
+        # rules + starting_balance 统一从 BacktestEngine.initial_cash 派生
+        self.risk_engine = RiskEngine(
+            self.msgbus,
+            rules=rules,
+            clock=self.clock if rules else None,
+            starting_balance=initial_cash,
+            lock_store=lock_store,
+        )
         self.portfolio = Portfolio(self.msgbus, initial_cash=initial_cash, fee_rate=fee_rate)
 
         self._strategies: list[Strategy] = []
