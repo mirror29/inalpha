@@ -1,8 +1,4 @@
-import "../globals.css";
-
 import type { Metadata } from "next";
-import { GeistMono } from "geist/font/mono";
-import { GeistSans } from "geist/font/sans";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getMessages, getTranslations, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
@@ -21,7 +17,6 @@ export async function generateMetadata({
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "meta" });
   return {
-    metadataBase: new URL("https://inalpha.dev"),
     title: t("title"),
     description: t("description"),
     openGraph: {
@@ -39,6 +34,10 @@ export async function generateMetadata({
   };
 }
 
+/**
+ * Locale layout — just wires next-intl. `<html>` / `<body>` and font
+ * variables live in the root layout (`src/app/layout.tsx`).
+ */
 export default async function LocaleLayout({
   children,
   params,
@@ -54,12 +53,6 @@ export default async function LocaleLayout({
   const messages = await getMessages();
 
   return (
-    <html lang={locale} className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body className="min-h-screen bg-bg text-fg antialiased">
-        <NextIntlClientProvider messages={messages}>
-          {children}
-        </NextIntlClientProvider>
-      </body>
-    </html>
+    <NextIntlClientProvider messages={messages}>{children}</NextIntlClientProvider>
   );
 }

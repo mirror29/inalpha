@@ -1,106 +1,93 @@
 "use client";
 
-import Image from "next/image";
 import { ArrowUpRight, BookOpen } from "lucide-react";
 import { motion } from "motion/react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 
-import { DotGrid } from "@/components/primitives/DotGrid";
-import { buttonVariants } from "@/components/ui/button";
-import { charItem, charStagger, fadeUp, stagger } from "@/lib/motion";
+import { CopyableCommand } from "@/components/primitives/CopyableCommand";
+import { LocaleSwitcher } from "@/components/primitives/LocaleSwitcher";
+import { fadeUp } from "@/lib/motion";
 
-const WORDMARK = "Inalpha";
-
+/**
+ * Page hero — broadsheet aesthetic, refined.
+ *
+ * Single column. The tagline owns the page. No competing engineering
+ * title block on the right (that metadata lives in the ticker strip and
+ * footer colophon). Wordmark sits at the very top in mono, small.
+ */
 export function Hero() {
   const t = useTranslations("hero");
+  const tCta = useTranslations("cta");
 
   return (
-    <section className="relative overflow-hidden">
-      <DotGrid fade="radial" />
+    <header className="relative border-b border-fg/12">
+      <div className="absolute right-6 top-6 z-50">
+        <LocaleSwitcher />
+      </div>
 
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -left-32 top-1/3 size-[480px] rounded-full bg-cyan/15 blur-[140px]"
-      />
-
-      <div className="relative mx-auto flex min-h-[88vh] max-w-6xl flex-col justify-center px-6 py-24 sm:py-32">
+      <div className="mx-auto max-w-6xl px-6 pt-16 pb-24 md:px-12 md:pt-24 md:pb-32">
         <motion.div
           initial="hidden"
           animate="visible"
-          variants={stagger}
-          className="space-y-8"
+          variants={{
+            hidden: {},
+            visible: {
+              transition: { staggerChildren: 0.09, delayChildren: 0.08 },
+            },
+          }}
         >
           <motion.div
-            variants={charStagger}
-            initial="hidden"
-            animate="visible"
-            aria-label={WORDMARK}
-            className="font-mono text-[clamp(3.5rem,12vw,9rem)] font-medium tracking-tight leading-none"
+            variants={fadeUp}
+            className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.32em] text-fg-muted/80"
           >
-            {WORDMARK.split("").map((char, i) => (
-              <motion.span
-                key={i}
-                variants={charItem}
-                className="inline-block"
-              >
-                {char}
-              </motion.span>
-            ))}
+            <span className="text-fg">Inalpha</span>
+            <span className="text-fg-muted/50">/</span>
+            <span>open-source quant framework</span>
+            <span className="ml-3 hidden h-px w-12 bg-fg/20 sm:inline-block" />
+            <span className="hidden text-fg-muted/60 sm:inline">rev 0.9 · D-9</span>
           </motion.div>
 
-          <motion.p
+          <motion.h1
             variants={fadeUp}
-            className="font-mono text-xl text-cyan sm:text-2xl"
+            className="display-italic mt-12 text-fg leading-[0.92] md:mt-16"
+            style={{ fontSize: "clamp(3rem, 9.5vw, 9rem)", fontWeight: 300 }}
           >
-            {t("tagline")}
-          </motion.p>
+            {t("title")}
+            <br />
+            <span className="text-cyan">{t("titleAlt")}</span>
+          </motion.h1>
 
           <motion.p
             variants={fadeUp}
-            className="max-w-2xl text-base text-fg-muted sm:text-lg"
+            className="mt-10 max-w-[60ch] text-[17px] leading-relaxed text-fg-muted sm:text-[18px]"
           >
-            {t("subtitle")}
+            {t("sub")}
           </motion.p>
 
-          <motion.p
+          <motion.div
             variants={fadeUp}
-            className="max-w-2xl text-sm leading-relaxed text-fg-muted/80 sm:text-base"
+            className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-4"
           >
-            {t("blurb")}
-          </motion.p>
-
-          <motion.div variants={fadeUp} className="flex flex-wrap gap-3 pt-4">
-            <a
+            <CopyableCommand
+              command={tCta("commands.git")}
+              copyLabel={tCta("copy")}
+              copiedLabel={tCta("copied")}
+              className="min-w-[22rem] max-w-md"
+            />
+            <Link
               href="https://github.com/mirror29/inalpha"
               target="_blank"
               rel="noreferrer"
-              className={buttonVariants({ variant: "primary", size: "lg" })}
+              className="group inline-flex items-center gap-2 border-b border-fg/30 pb-1 font-mono text-[12px] uppercase tracking-[0.22em] text-fg-muted transition-colors hover:border-fg hover:text-fg"
             >
-              {t("cta.github")}
-              <ArrowUpRight className="size-4" />
-            </a>
-            <a
-              href="https://github.com/mirror29/inalpha#readme"
-              target="_blank"
-              rel="noreferrer"
-              className={buttonVariants({ variant: "ghost", size: "lg" })}
-            >
-              <BookOpen className="size-4" />
-              {t("cta.docs")}
-            </a>
+              <BookOpen className="size-3.5" />
+              {tCta("github")}
+              <ArrowUpRight className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </Link>
           </motion.div>
         </motion.div>
       </div>
-
-      <Image
-        src="/mascot.png"
-        alt=""
-        aria-hidden
-        width={120}
-        height={120}
-        priority
-        className="pointer-events-none absolute bottom-8 right-6 size-24 opacity-60 mix-blend-screen sm:size-32 lg:right-12"
-      />
-    </section>
+    </header>
   );
 }
