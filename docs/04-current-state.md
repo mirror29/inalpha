@@ -112,14 +112,64 @@ sequenceDiagram
 - **orchestrator prompt 重写**：4 步标准链路 `deep_dive → compose_strategy →
   (list_backtest_runs 或 run_backtest) → 报告 / create_plan`。
 
-不在范围（下一阶段）：LLM 自动变异（ADR-0020 E1）、walk-forward、模拟盘 → 实盘升级。
+---
+
+## D-9（2026-05-25）LLM 自创策略 E1 MVP + baseline 重定位
+
+让 orchestrator **默认**走"自己写完整 `Strategy` 子类源码 → 沙盒 → 回测自动并跑 baseline"。
+内置策略从"穷举库出口"降级为"基线 / 教学 / 适配器"三类角色：
+
+- **沙盒三道关**（`services/paper/src/inalpha_paper/strategy_authoring/`）：
+  - `ast_audit.py`：AST 白名单（import / name / dunder access），拒绝 `os/sys/subprocess`、
+    `eval/exec/__import__`、`.__class__.__bases__` 等越狱路径
+  - `dynamic_loader.py`：受限 namespace `exec`，注入内核符号（`Strategy / Bar / Order / ...`），
+    裁剪 `__builtins__`，LLM 写策略**零 import**
+  - `contract_check.py`：协议校验（必继承 `Strategy`、覆写 `on_bar`、`__init__` 签名）
+- **多目标 fitness**（`strategy_authoring/fitness.py`）：`sharpe + 0.3*calmar -
+  0.10*turnover_penalty - 1.0*(drawdown>30%)`；回测响应同时返 `fitness` 字段；
+  排序候选不允许裸 Sharpe
+- **候选表**：migration `0005_strategy_candidates.py` + `storage/strategy_candidates.py` +
+  `POST/GET /strategy_candidates`；`BacktestRequest` 加 `candidate_id`（与 `strategy_id`
+  二选一）；`runner.run_backtest` candidate 分支自动从 DB 读 code → 二次审计 → 子进程加载
+- **Orchestration**：新 tool `paper.author_strategy` / `list_candidates` / `get_candidate`；
+  `paper.run_backtest` inputSchema 加 `candidateId`（superRefine 互斥）；
+  `strategy-code-audit` PreToolUse hook 拦超长 + prompt injection；
+  orchestrator prompt **默认走 author**，compose 降级为"用户明确点名内置时的快速通道"；
+  author tool description 内嵌 few-shot 模板降低协议错误率
+- **内置策略重定位**（`services/paper/.../strategies/__init__.py`）：`buy_and_hold` 作首要
+  基线、`sma_cross` / `mean_reversion` 作教学样本 + compose 快速通道、`signal_replay` 作
+  adapter；不再积累新内置策略
+- **baseline 自动并跑**：`runner.run_backtest` candidate 分支用 `asyncio.gather` 同时跑
+  candidate + `buy_and_hold` 同 bars/cash/fee；`BacktestResponse` 加 `baseline` 字段；
+  alpha 判定 = `candidate.fitness` 显著高于 `baseline.fitness`
+- **审批门**：`POST /strategy_candidates/{id}/promote` 端点 + orchestration 端
+  `paper.promote_candidate` tool。MVP 阶段 permission 默认 `allow`，agent 自助闭环
+  （前端 askUserChoice 还没接通，`ask` 会让 agent 撞墙）；审批责任改由两道防御替代：
+  (1) orchestrator prompt 强制 agent 调前自检 `fitness > baseline` + 等用户明确指令；
+  (2) 后端硬校验 `fitness IS NOT NULL` + 当前 `status='candidate'`，并把
+  `reason / promoted_by / promoted_at` 写到候选 `audit.promotion`。promote 仅做状态
+  切换——live trading runner 按行情 tick 调 `on_bar` 仍在 E2 / D-7 范围。
+  ADR-0018 askUserChoice 接通后回归 `ask`
+- **RiskEngine 真接入 paper HTTP 层**（ADR-0006 / issue #3）：lifespan 加载
+  `configs/risk_rules.toml` → 构造 async `RiskGuard`（独立于 backtest 的 sync
+  `RiskEngine`）→ `POST /orders/submit` 与 `POST /plans/{id}/execute` 撮合前过
+  `risk_guard.enforce`，命中返 409 `RISK_REJECTED` + 写入 `risk_locks` 表（独立
+  connection 显式 commit，不被调用方 endpoint 异常 rollback）。trade_repo / market_calendar
+  目前是 Noop / crypto-only 实现，cooldown / stoploss_guard 真激活留 follow-up
+  issue；前端 askUserChoice 接通前 ask 路径仍是 workaround
+
+不在范围（下一阶段）：MAP-Elites / Island Model / 多代演化 / unified-diff 变异（E2/E3）；
+`services/evolver/` 独立服务（等多代演化需求出现再拆）；promoted 候选的 live tick
+runner（按行情自动下单、写 `paper_positions` / `paper_trades`）。
 
 ---
 
 ## 未完成 / 下一步
 
-- **D-8b**：`permissions.yaml` 配置文件化（目前在 `defaults.ts` 硬编码）
-- **D-9**：RiskEngine 规则化（max notional / 价格偏离 / 日损上限）+ paper-service 真接入
+- **D-8b**：`permissions.yaml` 配置文件化（目前在 `defaults.ts` 硬编码，issue #4）
+- **D-9 · RiskEngine 接入后续**：cooldown / stoploss_guard / low_profit 真激活需要接
+  `trade_repo`（历史 fills 查询）；market_hours 真激活需要接 `services/data` 真日历；
+  目前 paper HTTP 已经过 RiskGuard 但只有 MaxDrawdown 能真触发（trade_repo=Noop）
 - **D-9 · 定时 agent 模式**：类 Hermes cron 接入已落地 — `packages/orchestration/src/scheduler/`
   + `scheduler_jobs` / `scheduler_runs` 两张表（migration 0004）+ croner 调度 + advisory lock
   + `/api/scheduler/*` HTTP 管理面 + `scripts/scheduler-admin.html`。
@@ -127,7 +177,7 @@ sequenceDiagram
   enabled=false，需手动开启。
 - **delegation hop**（ADR-0012 补丁）：sub-strategy 派生计划的转授权链
 - **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate）尚未落地
-- **E1 进化**（ADR-0020）：LLM 改写策略源码 + 3 道沙盒
+- **E1 MVP 已上**（D-9 · ADR-0020）：LLM 写完整源码 + 沙盒 + fitness；下一里程碑 E2 多代演化
 
 ---
 

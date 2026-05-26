@@ -18,7 +18,7 @@ from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Path, Query
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 from inalpha_shared.errors import InalphaError
@@ -26,6 +26,7 @@ from inalpha_shared.errors import InalphaError
 from ..account_id import account_id_from_user
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
+from ..execution import risk_guard as risk_guard_mod
 from ..execution.order_executor import OrderExecutor
 from ..schemas import (
     ApprovePlanRequest,
@@ -193,6 +194,7 @@ async def reject_plan(
 async def execute_plan(
     plan_id: Annotated[UUID, Path()],
     req: ExecutePlanRequest,
+    request: Request,
     db: DBConn,
     settings: Annotated[PaperSettings, Depends(get_paper_settings)],
     user: Annotated[User, Depends(get_current_user)],
@@ -237,6 +239,13 @@ async def execute_plan(
     order_type: str = order_params["type"]
     quantity: float = float(order_params["quantity"])
     price: float | None = order_params.get("price")
+
+    # D-9 风控前置闸门：违规 → 409 RISK_REJECTED + risk_locks 表写新行
+    # 不消费 approval_token —— plan 维持 'approved' 状态，等锁释放 / 风控调整后
+    # 用户可重发同一 plan_id（token 仍有效）
+    # enforce 用独立 connection 写锁，避免被本端点后续异常 rollback
+    guard = getattr(request.app.state, "risk_guard", None)
+    await risk_guard_mod.enforce(guard, venue=venue, symbol=symbol, side=side)
 
     # 2. 取 refPrice（不消费 token —— 网络失败可让 caller 重试）
     if not authorization or not authorization.startswith("Bearer "):

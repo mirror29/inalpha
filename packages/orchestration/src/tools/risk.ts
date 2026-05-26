@@ -136,3 +136,10 @@ export const riskTools = {
   listLocks: riskListLocksTool,
   unlock: riskUnlockTool,
 };
+
+/** 数组形态——给 ``tools/index.ts`` 的 spread / forEach 用。 */
+export const riskRuleTools = [
+  riskDescribeRulesTool,
+  riskListLocksTool,
+  riskUnlockTool,
+] as const;

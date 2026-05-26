@@ -24,6 +24,12 @@ import {
   paperTools,
 } from "./paper.js";
 import { researchDeepDiveTool, researchTools } from "./research.js";
+import {
+  riskDescribeRulesTool,
+  riskListLocksTool,
+  riskRuleTools,
+  riskUnlockTool,
+} from "./risk.js";
 import { sandboxRunCodeTool, sandboxTools } from "./sandbox.js";
 import {
   schedulerCreateJobTool,
@@ -34,6 +40,13 @@ import {
   schedulerTools,
   schedulerTriggerJobTool,
 } from "./scheduler.js";
+import {
+  paperAuthorStrategyTool,
+  paperAuthoringTools,
+  paperGetCandidateTool,
+  paperListCandidatesTool,
+  paperPromoteCandidateTool,
+} from "./strategy.js";
 import { swarmRunBacktestGridTool, swarmTools } from "./swarm.js";
 import {
   approveTradePlanTool,
@@ -52,16 +65,24 @@ export {
   dataGetTickerTool,
   executeTradePlanTool,
   getTradePlanTool,
+  paperAuthorStrategyTool,
   paperComposeStrategyTool,
   paperGetAccountTool,
+  paperGetCandidateTool,
   paperHealthTool,
   paperListBacktestRunsTool,
+  paperListCandidatesTool,
   paperListOrdersTool,
   paperListPositionsTool,
   paperListStrategiesTool,
+  paperPromoteCandidateTool,
   paperRunBacktestTool,
   rejectTradePlanTool,
   researchDeepDiveTool,
+  riskDescribeRulesTool,
+  riskListLocksTool,
+  riskRuleTools,
+  riskUnlockTool,
   sandboxRunCodeTool,
   schedulerCreateJobTool,
   schedulerGetJobTool,
@@ -76,11 +97,16 @@ export {
 export const allTools = [
   ...dataTools,
   ...paperTools,
+  ...paperAuthoringTools,
   ...tradePlanTools,
   ...researchTools,
   ...swarmTools,
   ...schedulerTools,
   ...sandboxTools,
+  // ADR-0006 §D6：risk.* agent 自检 + 解锁（unlock 在 permissions 层禁 LLM 直调）
+  riskDescribeRulesTool,
+  riskListLocksTool,
+  riskUnlockTool,
 ] as const;
 
 /** 给 trader subagent 用（不含 risk 的 approve/reject）。 */
@@ -129,6 +155,12 @@ export const orchestratorToolList = [
   // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
+  // D-9 · ADR-0020 E1 MVP：LLM 自创策略候选（compose 不够用时走这条）
+  paperAuthorStrategyTool,
+  paperListCandidatesTool,
+  paperGetCandidateTool,
+  // D-9 · 候选 → 正式（permission 默认 ask，弹气泡二次确认）
+  paperPromoteCandidateTool,
   // ADR-0025 Swarm S1：并行批量回测
   swarmRunBacktestGridTool,
   // Plan/Exec 五件套（D-8a' 直接挂到 orchestrator）

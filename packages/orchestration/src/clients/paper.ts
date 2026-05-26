@@ -11,6 +11,19 @@ export type PositionSnapshot = {
   generation: number;
 };
 
+/** D-9 · candidate 回测的 buy_and_hold 对照（runner candidate 分支自动并跑）。 */
+export type BaselineSnapshot = {
+  strategy_id: string;
+  fitness: number | null;
+  sharpe: number | null;
+  /** 最大回撤百分比（正数，cap 100.0）；超 100% 的物理穿仓由 blew_up 表达 */
+  max_drawdown_pct: number;
+  total_return_pct: number;
+  num_trades: number;
+  /** D-9 起：账户是否穿仓；true 表示本次 baseline 回测物理不可信 */
+  blew_up?: boolean;
+};
+
 export type BacktestReport = {
   /** D-8c 起：落库后 run_id，可作血缘锚点供 trade.create_plan 引用 */
   run_id: string | null;
@@ -19,7 +32,17 @@ export type BacktestReport = {
   /** D-8c 起：sha256(strategy_code|params) 前 16 hex，去重用 */
   params_hash: string | null;
 
+  /** 内置策略 ID 或 'candidate:<uuid>'（D-9 candidate 路径） */
   strategy_id: string;
+  /** D-9 起：candidate 路径下回填 candidate_id；内置路径为 null */
+  candidate_id: string | null;
+  /** D-9 起：多目标 fitness（ADR-0020 E1，不允许裸 Sharpe 排序候选） */
+  fitness: number | null;
+  /**
+   * D-9 起：candidate 路径下自动并跑的 buy_and_hold 对照；内置路径为 null。
+   * alpha 判定 = fitness 显著高于 baseline.fitness。
+   */
+  baseline: BaselineSnapshot | null;
   venue: string;
   symbol: string;
   timeframe: string;
@@ -33,13 +56,27 @@ export type BacktestReport = {
   period_end: string;
   sharpe: number | null;
   sortino: number | null;
+  /** 最大回撤百分比（正数，cap 100.0）；超 100% 的物理穿仓由 blew_up 表达 */
   max_drawdown_pct: number;
   win_rate: number | null;
+  /**
+   * D-9 起：账户是否穿仓（任意时点 equity ≤ -1%×initial_cash）。true 表示本次
+   * 回测物理上不可信，agent 必须显式告警而非直接展示 Sharpe / 收益率。
+   */
+  blew_up?: boolean;
+  /**
+   * D-9 起：回测物理一致性警告（如账户穿仓、现金透支）。非空时禁止无声渲染，
+   * orchestrator 必须把警告原样转给用户。
+   */
+  health_warnings?: string[];
   final_positions: PositionSnapshot[];
 };
 
 export type BacktestParams = {
-  strategyId: string;
+  /** 内置策略 ID（与 candidateId 二选一） */
+  strategyId?: string;
+  /** D-9 起：LLM 自创策略候选 ID（与 strategyId 二选一） */
+  candidateId?: string;
   params?: Record<string, unknown>;
   venue?: string;
   symbol: string;
@@ -52,6 +89,50 @@ export type BacktestParams = {
   researchId?: string;
   /** D-8c 起：触发本次回测的 strategy_hint（审计用） */
   strategyHint?: Record<string, unknown>;
+};
+
+// ────────────────────────────────────────────────────────────────────
+// D-9 · 自创策略候选（ADR-0020 E1 MVP）
+// ────────────────────────────────────────────────────────────────────
+
+export type AuthorStrategyParams = {
+  /** 完整 Python 源码；服务端跑三道沙盒（ast / dynamic_loader / contract） */
+  code: string;
+  /** 人话说明策略逻辑 / 适用场景（≤ 2000 字符） */
+  description?: string;
+};
+
+export type AuthorStrategyResult = {
+  candidate_id: string;
+  code_hash: string;
+  /** true=新落库；false=撞到同 code_hash，返已有 ID（幂等） */
+  created: boolean;
+  audit: Record<string, unknown>;
+};
+
+export type StrategyCandidateSummary = {
+  id: string;
+  code_hash: string;
+  description: string;
+  author: "llm" | "user" | "system";
+  status: "candidate" | "rejected" | "promoted";
+  metrics: Record<string, unknown> | null;
+  fitness: number | null;
+  last_backtest_run_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StrategyCandidateRecord = StrategyCandidateSummary & {
+  code: string;
+  author_id: string | null;
+  audit: Record<string, unknown> | null;
+};
+
+export type ListCandidatesFilter = {
+  status?: "candidate" | "rejected" | "promoted";
+  authorId?: string;
+  limit?: number;
 };
 
 // ────────────────────────────────────────────────────────────────────
@@ -231,8 +312,19 @@ export class PaperClient {
   }
 
   async runBacktest(params: BacktestParams): Promise<BacktestReport> {
+    if (!params.strategyId && !params.candidateId) {
+      throw new Error(
+        "PaperClient.runBacktest: must provide strategyId or candidateId",
+      );
+    }
+    if (params.strategyId && params.candidateId) {
+      throw new Error(
+        "PaperClient.runBacktest: strategyId and candidateId are mutually exclusive",
+      );
+    }
     return await this.http.post<BacktestReport>("/backtest", {
       strategy_id: params.strategyId,
+      candidate_id: params.candidateId,
       params: params.params ?? {},
       venue: params.venue ?? "binance",
       symbol: params.symbol,
@@ -244,6 +336,56 @@ export class PaperClient {
       research_id: params.researchId,
       strategy_hint: params.strategyHint,
     });
+  }
+
+  // ────────────────────────────────────────────────────────────────────
+  // D-9 · 自创策略候选（ADR-0020 E1 MVP）
+  // ────────────────────────────────────────────────────────────────────
+
+  async authorStrategy(params: AuthorStrategyParams): Promise<AuthorStrategyResult> {
+    return await this.http.post<AuthorStrategyResult>("/strategy_candidates", {
+      code: params.code,
+      description: params.description ?? "",
+    });
+  }
+
+  async getCandidate(candidateId: string): Promise<StrategyCandidateRecord> {
+    return await this.http.get<StrategyCandidateRecord>(
+      `/strategy_candidates/${candidateId}`,
+    );
+  }
+
+  async listCandidates(
+    filter: ListCandidatesFilter = {},
+  ): Promise<StrategyCandidateSummary[]> {
+    return await this.http.get<StrategyCandidateSummary[]>(
+      "/strategy_candidates",
+      {
+        status: filter.status,
+        author_id: filter.authorId,
+        limit: filter.limit,
+      },
+    );
+  }
+
+  /**
+   * D-9 · 把候选从 `status='candidate'` 切到 `'promoted'`。
+   *
+   * 后端校验：候选不存在 → 404；status≠candidate → 409；fitness=null → 400。
+   * orchestration tool `paper.promote_candidate` 默认 permission `ask`——agent 调时
+   * 会弹气泡让用户在对话里二次确认。
+   *
+   * @param reason - 为什么 promote（建议含回测区间 / fitness vs baseline / 风控指标）；
+   *                 落到候选 `audit.promotion.reason` 便于事后复盘
+   */
+  async promoteCandidate(
+    candidateId: string,
+    reason: string,
+  ): Promise<StrategyCandidateRecord> {
+    return await this.http.post<StrategyCandidateRecord>(
+      `/strategy_candidates/${candidateId}/promote`,
+      { reason },
+    );
   }
 
   // ────────────────────────────────────────────────────────────────────

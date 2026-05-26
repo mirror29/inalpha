@@ -16,7 +16,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 from inalpha_shared.errors import InalphaError, UnauthorizedError
@@ -24,6 +24,7 @@ from inalpha_shared.errors import InalphaError, UnauthorizedError
 from ..account_id import account_id_from_user
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
+from ..execution import risk_guard as risk_guard_mod
 from ..execution.order_executor import OrderExecutor
 from ..schemas import (
     AccountSnapshot,
@@ -47,13 +48,25 @@ class RefPriceUnavailableError(InalphaError):
 @router.post("/orders/submit", response_model=SubmitOrderResponse)
 async def post_submit_order(
     req: SubmitOrderRequest,
+    request: Request,
     db: DBConn,
     settings: Annotated[PaperSettings, Depends(get_paper_settings)],
     user: Annotated[User, Depends(get_current_user)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> SubmitOrderResponse:
-    """单笔下单（D-8b：落盘 + 持仓更新 + 扣现金事务）。"""
+    """单笔下单（D-8b：落盘 + 持仓更新 + 扣现金事务）。
+
+    D-9（issue #3）：撮合前先过 RiskGuard 拦截（``risk_engine_enabled=False`` 时 fail-open）。
+    """
     account_id = account_id_from_user(user)
+
+    # D-9 风控前置闸门：违规 → 409 RISK_REJECTED + risk_locks 表写新行
+    # enforce 内部用独立 connection 写锁，不复用 db（避免后续异常导致锁回滚）
+    guard = getattr(request.app.state, "risk_guard", None)
+    await risk_guard_mod.enforce(
+        guard, venue=req.venue, symbol=req.symbol, side=req.side
+    )
+
     ref_price = await _resolve_ref_price(req, settings, authorization)
 
     # 算成交（纯函数，不依赖 DB）

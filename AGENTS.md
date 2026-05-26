@@ -42,6 +42,9 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**，重度
 pnpm i                                  # Node 包（packages/orchestration）
 uv sync                                 # Python 包（services/*）
 
+# DB schema 升到最新（dev.sh 不会自动跑；漏跑会导致 paper 服务 500：表不存在）
+cd infra/migrations && uv run alembic upgrade head && cd ../..
+
 # 一键起所有 service（推荐）
 bash scripts/dev.sh                     # data:8001 + paper:8002 + mastra:4111
 bash scripts/dev.sh logs                # 跟随日志
@@ -60,6 +63,13 @@ cd packages/orchestration
 pnpm scheduler:trigger --list                  # 列全部 jobs
 pnpm scheduler:trigger daily_btc_deep_dive     # 手动触发一次
 # admin 页：直接 open scripts/scheduler-admin.html（默认连 4111）
+
+# D-9 LLM 自创策略 E1 MVP（orchestrator 内置策略不够用时自动走）
+# 链路：research.deep_dive → compose_strategy（拒绝时） → paper.author_strategy(code=...)
+#       → paper.run_backtest(candidateId=...) → fitness 排序 → paper.promote_candidate
+#         （permission ask · 用户在对话里二次确认）→ 后续 live tick 待 E2/D-7
+# 入口：services/paper/src/inalpha_paper/strategy_authoring/（三道沙盒 + fitness）
+#       packages/orchestration/src/tools/strategy.ts（4 个 tool：author / list / get / promote）
 ```
 
 ## 5. 各工具的额外建议

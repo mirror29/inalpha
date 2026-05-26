@@ -89,6 +89,68 @@ async def list_active(
     return list(rows)  # type: ignore[arg-type]
 
 
+async def is_locked(
+    conn: AsyncConnection,
+    *,
+    now: datetime,
+    scope: str,
+    market: str | None = None,
+    symbol: str | None = None,
+    side: str = "*",
+) -> dict[str, Any] | None:
+    """精确查 `now` 时 ``scope`` + ``market``/``symbol`` 是否被锁。
+
+    Side 兼容语义（同 `InMemoryLockStore._side_intersects`）：
+    - 锁的 ``side='*'`` 拦任何方向查询
+    - 查询的 ``side='*'`` 命中任何方向的锁
+    - 否则 long 锁拦 long 查询、short 锁拦 short 查询，不互拦
+
+    Returns:
+        首个命中锁的 row dict（按 locked_until DESC，最远解锁的先看）；无锁返 ``None``。
+
+    Note:
+        scope='global' 时忽略 market/symbol 参数；scope='market' 时 symbol 字段必须为 NULL；
+        scope='symbol' 时按 symbol 精确匹配。
+    """
+    sql = (
+        "SELECT id, scope, market, symbol, side, rule_name, reason, "
+        "locked_at, locked_until FROM risk_locks "
+        "WHERE active = TRUE AND locked_until > %s AND scope = %s"
+    )
+    params: list[Any] = [now, scope]
+
+    if scope == "global":
+        # global 锁不区分 market/symbol；这两个字段在 DB 里也是 NULL
+        pass
+    elif scope == "market":
+        if market is None:
+            return None
+        sql += " AND market = %s AND symbol IS NULL"
+        params.append(market)
+    elif scope == "symbol":
+        if symbol is None:
+            return None
+        sql += " AND symbol = %s"
+        params.append(symbol)
+    else:
+        raise ValueError(f"invalid scope {scope!r}")
+
+    # side 兼容：锁的 side='*' 或等于查询；查询的 side='*' 匹配任何锁
+    if side == "*":
+        # 查询双向 → 任何锁都命中
+        pass
+    else:
+        sql += " AND (side = '*' OR side = %s)"
+        params.append(side)
+
+    sql += " ORDER BY locked_until DESC LIMIT 1"
+
+    async with conn.cursor() as cur:
+        await cur.execute(sql, tuple(params))
+        row = await cur.fetchone()
+    return dict(row) if row else None  # type: ignore[arg-type]
+
+
 async def manual_unlock(
     conn: AsyncConnection,
     lock_id: int,
