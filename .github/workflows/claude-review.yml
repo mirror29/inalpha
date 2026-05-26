@@ -1,0 +1,75 @@
+name: Claude PR Review
+
+# 触发：PR 打开 / 推新 commit / reopen 时自动跑一次 review
+# 互动入口见 claude.yml（在 PR 里 @claude 触发对话）
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 手动指定 PR 编号（留空 = 用 workflow_dispatch 的当前分支）
+        required: false
+
+jobs:
+  review:
+    name: Claude · 自动 review PR diff
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          mode: review
+          direct_prompt: |
+            按 Inalpha 仓库 CLAUDE.md（§3 协作硬约束 + §3.1 金融时效性 + §3.2 prompt 工程纪律 + §4 CI 红线）review 本 PR diff。
+
+            ## 必查 red flag
+
+            1. **Prompt / Agent 工程纪律**（§3.2）：
+               - tool description 缺三段式（功能 + 何时用 + 何时不用 + 坑）
+               - prompt 预设了具体输入示例 / 锁死预期（如 "用户说 'BTC 能买吗'"）
+               - prompt 硬编码语言 / 市场 / 品种（应面向全球用户）
+               - 示例 ticker / venue 没标"仅供识别格式"
+
+            2. **金融时效性**（§3.1）：
+               - DataClient.get_bars 意图是"最新 / 现价"但没传 fresh=True
+               - 判 freshness 看 bar 数量而非 bars[-1].ts 与 as_of 的间隔
+               - prompt 引用具体日期 / 数值 / 事件结论无数据源
+               - 新加 connector 未考虑 freshness 默认（金融默认 fresh=True）
+               - LLM analyst prompt 没强调 "as_of 是真现在，不要用过时预测当现在"
+
+            3. **commit 完整性**（§4）：
+               - 新加 import 但被引用的实现文件未出现在 diff（漏 git add）
+               - 历史踩坑：grid-size-cap.ts / scheduler/ / _base.py
+
+            4. **CI 红线**（§4）：
+               - 公开文档（README / AGENTS / docs/00-04）引用了 docs/miro/ 私有路径
+               - 模块顶层 eager 调 getSettings() 但没在 tests/setup.ts 注入默认 env
+
+            5. **多空意识**：
+               - long-only 策略（sma_cross / mean_reversion / buy_and_hold）加了 SHORT/COVER 信号
+               - 用 SELL 表示做空（应该用 SHORT 开空、COVER 平空）
+
+            6. **命名 / 不要碰**：
+               - Python 包不是 inalpha_<service> snake_case
+               - tool 命名不是 <service>.<verb> 或 mcp__<server>__<verb>
+               - 改了 services/_shared/ 但 PR 描述没说明
+               - .mastra/ / docs/miro/ 出现在 diff（应 gitignored）
+
+            ## review 行为
+
+            - 找到 red flag → inline comment 贴到具体 line + 引用 CLAUDE.md 哪条
+            - 没问题 → 一段中文 LGTM 总结即可，不要硬挑刺
+            - 措辞参考 CLAUDE.md 简洁风格：不堆模板话、不复读用户 diff
+            - 用户措辞翻译表（见 packages/orchestration/src/mastra/agents/orchestrator.ts）
+              对你也适用：不要在 review 输出里搬 promote / iterate / verdict / pass /
+              abandon 这类英文工程黑话
