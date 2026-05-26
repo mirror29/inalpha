@@ -29,6 +29,7 @@ from .lock_store import ActiveLock, InMemoryLockStore, LockStore
 from .low_profit import LowProfitRule
 from .market_hours import MarketHoursRule
 from .max_drawdown import MaxDrawdownRule
+from .postgres_repo import PostgresTradeRepository
 from .reconciler import LockStoreReconciler, ReconcileStats
 from .stoploss_guard import StoplossGuardRule
 
@@ -44,6 +45,7 @@ __all__ = [
     "MarketCalendar",
     "MarketHoursRule",
     "MaxDrawdownRule",
+    "PostgresTradeRepository",
     "ReconcileStats",
     "RiskRule",
     "RiskRuleConfigError",
