@@ -23,6 +23,7 @@ from .base import (
     RiskVerdict,
     TradeRepository,
 )
+from .config import RiskRulesConfig, build_rules, load_risk_rules_config
 from .cooldown import CooldownRule
 from .lock_store import ActiveLock, InMemoryLockStore, LockStore
 from .low_profit import LowProfitRule
@@ -43,7 +44,10 @@ __all__ = [
     "MaxDrawdownRule",
     "RiskRule",
     "RiskRuleConfigError",
+    "RiskRulesConfig",
     "RiskVerdict",
     "StoplossGuardRule",
     "TradeRepository",
+    "build_rules",
+    "load_risk_rules_config",
 ]

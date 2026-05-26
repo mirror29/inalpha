@@ -1,0 +1,49 @@
+# Inalpha 执行层风控配置（ADR-0006 §5.1）
+#
+# 格式：TOML（Python 标准库 tomllib 解析，零依赖）
+# 加载：execution.risk_rules.config.load_risk_rules_config(path)
+# 校验：Pydantic 严格校验，未知字段 / 配置矛盾 fail-fast
+#
+# Rule 顺序按"先全局 → 后单 symbol"在 RiskEngine 内部硬编码（global → market → symbol），
+# 配置顺序仅影响同一 scope 内多 rule 的命中优先级。
+
+enabled = true
+starting_balance = 10_000.0  # USD（账户起始余额，影响 MaxDrawdown 计算）
+
+# ─── 全局账户保护 ───
+[[rules]]
+name = "MaxDrawdownRule"
+max_drawdown = 0.15           # 15% 账户回撤 → 锁
+lookback_min = 1440           # 24h 窗口
+trade_limit = 5               # 至少 5 笔才评估
+stop_duration_min = 240       # 锁 4h
+
+# ─── 全局连续止损保护 ───
+[[rules]]
+name = "StoplossGuardRule"
+trade_limit = 5               # 5 次止损在窗口内
+lookback_min = 60             # 60 分钟窗口
+stop_duration_min = 120       # 锁 2h
+only_per_side = false         # 双向都计
+required_profit = 0.0         # 亏损才算止损（pct < 0）
+
+# ─── 多市场交易时段拦截 ───
+[[rules]]
+name = "MarketHoursRule"
+allow_pre_market = false
+allow_after_hours = false
+
+# ─── 单 symbol 冷却（防反复出入）───
+[[rules]]
+name = "CooldownRule"
+lookback_min = 5              # 5 分钟内有平仓
+stop_duration_min = 5         # 锁 5 分钟
+
+# ─── 单 symbol 持续亏损锁（按方向单独锁）───
+[[rules]]
+name = "LowProfitRule"
+trade_limit = 4               # 至少 4 笔
+required_profit = -0.05       # 累计 < -5% 触发
+lookback_min = 720            # 12h
+stop_duration_min = 60        # 锁 1h
+only_per_side = true          # 多/空分别锁
