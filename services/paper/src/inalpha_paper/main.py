@@ -17,7 +17,15 @@ from inalpha_shared import (
 )
 
 from . import __version__
-from .api import backtest, health, orders, strategies, trade_plans
+from .api import (
+    backtest,
+    health,
+    orders,
+    risk,
+    strategies,
+    strategy_candidates,
+    trade_plans,
+)
 from .config import get_paper_settings
 from .engine.pool import init_pool as init_backtest_pool
 from .engine.pool import shutdown_pool as shutdown_backtest_pool
@@ -54,5 +62,7 @@ install_error_handler(app)
 app.include_router(health.router)
 app.include_router(backtest.router)
 app.include_router(orders.router)
+app.include_router(risk.router)
 app.include_router(strategies.router)
+app.include_router(strategy_candidates.router)
 app.include_router(trade_plans.router)
