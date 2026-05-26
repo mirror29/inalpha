@@ -37,6 +37,10 @@ class Position:
 
     ts_opened: int = 0
     ts_last_event: int = 0
+    open_order_id: str | None = None
+    """ADR-0007：当前持仓首次开仓的 ``client_order_id``。同向加仓保持原值；
+    完全平仓后清空；反向开仓重置为新 order id。Portfolio 写 closed_trades 时透传。"""
+
     _fill_history: list[tuple[OrderSide, float, float, int]] = field(default_factory=list)
     """list of (side, quantity, price, ts) 供 reconcile 用。"""
 

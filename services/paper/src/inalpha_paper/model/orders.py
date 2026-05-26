@@ -85,6 +85,12 @@ class Order:
     # 拒绝 / 取消的原因（如果有）
     reason: str | None = None
 
+    # ADR-0007：Strategy 显式标记，Portfolio 写入 closed_trades.exit_reason 时透传
+    tag: str | None = None
+    """半结构化语义标签。约定值（与 closed_trades.exit_reason CHECK 集合对齐）：
+    'stop_loss' / 'trailing_stop_loss' / 'liquidation' / 'take_profit' / 'manual' / 'signal'。
+    None 时 Portfolio 写 closed_trades 默认 'signal'。"""
+
     # 维护成交序列以便 reconcile（ADR-0017 live worker reconcile_state 用）
     _fills: list[tuple[float, float, int]] = field(default_factory=list)
     """list of (fill_quantity, fill_price, ts_event)"""
