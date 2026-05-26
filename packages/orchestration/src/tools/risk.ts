@@ -131,7 +131,7 @@ export const riskUnlockTool = createTool({
 // 一键导出（接入 index.ts 时引用）
 // ────────────────────────────────────────────────────────────────────
 
-export const riskTools = {
+export const riskRuleTools = {
   describeRules: riskDescribeRulesTool,
   listLocks: riskListLocksTool,
   unlock: riskUnlockTool,
