@@ -5,7 +5,11 @@
 
 - 简单可调试 —— 出问题立刻能定位是 hint 错还是规则错
 - LLM 已经在 research 端推过一次 family；compose 不应该让 LLM 再选第二次（防"双 LLM 互相同意"，[ADR-0012 Alt D]）
-- 后续 E1 引入 LLM 变异时，这一层会被自然替换为参数搜索 / mutator
+
+D-9 起：**compose 仍是首选**（成本低、稳定）；compose 拒绝（``family='none'`` 或硬约束失败）
+时，orchestrator 走 **``paper.author_strategy`` 路径**让 LLM 直接写完整 ``Strategy`` 子类
+源码（ADR-0020 E1 MVP，见 ``services/paper/src/inalpha_paper/strategy_authoring/``）。
+本模块的规则路由对内置 3 策略仍然有效——只是不再是唯一出口。
 
 服务边界注意：本模块的 ``StrategyHint`` / ``Factor`` 是 **paper 服务内部 owned**，
 与 ``services/research`` 的同名 schema **字段一致但物理独立**。orchestration 层做
@@ -152,6 +156,14 @@ def _compose_trend(
         0.05,
         default=_recommend_trade_size(factors, base=0.02),
     )
+    # position_pct 让 sma_cross 真正按本金比例下单（runner 注入 initial_cash 后
+    # 生效）；缺省 1.0 = 信号触发时满仓。LLM hint 可显式覆盖 0-1 间。
+    position_pct = _coerce_float(
+        hint.params.get("position_pct"),
+        0.0,
+        1.0,
+        default=1.0,
+    )
 
     return ComposeResult(
         strategy_id="sma_cross",
@@ -159,10 +171,11 @@ def _compose_trend(
             "fast_period": fast,
             "slow_period": slow,
             "trade_size": trade_size,
+            "position_pct": position_pct,
         },
         reasoning=_compose_reasoning(
             "sma_cross", hint, factors,
-            extras=f"fast={fast} slow={slow} size={trade_size:.3f}",
+            extras=f"fast={fast} slow={slow} size={trade_size:.3f} pos_pct={position_pct:.2f}",
         ),
     )
 
@@ -210,13 +223,15 @@ def _compose_buy_hold(
     hint: StrategyHint,
     factors: list[Factor],
 ) -> ComposeResult:
-    """buy_hold → buy_and_hold。仅 ``trade_size``（0.5-1.0，fraction of cash 不实际生效，
-    但保留兼容 strategy 构造器）。"""
+    """buy_hold → buy_and_hold。``trade_size`` 是绝对订单数量（BTC/ETH 单位），
+    保守默认 0.01；D-9 candidate 路径下 baseline qty 由 ``runner.py`` 按
+    ``initial_cash / first_open`` 预算后注入，compose 这条路径仅供 LLM hint
+    直选 buy_hold family 时落地用。"""
     trade_size = _coerce_float(
         hint.params.get("trade_size"),
-        0.01,
+        0.001,
         1.0,
-        default=0.5,
+        default=0.01,
     )
     return ComposeResult(
         strategy_id="buy_and_hold",

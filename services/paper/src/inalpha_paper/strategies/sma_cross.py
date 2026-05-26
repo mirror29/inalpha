@@ -35,6 +35,8 @@ class SMACrossStrategy(Strategy):
         fast_period: int = 10,
         slow_period: int = 30,
         trade_size: float = 0.01,
+        position_pct: float | None = None,
+        initial_cash: float = 0.0,
     ) -> None:
         if fast_period >= slow_period:
             raise ValueError(f"fast_period ({fast_period}) must be < slow_period ({slow_period})")
@@ -45,6 +47,10 @@ class SMACrossStrategy(Strategy):
         self._fast_period = fast_period
         self._slow_period = slow_period
         self._trade_size = trade_size
+        # position_pct + initial_cash 同时给且 >0 时按本金比例下单（每根信号 bar
+        # 实时按当前 bar.open 算 qty）；否则回退到 trade_size 绝对量旧语义。
+        self._position_pct = position_pct
+        self._initial_cash = initial_cash
 
         # 滚动窗口存收盘价
         self._closes: deque[float] = deque(maxlen=slow_period)
@@ -78,10 +84,10 @@ class SMACrossStrategy(Strategy):
             crossed_down = self._prev_fast >= self._prev_slow and fast < slow
 
             if crossed_up and not self._is_long:
-                self._submit_market(OrderSide.BUY)
+                self._submit_market(OrderSide.BUY, bar)
                 self.signal_count += 1
             elif crossed_down and self._is_long:
-                self._submit_market(OrderSide.SELL)
+                self._submit_market(OrderSide.SELL, bar)
                 self.signal_count += 1
 
         self._prev_fast = fast
@@ -99,12 +105,28 @@ class SMACrossStrategy(Strategy):
 
     # ─── 内部 ───
 
-    def _submit_market(self, side: OrderSide) -> None:
+    def _resolve_quantity(self, bar: Bar) -> float:
+        """按 position_pct 算"满仓比例" qty；缺参数时回退 trade_size 绝对量。
+
+        除以 (1 + 0.001) 留 fee buffer，避免 cash 透支（撮合层目前不校验 cash，
+        见 plan follow-up）。bar.open 用作市价单的成交价基准（与 SimulatedExchange
+        市价单成交价对齐）。
+        """
+        if (
+            self._position_pct is not None
+            and self._position_pct > 0
+            and self._initial_cash > 0
+            and bar.open > 0
+        ):
+            return (self._initial_cash * self._position_pct) / bar.open / (1.0 + 0.001)
+        return self._trade_size
+
+    def _submit_market(self, side: OrderSide, bar: Bar) -> None:
         order = Order(
             client_order_id=ClientOrderId(f"sma-{self.name}-{uuid4().hex[:8]}"),
             instrument_id=self._instrument_id,
             side=side,
             type=OrderType.MARKET,
-            quantity=self._trade_size,
+            quantity=self._resolve_quantity(bar),
         )
         self.submit_order(order)
