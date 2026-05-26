@@ -92,19 +92,45 @@ class TradeRepository(Protocol):
         *,
         instrument_id: InstrumentId | None = None,
         close_after: datetime,
+        close_before: datetime | None = None,
         side: Side | None = None,
         exit_reasons: list[str] | None = None,
         max_profit_pct: float | None = None,
     ) -> list[ClosedTradeRecord]:
-        """查 `close_after` 之后已平仓的 trades，按 `close_ts` 升序。
+        """查时间窗内已平仓的 trades，按 `close_ts` 升序。
 
         Args:
             instrument_id: 限定 symbol；None 表示全部
             close_after: 平仓时间下界（含）
+            close_before: 平仓时间上界（不含）；None 表示无上界（取到现在）
             side: 限定方向；None / "*" 表示双向
             exit_reasons: 限定退出原因（如 ["stop_loss", "trailing_stop_loss"]）；None 表示不过滤
             max_profit_pct: 仅返回盈亏 < 此值的 trade（用于 stoploss_guard 找亏损）；None 表示不过滤
         """
+        ...
+
+
+@runtime_checkable
+class MarketCalendar(Protocol):
+    """交易日历查询接口。
+
+    venue 字符串作为 market 标识（如 "binance" / "nasdaq" / "shanghai"）。
+    Slice 1-3 用 mock；后续接 `services/data` 真实日历。
+    """
+
+    def is_trading_hours(
+        self,
+        market: str,
+        now: datetime,
+        *,
+        include_pre: bool = False,
+        include_after: bool = False,
+    ) -> bool:
+        """判断 `market` 在 `now` 是否在交易时段。crypto 永远 True。"""
+        ...
+
+    def next_session_open(self, market: str, now: datetime) -> datetime:
+        """`now` 之后下个开盘时刻。crypto 直接返回 `now`。"""
         ...
 
 
