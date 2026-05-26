@@ -1,4 +1,4 @@
-onlyBuiltDependencies:
-  - esbuild
-  - protobufjs
+allowBuilds:
+  esbuild: true
+  protobufjs: true
 verifyDepsBeforeRun: false
