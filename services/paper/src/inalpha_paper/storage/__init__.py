@@ -10,6 +10,6 @@
 - 所有函数都接 ``AsyncConnection`` 参数（不内部 acquire 连接），让调用方控制事务
 - 一次 fill 涉及"写 orders + 更新 positions + 扣 cash"——必须在调用方的事务内串起来
 """
-from . import accounts, backtest_runs, orders, positions, trade_plans
+from . import accounts, backtest_runs, orders, positions, risk_locks, trade_plans
 
-__all__ = ["accounts", "backtest_runs", "orders", "positions", "trade_plans"]
+__all__ = ["accounts", "backtest_runs", "orders", "positions", "risk_locks", "trade_plans"]

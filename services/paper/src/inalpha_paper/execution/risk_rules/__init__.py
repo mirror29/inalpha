@@ -24,15 +24,19 @@ from .base import (
     TradeRepository,
 )
 from .cooldown import CooldownRule
+from .lock_store import ActiveLock, InMemoryLockStore, LockStore
 from .low_profit import LowProfitRule
 from .market_hours import MarketHoursRule
 from .max_drawdown import MaxDrawdownRule
 from .stoploss_guard import StoplossGuardRule
 
 __all__ = [
+    "ActiveLock",
     "ClosedTradeRecord",
     "CooldownRule",
+    "InMemoryLockStore",
     "LockScope",
+    "LockStore",
     "LowProfitRule",
     "MarketCalendar",
     "MarketHoursRule",
