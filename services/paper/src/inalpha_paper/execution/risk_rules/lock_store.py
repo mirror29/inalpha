@@ -82,13 +82,26 @@ class InMemoryLockStore:
     """单进程内存 LockStore。dict-based + 自增 id。
 
     线程不安全（Inalpha msgbus 单线程模式 OK）。
-    多进程 / 跨服务场景必须用 PostgreSQL 实现替换（后续 Slice）。
+    多进程 / 跨服务场景必须用 PostgreSQL 实现替换。
+
+    Dirty 跟踪（reconcile worker 用）：
+
+    - `_pending_insert`：add 后未 sync 到 DB 的 lock id
+    - `_pending_unlock`：manual_unlock 后未 sync 到 DB 的 lock id
+    - 调 `mark_synced_*()` 在 reconcile 后清掉
+
+    本类**不知道** DB 存在 —— 仅暴露状态接口；`LockStoreReconciler` 拉数据写 DB。
     """
 
     def __init__(self) -> None:
         self._locks: dict[int, ActiveLock] = {}
         self._inactive: set[int] = set()
         self._next_id = 1
+        # dirty 跟踪：reconcile worker 周期性拉走并 mark synced
+        self._pending_insert: set[int] = set()
+        self._pending_unlock: set[int] = set()
+        # 当 lock 已 sync 进 DB 后，记录其 in-memory id → DB id 映射（外部 reconciler 填）
+        self._db_id_map: dict[int, int] = {}
 
     def add(
         self,
@@ -117,6 +130,7 @@ class InMemoryLockStore:
             locked_until=verdict.until,
         )
         self._locks[lock_id] = lock
+        self._pending_insert.add(lock_id)
         return lock
 
     def list_active(
@@ -165,7 +179,35 @@ class InMemoryLockStore:
         if lock_id not in self._locks or lock_id in self._inactive:
             return False
         self._inactive.add(lock_id)
+        # 同步还没跑过 → 直接从 pending_insert 删（DB 还没记，无需 unlock）
+        # 已经 sync 过 → 进 pending_unlock（reconciler 下次 UPDATE active=FALSE）
+        if lock_id in self._pending_insert:
+            self._pending_insert.discard(lock_id)
+        else:
+            self._pending_unlock.add(lock_id)
         return True
+
+    # ─── Reconcile worker 接口 ───
+
+    def get_pending_inserts(self) -> list[ActiveLock]:
+        """返回所有 dirty insert（已 add 但未 sync 到 DB）的 lock。"""
+        return [self._locks[lid] for lid in sorted(self._pending_insert) if lid in self._locks]
+
+    def get_pending_unlocks(self) -> list[int]:
+        """返回所有 dirty unlock（已 manual_unlock 但未 sync 到 DB）的 in-memory lock id。"""
+        return sorted(self._pending_unlock)
+
+    def mark_synced_insert(self, in_memory_id: int, db_id: int) -> None:
+        """reconciler INSERT 成功后调，记 in-memory_id → db_id 映射。"""
+        self._pending_insert.discard(in_memory_id)
+        self._db_id_map[in_memory_id] = db_id
+
+    def mark_synced_unlock(self, in_memory_id: int) -> None:
+        """reconciler UPDATE active=FALSE 成功后调。"""
+        self._pending_unlock.discard(in_memory_id)
+
+    def get_db_id(self, in_memory_id: int) -> int | None:
+        return self._db_id_map.get(in_memory_id)
 
 
 def _side_intersects(lock_side: Side, query_side: Side) -> bool:
