@@ -14,6 +14,8 @@ out/
 coverage/
 *.log
 .pnpm-store/
+# pnpm auto-generates a placeholder here, but Inalpha is not a monorepo (sub-packages each manage their own pnpm-lock)
+pnpm-workspace.yaml
 
 # Python
 __pycache__/
