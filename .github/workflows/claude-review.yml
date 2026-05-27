@@ -2,6 +2,7 @@ name: Claude PR Review
 
 # 触发：PR 打开 / 推新 commit / reopen 时自动跑一次 review
 # 互动入口见 claude.yml（在 PR 里 @claude 触发对话）
+# 鉴权：走 Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
 
 on:
   pull_request:
@@ -20,16 +21,19 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - uses: anthropics/claude-code-action@beta
+      - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          mode: review
-          direct_prompt: |
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+
             按 Inalpha 仓库 CLAUDE.md（§3 协作硬约束 + §3.1 金融时效性 + §3.2 prompt 工程纪律 + §4 CI 红线）review 本 PR diff。
 
             ## 必查 red flag
@@ -67,9 +71,14 @@ jobs:
 
             ## review 行为
 
-            - 找到 red flag → inline comment 贴到具体 line + 引用 CLAUDE.md 哪条
-            - 没问题 → 一段中文 LGTM 总结即可，不要硬挑刺
+            - PR 分支已 checkout 在当前工作目录
+            - 找到 red flag → 用 `mcp__github_inline_comment__create_inline_comment`（带 `confirmed: true`）贴到具体 line + 引用 CLAUDE.md 哪条
+            - 顶层总结用 `gh pr comment` 发；没问题 → 一段中文 LGTM 总结即可，不要硬挑刺
             - 措辞参考 CLAUDE.md 简洁风格：不堆模板话、不复读用户 diff
             - 用户措辞翻译表（见 packages/orchestration/src/mastra/agents/orchestrator.ts）
               对你也适用：不要在 review 输出里搬 promote / iterate / verdict / pass /
               abandon 这类英文工程黑话
+            - 只贴 GitHub 评论，不要把审查文字当聊天消息发
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"

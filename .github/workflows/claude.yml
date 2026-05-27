@@ -2,6 +2,7 @@ name: Claude
 
 # 互动入口：在 PR / issue / review comment 里 @claude 触发对话
 # 自动 review 见 claude-review.yml（PR 打开时无脑跑一次）
+# 鉴权：走 Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
 
 on:
   issue_comment:
@@ -27,11 +28,12 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - uses: anthropics/claude-code-action@beta
+      - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
