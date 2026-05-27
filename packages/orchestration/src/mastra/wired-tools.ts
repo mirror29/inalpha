@@ -22,7 +22,7 @@ import {
   defaultStrategyCodeAuditRegistration,
   withHooks,
 } from "../hooks/index.js";
-import { DEFAULT_PERMISSIONS, PermissionEngine } from "../permissions/index.js";
+import { PermissionEngine, loadDefaultPermissions } from "../permissions/index.js";
 import type { Decision } from "../permissions/index.js";
 import {
   allTools,
@@ -50,15 +50,25 @@ function buildDefaultRunner(
   return runner;
 }
 
-/** 默认 permission engine。 */
+/**
+ * 默认 permission engine。
+ *
+ * 规则来源（ADR-0011 / D-8b · #4）：
+ *
+ *   ``INALPHA_PERMISSIONS_FILE`` env  →  包内 ``config/permissions.default.yaml``
+ *   →  ``DEFAULT_PERMISSIONS`` 常量（仅在默认 yaml 文件缺失时 fallback）
+ *
+ * env 指定的文件加载失败 / schema 不匹配会 throw——这是 issue #4 验收第 4 条
+ * 要求的 fail-fast，不做静默 fallback。
+ */
 function buildDefaultPermissionEngine(): PermissionEngine {
-  return new PermissionEngine(DEFAULT_PERMISSIONS);
+  return new PermissionEngine(loadDefaultPermissions());
 }
 
 export type WireToolsOptions = {
   /** 自定义 hook runner（测试 / 替换默认）；缺省走 ``defaultAuditRegistration`` */
   hookRunner?: HookRunner;
-  /** 自定义 permission engine；缺省走 ``DEFAULT_PERMISSIONS`` */
+  /** 自定义 permission engine；缺省走 ``loadDefaultPermissions()``（yaml 优先 / 常量兜底） */
   permissionEngine?: PermissionEngine;
   /** audit-log sink（默认 console.log JSON 行）；当传入自定义 hookRunner 时本字段忽略 */
   auditSink?: (record: Record<string, unknown>) => void;
