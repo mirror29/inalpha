@@ -244,8 +244,15 @@ async def execute_plan(
     # 不消费 approval_token —— plan 维持 'approved' 状态，等锁释放 / 风控调整后
     # 用户可重发同一 plan_id（token 仍有效）
     # enforce 用独立 connection 写锁，避免被本端点后续异常 rollback
-    guard = getattr(request.app.state, "risk_guard", None)
-    await risk_guard_mod.enforce(guard, venue=venue, symbol=symbol, side=side)
+    # D-9.1a（issue #8）：factory per-account（隔离不同 JWT user 的 trade history）
+    factory = getattr(request.app.state, "risk_guard_factory", None)
+    await risk_guard_mod.enforce(
+        factory,
+        account_id=account_id,
+        venue=venue,
+        symbol=symbol,
+        side=side,
+    )
 
     # 2. 取 refPrice（不消费 token —— 网络失败可让 caller 重试）
     if not authorization or not authorization.startswith("Bearer "):

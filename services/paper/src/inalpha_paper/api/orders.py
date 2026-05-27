@@ -57,14 +57,19 @@ async def post_submit_order(
     """单笔下单（D-8b：落盘 + 持仓更新 + 扣现金事务）。
 
     D-9（issue #3）：撮合前先过 RiskGuard 拦截（``risk_engine_enabled=False`` 时 fail-open）。
+    D-9.1a（issue #8）：RiskGuard 改 per-account（factory.get_for_check(account_id)）。
     """
     account_id = account_id_from_user(user)
 
     # D-9 风控前置闸门：违规 → 409 RISK_REJECTED + risk_locks 表写新行
     # enforce 内部用独立 connection 写锁，不复用 db（避免后续异常导致锁回滚）
-    guard = getattr(request.app.state, "risk_guard", None)
+    factory = getattr(request.app.state, "risk_guard_factory", None)
     await risk_guard_mod.enforce(
-        guard, venue=req.venue, symbol=req.symbol, side=req.side
+        factory,
+        account_id=account_id,
+        venue=req.venue,
+        symbol=req.symbol,
+        side=req.side,
     )
 
     ref_price = await _resolve_ref_price(req, settings, authorization)

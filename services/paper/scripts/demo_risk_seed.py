@@ -1,25 +1,21 @@
 """注入合成 closed_trades 模拟历史亏损 → 让 ``StoplossGuardRule`` 真触发拦截。
 
-**Demo / 演示工具**。配合 ``PostgresTradeRepository`` opt-in 模式
-（env ``INALPHA_RISK_DEMO_ACCOUNT_SUB``）使用，让 agent 在对话里能真看到 RISK_REJECTED。
+**Demo / 演示工具**。D-9.1a（issue #8）起 ``RiskGuardFactory`` 默认按 caller
+account_id 隔离 trade history，无需 env 切换 demo mode。
 
-用法（端到端 5 步演示）：
+用法（端到端 4 步演示）：
 
     # 1. 注入 5 笔亏损 trade（默认 BTC/USDT@binance / SELL 平 long / -2.5%/笔）
     uv run python services/paper/scripts/demo_risk_seed.py --sub test-user
 
-    # 2. 重启 paper service 时启用 demo mode
-    export INALPHA_RISK_DEMO_ACCOUNT_SUB=test-user
-    bash scripts/dev.sh   # paper service 启动 log 应出现"RiskGuard demo mode"
-
-    # 3. 跟 agent 用同 sub 对话（默认 JWT sub=test-user）：
+    # 2. 跟 agent 用同 sub 对话（默认 JWT sub=test-user）：
     #    "下一笔 0.001 BTC 多单" → trade.execute_plan 应返 409 RISK_REJECTED
     #    rule_name=StoplossGuardRule，agent 应清楚转述给用户
 
-    # 4. 验证 risk_locks 表多一行
+    # 3. 验证 risk_locks 表多一行
     psql ... -c "SELECT * FROM risk_locks WHERE active=TRUE;"
 
-    # 5. 清理
+    # 4. 清理
     uv run python services/paper/scripts/demo_risk_seed.py --sub test-user --cleanup
 
 约束：
@@ -131,8 +127,6 @@ async def _amain(args: argparse.Namespace) -> int:
         print(f"inserted {len(ids)} demo closed_trades, ids={ids}")
         print()
         print("──── 下一步 ────")
-        print(f"  export INALPHA_RISK_DEMO_ACCOUNT_SUB={args.sub}")
-        print("  bash scripts/dev.sh   # 重启 paper service")
         print(f"  # 用 sub={args.sub} 的 JWT 跟 agent 对话，下 {args.symbol} 单 → 期望 409 RISK_REJECTED")
         print(f"  # 清理：uv run python services/paper/scripts/demo_risk_seed.py --sub {args.sub} --cleanup")
     finally:

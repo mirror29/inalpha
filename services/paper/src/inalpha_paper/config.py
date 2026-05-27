@@ -59,7 +59,7 @@ class PaperSettings(BaseSettings):
         description="单 backtest job RLIMIT_DATA 上限（GB）。macOS 上 mmap 仍可绕开。",
     )
 
-    # ─── D-9 · RiskEngine HTTP 接入（ADR-0006 / issue #3）─────────────
+    # ─── D-9 / D-9.1a · RiskEngine HTTP 接入（ADR-0006 / issue #3 + #8）─
 
     risk_engine_enabled: bool = Field(
         default=True,
@@ -72,13 +72,6 @@ class PaperSettings(BaseSettings):
         alias="INALPHA_RISK_RULES_CONFIG",
         description="risk_rules.toml 路径，相对 paper service 工作目录或绝对路径。"
         "文件缺失 / 解析失败 → lifespan log error 后 fail-open（不阻塞服务起步）。",
-    )
-    risk_demo_account_sub: str | None = Field(
-        default=None,
-        alias="INALPHA_RISK_DEMO_ACCOUNT_SUB",
-        description="demo / single-account 模式：设置 JWT sub 字符串后 lifespan 用 "
-        "PostgresTradeRepository 替换 _NoopTradeRepo，让 trade-based RiskRule 能读 "
-        "closed_trades 表真触发拦截。仅供 issue #3 演示，production 多账户走 issue #8。",
     )
 
 
