@@ -32,6 +32,7 @@ import {
 } from "@mastra/observability";
 
 import { getSettings } from "../config.js";
+import { permissionsApiRoutes } from "../permissions/api.js";
 import { schedulerApiRoutes } from "../scheduler/api.js";
 import { bootstrapScheduler } from "../scheduler/index.js";
 import { orchestrator } from "./agents/orchestrator.js";
@@ -71,8 +72,9 @@ export const mastra = new Mastra({
   },
   logger: new PinoLogger({ name: "inalpha", level: "info" }),
   observability,
-  // D-9：scheduler HTTP 管理面（与 mastra dev 共用 4111 端口）
-  server: { apiRoutes: schedulerApiRoutes },
+  // D-9：scheduler HTTP 管理面 + D-9.1b：permissions ask 审批通道
+  // 两套路由共用 4111 端口
+  server: { apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes] },
 });
 
 // D-9：类 Hermes 定时 agent 模式。默认关闭，需在 .env 设 `SCHEDULER_ENABLED=true` 才启动。

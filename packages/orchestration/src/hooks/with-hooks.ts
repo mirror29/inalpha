@@ -26,6 +26,10 @@
  *   让 Mastra runtime 把它当 tool 报错处理（LLM 看到错误消息能下一轮决策）。
  * - 现阶段不接 permission engine，仅留 ``permissionResolver`` 参数。task #3 接入。
  */
+import {
+  type PendingApprovalsStore,
+  pendingApprovals as defaultPendingApprovals,
+} from "../permissions/pending.js";
 import type { HookRunner } from "./runner.js";
 
 /**
@@ -92,6 +96,14 @@ export type WithHooksOptions = {
   permissionResolver?: PermissionResolver;
   /** 可选 sessionId 提供器；从 tool ctx 中取（依赖 Mastra runtime context） */
   getSessionId?: (toolCtx: unknown) => string | undefined;
+  /**
+   * 可选挂起池（D-9.1b / ADR-0018）。permissionResolver=ask 时把请求挂进去等用户决策。
+   * 缺省用模块级单例（同 ``mastra/index.ts`` 注册 HTTP routes 用的 store）。
+   * 测试可注入 fresh 实例隔离。
+   */
+  pendingApprovals?: PendingApprovalsStore;
+  /** ask 路径超时毫秒数；缺省 30_000（30 秒）。0 / 负数视作默认。 */
+  askTimeoutMs?: number;
 };
 
 /**
@@ -152,13 +164,29 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
         }
 
         if (permDecision === "ask") {
-          // D-8 阶段：没有 ask 实现（用户审批 / Risk Agent 路径，task #5 起接入）。
-          // 暂时把 ask 当 deny + 提示信息，让 LLM 知道这条路需要人工。
-          return {
-            isError: true,
-            message: `tool ${toolName} requires approval (ask path not yet wired; see ADR-0011)`,
-            deniedBy: "permission-ask-pending",
-          };
+          // D-9.1b / ADR-0018：把请求挂进 PendingApprovalsStore，等前端 POST
+          // /permissions/:id/respond 决策。30s 超时自动 deny。
+          const store = opts.pendingApprovals ?? defaultPendingApprovals;
+          const timeoutMs =
+            opts.askTimeoutMs && opts.askTimeoutMs > 0 ? opts.askTimeoutMs : undefined;
+          const { decision, requestId, via } = await store.request({
+            toolName,
+            toolInput: effectiveInput,
+            sessionId,
+            timeoutMs,
+          });
+          if (decision === "deny") {
+            return {
+              isError: true,
+              message:
+                via === "timeout"
+                  ? `tool ${toolName} denied (no user response in time, request ${requestId})`
+                  : `tool ${toolName} denied by user (request ${requestId})`,
+              deniedBy: via === "timeout" ? "permission-ask-timeout" : "permission-ask-user-deny",
+              requestId,
+            };
+          }
+          // decision === "allow" → 继续走 execute
         }
 
         // 3. execute

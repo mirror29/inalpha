@@ -6,17 +6,18 @@
  * - ``paper.author_strategy``：把 LLM 写的 Python 源码送进沙盒 → 落候选表 → 返回 candidate_id
  * - ``paper.list_candidates``：列候选（按 fitness 排序），用于"对比 / 找当前最优"
  * - ``paper.get_candidate``：取完整候选（含源码 / metrics / fitness），用于"看这个候选具体是啥"
- * - ``paper.promote_candidate``：把候选从 ``candidate`` 切到 ``promoted``；MVP 阶段
- *   permission ``allow``，agent 自助闭环；promote 后仅状态切换，live trading runner
+ * - ``paper.promote_candidate``：把候选从 ``candidate`` 切到 ``promoted``；D-9.1b 起
+ *   permission ``ask``（前端气泡确认）；promote 后仅状态切换，live trading runner
  *   在 E2 / D-7 接入
  *
  * 跑回测复用 ``paper.run_backtest``，传 ``candidateId`` 走候选分支——本模块不开
  * 单独的"跑回测" tool，避免 LLM 误用。
  *
- * **审批门**（D-9 MVP）：前端 askUserChoice 还没接通，permission ``ask`` 会让 agent
- * 撞墙；为了让 agent 闭环，promote 暂时放 ``allow``，由 LLM 调前自检（看 fitness vs
- * baseline + 等用户明确指令）+ 后端硬校验（``fitness IS NOT NULL`` + ``status='candidate'``）
- * 两道防御替代 permission 拦截。等 ADR-0018 askUserChoice 接通后改回 ``ask``。
+ * **审批门**（D-9.1b 起，ADR-0018 askUserChoice 接通）：promote_candidate 走
+ * permission ``ask`` —— agent 调时前端会弹气泡让用户点 "允许 / 拒绝"。30 秒无响应
+ * 自动 deny。LLM 仍须调前自检（fitness vs baseline + 等用户明确指令），避免让用户
+ * 看到一个本不该出现的气泡。后端硬校验（``fitness IS NOT NULL`` + ``status='candidate'``）
+ * 作为第二道防线。
  */
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
@@ -292,8 +293,9 @@ export const paperPromoteCandidateTool = createTool({
   description: `
     把策略候选从 status='candidate' 切到 'promoted'（"草稿 → 正式"）。
 
-    **审批门**（D-9 MVP）：本 tool 默认 permission \`allow\`，agent 可直接闭环（因为
-    前端 askUserChoice 还没接通）。审批责任由**你**承担——调前必须满足三条硬性自检：
+    **审批门**（D-9.1b 起）：permission \`ask\` —— 调用时前端会弹气泡让用户点
+    "允许 / 拒绝"。30 秒无响应 → 自动 deny。**所以你仍要满足三条硬性自检**（用户
+    点允许后才能 promote，但浪费用户的点击是坏体验）：
 
       1. 查过候选：\`paper.get_candidate(candidateId)\` 或 \`list_candidates\` 拿到完整
          \`fitness\` / \`metrics\` / \`baseline\`，**亲眼看过数字**
@@ -301,12 +303,12 @@ export const paperPromoteCandidateTool = createTool({
       3. 用户在对话里**明确**说"上线 / promote / 转正 / 推到 trade 链路 / 把它发布"等指令；
          **不是**用户只是"看看 / 对比 / 评估"
 
-    自检不齐就不要调——后端会拒（fitness null → 400），但即使后端放行你也不该 promote
-    没跑赢 baseline 的策略。这是设计上从"permission 层拦"挪到"prompt 层自律"的折中。
+    自检不齐就不要调——会让用户面对一个气泡确认本不该发生的操作；同时后端硬校验仍在
+    （fitness IS NOT NULL + status='candidate'）。
 
     **调前必做**：在对话里给用户报告完整决策依据（候选 ID / fitness vs baseline /
-    max_drawdown / 你打算 promote 的理由），然后**才**调 tool。这样用户哪怕事后看
-    audit log 也知道为啥 promote 了它。
+    max_drawdown / 你打算 promote 的理由），然后**才**调 tool。这样用户点气泡时
+    有充分信息可判断；事后看 audit log 也知道为啥 promote 了它。
 
     何时用：
     - 用户明确说"上线 / promote / 转正 / 推到 trade 链路 / 把它发布"等

@@ -186,7 +186,9 @@ describe("wireToolList · permission + audit-log integration", () => {
     });
   });
 
-  it("ask-decision yields pending-approval marker (no executor in D-8a)", async () => {
+  it("ask-decision times out → deny (D-9.1b)", async () => {
+    const { PendingApprovalsStore } = await import("../src/permissions/pending.js");
+    const store = new PendingApprovalsStore();
     const tool = {
       id: "risk.update_config",
       description: "synthetic",
@@ -196,11 +198,13 @@ describe("wireToolList · permission + audit-log integration", () => {
     const [wrapped] = wireToolList([tool], {
       hookRunner: new HookRunner(),
       permissionEngine: new PermissionEngine(DEFAULT_PERMISSIONS),
+      pendingApprovals: store,
+      askTimeoutMs: 50,
     });
 
     const out = (await wrapped!.execute!({})) as { isError: boolean; deniedBy: string };
     expect(out.isError).toBe(true);
-    expect(out.deniedBy).toBe("permission-ask-pending");
+    expect(out.deniedBy).toBe("permission-ask-timeout");
     expect(tool.execute).not.toHaveBeenCalled();
   });
 });
