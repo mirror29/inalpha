@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
 </p>
 
-<p><em>Every factor proposed, every strategy mutated, every order routed — logged, versioned, reviewable. The LLM writes the code; the engineering harness signs every decision.</em></p>
+<p><em>Every factor proposed, every strategy mutated, every order routed — logged, versioned, reviewable. Every number the agents reason on — sourced, <code>as_of</code>-stamped, freshness-checked. The LLM writes the code; the engineering harness signs every decision.</em></p>
 
 </div>
 
@@ -29,6 +29,8 @@
 ## Overview
 
 Inalpha is a **professional quant agent framework, governed by engineering discipline**. It treats LLM agents not as black-box signal generators, but as code-writing collaborators bounded by hooks, permissions, plan-then-execute approval, and a one-shot signature on every order path.
+
+**Source-attributed by default.** Below the decision harness sits a data discipline: every bar, every quote, every macro print the agents reason on carries its source, its `as_of` timestamp, and a freshness check. Financial reasoning that quietly ages into stale data is the most common way an agent fails *without anyone noticing* — Inalpha refuses to compile that failure mode.
 
 Four capability lines sit on top of that harness:
 
@@ -124,6 +126,35 @@ Inalpha splits *scheduling* from *compute*. The agent runtime fans out the grid 
 
 ---
 
+## Roadmap
+
+Where each capability stands today. Live module inventory and the end-to-end decision sequence diagram live in [`docs/04-current-state.md`](docs/04-current-state.md).
+
+| Status | Capability | Phase | Highlight |
+|---|---|---|---|
+| ✅ Shipped | Plan/Exec audit trail + Hooks + Permission Engine | D-8a | three-step orders · one-shot signing token · 5 lifecycle hook events · allow / ask / deny tri-state |
+| ✅ Shipped | Research → strategy → backtest lineage | D-8c | `deep_dive → compose_strategy → run_backtest` with `research_id` / `backtest_id` threaded through |
+| ✅ Shipped | LLM-authored strategies — E1 MVP | D-9 | three sandbox gates (AST · subprocess · `Strategy` contract) + multi-objective fitness + baseline auto-run |
+| ✅ Shipped | Risk engine at the HTTP boundary | D-9 | declarative `risk_rules.toml` · pre-trade `enforce` · `risk_locks` table with independent commit |
+| ✅ Shipped | Bull / bear researcher debate | D-9 | opposing-stance researchers under `services/research` |
+| ✅ Shipped | Scheduler / cron agent mode | D-9 | `scheduler_jobs` + advisory lock + `/api/scheduler/*` management plane |
+| ✅ Shipped | RiskGuard per-account isolation | D-9.1a | `RiskGuardFactory` removes cross-account state bleed |
+| ⏭️ In Flight | Risk engine — remaining rules | D-9 closing | `cooldown` / `stoploss_guard` / `market_hours` need real `trade_repo` + `market_calendar` |
+| ⏭️ In Flight | `askUserChoice` front-end | D-10 (issue #2) | brings the `ask` permission state back from workaround |
+| ⏭️ In Flight | `permissions.yaml` configuration | D-8b (issue #4) | replaces the hard-coded `defaults.ts` |
+| 🗓️ Planned | Live runner | D-10 (issue #1) | tick-driven `on_bar` writing `paper_positions` / `paper_trades` |
+| 🗓️ Planned | Strategy evolution — E2 | D-11 | multi-generation loop + MAP-Elites + Island Model + `unified-diff` mutations |
+| 🗓️ Planned | Research-hub nested supervisor | D-10+ | 4 analysts + bull/bear/risk debate as a single closed loop |
+| 🗓️ Planned | Factor discovery — L0 → L1 | D-11+ | walk-forward IC + multiple-testing correction + `factor_candidates` table |
+| 🔬 Exploring | Skills as procedural memory | TBD | reusable markdown skills with auto-discovery |
+| 🔬 Exploring | Alpha Zoo cold start | E1+ | seed factor library with public alphas (Qlib / Kakushadze / GTJA) |
+| 🔬 Exploring | E4 `evolve_strategy` MCP tool | E4 | evolution loop exposed to the orchestrator as one MCP tool |
+| 🔬 Exploring | Analog backtesting | TBD | similarity-window-driven backtest range selection (STUMPY) |
+
+> **Legend** — ✅ Shipped: behavior already lives in `main` · ⏭️ In Flight: actively in this phase · 🗓️ Planned: scoped for an upcoming phase, not started · 🔬 Exploring: research recorded, no commit date.
+
+---
+
 ## Built on the shoulders of
 
 Inalpha is not invented from scratch. It selectively inherits proven designs from prior work, with explicit boundaries around **what we take and what we leave**:
@@ -159,16 +190,48 @@ Inalpha is not invented from scratch. It selectively inherits proven designs fro
 
 ## Quick Start
 
-```bash
-pnpm i                          # Node packages (packages/orchestration)
-uv sync                         # Python packages (services/_shared, data, paper)
+### 1 · Install dependencies
 
-bash scripts/dev.sh             # one shot — starts data (8001) + paper (8002) + mastra (4111)
+```bash
+pnpm i      # Node packages (packages/orchestration)
+uv sync     # Python packages (services/_shared, data, paper, research)
+```
+
+### 2 · Configure your LLM key (required)
+
+A single `.env` at the repo root is read by Mastra (TS) **and** all Python services. Copy the template and fill in the LLM provider you want to use:
+
+```bash
+cp .env.example .env
+```
+
+Inside `.env`, set `LLM_PROVIDER` to one of `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` and fill in the matching key:
+
+| Provider | env var | Default model | Get a key |
+|---|---|---|---|
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-7` | [console.anthropic.com](https://console.anthropic.com) |
+| `openai` | `OPENAI_API_KEY` | `gpt-5` | [platform.openai.com](https://platform.openai.com) |
+| `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash-exp` | [aistudio.google.com](https://aistudio.google.com) |
+| `kimi` | `KIMI_API_KEY` | `moonshot-v1-8k` | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` | [open.bigmodel.cn](https://open.bigmodel.cn) |
+| `ollama` | — (local) | `llama3.2` | `ollama pull llama3.2` |
+
+Override the default model by setting `LLM_MODEL=...` in the same file. Mastra and `services/research` both read this one file — no per-service config to juggle.
+
+> Already have keys in `services/*/.env` or `packages/orchestration/.env` from earlier? Those still work as cwd-level overrides while you migrate. Once you copy them up into the root `.env`, the per-service files can be deleted.
+
+### 3 · Start everything
+
+```bash
+bash scripts/dev.sh             # one shot — data (8001) + paper (8002) + research (8003) + mastra (4111)
 bash scripts/dev.sh logs        # follow service logs
 bash scripts/dev.sh stop        # stop everything
 ```
 
-Then open the `mastra dev` playground at `http://127.0.0.1:4111` to start a conversation with the orchestrator agent.
+### 4 · Talk to the orchestrator
+
+Open the `mastra dev` playground at **<http://127.0.0.1:4111>** — that's where you chat with the orchestrator agent and watch every tool call, hook event, and approval token in the live trace UI. `services/paper` does not call any LLM directly; only the orchestrator (Mastra) and `services/research` consume your key.
 
 Prefer the manual three-terminal flow? See [`AGENTS.md §4`](AGENTS.md).
 

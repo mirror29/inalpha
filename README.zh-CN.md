@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
 </p>
 
-<p><em>每个因子提案、每次策略变异、每笔订单路由——都有日志、有版本、可复核。LLM 只负责写代码，工程纪律为每个决策背书。</em></p>
+<p><em>每个因子提案、每次策略变异、每笔订单路由——都有日志、有版本、可复核。Agent 推理依据的每一个数字——都有来源、有 <code>as_of</code> 时点、有 freshness 校验。LLM 只负责写代码，工程纪律为每个决策背书。</em></p>
 
 </div>
 
@@ -29,6 +29,8 @@
 ## Overview
 
 Inalpha 是一个**用工程纪律驱动的专业量化 agent 框架**。它不把 LLM 当作黑箱信号源，而把它视作受 hooks / permissions / plan-exec / 一次性签名约束的代码协作者——每一步关键动作都留痕、可版本化、可复核。
+
+**数据默认溯源。** 决策护栏之下还有一道数据纪律：agent 推理依据的每一根 K 线、每一笔报价、每一个宏观数据点，都带来源、带 `as_of` 时间戳、带 freshness 校验。金融推理悄无声息地"用着过期数据继续讲故事"，是 agent 最常见、也最不易被察觉的失败模式——Inalpha 拒绝把这种失败模式编译进系统。
 
 在这套护栏之上，铺开四条能力线：
 
@@ -124,6 +126,35 @@ Inalpha 把*调度*和*算力*分开：agent runtime 负责扇出网格、聚合
 
 ---
 
+## Roadmap
+
+每条能力的当前进度。已落地模块清单与端到端决策时序图见 [`docs/04-current-state.md`](docs/04-current-state.md)。
+
+| 状态 | 能力 | Phase | 关键点 |
+|---|---|---|---|
+| ✅ 已上线 | Plan/Exec 审计链 + Hooks + Permission Engine | D-8a | 三步下单 · 一次性签名 token · 5 类生命周期 hook · allow / ask / deny 三态 |
+| ✅ 已上线 | 研究 → 策略 → 回测 lineage | D-8c | `deep_dive → compose_strategy → run_backtest` 全链路串 `research_id` / `backtest_id` |
+| ✅ 已上线 | LLM 自创策略 — E1 MVP | D-9 | 三道沙盒（AST 审计 / 子进程 / `Strategy` 协议契约） + 多目标 fitness + baseline 自动并跑 |
+| ✅ 已上线 | 风控引擎落到 HTTP 边界 | D-9 | 声明式 `risk_rules.toml` · 撮合前 `enforce` · `risk_locks` 表（独立 commit） |
+| ✅ 已上线 | Bull / Bear 研究员辩论 | D-9 | `services/research` 立场对抗研究员 |
+| ✅ 已上线 | Scheduler / cron agent 模式 | D-9 | `scheduler_jobs` + advisory lock + `/api/scheduler/*` 管理面 |
+| ✅ 已上线 | RiskGuard 账户级隔离 | D-9.1a | `RiskGuardFactory` 去除跨账户状态串联 |
+| ⏭️ 进行中 | 风控引擎 — 剩余规则激活 | D-9 收尾 | `cooldown` / `stoploss_guard` / `market_hours` 需接 `trade_repo` + `market_calendar` |
+| ⏭️ 进行中 | `askUserChoice` 前端 | D-10（issue #2） | 把 permission 的 `ask` 路径从 workaround 救回 |
+| ⏭️ 进行中 | `permissions.yaml` 配置化 | D-8b（issue #4） | 替代 `defaults.ts` 硬编码 |
+| 🗓️ 已规划 | Live runner | D-10（issue #1） | 行情 tick 驱动 `on_bar`、写 `paper_positions` / `paper_trades` |
+| 🗓️ 已规划 | 策略进化 — E2 | D-11 | 多代演化 + MAP-Elites + Island Model + `unified-diff` 变异 |
+| 🗓️ 已规划 | Research-hub 嵌套 supervisor | D-10+ | 4 analyst + bull/bear/risk debate 闭环 |
+| 🗓️ 已规划 | 因子发现 — L0 → L1 | D-11+ | walk-forward IC + 多重检验校正 + `factor_candidates` 表 |
+| 🔬 探索中 | Skills as procedural memory | 待定 | 可复用 markdown skill + auto-discovery |
+| 🔬 探索中 | Alpha Zoo 冷启动 | E1+ | 公开 alpha 库播种（Qlib / Kakushadze / GTJA） |
+| 🔬 探索中 | E4 `evolve_strategy` MCP tool | E4 | 进化循环以单个 MCP tool 暴露给 orchestrator |
+| 🔬 探索中 | Analog backtesting | 待定 | 历史相似窗口驱动回测区间（STUMPY） |
+
+> **图例** — ✅ 已上线：行为已在 `main` 中 · ⏭️ 进行中：当前 phase 在做 · 🗓️ 已规划：未来 phase 已 scope、未开工 · 🔬 探索中：调研在档、无 commit 日期。
+
+---
+
 ## Built on the shoulders of
 
 Inalpha 不是从零发明——它有选择地继承前人的最优解，并明确**借鉴边界**：
@@ -159,16 +190,48 @@ Inalpha 不是从零发明——它有选择地继承前人的最优解，并明
 
 ## Quick Start
 
-```bash
-pnpm i                          # Node 包（packages/orchestration）
-uv sync                         # Python 包（services/_shared, data, paper）
+### 1 · 安装依赖
 
-bash scripts/dev.sh             # 一键起 data(8001) + paper(8002) + mastra(4111)
+```bash
+pnpm i      # Node 包（packages/orchestration）
+uv sync     # Python 包（services/_shared, data, paper, research）
+```
+
+### 2 · 配置 LLM Key（必须）
+
+仓库根目录**单一 `.env`** 同时供 Mastra（TS）和所有 Python service 读取。拷贝模板后填你要用的那家 provider：
+
+```bash
+cp .env.example .env
+```
+
+在 `.env` 里把 `LLM_PROVIDER` 设成 `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` 之一，填对应 key：
+
+| Provider | env 字段 | 默认模型 | 获取 key |
+|---|---|---|---|
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-7` | [console.anthropic.com](https://console.anthropic.com) |
+| `openai` | `OPENAI_API_KEY` | `gpt-5` | [platform.openai.com](https://platform.openai.com) |
+| `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash-exp` | [aistudio.google.com](https://aistudio.google.com) |
+| `kimi` | `KIMI_API_KEY` | `moonshot-v1-8k` | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` | [open.bigmodel.cn](https://open.bigmodel.cn) |
+| `ollama` | — （本地） | `llama3.2` | `ollama pull llama3.2` |
+
+要换模型？把 `LLM_MODEL=...` 一起填。Mastra 和 `services/research` 共读这一份配置——不再需要在每个 service 各自维护 .env。
+
+> 旧用户 `services/*/.env` / `packages/orchestration/.env` 里已填的值仍作为 cwd-level fallback 生效（迁移期友好）。把它们合并到根 `.env` 后即可删掉。
+
+### 3 · 启动全部 service
+
+```bash
+bash scripts/dev.sh             # 一键起 data(8001) + paper(8002) + research(8003) + mastra(4111)
 bash scripts/dev.sh logs        # 跟随日志
 bash scripts/dev.sh stop        # 停止全部
 ```
 
-随后打开 `http://127.0.0.1:4111` 的 `mastra dev` playground，与 orchestrator agent 对话。
+### 4 · 跟 orchestrator 对话
+
+打开 `mastra dev` playground **<http://127.0.0.1:4111>** —— 在这里跟 orchestrator agent 聊天，并在 live trace UI 里看每一次 tool 调用、hook 事件、approval token 流转。`services/paper` 不直接调 LLM；只有 orchestrator（Mastra）和 `services/research` 会消耗你的 key。
 
 想用 3 个独立 terminal 手动起？见 [`AGENTS.md §4`](AGENTS.md)。
 

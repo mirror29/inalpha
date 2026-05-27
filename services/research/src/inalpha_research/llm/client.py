@@ -80,9 +80,12 @@ class DeepSeekLLMClient:
         max_concurrent: int = 5,
         max_retries: int = 3,
         retry_base_seconds: float = 1.0,
+        provider_name: str = "deepseek",
     ) -> None:
+        # provider_name 让 OpenAI-compat 家族（openai / kimi / zhipu / ollama）
+        # 复用本类时，错误日志仍带正确的 provider 标识
         if not api_key:
-            raise ValueError("DeepSeekLLMClient: api_key is required")
+            raise ValueError(f"{provider_name}: api_key is required")
         # 延迟 import：测试不走这条路时不需要装 openai
         from openai import AsyncOpenAI
 
@@ -92,6 +95,7 @@ class DeepSeekLLMClient:
             timeout=timeout_seconds,
         )
         self._model = model
+        self._provider_name = provider_name
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._max_retries = max_retries
         self._retry_base_seconds = retry_base_seconds
@@ -141,10 +145,10 @@ class DeepSeekLLMClient:
         # 走到这说明可重试错误把次数用光
         assert last_err is not None
         raise LLMError(
-            f"DeepSeek API call failed after {self._max_retries + 1} attempts: {last_err}",
+            f"{self._provider_name} API call failed after {self._max_retries + 1} attempts: {last_err}",
             code="LLM_PROVIDER_ERROR",
             details={
-                "provider": "deepseek",
+                "provider": self._provider_name,
                 "model": self._model,
                 "error_type": type(last_err).__name__,
             },
@@ -175,15 +179,15 @@ class DeepSeekLLMClient:
                 raise
             except Exception as e:
                 raise LLMError(
-                    f"DeepSeek API call failed: {e}",
+                    f"{self._provider_name} API call failed: {e}",
                     code="LLM_PROVIDER_ERROR",
-                    details={"provider": "deepseek", "model": self._model},
+                    details={"provider": self._provider_name, "model": self._model},
                 ) from e
 
         choices = r.choices
         if not choices:
             raise LLMError(
-                "DeepSeek returned no choices",
+                f"{self._provider_name} returned no choices",
                 code="LLM_EMPTY_RESPONSE",
             )
         content = choices[0].message.content or ""
@@ -191,19 +195,293 @@ class DeepSeekLLMClient:
             data = json.loads(content)
         except json.JSONDecodeError as e:
             raise LLMError(
-                f"DeepSeek did not return valid JSON: {e}",
+                f"{self._provider_name} did not return valid JSON: {e}",
                 code="LLM_INVALID_JSON",
                 details={"raw": content[:500]},
             ) from e
         if not isinstance(data, dict):
             raise LLMError(
-                f"DeepSeek returned non-dict JSON: {type(data).__name__}",
+                f"{self._provider_name} returned non-dict JSON: {type(data).__name__}",
                 code="LLM_INVALID_JSON",
             )
         return data
 
     async def aclose(self) -> None:
         await self._client.close()
+
+
+# ────────────────────────────────────────────────────────────────────
+# Anthropic (Claude)
+# ────────────────────────────────────────────────────────────────────
+
+
+class AnthropicLLMClient:
+    """走 Anthropic Messages API。
+
+    与 DeepSeekLLMClient 的差异：
+
+    - 用 ``anthropic.AsyncAnthropic`` SDK（不是 OpenAI 兼容）
+    - 没有 native ``response_format=json_object``，靠 system prompt 强制 + 解析；
+      我们走"system prompt 后缀注入 ``ONLY OUTPUT JSON``"的稳妥路径
+    - 限流 / 重试与 DeepSeek 同构，把 anthropic 自家的异常类映射进来
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "claude-opus-4-7",
+        timeout_seconds: float = 60.0,
+        max_concurrent: int = 5,
+        max_retries: int = 3,
+        retry_base_seconds: float = 1.0,
+    ) -> None:
+        if not api_key:
+            raise ValueError("anthropic: api_key is required")
+        from anthropic import AsyncAnthropic
+
+        self._client = AsyncAnthropic(api_key=api_key, timeout=timeout_seconds)
+        self._model = model
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._max_retries = max_retries
+        self._retry_base_seconds = retry_base_seconds
+
+    async def _call_with_retry(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> Any:
+        from anthropic import APITimeoutError, InternalServerError, RateLimitError
+
+        retriable = (RateLimitError, APITimeoutError, InternalServerError)
+        last_err: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                return await self._client.messages.create(
+                    model=self._model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    system=system + "\n\nIMPORTANT: respond with a single valid JSON object only.",
+                    messages=[{"role": "user", "content": user}],
+                )
+            except retriable as e:
+                last_err = e
+                if attempt >= self._max_retries:
+                    break
+                backoff = self._retry_base_seconds * (2**attempt)
+                jitter = random.uniform(0, self._retry_base_seconds * 0.5)
+                sleep_s = backoff + jitter
+                logger.warning(
+                    "anthropic retriable error (attempt %d/%d): %s; sleeping %.2fs",
+                    attempt + 1,
+                    self._max_retries + 1,
+                    type(e).__name__,
+                    sleep_s,
+                )
+                await asyncio.sleep(sleep_s)
+
+        assert last_err is not None
+        raise LLMError(
+            f"anthropic API call failed after {self._max_retries + 1} attempts: {last_err}",
+            code="LLM_PROVIDER_ERROR",
+            details={
+                "provider": "anthropic",
+                "model": self._model,
+                "error_type": type(last_err).__name__,
+            },
+        ) from last_err
+
+    async def complete_json(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.2,
+    ) -> dict[str, Any]:
+        async with self._semaphore:
+            try:
+                r = await self._call_with_retry(
+                    system=system,
+                    user=user,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            except LLMError:
+                raise
+            except Exception as e:
+                raise LLMError(
+                    f"anthropic API call failed: {e}",
+                    code="LLM_PROVIDER_ERROR",
+                    details={"provider": "anthropic", "model": self._model},
+                ) from e
+
+        # Anthropic 返回 content blocks list；我们只取第一块的 text
+        blocks = r.content
+        if not blocks:
+            raise LLMError(
+                "anthropic returned no content blocks", code="LLM_EMPTY_RESPONSE"
+            )
+        text = getattr(blocks[0], "text", "") or ""
+        # 偶尔模型会在 JSON 前后包 markdown fence；剥一下
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.strip("`").lstrip("json").strip()
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise LLMError(
+                f"anthropic did not return valid JSON: {e}",
+                code="LLM_INVALID_JSON",
+                details={"raw": text[:500]},
+            ) from e
+        if not isinstance(data, dict):
+            raise LLMError(
+                f"anthropic returned non-dict JSON: {type(data).__name__}",
+                code="LLM_INVALID_JSON",
+            )
+        return data
+
+    async def aclose(self) -> None:
+        await self._client.close()
+
+
+# ────────────────────────────────────────────────────────────────────
+# Gemini (Google)
+# ────────────────────────────────────────────────────────────────────
+
+
+class GeminiLLMClient:
+    """走 Google Gemini API（google-genai SDK）。
+
+    用 ``response_mime_type="application/json"`` 强制 JSON 输出，效果接近
+    OpenAI 的 json_object 模式。
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = "gemini-2.0-flash-exp",
+        timeout_seconds: float = 60.0,
+        max_concurrent: int = 5,
+        max_retries: int = 3,
+        retry_base_seconds: float = 1.0,
+    ) -> None:
+        if not api_key:
+            raise ValueError("gemini: api_key is required")
+        from google import genai
+
+        self._client = genai.Client(api_key=api_key)
+        self._model = model
+        self._timeout = timeout_seconds
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._max_retries = max_retries
+        self._retry_base_seconds = retry_base_seconds
+
+    async def _call_with_retry(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> Any:
+        # google-genai 的异常类不如 anthropic/openai 分得细；通过 status code 字段判断
+        from google.genai import errors as genai_errors
+
+        last_err: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                return await self._client.aio.models.generate_content(
+                    model=self._model,
+                    contents=user,
+                    config={
+                        "system_instruction": system,
+                        "temperature": temperature,
+                        "max_output_tokens": max_tokens,
+                        "response_mime_type": "application/json",
+                    },
+                )
+            except genai_errors.APIError as e:
+                last_err = e
+                # 429 / 500-599 可重试；其他直接抛
+                code = getattr(e, "code", 0)
+                if code != 429 and not (500 <= code < 600):
+                    raise
+                if attempt >= self._max_retries:
+                    break
+                backoff = self._retry_base_seconds * (2**attempt)
+                jitter = random.uniform(0, self._retry_base_seconds * 0.5)
+                sleep_s = backoff + jitter
+                logger.warning(
+                    "gemini retriable error (attempt %d/%d): code=%s; sleeping %.2fs",
+                    attempt + 1,
+                    self._max_retries + 1,
+                    code,
+                    sleep_s,
+                )
+                await asyncio.sleep(sleep_s)
+
+        assert last_err is not None
+        raise LLMError(
+            f"gemini API call failed after {self._max_retries + 1} attempts: {last_err}",
+            code="LLM_PROVIDER_ERROR",
+            details={
+                "provider": "gemini",
+                "model": self._model,
+                "error_type": type(last_err).__name__,
+            },
+        ) from last_err
+
+    async def complete_json(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.2,
+    ) -> dict[str, Any]:
+        async with self._semaphore:
+            try:
+                r = await self._call_with_retry(
+                    system=system,
+                    user=user,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            except LLMError:
+                raise
+            except Exception as e:
+                raise LLMError(
+                    f"gemini API call failed: {e}",
+                    code="LLM_PROVIDER_ERROR",
+                    details={"provider": "gemini", "model": self._model},
+                ) from e
+
+        text = getattr(r, "text", "") or ""
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise LLMError(
+                f"gemini did not return valid JSON: {e}",
+                code="LLM_INVALID_JSON",
+                details={"raw": text[:500]},
+            ) from e
+        if not isinstance(data, dict):
+            raise LLMError(
+                f"gemini returned non-dict JSON: {type(data).__name__}",
+                code="LLM_INVALID_JSON",
+            )
+        return data
+
+    async def aclose(self) -> None:
+        # google-genai 没有显式 close
+        return None
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -275,36 +553,101 @@ class FakeLLMClient:
 # ────────────────────────────────────────────────────────────────────
 
 
+# 各 provider 默认 base_url（OpenAI-compat 家族）
+_OPENAI_COMPAT_DEFAULTS: dict[str, tuple[str, str]] = {
+    # provider -> (default_base_url, default_model)
+    "deepseek": ("https://api.deepseek.com/v1", "deepseek-chat"),
+    "openai": ("https://api.openai.com/v1", "gpt-5"),
+    "kimi": ("https://api.moonshot.cn/v1", "moonshot-v1-8k"),
+    "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "glm-4-plus"),
+    "ollama": ("http://localhost:11434/v1", "llama3.2"),
+}
+
+# 非 OpenAI-compat provider 的默认模型
+_NATIVE_DEFAULTS: dict[str, str] = {
+    "anthropic": "claude-opus-4-7",
+    "gemini": "gemini-2.0-flash-exp",
+}
+
+SUPPORTED_PROVIDERS = (
+    "deepseek",
+    "anthropic",
+    "openai",
+    "gemini",
+    "kimi",
+    "zhipu",
+    "ollama",
+    "fake",
+)
+
+
 def build_llm_client(
     *,
     provider: str,
     api_key: str,
-    base_url: str,
-    model: str,
-    timeout_seconds: float,
+    base_url: str = "",
+    model: str = "",
+    timeout_seconds: float = 60.0,
     max_concurrent: int = 5,
     max_retries: int = 3,
     retry_base_seconds: float = 1.0,
 ) -> LLMClient:
-    """按 settings 构造 LLM client。
+    """按 provider 构造 LLM client。
 
-    ``provider``:
-    - ``"deepseek"``：真 DeepSeek API（require api_key）；新增 ``max_concurrent /
-      max_retries / retry_base_seconds`` 由 ``ResearchSettings`` 控制护栏
-    - ``"fake"``：返空 FakeLLMClient —— 没注 response 就抛错，**不要在生产用**；
-      不接收护栏参数（测试不需要限流和退避）
+    支持的 provider（与 README §Recommended Models 对齐）：
+
+    - **OpenAI-compatible 家族**（共用 ``DeepSeekLLMClient`` 实现，传不同 base_url）：
+      ``deepseek`` / ``openai`` / ``kimi`` / ``zhipu`` / ``ollama``
+    - **原生 SDK**：``anthropic`` / ``gemini``
+    - ``fake``：测试用 mock；不需要 api_key
+
+    ``base_url`` / ``model`` 留空时，按 provider 默认值填充。Ollama 需要本地
+    服务起好（默认 ``http://localhost:11434/v1``）。
     """
     p = provider.lower()
-    if p == "deepseek":
+
+    if p == "fake":
+        return FakeLLMClient()
+
+    if p not in SUPPORTED_PROVIDERS:
+        raise ValueError(
+            f"unknown LLM provider {provider!r}; "
+            f"supported: {', '.join(SUPPORTED_PROVIDERS)}"
+        )
+
+    # OpenAI-compat 家族
+    if p in _OPENAI_COMPAT_DEFAULTS:
+        default_base, default_model = _OPENAI_COMPAT_DEFAULTS[p]
         return DeepSeekLLMClient(
+            api_key=api_key or "ollama",  # ollama 不验 key，给个占位
+            base_url=base_url or default_base,
+            model=model or default_model,
+            timeout_seconds=timeout_seconds,
+            max_concurrent=max_concurrent,
+            max_retries=max_retries,
+            retry_base_seconds=retry_base_seconds,
+            provider_name=p,
+        )
+
+    if p == "anthropic":
+        return AnthropicLLMClient(
             api_key=api_key,
-            base_url=base_url,
-            model=model,
+            model=model or _NATIVE_DEFAULTS["anthropic"],
             timeout_seconds=timeout_seconds,
             max_concurrent=max_concurrent,
             max_retries=max_retries,
             retry_base_seconds=retry_base_seconds,
         )
-    if p == "fake":
-        return FakeLLMClient()
-    raise ValueError(f"unknown LLM provider {provider!r}; supported: 'deepseek' | 'fake'")
+
+    if p == "gemini":
+        return GeminiLLMClient(
+            api_key=api_key,
+            model=model or _NATIVE_DEFAULTS["gemini"],
+            timeout_seconds=timeout_seconds,
+            max_concurrent=max_concurrent,
+            max_retries=max_retries,
+            retry_base_seconds=retry_base_seconds,
+        )
+
+    # 不可达：上面 if p not in SUPPORTED_PROVIDERS 已抛
+    raise AssertionError(f"unreachable provider branch: {p}")

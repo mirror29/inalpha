@@ -9,7 +9,11 @@ dependencies = [
     "fastapi>=0.136.0",
     "uvicorn[standard]>=0.47.0",
     "httpx>=0.28.0",
-    "openai>=2.38.0",   # DeepSeek 也走 OpenAI-compatible API
+    # OpenAI-compat 家族共用：deepseek / openai / kimi / zhipu / ollama
+    "openai>=2.38.0",
+    # 原生 SDK provider
+    "anthropic>=0.45.0",
+    "google-genai>=1.0.0",
 ]
 
 [dependency-groups]
@@ -54,5 +58,5 @@ strict = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["openai", "openai.*"]
+module = ["openai", "openai.*", "anthropic", "anthropic.*", "google", "google.*"]
 ignore_missing_imports = true

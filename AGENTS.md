@@ -42,17 +42,22 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**，重度
 pnpm i                                  # Node 包（packages/orchestration）
 uv sync                                 # Python 包（services/*）
 
+# 配置统一 .env（所有 service 共享根目录一份 .env）
+cp .env.example .env                    # 在 .env 里填 LLM_PROVIDER + 对应 *_API_KEY
+                                        # 详见 README.md §Quick Start 的 provider/model 表
+
 # DB schema 升到最新（dev.sh 不会自动跑；漏跑会导致 paper 服务 500：表不存在）
 cd infra/migrations && uv run alembic upgrade head && cd ../..
 
 # 一键起所有 service（推荐）
-bash scripts/dev.sh                     # data:8001 + paper:8002 + mastra:4111
+bash scripts/dev.sh                     # data:8001 + paper:8002 + research:8003 + mastra:4111
 bash scripts/dev.sh logs                # 跟随日志
 bash scripts/dev.sh stop                # 停止全部
 
-# 手动起（如果想要 3 个独立 terminal）
-cd services/data  && uv run uvicorn inalpha_data.main:app  --port 8001 --reload
-cd services/paper && uv run uvicorn inalpha_paper.main:app --port 8002 --reload
+# 手动起（如果想要 4 个独立 terminal）
+cd services/data     && uv run uvicorn inalpha_data.main:app     --port 8001 --reload
+cd services/paper    && uv run uvicorn inalpha_paper.main:app    --port 8002 --reload
+cd services/research && uv run uvicorn inalpha_research.main:app --port 8003 --reload
 cd packages/orchestration && pnpm dev
 
 # 跨文件一致性检验（提交前跑一次）

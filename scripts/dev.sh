@@ -32,6 +32,21 @@ LOG_DIR="${ROOT}/.tmp/dev-logs"
 PID_DIR="${ROOT}/.tmp/dev-pids"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
+# 统一 .env：source 根 .env 让所有子进程（uvicorn / mastra）继承
+# 子目录 .env（packages/orchestration/.env / services/*/.env）仍作为
+# fallback 覆盖（pydantic-settings list / dotenv override）—— 迁移期友好
+if [[ -f "${ROOT}/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${ROOT}/.env"
+    set +a
+elif [[ "${1:-up}" == "up" ]]; then
+    echo "⚠️  未找到根目录 .env —— 先 cp .env.example .env 并填入 LLM key" >&2
+    echo "   见 README.md §Quick Start" >&2
+    echo "   （仍尝试启动；如各 service 已有 .env 兜底则可继续，否则会 fail-fast）" >&2
+    echo "" >&2
+fi
+
 # 解析参数
 CMD=""
 FORCE=0
