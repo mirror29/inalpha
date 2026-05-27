@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# PR 同分支新 push 取消旧 run（main 推送不取消，保证每个 commit 都跑）
+# Cancel in-progress runs on new pushes to the same PR branch; main pushes never cancel.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   consistency:
     name: Cross-file consistency check / 跨文件一致性检验

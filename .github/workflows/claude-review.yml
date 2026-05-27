@@ -17,6 +17,12 @@ on:
         description: Manually specify PR number (leave blank to use the current branch via workflow_dispatch) / 手动指定 PR 编号（留空 = 用 workflow_dispatch 的当前分支）
         required: false
 
+# 同一 PR 新 push 立刻取消上一次 review，避免一个 PR 收到多份重复评论邮件
+# Cancel in-progress reviews when the same PR receives a new push, to stop duplicate comment emails.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   review:
     name: Claude · auto-review PR diff / 自动 review PR diff
