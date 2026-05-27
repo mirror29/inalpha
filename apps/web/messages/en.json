@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Inalpha — Agents that disagree. Records that don't.",
-    "description": "Open-source quant trading framework. Multi-agent debate, unified kernel, every decision auditable."
+    "title": "Inalpha — Quant agents that evolve under audit.",
+    "description": "Open-source quant agent framework: factor lab, risk engine, strategy evolution, audit-grade plan/exec. Engineering discipline borrowed from Claude Code."
   },
   "nav": {
     "github": "GitHub",
@@ -10,9 +10,9 @@
   },
   "hero": {
     "wordmark": "Inalpha",
-    "title": "Agents that disagree.",
-    "titleAlt": "Records that don't.",
-    "sub": "Open-source quant framework. Multi-agent debate, unified kernel, every decision auditable.",
+    "title": "Quant agents",
+    "titleAlt": "that evolve under audit.",
+    "sub": "Factor lab · Risk engine · Strategy evolution · Plan/Exec — every factor proposed, every strategy mutated, every order routed is logged, versioned, and reviewable. The LLM writes the code; the engineering harness signs every decision.",
     "ctaPrimary": "git clone",
     "ctaSecondary": "Live demo",
     "stats": {
@@ -32,7 +32,7 @@
     "eyebrow": "01 / Problem",
     "title": "You're not doing quant.",
     "titleAlt": "You're trusting a black box.",
-    "sub": "Most LLM trading stacks return a single score and a paragraph. You can't replay it. You can't audit it. You can't disagree with it.",
+    "sub": "Most LLM trading stacks return a single score and a paragraph. You can't replay it, you can't audit it, and you can't disagree with it. Inalpha treats every factor, plan, and order as a versioned record — not a vibe.",
     "table": {
       "header": {
         "want": "What you want",
@@ -42,17 +42,17 @@
       "signal": {
         "want": "Signal",
         "blackbox": "One score",
-        "inalpha": "Three opposing analysts"
+        "inalpha": "Plan with rationale + opposing analysts"
       },
       "reason": {
         "want": "Reasoning",
         "blackbox": "\"trust me\"",
-        "inalpha": "Structured decision record"
+        "inalpha": "Hooks-enforced decision record"
       },
       "replay": {
         "want": "Replay",
         "blackbox": "Not reproducible",
-        "inalpha": "JSONL on disk, replay any decision"
+        "inalpha": "JSONL on disk + token-signed audit trail"
       }
     }
   },
@@ -63,8 +63,8 @@
     "columnA": {
       "header": "A. Agents are first-class",
       "items": [
-        "Opposing stances by design",
-        "Distinct toolsets per role",
+        "Factor / risk / evolution agents, each with its own toolset",
+        "Opposing stances in research debate by design",
         "Traceable decisions, not vibes",
         "Replay-able from any timestamp"
       ],
@@ -75,8 +75,8 @@
       "items": [
         "Hooks on every tool call",
         "Permissions scoped per role",
-        "Decision records on disk",
-        "Declarative configs, not ad-hoc code"
+        "Plan → approve → execute with one-shot token",
+        "Decision records on disk, declarative configs in repo"
       ],
       "footer": "Not vibes. Auditable."
     },
@@ -133,7 +133,7 @@
     "eyebrow": "04 / Kernel",
     "title": "One codebase.",
     "titleAlt": "Three modes.",
-    "sub": "The same strategy runs as backtest, paper, and live. If behavior diverges anywhere, none of them is meaningful.",
+    "sub": "Strategy code is written once. Swap the Clock for backtest vs live; swap the Gateway for paper vs broker. Business logic stays put — divergence can only come from physical reality (slippage, latency, data precision).",
     "diff": {
       "beforeLabel": "backtest",
       "afterLabel": "live",
@@ -172,7 +172,7 @@
     "eyebrow": "05 / Harness",
     "title": "Inspired by Claude Code.",
     "titleAlt": "Adapted for trading.",
-    "sub": "Declarative configs decide what each agent can call. Plan-then-execute prevents runaway loops. Subagents isolate risk. MCP plugs in tools without hand-rolled glue.",
+    "sub": "Declarative configs decide what each agent can call. Plan → approve → execute is enforced by a one-shot, TTL-bound token — the LLM never reaches the order path unsupervised. Subagents isolate risk. MCP plugs in tools without hand-rolled glue.",
     "configSample": "research:\n  allow:\n    - data.get_bars\n    - data.get_news\n  deny:\n    - paper.place_order\n\nrisk:\n  allow: [\"*\"]\n  require_human: [\"place_order > 0.5\"]",
     "chips": {
       "hooks": "hooks",
@@ -223,9 +223,9 @@
     "currentState": {
       "title": "Where we are honest with you",
       "items": [
-        "D-9 in flight: multi-venue + 5 asset classes, signal layer long/short",
-        "RiskEngine next, then LLM strategy authoring",
-        "No real-money deployment yet — paper only"
+        "D-9 in flight: LLM-authored strategies (E1 MVP) with sandbox gates + multi-objective fitness",
+        "RiskEngine rules enforced at the paper HTTP boundary (notional cap / price deviation / drawdown veto)",
+        "No real-money deployment yet — every change passes plan/exec approval and lands on disk"
       ]
     }
   },
@@ -248,7 +248,7 @@
   },
   "footer": {
     "license": "AGPL-3.0",
-    "tagline": "Find alpha with a fox's eye.",
+    "tagline": "Quant agents that evolve under audit.",
     "rights": "Inalpha · open source · 2026",
     "fineprintMotion": "Motion follows your system preference."
   },

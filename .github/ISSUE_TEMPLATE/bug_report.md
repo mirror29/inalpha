@@ -1,43 +1,54 @@
 ---
 name: Bug report / 问题报告
-about: 报告一个 bug 或异常行为
+about: Report a bug or unexpected behavior / 报告一个 bug 或异常行为
 title: "[bug] "
 labels: bug
 ---
 
-> 项目处于 alpha 阶段（当前 Phase D-8a）。**请先确认你的问题不是「未实现」而是「实现错了」。**
+> Inalpha is in **alpha** (Phase D-9). **Please confirm the problem is "implemented incorrectly," not "not yet implemented."**
+> See `CLAUDE.md §3` and `docs/04-current-state.md` for the roadmap.
+>
+> 项目处于 alpha 阶段（当前 Phase D-9）。**请先确认你的问题不是「未实现」而是「实现错了」。**
 > Roadmap 见 `CLAUDE.md §3` 与 `docs/04-current-state.md`。
 
-## 环境
+## Environment / 环境
 
-- 受影响 service：`services/data` / `services/paper` / `packages/orchestration` / 其他
-- 当前 Phase：D-8a / D-8b / ...
-- OS / Node / Python 版本：
-- Git commit SHA（`git rev-parse --short HEAD`）：
+- Affected service / 受影响 service: `services/data` / `services/paper` / `services/research` / `packages/orchestration` / other
+- Current Phase / 当前 Phase: D-9 / D-10+ / E-series / N/A
+- OS / Node / Python versions:
+- Git commit SHA (`git rev-parse --short HEAD`):
 
-## 期望行为
+## Expected behavior / 期望行为
+
+What should have happened.
 
 简述「应该发生什么」。
 
-## 实际行为
+## Actual behavior / 实际行为
+
+What actually happened. For crashes, please paste the full stack trace.
 
 简述「实际发生了什么」。如果是 crash 请贴完整 stack trace。
 
-## 最小复现命令
+## Minimal reproduction / 最小复现命令
+
+Please paste a command sequence that reproduces the problem from a clean clone — the shorter the better:
 
 请贴一段能从干净 clone 复现问题的命令序列，越短越好：
 
 ```bash
-# 例如
+# Example / 例如
 pnpm i && uv sync
 cd services/paper && uv run python -m inalpha_paper.main &
-# ...触发问题的请求
+# ...the request that triggers the bug
 ```
 
-## 一致性检查
+## Consistency check / 一致性检查
 
-- [ ] 已跑 `bash scripts/check-consistency.sh`，结果：（pass / 哪几项 fail）
+- [ ] Ran `bash scripts/check-consistency.sh`. Result / 结果: (pass / which checks failed)
 
-## 其他
+## Other / 其他
+
+Logs, screenshots, related issues, etc.
 
 日志、截图、相关 issue 链接等。

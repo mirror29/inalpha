@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Inalpha — 让 Agent 当面辩论，让记录字字可审。",
-    "description": "开源量化交易框架。多 agent 对抗辩论、统一内核、每个决策可审计、可回放。"
+    "title": "Inalpha — 可审计的量化 agent，能进化的策略。",
+    "description": "开源专业量化 agent 框架：因子实验室、风控引擎、策略进化、审计级 plan/exec。工程纪律源自 Claude Code。"
   },
   "nav": {
     "github": "GitHub",
@@ -10,9 +10,9 @@
   },
   "hero": {
     "wordmark": "Inalpha",
-    "title": "让 Agent 当面辩论，",
-    "titleAlt": "让记录字字可审。",
-    "sub": "开源量化交易框架。多 agent 对抗辩论、统一内核、每个决策皆可审计、可回放。",
+    "title": "可审计的量化 agent，",
+    "titleAlt": "能进化的策略。",
+    "sub": "因子实验室 · 风控引擎 · 策略进化 · Plan/Exec 审批——每个因子提案、每次策略变异、每笔订单路由都有日志、有版本、可复核。LLM 只负责写代码，工程纪律为每个决策背书。",
     "ctaPrimary": "git clone",
     "ctaSecondary": "实时演示",
     "stats": {
@@ -32,7 +32,7 @@
     "eyebrow": "01 / 问题",
     "title": "你以为在做量化研究，",
     "titleAlt": "实则在仰仗一个黑盒。",
-    "sub": "大多数 LLM 量化框架，只给你一个分值加一段散文。无法回放、无法审计，也无从质疑。",
+    "sub": "大多数 LLM 量化框架，只给你一个分值加一段散文。无法回放、无法审计，也无从质疑。Inalpha 把每一个因子、计划、订单都当作有版本的记录看待——不是凭感觉的猜测。",
     "table": {
       "header": {
         "want": "你想要的",
@@ -42,17 +42,17 @@
       "signal": {
         "want": "信号",
         "blackbox": "一个分值",
-        "inalpha": "三方对立分析师"
+        "inalpha": "带 rationale 的 plan + 对立分析师"
       },
       "reason": {
         "want": "依据",
         "blackbox": "「相信我」",
-        "inalpha": "结构化决策记录"
+        "inalpha": "Hooks 强制的决策记录"
       },
       "replay": {
         "want": "回放",
         "blackbox": "无法复现",
-        "inalpha": "JSONL 落盘，任意决策可回放"
+        "inalpha": "JSONL 落盘 + token 签名审计链"
       }
     }
   },
@@ -63,8 +63,8 @@
     "columnA": {
       "header": "A. Agent 是一级公民",
       "items": [
-        "立场天然对立",
-        "工具集按角色隔离",
+        "因子 / 风控 / 进化 各 agent 独立工具集",
+        "研究辩论中立场天然对立",
         "决策可追溯，不靠玄学",
         "任意时间点皆可回放"
       ],
@@ -75,8 +75,8 @@
       "items": [
         "每个 tool call 都走中间件",
         "权限按角色 scope",
-        "决策记录落盘",
-        "声明式配置，不靠临时代码"
+        "Plan → approve → execute · 一次性 token 兜底",
+        "决策记录落盘，声明式配置入库"
       ],
       "footer": "不靠运气，每一步皆可审计。"
     },
@@ -133,7 +133,7 @@
     "eyebrow": "04 / 统一内核",
     "title": "一份代码，",
     "titleAlt": "三种模式。",
-    "sub": "同一份策略代码跑回测、模拟、实盘。三者任一处行为偏离，整套系统皆失去意义。",
+    "sub": "策略代码只写一次。回测 vs 实盘切换 Clock；模拟盘 vs 撮合切换 Gateway——业务逻辑不动。剩下能让分歧出现的，只有物理差异（滑点、延迟、数据精度）。",
     "diff": {
       "beforeLabel": "backtest",
       "afterLabel": "live",
@@ -172,7 +172,7 @@
     "eyebrow": "05 / 工程绑带",
     "title": "Claude Code 的工程哲学，",
     "titleAlt": "应用于量化交易。",
-    "sub": "声明式配置规定每个 agent 的工具调用权限。先 plan 后 exec，杜绝失控回环。subagent 隔离风险与复盘。MCP 协议接入工具，免去胶水代码。",
+    "sub": "声明式配置规定每个 agent 的工具调用权限。Plan → approve → execute 由一次性、短 TTL 的 token 强制——LLM 永远不会绕过审批触达订单路径。subagent 隔离风险与复盘。MCP 协议接入工具，免去胶水代码。",
     "configSample": "research:\n  allow:\n    - data.get_bars\n    - data.get_news\n  deny:\n    - paper.place_order\n\nrisk:\n  allow: [\"*\"]\n  require_human: [\"place_order > 0.5\"]",
     "chips": {
       "hooks": "hooks",
@@ -223,9 +223,9 @@
     "currentState": {
       "title": "诚实告知 ——",
       "items": [
-        "D-9 进行中：多 venue + 5 类资产，信号层多空已通",
-        "下一步 RiskEngine，再下一步 LLM 改策略",
-        "暂不支持真金部署，仅模拟盘可用"
+        "D-9 进行中：LLM 自创策略 E1 MVP（三道沙盒 + 多目标 fitness）",
+        "RiskEngine 规则在 paper HTTP 边界生效（仓位上限 / 价格偏离 / 回撤一票否决）",
+        "暂不支持真金部署——每一次改动都经 plan/exec 审批，决策记录落盘"
       ]
     }
   },
@@ -248,7 +248,7 @@
   },
   "footer": {
     "license": "AGPL-3.0",
-    "tagline": "以狐之眼，寻 alpha。",
+    "tagline": "可审计的量化 agent，能进化的策略。",
     "rights": "Inalpha · 开源 · 2026",
     "fineprintMotion": "动效遵循系统偏好。"
   },

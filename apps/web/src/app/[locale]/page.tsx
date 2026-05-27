@@ -20,12 +20,13 @@ export default async function HomePage({
 
   const tickerItems = [
     "INALPHA",
-    "OPEN-SOURCE QUANT FRAMEWORK",
+    "OPEN-SOURCE QUANT AGENT FRAMEWORK",
     "D-9",
     "REV 0.9",
     "2026.05.26",
-    "BACKTEST = PAPER = LIVE",
-    "MULTI-AGENT DEBATE",
+    "AUDIT-GRADE EVOLUTION",
+    "FACTOR LAB · RISK ENGINE",
+    "PLAN · APPROVE · EXECUTE",
     "AGENTS · FIRST-CLASS",
     "AGPL-3.0",
     "ALPHA QUALITY",
