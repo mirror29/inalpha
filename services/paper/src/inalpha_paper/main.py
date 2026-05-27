@@ -33,6 +33,7 @@ from .engine.pool import init_pool as init_backtest_pool
 from .engine.pool import shutdown_pool as shutdown_backtest_pool
 from .execution.risk_guard_factory import RiskGuardFactory
 from .execution.risk_rules import load_risk_rules_config
+from .execution.risk_rules.market_calendar import RoutingCalendar
 
 _settings = get_paper_settings()
 configure_logging(level=_settings.log_level, service_name=_settings.service_name)
@@ -52,20 +53,6 @@ def _resolve_config_path() -> Path | None:
     pkg_root = Path(__file__).resolve().parent.parent.parent
     candidate = pkg_root / _settings.risk_rules_config_path
     return candidate if candidate.exists() else None
-
-
-class _CryptoOnlyCalendar:
-    """crypto 永远在交易时段 + 下次开盘=now。
-
-    crypto 24/7 是 paper service 主用例。非 crypto 市场（美股 / A 股）真日历接入
-    见 D-9.1a 第二阶段（MarketHoursRule 真激活，task #3）。
-    """
-
-    def is_trading_hours(self, *_: object, **__: object) -> bool:
-        return True
-
-    def next_session_open(self, _market: str, now):  # type: ignore[no-untyped-def]
-        return now
 
 
 async def _build_risk_guard_factory(pool: object) -> RiskGuardFactory | None:
@@ -102,10 +89,11 @@ async def _build_risk_guard_factory(pool: object) -> RiskGuardFactory | None:
     factory = RiskGuardFactory(
         cfg=cfg,
         pool=pool,  # type: ignore[arg-type]
-        market_calendar=_CryptoOnlyCalendar(),
+        market_calendar=RoutingCalendar(),
     )
     _logger.info(
-        "RiskGuardFactory ready: %d rules from %s (per-account LRU cache)",
+        "RiskGuardFactory ready: %d rules from %s (per-account LRU cache, "
+        "calendar=RoutingCalendar[crypto+us_equity])",
         factory.rule_count,
         cfg_path,
     )
