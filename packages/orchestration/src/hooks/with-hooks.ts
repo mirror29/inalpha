@@ -195,7 +195,12 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           const timeoutMs =
             opts.askTimeoutMs && opts.askTimeoutMs > 0 ? opts.askTimeoutMs : undefined;
 
-          if (cache.consume(sessionId, toolName, effectiveInput)) {
+          if (
+            cache.consume(sessionId, toolName, effectiveInput, (msg) =>
+              // stderr 走 mastra dev log，方便 user 实时看 mismatch 原因
+              console.warn(`[askCache] ${msg}`),
+            )
+          ) {
             // 第二次 ask 命中 cache → 一次性消费 + 放行（继续往下走 execute）
           } else {
             // 第一次 ask：mark cache + 挂 store（CLI 入口可见）+ 返 requiresApproval

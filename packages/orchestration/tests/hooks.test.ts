@@ -452,6 +452,29 @@ describe("withHooks", () => {
     store.clearAll();
   });
 
+  it("ask cache 用 stable key：input key 顺序不同也匹中 (DeepSeek 实测痛点)", async () => {
+    const { AskApprovalCache } = await import("../src/permissions/ask-cache.js");
+    const cache = new AskApprovalCache(5_000);
+    const runner = new HookRunner();
+    const exec = vi.fn().mockResolvedValue({ ok: 1 });
+    const tool = { id: "test.tool", execute: exec };
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => "ask",
+      askCache: cache,
+    });
+
+    // 第一次调：key 顺序 {candidateId, reason}
+    await wrapped.execute!({ candidateId: "X", reason: "alpha" });
+    expect(exec).not.toHaveBeenCalled();
+
+    // 第二次调：LLM 把 key 顺序换成 {reason, candidateId} —— stable stringify 仍命中
+    const out = await wrapped.execute!({ reason: "alpha", candidateId: "X" });
+    expect(exec).toHaveBeenCalledOnce();
+    expect(out).toEqual({ ok: 1 });
+    cache.clear();
+  });
+
   it("hook permissionOverride=allow wins over permissionResolver=deny", async () => {
     const runner = new HookRunner();
     const tool = makeTool(() => ({ ran: true }));

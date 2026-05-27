@@ -30,6 +30,21 @@ interface AskCacheEntry {
 
 const DEFAULT_TTL_MS = 60_000;
 
+/**
+ * **稳定** JSON stringify —— object keys 按字典序，避免 ``{a,b}`` vs ``{b,a}`` 撞不上。
+ *
+ * 必须用 stable 形式：DeepSeek / GPT 生成 tool call JSON 时 key 顺序在两次调用之间
+ * 经常变（实测 ``{candidateId, reason}`` ↔ ``{reason, candidateId}``），plain
+ * ``JSON.stringify`` 会给两个不同字符串 → cache miss → 死循环。
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+}
+
 export class AskApprovalCache {
   private readonly entries = new Map<string, AskCacheEntry>();
   private readonly ttlMs: number;
@@ -46,9 +61,7 @@ export class AskApprovalCache {
     input: unknown,
   ): string {
     const sid = sessionId && sessionId.length > 0 ? sessionId : "__global__";
-    // JSON.stringify 对 plain object input 足够；含 Date / undefined 等会丢精度
-    // 但 tool input 走过 zod 校验，基本都是 JSON 安全
-    return `${sid}::${toolName}::${JSON.stringify(input)}`;
+    return `${sid}::${toolName}::${stableStringify(input)}`;
   }
 
   /**
@@ -68,20 +81,61 @@ export class AskApprovalCache {
   /**
    * 检查 + 一次性消费。命中（同 sessionId + toolName + input 60s 内被 mark）→
    * 删除条目 + 返 ``true``；未命中 → 返 ``false``。
+   *
+   * 未命中时若 ``debugSink`` 提供且存在"同 sessionId + 同 toolName 但 input 不同"
+   * 的条目，会调 sink 打 mismatch diff（帮 user 定位是 LLM 改了 input 哪个字段
+   * 导致 cache 撞不上）。
    */
-  consume(sessionId: string | undefined, toolName: string, input: unknown): boolean {
+  consume(
+    sessionId: string | undefined,
+    toolName: string,
+    input: unknown,
+    debugSink?: (msg: string) => void,
+  ): boolean {
     const key = AskApprovalCache.keyFor(sessionId, toolName, input);
     const entry = this.entries.get(key);
-    if (!entry) return false;
+    if (!entry) {
+      if (debugSink) this.debugWhyMiss(sessionId, toolName, input, debugSink);
+      return false;
+    }
     // 双保险：即便 setTimeout 未触发，超时仍按未命中处理
     if (Date.now() - entry.markedAt > this.ttlMs) {
       clearTimeout(entry.timer);
       this.entries.delete(key);
+      if (debugSink) debugSink(`AskCache: entry expired for ${toolName} (sid=${sessionId})`);
       return false;
     }
     clearTimeout(entry.timer);
     this.entries.delete(key);
     return true;
+  }
+
+  /** 未命中时尝试找同 sid+tool 但 input 不同的条目，打 diff 帮排查。 */
+  private debugWhyMiss(
+    sessionId: string | undefined,
+    toolName: string,
+    input: unknown,
+    sink: (msg: string) => void,
+  ): void {
+    const sid = sessionId && sessionId.length > 0 ? sessionId : "__global__";
+    const prefix = `${sid}::${toolName}::`;
+    const candidates: string[] = [];
+    for (const k of this.entries.keys()) {
+      if (k.startsWith(prefix)) candidates.push(k.slice(prefix.length));
+    }
+    if (candidates.length === 0) {
+      sink(
+        `AskCache miss: no prior mark for sid=${sid} tool=${toolName} ` +
+          `(possible cause: different sessionId between calls / first call wasn't ask)`,
+      );
+      return;
+    }
+    const got = stableStringify(input);
+    sink(
+      `AskCache miss: sid=${sid} tool=${toolName} input mismatch.\n` +
+        `  retry sent: ${got}\n` +
+        `  prior had: ${candidates.join(" | ")}`,
+    );
   }
 
   /** 当前活跃条目数（监控 / 测试用）。 */
