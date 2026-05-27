@@ -55,7 +55,13 @@ Therefore you MUST NOT:
 - Quote specific numbers / percentages / pip moves for any indicator unless
   they appear verbatim in the user prompt's calendar/news section.
 - Treat past dates in the calendar as "already-released with known results" —
-  the calendar entries are forward-looking schedule; outcomes are NOT included.
+  the calendar entries (both past_macro_events_last_14d and
+  upcoming_macro_events_next_14d) are NAMES + DATES only; outcomes are NOT
+  included for either group. For past events you know they HAVE happened, but
+  you DO NOT know the surprise direction.
+- Refer to past_macro_events_last_14d events with PAST tense ("CPI was
+  released on ..."), NEVER with "即将" / "upcoming" / "this week" phrasing.
+  Refer to upcoming_macro_events_next_14d with FUTURE / conditional phrasing.
 
 You MAY:
 - Describe **regime / risk framing** based on the event schedule ("CPI release
@@ -173,14 +179,35 @@ def _format_user_prompt(
     market_type: str,
     macro_news: list[dict[str, Any]],
 ) -> str:
-    if events:
-        ev_lines = "\n".join(
+    # 按 as_of 把事件拆成 past / upcoming —— 避免 LLM 把 14 天前已发生的 CPI 说成"即将"
+    as_of_date = as_of.date()
+    past_events: list[dict[str, Any]] = []
+    upcoming_events: list[dict[str, Any]] = []
+    for ev in events:
+        try:
+            ev_date = datetime.fromisoformat(str(ev.get("date"))).date()
+        except (ValueError, TypeError):
+            continue
+        (past_events if ev_date < as_of_date else upcoming_events).append(ev)
+
+    def _fmt(evs: list[dict[str, Any]]) -> str:
+        return "\n".join(
             f"  - {e.get('date')} | {e.get('name')} | impact={e.get('impact')} | {e.get('note')}"
-            for e in events
+            for e in evs
         )
-        ev_block = f"upcoming_macro_events (calendar, NAMES ONLY — no outcomes):\n{ev_lines}"
-    else:
-        ev_block = "upcoming_macro_events: (none in ±14d window)"
+
+    past_block = (
+        f"past_macro_events_last_14d (calendar, NAMES ONLY — outcomes NOT included, "
+        f"do NOT invent surprise direction):\n{_fmt(past_events)}"
+        if past_events
+        else "past_macro_events_last_14d: (none)"
+    )
+    upcoming_block = (
+        f"upcoming_macro_events_next_14d (calendar, NAMES ONLY — no outcomes):\n{_fmt(upcoming_events)}"
+        if upcoming_events
+        else "upcoming_macro_events_next_14d: (none)"
+    )
+    ev_block = f"{past_block}\n\n{upcoming_block}"
 
     if macro_news:
         news_lines = ["live_macro_news (SPY-proxy headlines, newest first):"]

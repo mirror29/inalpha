@@ -193,9 +193,18 @@ def _format_user_prompt(
     对方上一轮发言（如有）。
     """
     parts: list[str] = [
+        "⚠️ TIME ANCHOR — read before anything else:",
+        f"  as_of = {as_of.isoformat()} — this is the REAL wall-clock NOW.",
+        "  Your training cutoff is earlier than as_of. Any event your training "
+        "data labels as 'upcoming' that has a date < as_of is already HISTORY — "
+        "do NOT write '即将' / 'upcoming' / 'next week' about it.",
+        "  Do NOT cite specific calendar dates (CPI prints, FOMC meetings, "
+        "earnings, halvings, elections, etc.) UNLESS that exact date appears in "
+        "an analyst_brief below. If you need to reference an event that's not in "
+        "the briefs, say 'the briefs do not cover this' instead of guessing.",
+        "",
         f"asset: {symbol} @ {venue}",
         f"timeframe: {timeframe}",
-        f"as_of: {as_of.isoformat()}",
         f"debate_round: {round_no}",
         f"your_role: {role}",
         "",
