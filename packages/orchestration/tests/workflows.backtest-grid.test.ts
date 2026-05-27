@@ -89,33 +89,59 @@ describe("pickTopK", () => {
 
 type FetchCall = { url: string; body: unknown };
 
+type BacktestRequestBody = {
+  strategy_id?: string | null;
+  candidate_id?: string | null;
+  symbol: string;
+};
+
 function mockPaperBacktest(opts: {
-  failPredicate?: (body: { strategy_id: string; symbol: string }) => boolean;
-  reportFactory?: (body: { strategy_id: string; symbol: string }) => Record<string, unknown>;
+  failPredicate?: (body: BacktestRequestBody) => boolean;
+  reportFactory?: (body: BacktestRequestBody) => Record<string, unknown>;
 }): FetchCall[] {
   const calls: FetchCall[] = [];
-  const defaultReport = (body: { strategy_id: string; symbol: string }) => ({
-    run_id: null,
-    research_id: null,
-    params_hash: "deadbeef",
-    strategy_id: body.strategy_id,
-    venue: "binance",
-    symbol: body.symbol,
-    timeframe: "1h",
-    initial_cash: 10_000,
-    final_equity: 10_500,
-    total_return_pct: 5,
-    num_trades: 3,
-    total_fees: 1.2,
-    num_bars_processed: 100,
-    period_start: "2024-01-01T00:00:00Z",
-    period_end: "2024-12-31T00:00:00Z",
-    sharpe: 1.5,
-    sortino: 1.8,
-    max_drawdown_pct: 8,
-    win_rate: 0.55,
-    final_positions: [],
-  });
+  const defaultReport = (body: BacktestRequestBody) => {
+    const isCandidate = !!body.candidate_id;
+    // candidate 路径下 strategy_id = 'candidate:<uuid>' 字面（仿真实 paper service 响应）
+    const reportStrategyId = isCandidate
+      ? `candidate:${body.candidate_id}`
+      : body.strategy_id ?? "unknown";
+    return {
+      run_id: null,
+      research_id: null,
+      params_hash: "deadbeef",
+      strategy_id: reportStrategyId,
+      candidate_id: body.candidate_id ?? null,
+      venue: "binance",
+      symbol: body.symbol,
+      timeframe: "1h",
+      initial_cash: 10_000,
+      final_equity: 10_500,
+      total_return_pct: 5,
+      num_trades: 3,
+      total_fees: 1.2,
+      num_bars_processed: 100,
+      period_start: "2024-01-01T00:00:00Z",
+      period_end: "2024-12-31T00:00:00Z",
+      sharpe: 1.5,
+      sortino: 1.8,
+      max_drawdown_pct: 8,
+      win_rate: 0.55,
+      final_positions: [],
+      // D-9 新字段
+      fitness: isCandidate ? 1.2 : null,
+      baseline: isCandidate
+        ? {
+            strategy_id: "buy_and_hold",
+            fitness: 0.5,
+            sharpe: 0.8,
+            max_drawdown_pct: 12,
+            total_return_pct: 4,
+            num_trades: 1,
+          }
+        : null,
+    };
+  };
 
   vi.stubGlobal(
     "fetch",
@@ -267,5 +293,110 @@ describe("backtest_grid workflow (end-to-end)", () => {
     // Pareto 只看 ok 的 3 个
     expect(result.result.pareto.length).toBeGreaterThanOrEqual(1);
     expect(result.result.pareto.length).toBeLessThanOrEqual(3);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // D-9 · candidate 路径 grid（与 strategies 并列）
+  // ────────────────────────────────────────────────────────────────────
+
+  it("expands candidateIds × symbols into N jobs (D-9 candidate grid)", async () => {
+    const calls = mockPaperBacktest({});
+    const c1 = "550e8400-e29b-41d4-a716-446655440001";
+    const c2 = "550e8400-e29b-41d4-a716-446655440002";
+
+    const wf = mastra.getWorkflow("backtest_grid");
+    const run = await wf.createRun();
+    const result = await run.start({
+      inputData: {
+        candidateIds: [c1, c2],
+        symbols: ["BTC/USDT", "ETH/USDT"],
+        venue: "binance",
+        timeframe: "1h",
+        from_ts: "2024-01-01T00:00:00Z",
+        to_ts: "2024-12-31T00:00:00Z",
+        initial_cash: 10_000,
+        fee_rate: 0.001,
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    expect(calls).toHaveLength(4);
+    // 所有 4 个 job 都走 candidate 分支（HTTP body 必有 candidate_id 字段非空）
+    for (const c of calls) {
+      const body = c.body as { strategy_id: string | null; candidate_id: string | null };
+      expect(body.candidate_id).not.toBeNull();
+      expect(body.strategy_id).toBeFalsy();
+    }
+    // shim 透传 D-9 字段
+    const okReports = result.result.reports.filter((r) => r.report !== null);
+    expect(okReports).toHaveLength(4);
+    for (const r of okReports) {
+      expect(r.report!.candidate_id).not.toBeNull();
+      expect(r.report!.fitness).toBe(1.2);
+      expect(r.report!.baseline).not.toBeNull();
+      expect(r.report!.baseline!.strategy_id).toBe("buy_and_hold");
+      expect(r.report!.strategy_id.startsWith("candidate:")).toBe(true);
+    }
+  });
+
+  it("supports mixed strategies + candidateIds in a single grid", async () => {
+    const calls = mockPaperBacktest({});
+    const c1 = "550e8400-e29b-41d4-a716-446655440001";
+
+    const wf = mastra.getWorkflow("backtest_grid");
+    const run = await wf.createRun();
+    const result = await run.start({
+      inputData: {
+        strategies: ["sma_cross"],
+        candidateIds: [c1],
+        symbols: ["BTC/USDT"],
+        venue: "binance",
+        timeframe: "1h",
+        from_ts: "2024-01-01T00:00:00Z",
+        to_ts: "2024-12-31T00:00:00Z",
+        initial_cash: 10_000,
+        fee_rate: 0.001,
+      },
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    expect(calls).toHaveLength(2);
+    // 一条 strategy 一条 candidate
+    const builtinCall = calls.find(
+      (c) => (c.body as { strategy_id: string | null }).strategy_id === "sma_cross",
+    );
+    const candidateCall = calls.find(
+      (c) => (c.body as { candidate_id: string | null }).candidate_id === c1,
+    );
+    expect(builtinCall).toBeDefined();
+    expect(candidateCall).toBeDefined();
+    // 报告 shim：内置路径 baseline=null, candidate 路径 baseline 非空
+    const builtinShim = result.result.reports.find(
+      (r) => r.report?.strategy_id === "sma_cross",
+    )?.report;
+    const candidateShim = result.result.reports.find(
+      (r) => r.report?.candidate_id === c1,
+    )?.report;
+    expect(builtinShim?.baseline).toBeNull();
+    expect(candidateShim?.baseline).not.toBeNull();
+  });
+
+  it("rejects grid with neither strategies nor candidateIds", async () => {
+    const wf = mastra.getWorkflow("backtest_grid");
+    const run = await wf.createRun();
+    const result = await run.start({
+      inputData: {
+        // 故意不传 strategies / candidateIds
+        symbols: ["BTC/USDT"],
+        venue: "binance",
+        timeframe: "1h",
+        initial_cash: 10_000,
+        fee_rate: 0.001,
+      } as never,
+    });
+    // schema superRefine 拒
+    expect(result.status).not.toBe("success");
   });
 });

@@ -16,14 +16,15 @@ import type { HookHandler, HookRegistration } from "../types.js";
 
 export const DEFAULT_GRID_MAX = 20;
 
-/** swarm.run_backtest_grid 输入形状（仅取需要的两个数组）。 */
+/** swarm.run_backtest_grid 输入形状（D-9：strategies + candidateIds 共同作策略源）。 */
 type GridInputShape = {
   strategies?: unknown;
+  candidateIds?: unknown;
   symbols?: unknown;
 };
 
-function getArrayLen(value: unknown): number | null {
-  return Array.isArray(value) ? value.length : null;
+function getArrayLen(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 export function createGridSizeCapHandler(opts?: { max?: number }): HookHandler {
@@ -31,17 +32,20 @@ export function createGridSizeCapHandler(opts?: { max?: number }): HookHandler {
   return (ctx) => {
     const input = (ctx.toolInput ?? {}) as GridInputShape;
     const s = getArrayLen(input.strategies);
+    const c = getArrayLen(input.candidateIds);
     const sym = getArrayLen(input.symbols);
 
-    // 缺字段不在这层拦——交 zod / schema 校验报更明确的错
-    if (s === null || sym === null) return;
+    // 缺 symbols 不在这层拦——交 zod / schema 校验报更明确的错
+    if (sym === 0) return;
+    // strategies / candidateIds 都缺 → 交 schema superRefine 拦
+    if (s + c === 0) return;
 
-    const total = s * sym;
+    const total = (s + c) * sym;
     if (total > max) {
       return {
         permissionOverride: "deny",
         message:
-          `grid 上限 ${max}，当前 ${total}（${s} strategies × ${sym} symbols）。` +
+          `grid 上限 ${max}，当前 ${total}（${s} strategies + ${c} candidates × ${sym} symbols）。` +
           `请拆成 ≤ ${max} job 的多次调用，或减少其中一边。`,
       };
     }

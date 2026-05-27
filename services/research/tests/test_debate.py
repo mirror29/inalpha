@@ -1,0 +1,233 @@
+"""辩论协调器单测 —— 不打外部网络，用 FakeLLMClient 跑 Bull/Bear 轮换。"""
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from inalpha_research.debate import run_debate
+from inalpha_research.llm.client import FakeLLMClient
+from inalpha_research.researchers import BearResearcher, BullResearcher
+from inalpha_research.schemas import AnalystBrief
+
+
+def _as_of() -> datetime:
+    return datetime(2026, 5, 21, 12, 0, tzinfo=UTC)
+
+
+def _brief(analyst: str, stance: str = "neutral") -> AnalystBrief:
+    return AnalystBrief(
+        analyst=analyst,  # type: ignore[arg-type]
+        stance=stance,  # type: ignore[arg-type]
+        confidence=0.5,
+        summary=f"{analyst} brief",
+        key_points=[f"{analyst} kp1"],
+    )
+
+
+def _bull_bear_llm() -> FakeLLMClient:
+    return FakeLLMClient(
+        {
+            "you are a bull analyst": {"argument": "Bull says up"},
+            "you are a bear analyst": {"argument": "Bear says down"},
+        }
+    )
+
+
+async def test_run_debate_zero_rounds_returns_empty() -> None:
+    """``max_rounds=0`` 时不调 LLM，直接返空 log（runner 旁路场景）。"""
+    llm = _bull_bear_llm()
+    bull = BullResearcher(llm=llm)
+    bear = BearResearcher(llm=llm)
+
+    log = await run_debate(
+        bull=bull,
+        bear=bear,
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical", "bullish")],
+        max_rounds=0,
+    )
+
+    assert log == []
+    assert llm.calls == []
+
+
+async def test_run_debate_one_round_alternates_bull_then_bear() -> None:
+    llm = _bull_bear_llm()
+    bull = BullResearcher(llm=llm)
+    bear = BearResearcher(llm=llm)
+
+    log = await run_debate(
+        bull=bull,
+        bear=bear,
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical", "bullish"), _brief("risk", "neutral")],
+        max_rounds=1,
+    )
+
+    assert len(log) == 2
+    assert log[0].role == "bull"
+    assert log[0].round == 1
+    assert log[0].content == "Bull says up"
+    assert log[1].role == "bear"
+    assert log[1].round == 1
+    assert log[1].content == "Bear says down"
+
+    # Bull 第一轮 user prompt 不应含"opponent_last_turn"（第一发言）
+    bull_call = next(c for c in llm.calls if "bull analyst" in c["system"].lower())
+    assert "opponent_last_turn" not in bull_call["user"]
+
+    # Bear 这次应该看到 Bull 上一轮（rebut）
+    bear_call = next(c for c in llm.calls if "bear analyst" in c["system"].lower())
+    assert "opponent_last_turn" in bear_call["user"]
+    assert "Bull says up" in bear_call["user"]
+
+
+async def test_run_debate_multi_round_grows_history() -> None:
+    """2 轮 = 4 turns，且第 2 轮 Bull 应看到 Round1 Bear。"""
+    llm = _bull_bear_llm()
+    bull = BullResearcher(llm=llm)
+    bear = BearResearcher(llm=llm)
+
+    log = await run_debate(
+        bull=bull,
+        bear=bear,
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=2,
+    )
+
+    assert [(t.role, t.round) for t in log] == [
+        ("bull", 1),
+        ("bear", 1),
+        ("bull", 2),
+        ("bear", 2),
+    ]
+
+    # 4 次 LLM 调用
+    assert len(llm.calls) == 4
+    # 第 3 次（Round 2 Bull）应该看到 Round 1 Bear 的发言
+    bull_round2 = llm.calls[2]
+    assert "bull analyst" in bull_round2["system"].lower()
+    assert "Bear says down" in bull_round2["user"]
+    assert "Round 1 BEAR" in bull_round2["user"]
+
+
+async def test_run_debate_swallows_researcher_failure() -> None:
+    """LLM 抛错时辩论不中断，落"(researcher failed)"占位继续。"""
+    llm = FakeLLMClient(
+        {
+            "you are a bull analyst": {"argument": "Bull ok"},
+            # 没给 Bear 预设 → FakeLLMClient 抛 LLMError
+        }
+    )
+    bull = BullResearcher(llm=llm)
+    bear = BearResearcher(llm=llm)
+
+    log = await run_debate(
+        bull=bull,
+        bear=bear,
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=1,
+    )
+
+    assert len(log) == 2
+    assert log[0].content == "Bull ok"
+    assert "(researcher failed:" in log[1].content
+    assert "LLM_FAKE_NO_MATCH" in log[1].content or "LLMError" in log[1].content
+
+
+async def test_researcher_speak_empty_argument_falls_back() -> None:
+    """LLM 返空 argument 字段时不应让 ResearcherTurn.content 校验炸（min_length=1）。"""
+    llm = FakeLLMClient({"you are a bull analyst": {"argument": ""}})
+    bull = BullResearcher(llm=llm)
+
+    text = await bull.speak(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        history=[],
+        round_no=1,
+    )
+    assert text == "(empty argument from LLM)"
+
+
+async def test_researcher_speak_handles_missing_response_key() -> None:
+    """LLM 返没有 argument key 的 JSON 时也兜底为占位文本。"""
+    llm = FakeLLMClient({"you are a bear analyst": {"foo": "bar"}})
+    bear = BearResearcher(llm=llm)
+
+    text = await bear.speak(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        history=[],
+        round_no=1,
+    )
+    assert text == "(empty argument from LLM)"
+
+
+def test_bull_system_prompt_adjusts_for_crypto_vs_stock() -> None:
+    """Bull system prompt 在 5 类资产下文案不同（fundamental_note 切换）。"""
+    bull = BullResearcher(llm=FakeLLMClient())
+    crypto_prompt = bull.system_prompt(asset_type="crypto")
+    us_prompt = bull.system_prompt(asset_type="us_stock")
+    cn_prompt = bull.system_prompt(asset_type="cn_stock")
+    hk_prompt = bull.system_prompt(asset_type="hk_stock")
+
+    # crypto 谈 on-chain / halving，不谈 10-K / 年报
+    assert "on-chain" in crypto_prompt or "halving" in crypto_prompt
+    assert "10-K" not in crypto_prompt and "年报" not in crypto_prompt
+
+    # 美股谈 10-K / EPS
+    assert "10-K" in us_prompt or "EPS" in us_prompt
+    assert "halving" not in us_prompt
+
+    # A 股谈年报 / 北向
+    assert "年报" in cn_prompt or "北向" in cn_prompt
+    assert "halving" not in cn_prompt
+
+    # 港股谈 Southbound / 互联互通
+    assert "Southbound" in hk_prompt or "HKMA" in hk_prompt
+
+
+def test_infer_asset_type_classifies_all_venues() -> None:
+    """覆盖 5 类资产的 venue+symbol 路由。"""
+    from inalpha_research.researchers.base import infer_asset_type
+
+    # crypto
+    assert infer_asset_type(venue="binance", symbol="BTC/USDT") == "crypto"
+    assert infer_asset_type(venue="okx", symbol="ETH/USDT") == "crypto"
+    # 美股
+    assert infer_asset_type(venue="alpaca", symbol="AAPL") == "us_stock"
+    assert infer_asset_type(venue="yfinance", symbol="AAPL") == "us_stock"
+    assert infer_asset_type(venue="yfinance", symbol="SPY") == "us_stock"
+    # A 股
+    assert infer_asset_type(venue="akshare", symbol="sh.600519") == "cn_stock"
+    assert infer_asset_type(venue="akshare", symbol="sz.000001") == "cn_stock"
+    # 港股
+    assert infer_asset_type(venue="akshare", symbol="hk.00700") == "hk_stock"
+    # 日 / 英 / 德（akshare 归 global_stock）
+    assert infer_asset_type(venue="akshare", symbol="jp.6758") == "global_stock"
+    assert infer_asset_type(venue="akshare", symbol="uk.BARC") == "global_stock"
+    # yfinance 后缀路由
+    assert infer_asset_type(venue="yfinance", symbol="005930.KS") == "global_stock"  # 韩
+    assert infer_asset_type(venue="yfinance", symbol="BHP.AX") == "global_stock"  # 澳
+    assert infer_asset_type(venue="yfinance", symbol="^N225") == "global_stock"  # 指数
+    # 未知 venue 兜底
+    assert infer_asset_type(venue="unknown", symbol="X") == "global_stock"
