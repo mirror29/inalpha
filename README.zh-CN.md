@@ -190,16 +190,48 @@ Inalpha 不是从零发明——它有选择地继承前人的最优解，并明
 
 ## Quick Start
 
-```bash
-pnpm i                          # Node 包（packages/orchestration）
-uv sync                         # Python 包（services/_shared, data, paper）
+### 1 · 安装依赖
 
-bash scripts/dev.sh             # 一键起 data(8001) + paper(8002) + mastra(4111)
+```bash
+pnpm i      # Node 包（packages/orchestration）
+uv sync     # Python 包（services/_shared, data, paper, research）
+```
+
+### 2 · 配置 LLM Key（必须）
+
+仓库根目录**单一 `.env`** 同时供 Mastra（TS）和所有 Python service 读取。拷贝模板后填你要用的那家 provider：
+
+```bash
+cp .env.example .env
+```
+
+在 `.env` 里把 `LLM_PROVIDER` 设成 `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` 之一，填对应 key：
+
+| Provider | env 字段 | 默认模型 | 获取 key |
+|---|---|---|---|
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-7` | [console.anthropic.com](https://console.anthropic.com) |
+| `openai` | `OPENAI_API_KEY` | `gpt-5` | [platform.openai.com](https://platform.openai.com) |
+| `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash-exp` | [aistudio.google.com](https://aistudio.google.com) |
+| `kimi` | `KIMI_API_KEY` | `moonshot-v1-8k` | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` | [open.bigmodel.cn](https://open.bigmodel.cn) |
+| `ollama` | — （本地） | `llama3.2` | `ollama pull llama3.2` |
+
+要换模型？把 `LLM_MODEL=...` 一起填。Mastra 和 `services/research` 共读这一份配置——不再需要在每个 service 各自维护 .env。
+
+> 旧用户 `services/*/.env` / `packages/orchestration/.env` 里已填的值仍作为 cwd-level fallback 生效（迁移期友好）。把它们合并到根 `.env` 后即可删掉。
+
+### 3 · 启动全部 service
+
+```bash
+bash scripts/dev.sh             # 一键起 data(8001) + paper(8002) + research(8003) + mastra(4111)
 bash scripts/dev.sh logs        # 跟随日志
 bash scripts/dev.sh stop        # 停止全部
 ```
 
-随后打开 `http://127.0.0.1:4111` 的 `mastra dev` playground，与 orchestrator agent 对话。
+### 4 · 跟 orchestrator 对话
+
+打开 `mastra dev` playground **<http://127.0.0.1:4111>** —— 在这里跟 orchestrator agent 聊天，并在 live trace UI 里看每一次 tool 调用、hook 事件、approval token 流转。`services/paper` 不直接调 LLM；只有 orchestrator（Mastra）和 `services/research` 会消耗你的 key。
 
 想用 3 个独立 terminal 手动起？见 [`AGENTS.md §4`](AGENTS.md)。
 

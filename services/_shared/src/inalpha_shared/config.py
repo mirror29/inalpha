@@ -8,20 +8,30 @@
     class DataServiceSettings(Settings):
         binance_api_key: str = Field(..., alias="BINANCE_API_KEY")
         binance_api_secret: str = Field(..., alias="BINANCE_API_SECRET")
+
+`.env` 文件加载顺序（pydantic-settings list 语义：后者覆盖前者）：
+
+1. ``<repo-root>/.env`` —— **统一入口**，所有 service 共享一份配置
+2. ``./.env``（cwd 下，通常是 service 目录） —— 兼容旧用户 services/*/.env
+   作为 fallback；用户迁移完成后可删除
 """
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 仓库根 = 本文件 services/_shared/src/inalpha_shared/config.py 向上 4 层
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class Settings(BaseSettings):
     """所有 service 共用的基础 settings。"""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(_REPO_ROOT / ".env"), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

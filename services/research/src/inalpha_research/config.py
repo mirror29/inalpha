@@ -27,23 +27,64 @@ class ResearchSettings(BaseSettings):
     llm_provider: str = Field(
         default="deepseek",
         alias="LLM_PROVIDER",
-        description="LLM provider id；目前只支持 'deepseek'，'fake' 走 mock（测试用）",
+        description="LLM provider id；deepseek / anthropic / openai / gemini / "
+        "kimi / zhipu / ollama / fake。详见 llm/client.py SUPPORTED_PROVIDERS",
     )
     llm_base_url: str = Field(
-        default="https://api.deepseek.com/v1",
+        default="",
         alias="LLM_BASE_URL",
-        description="OpenAI-compatible base URL；DeepSeek = api.deepseek.com/v1",
+        description="OpenAI-compatible base URL；留空时由 build_llm_client 按 provider 选默认值",
     )
     llm_model: str = Field(
-        default="deepseek-chat",
+        default="",
         alias="LLM_MODEL",
-        description="模型名；DeepSeek 用 deepseek-chat / deepseek-reasoner",
+        description="模型名；留空时由 build_llm_client 按 provider 选默认（详见 README §Recommended Models）",
     )
+    # 通用 key（兼容旧 .env 写法 LLM_API_KEY=xxx）；优先级低于 provider-specific
     llm_api_key: str = Field(
         default="",
         alias="LLM_API_KEY",
-        description="LLM provider 的 API key；fake provider 时可空",
+        description="通用 LLM API key（旧字段，兼容保留）。"
+        "新写法请用 {PROVIDER}_API_KEY，例如 ANTHROPIC_API_KEY / OPENAI_API_KEY",
     )
+    # provider-specific keys（新写法，与 .env.example 对齐）
+    deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    kimi_api_key: str = Field(default="", alias="KIMI_API_KEY")
+    zhipu_api_key: str = Field(default="", alias="ZHIPU_API_KEY")
+    ollama_base_url: str = Field(
+        default="http://localhost:11434/v1",
+        alias="OLLAMA_BASE_URL",
+        description="Ollama 本地服务 base URL（不需要 api_key）",
+    )
+
+    @property
+    def effective_api_key(self) -> str:
+        """按 llm_provider 选对应的 API key；fallback 到通用 LLM_API_KEY。
+
+        优先级：``{provider}_API_KEY`` > ``LLM_API_KEY``。
+        Ollama 不需要 key，返空。
+        """
+        provider_key = {
+            "deepseek": self.deepseek_api_key,
+            "anthropic": self.anthropic_api_key,
+            "openai": self.openai_api_key,
+            "gemini": self.gemini_api_key,
+            "kimi": self.kimi_api_key,
+            "zhipu": self.zhipu_api_key,
+            "ollama": "",  # ollama 不需要 key
+            "fake": "",
+        }.get(self.llm_provider.lower(), "")
+        return provider_key or self.llm_api_key
+
+    @property
+    def effective_base_url(self) -> str:
+        """ollama 的 base url 单独读 OLLAMA_BASE_URL；其他 provider 用 LLM_BASE_URL（可空）。"""
+        if self.llm_provider.lower() == "ollama":
+            return self.ollama_base_url
+        return self.llm_base_url
     llm_timeout_seconds: float = Field(
         default=60.0,
         alias="LLM_TIMEOUT_SECONDS",

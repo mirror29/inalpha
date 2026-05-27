@@ -190,16 +190,48 @@ Inalpha is not invented from scratch. It selectively inherits proven designs fro
 
 ## Quick Start
 
-```bash
-pnpm i                          # Node packages (packages/orchestration)
-uv sync                         # Python packages (services/_shared, data, paper)
+### 1 · Install dependencies
 
-bash scripts/dev.sh             # one shot — starts data (8001) + paper (8002) + mastra (4111)
+```bash
+pnpm i      # Node packages (packages/orchestration)
+uv sync     # Python packages (services/_shared, data, paper, research)
+```
+
+### 2 · Configure your LLM key (required)
+
+A single `.env` at the repo root is read by Mastra (TS) **and** all Python services. Copy the template and fill in the LLM provider you want to use:
+
+```bash
+cp .env.example .env
+```
+
+Inside `.env`, set `LLM_PROVIDER` to one of `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` and fill in the matching key:
+
+| Provider | env var | Default model | Get a key |
+|---|---|---|---|
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-7` | [console.anthropic.com](https://console.anthropic.com) |
+| `openai` | `OPENAI_API_KEY` | `gpt-5` | [platform.openai.com](https://platform.openai.com) |
+| `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash-exp` | [aistudio.google.com](https://aistudio.google.com) |
+| `kimi` | `KIMI_API_KEY` | `moonshot-v1-8k` | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` | [open.bigmodel.cn](https://open.bigmodel.cn) |
+| `ollama` | — (local) | `llama3.2` | `ollama pull llama3.2` |
+
+Override the default model by setting `LLM_MODEL=...` in the same file. Mastra and `services/research` both read this one file — no per-service config to juggle.
+
+> Already have keys in `services/*/.env` or `packages/orchestration/.env` from earlier? Those still work as cwd-level overrides while you migrate. Once you copy them up into the root `.env`, the per-service files can be deleted.
+
+### 3 · Start everything
+
+```bash
+bash scripts/dev.sh             # one shot — data (8001) + paper (8002) + research (8003) + mastra (4111)
 bash scripts/dev.sh logs        # follow service logs
 bash scripts/dev.sh stop        # stop everything
 ```
 
-Then open the `mastra dev` playground at `http://127.0.0.1:4111` to start a conversation with the orchestrator agent.
+### 4 · Talk to the orchestrator
+
+Open the `mastra dev` playground at **<http://127.0.0.1:4111>** — that's where you chat with the orchestrator agent and watch every tool call, hook event, and approval token in the live trace UI. `services/paper` does not call any LLM directly; only the orchestrator (Mastra) and `services/research` consume your key.
 
 Prefer the manual three-terminal flow? See [`AGENTS.md §4`](AGENTS.md).
 
