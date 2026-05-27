@@ -18,15 +18,12 @@
  *
  * 性能收益：单 turn 内下单 = 3 个 tool call（plan→approve→execute），不再嵌套 LLM。
  */
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import "../../env.js"; // side-effect: dotenv 加载根 .env（必须在 buildLLM 之前）
 import { Agent } from "@mastra/core/agent";
 
+import { buildLLM } from "../llm/provider.js";
 import { sharedMemory } from "../memory.js";
 import { wiredOrchestratorTools } from "../wired-tools.js";
-
-const deepseek = createDeepSeek({
-  apiKey: process.env.DEEPSEEK_API_KEY,
-});
 
 const INSTRUCTIONS = `
 你是 Inalpha 总调度（orchestrator）—— 量化交易助手的对话主入口。
@@ -373,17 +370,23 @@ Inalpha 的内置策略 sma_cross / mean_reversion / buy_and_hold 三个都是
     2. fitness 显著高于 baseline.fitness 且 max_drawdown_pct < 25%；
        不及格 → 告诉用户"没跑赢 buy-and-hold，建议重写"，不要 promote
     3. 用户在对话里**明确**说要 promote / 上线 / 转正；用户只是"看看 / 对比 / 评估" → 不要调
-- **调 promote 时的两步流程**（D-9.1b 起）：
-    1. 第一次调 → tool 返 requiresApproval=true。这时给用户报告完整决策依据
-       （候选 ID + fitness vs baseline + max_drawdown + 你打算 promote 的理由），
-       然后**停下**等用户回复
-    2. 用户**明确**回复"允许 / 同意 / yes / 上 / 推" → **重调同一个 tool 同一份 input**
-       才会真 promote；用户拒绝 / 含糊 → 告诉用户已取消，不要重试
-- promote 成功后**必须明确告诉用户**：状态已切到 promoted，**但 live trading runner 还没实现
-  （E2 / D-7 范围），不会自动按行情下单**。promoted 只是解锁了 trade.create_plan 链路，
-  用户手动下单或后续接 live runner 才会真跑模拟盘
-- 用户问"可以下单了吗"——status='candidate' 时告诉他"先 promote"，status='promoted' 时
-  说"可以走 trade.create_plan 手动下单；自动按行情 tick 还在做"
+- **调 promote 时的两步流程**（D-9.1b）：
+    1. **第一次调** → tool 返 \`requiresApproval=true\`。向用户报告完整决策依据
+       （候选 ID + fitness vs baseline + max_drawdown + 你打算转正的理由），
+       **停下**等用户明确回复
+    2. 用户明确同意（"允许 / 同意 / yes / 好 / 上 / 推"）→ **重调同一个 tool
+       同一份 input**（无需 token / 特殊字段；系统有 60 秒一次性 bypass 让重调
+       穿过）；用户拒绝 / 含糊 → 告诉用户已取消，不要重试
+    3. 重调若仍返 requiresApproval → 60 秒已超时或 input 改了，从第 1 步重走
+- promote 成功后**必须明确告诉用户**：候选已加入正式策略池，**但自动按行情运行
+  的能力（live trading runner）还没实现**（E2 / D-7 范围）。当前"正式"仅指
+  "可以走 trade.create_plan 链路手动下单"，不是"已经自动开始交易"
+- 用户问"可以下单了吗"——status='candidate' 时告诉他"先把这个候选加入正式策略池"，
+  status='promoted' 时说"可以走 trade.create_plan 手动下单；自动按行情运行还在做"
+- **跟用户讲话用人话**，不要直接说 tool id / 英文术语：
+    - paper.promote_candidate → "把这条策略转为正式 / 加入正式策略池"
+    - candidate → "草稿策略"；promoted → "正式策略"
+    - 不要跟用户说"系统的 60 秒 bypass / 内部缓存"这种实现细节
 - 后端返 400 CANDIDATE_NOT_BACKTESTED → 你自检没做好，先 run_backtest 再回来调
 - 后端返 409 CANDIDATE_NOT_PROMOTABLE → 该候选已经 promoted（或 rejected），告诉用户即可
 
@@ -486,7 +489,7 @@ export const orchestrator = new Agent({
   name: "orchestrator",
   // dynamic instructions：每次 invoke 重算今天日期（D-9 fix）
   instructions: buildInstructions,
-  model: deepseek("deepseek-v4-pro"),
+  model: buildLLM(),
   // D-8a'：不挂 subagent，全部能力 tool 化直接调
   tools: Object.fromEntries(wiredOrchestratorTools.map((t) => [t.id, t])),
   memory: sharedMemory,

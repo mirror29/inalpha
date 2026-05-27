@@ -24,18 +24,22 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
   allow: [
     // 只读 / 信息查询
     "data.*",
-    "paper.list_strategies",
-    "paper.list_orders",
-    "paper.list_positions",
-    "paper.list_backtest_runs",
-    "paper.list_candidates",
+    "paper.list_*",
+    "paper.get_*",
     "paper.run_backtest",
+    "paper.run_backtest_with_reflection",
+    "paper.reflect_backtest",
     "paper.compose_strategy",
     "paper.author_strategy",
     "paper.health",
-    "paper.get_*",
     "research.deep_dive",
+    "research.*",
     "factor.*",
+    "scheduler.list_*",
+    "scheduler.get_*",
+    "scheduler.create_job",
+    "scheduler.set_enabled",
+    "scheduler.trigger_job",
 
     // Swarm 批量回测（ADR-0025）：只读，无下单路径
     "swarm.*",

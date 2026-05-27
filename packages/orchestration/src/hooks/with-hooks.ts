@@ -27,6 +27,10 @@
  * - 现阶段不接 permission engine，仅留 ``permissionResolver`` 参数。task #3 接入。
  */
 import {
+  type AskApprovalCache,
+  defaultAskCache,
+} from "../permissions/ask-cache.js";
+import {
   type PendingApprovalsStore,
   pendingApprovals as defaultPendingApprovals,
 } from "../permissions/pending.js";
@@ -97,13 +101,19 @@ export type WithHooksOptions = {
   /** 可选 sessionId 提供器；从 tool ctx 中取（依赖 Mastra runtime context） */
   getSessionId?: (toolCtx: unknown) => string | undefined;
   /**
-   * 可选挂起池（D-9.1b / ADR-0018）。permissionResolver=ask 时把请求挂进去等用户决策。
-   * 缺省用模块级单例（同 ``mastra/index.ts`` 注册 HTTP routes 用的 store）。
-   * 测试可注入 fresh 实例隔离。
+   * 可选挂起池（D-9.1b / ADR-0018）。permissionResolver=ask 时把请求挂进去，供
+   * CLI / Web 入口（GET /permissions/pending）查看。缺省用模块级单例（同
+   * ``mastra/index.ts`` 注册 HTTP routes 用的 store）。测试可注入 fresh 实例隔离。
    */
   pendingApprovals?: PendingApprovalsStore;
-  /** ask 路径超时毫秒数；缺省 30_000（30 秒）。0 / 负数视作默认。 */
+  /** ask 路径 store 超时毫秒数；缺省 30_000（30 秒）。0 / 负数视作默认。 */
   askTimeoutMs?: number;
+  /**
+   * 可选 session-scoped 短期通行池（D-9.1b 修订）。让"第一次 ask → 用户在 chat
+   * 说允许 → agent 重调同 tool 同 input → 放行"在不引入 token 的前提下走通。
+   * 缺省用模块级单例；测试可注入 fresh 实例。
+   */
+  askCache?: AskApprovalCache;
 };
 
 /**
@@ -164,46 +174,60 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
         }
 
         if (permDecision === "ask") {
-          // D-9.1b / ADR-0018 · 会话驱动模式：
+          // D-9.1b 修订 · session-scoped 短期通行池：
           //
-          // 不阻塞等 HTTP POST 决策——Mastra dev playground 没有原生气泡 UI，
-          // 阻塞 tool execute 等不到响应只会撞超时。
+          // 第一次 ask：cache 没命中 → mark + 返 requiresApproval；agent 在 chat
+          //   里向用户说明 + 等用户口头同意。
+          // 第二次 ask（同 sessionId + 同 toolName + 同 input，60s 内）：cache 命中
+          //   → 消费 + 继续走 execute；agent 无需在 input 里塞任何 token。
           //
-          // 这里**立即返**结构化错误，agent 接到 ``requiresApproval=true`` 后应
-          // 在 chat 里向用户说明操作内容 + 等用户口头确认 + 然后**重调本 tool**。
-          // 后端硬校验（如 promote_candidate 的 ``fitness IS NOT NULL`` + status
-          // 检查）作为第二道防线，防 agent 漏掉用户确认环节就重调。
+          // 这一改解决了 Mastra dev playground 没有 popup UI 时"用户在 chat 里说
+          // '允许' / agent 重调还是被拦"的死循环。
           //
-          // 进程内 ``PendingApprovalsStore`` 仍然为未来 CLI / Web UI 模式保留
-          // （已经导出 HTTP API），现阶段不依赖它。
+          // 安全模型：agent 是否真等了用户回复完全靠 prompt 纪律 + 后端硬校验
+          // （如 promote 的 fitness > baseline）作护栏；本缓存只解决 UX 死循环，
+          // 不是强制审批门。详见 permissions/ask-cache.ts。
           //
-          // 同时把请求挂进 store 一份——CLI 用户跑 curl /permissions/pending 也能
-          // 看到 + respond，让 "未来 CLI / Web 模式" 不用改本文件就能用。
+          // 同时把请求挂进 PendingApprovalsStore（fire-and-forget）—— GET
+          // /permissions/pending 仍能列出来，为未来 CLI / Web 入口保留。
+          const cache = opts.askCache ?? defaultAskCache;
           const store = opts.pendingApprovals ?? defaultPendingApprovals;
           const timeoutMs =
             opts.askTimeoutMs && opts.askTimeoutMs > 0 ? opts.askTimeoutMs : undefined;
-          // fire-and-forget：store 自动 timeout deny，回结果没人 await，丢弃即可
-          void store.request({
-            toolName,
-            toolInput: effectiveInput,
-            sessionId,
-            timeoutMs,
-          });
-          return {
-            isError: true,
-            deniedBy: "permission-ask",
-            requiresApproval: true,
-            toolName,
-            toolInput: effectiveInput,
-            message:
-              `操作 ${toolName} 需要用户明确批准（permission policy=ask）。` +
-              `\n\nLLM 行动指引：` +
-              `\n  1. 用中文向用户说明操作内容与依据（input=${JSON.stringify(effectiveInput)}）；` +
-              `\n  2. 等用户**明确**回复"允许 / 同意 / yes / 上 / 推"再重调本 tool；` +
-              `\n  3. 用户未明确允许 / 拒绝 / 含糊 → 不要重试；告诉用户已取消。` +
-              `\n\n（CLI / web 入口：可 curl POST /permissions/<id>/respond，` +
-              `但当前会话驱动模式只看用户回复）`,
-          };
+
+          if (cache.consume(sessionId, toolName, effectiveInput)) {
+            // 第二次 ask 命中 cache → 一次性消费 + 放行（继续往下走 execute）
+          } else {
+            // 第一次 ask：mark cache + 挂 store（CLI 入口可见）+ 返 requiresApproval
+            cache.mark(sessionId, toolName, effectiveInput);
+            void store.request({
+              toolName,
+              toolInput: effectiveInput,
+              sessionId,
+              timeoutMs,
+            });
+            return {
+              isError: true,
+              deniedBy: "permission-ask",
+              requiresApproval: true,
+              toolName,
+              toolInput: effectiveInput,
+              message:
+                `Tool "${toolName}" requires explicit user approval (permission policy=ask).\n\n` +
+                `LLM action guide (reply in the user's language — match their latest message; ` +
+                `never hardcode Chinese / English):\n` +
+                `  1. Explain the action in plain words. Don't speak the raw tool id; ` +
+                `translate it into a user-meaningful phrase (e.g. paper.promote_candidate ` +
+                `→ "add this strategy to the live pool" / "把这条策略加入正式策略池"). ` +
+                `Include the *why* and key inputs (use human-friendly labels alongside IDs).\n` +
+                `  2. Wait for an explicit user confirmation. If they agree, retry the ` +
+                `**same tool with the same input** — the system has a 60-second one-shot ` +
+                `bypass that will let the retry through. If they refuse / hesitate / ` +
+                `give an ambiguous answer, tell them you've cancelled and do NOT retry.\n` +
+                `  3. Don't mention tokens, "__approval", or technical bypass details to ` +
+                `the user — they just need to say "ok / 允许 / yes" in plain language.`,
+            };
+          }
         }
 
         // 3. execute

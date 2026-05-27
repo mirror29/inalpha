@@ -22,6 +22,7 @@ import {
   defaultStrategyCodeAuditRegistration,
   withHooks,
 } from "../hooks/index.js";
+import type { AskApprovalCache } from "../permissions/ask-cache.js";
 import { PermissionEngine, loadDefaultPermissions } from "../permissions/index.js";
 import type { Decision } from "../permissions/index.js";
 import type { PendingApprovalsStore } from "../permissions/pending.js";
@@ -77,6 +78,8 @@ export type WireToolsOptions = {
   pendingApprovals?: PendingApprovalsStore;
   /** ask 路径超时毫秒数；缺省 30_000（30 秒）。 */
   askTimeoutMs?: number;
+  /** session-scoped 短期通行池（D-9.1b 修订）；缺省用模块单例，测试可注入 fresh 实例。 */
+  askCache?: AskApprovalCache;
 };
 
 /** wireTools 返回的 tool 形态（id 必有，其它字段透传）。 */
@@ -115,6 +118,7 @@ export function wireToolList(
       permissionResolver: resolver,
       pendingApprovals: opts.pendingApprovals,
       askTimeoutMs: opts.askTimeoutMs,
+      askCache: opts.askCache,
     }),
   );
 }

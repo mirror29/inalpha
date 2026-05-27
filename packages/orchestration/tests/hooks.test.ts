@@ -317,11 +317,11 @@ describe("withHooks", () => {
     expect(out.deniedBy).toBe("permission");
   });
 
-  it("permissionResolver=ask → 立即返 requiresApproval 不调 execute (D-9.1b 会话驱动)", async () => {
-    const { PendingApprovalsStore } = await import(
-      "../src/permissions/pending.js"
-    );
+  it("ask 第一次调 → 返 requiresApproval + 不调 execute (D-9.1b session cache)", async () => {
+    const { PendingApprovalsStore } = await import("../src/permissions/pending.js");
+    const { AskApprovalCache } = await import("../src/permissions/ask-cache.js");
     const store = new PendingApprovalsStore();
+    const cache = new AskApprovalCache(5_000);
     const runner = new HookRunner();
     const exec = vi.fn();
     const tool = { id: "test.tool", description: "", execute: exec };
@@ -329,7 +329,7 @@ describe("withHooks", () => {
       runner,
       permissionResolver: () => "ask",
       pendingApprovals: store,
-      askTimeoutMs: 5_000,
+      askCache: cache,
     });
 
     const out = (await wrapped.execute!({ x: 1 })) as {
@@ -348,20 +348,99 @@ describe("withHooks", () => {
     expect(out.toolName).toBe("test.tool");
     expect(out.toolInput).toEqual({ x: 1 });
     expect(out.message).toContain("test.tool");
-    expect(out.message).toContain("允许");
+    // message 不锁中文 / 英文（CLAUDE.md §3 用户语言原则）
+    expect(out.message).toMatch(/user's language|user language|their .* language/i);
+    // 第一次调后 cache 应该有标记
+    expect(cache.size()).toBe(1);
+    store.clearAll();
+    cache.clear();
   });
 
-  it("permissionResolver=ask 也把请求挂进 store (CLI / Web 备用入口)", async () => {
+  it("ask 第二次调（同 input）→ cache 命中 → 放行调 execute (session bypass)", async () => {
+    const { AskApprovalCache } = await import("../src/permissions/ask-cache.js");
+    const cache = new AskApprovalCache(5_000);
+    const runner = new HookRunner();
+    const exec = vi.fn().mockResolvedValue({ ran: true });
+    const tool = { id: "test.tool", execute: exec };
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => "ask",
+      askCache: cache,
+    });
+
+    // 第一次调 → 被 ask 拦
+    await wrapped.execute!({ x: 1, y: "abc" });
+    expect(exec).not.toHaveBeenCalled();
+    expect(cache.size()).toBe(1);
+
+    // 第二次调（同 input）→ cache 命中 → 放行
+    const out = await wrapped.execute!({ x: 1, y: "abc" });
+    expect(exec).toHaveBeenCalledOnce();
+    expect(exec).toHaveBeenCalledWith({ x: 1, y: "abc" }, undefined);
+    expect(out).toEqual({ ran: true });
+    // 一次性消费：第二次后 cache 又空了
+    expect(cache.size()).toBe(0);
+  });
+
+  it("ask 第二次调（input 改了）→ cache 不命中 → 再 ask 一次", async () => {
+    const { AskApprovalCache } = await import("../src/permissions/ask-cache.js");
+    const cache = new AskApprovalCache(5_000);
+    const runner = new HookRunner();
+    const exec = vi.fn();
+    const tool = { id: "test.tool", execute: exec };
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => "ask",
+      askCache: cache,
+    });
+
+    await wrapped.execute!({ x: 1 });
+    expect(cache.size()).toBe(1);
+
+    // 第二次 input 不一样
+    const out = (await wrapped.execute!({ x: 999 })) as { deniedBy: string };
+    expect(exec).not.toHaveBeenCalled();
+    expect(out.deniedBy).toBe("permission-ask");
+    // 又 mark 了一条新的（首次的还在）→ size=2
+    expect(cache.size()).toBe(2);
+  });
+
+  it("ask 第三次调（同 input）→ 仍要 ask（一次性消费 + 第二次已用掉）", async () => {
+    const { AskApprovalCache } = await import("../src/permissions/ask-cache.js");
+    const cache = new AskApprovalCache(5_000);
+    const runner = new HookRunner();
+    const exec = vi.fn().mockResolvedValue({ ok: 1 });
+    const tool = { id: "test.tool", execute: exec };
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => "ask",
+      askCache: cache,
+    });
+
+    await wrapped.execute!({ x: 1 }); // 第 1 次 → ask
+    await wrapped.execute!({ x: 1 }); // 第 2 次 → 放行 + 消费
+    expect(exec).toHaveBeenCalledOnce();
+
+    // 第 3 次：cache 空，又被 ask
+    const out = (await wrapped.execute!({ x: 1 })) as { deniedBy: string };
+    expect(exec).toHaveBeenCalledOnce(); // 没增加
+    expect(out.deniedBy).toBe("permission-ask");
+  });
+
+  it("ask 第一次调也把请求挂进 store (CLI / Web 备用入口)", async () => {
     const { PendingApprovalsStore } = await import(
       "../src/permissions/pending.js"
     );
+    const { AskApprovalCache } = await import("../src/permissions/ask-cache.js");
     const store = new PendingApprovalsStore();
+    const cache = new AskApprovalCache(5_000);
     const runner = new HookRunner();
     const tool = { id: "test.tool", execute: vi.fn() };
     const wrapped = withHooks(tool, {
       runner,
       permissionResolver: () => "ask",
       pendingApprovals: store,
+      askCache: cache,
       askTimeoutMs: 5_000,
     });
 
