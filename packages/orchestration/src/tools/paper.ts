@@ -74,7 +74,7 @@ export const paperRunBacktestTool = createTool({
 
     何时不用：
     - 实时跑模拟盘 → 用 paper.start_strategy（D-7 还没做）
-    - 跨多标的批量 → 用 swarm.backtest_grid（D-7 还没做）
+    - **跨多标的 / 多候选 批量** → 用 swarm.run_backtest_grid（D-9 已支持全市场）
     - 单纯查 K 线走势 → data.get_bars
 
     坑：

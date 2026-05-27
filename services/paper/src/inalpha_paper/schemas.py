@@ -40,8 +40,16 @@ class BacktestRequest(BaseModel):
         examples=[{"fast_period": 10, "slow_period": 30, "trade_size": 0.01}],
     )
 
-    venue: str = Field(default="binance")
-    symbol: str = Field(..., examples=["BTC/USDT"])
+    venue: str = Field(
+        default="binance",
+        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→akshare / 全球指数→yfinance / FRED→fred",
+        examples=["binance", "yfinance", "alpaca", "akshare", "fred"],
+    )
+    symbol: str = Field(
+        ...,
+        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+        examples=["BTC/USDT", "AAPL", "^N225", "sh.600519", "DFF"],
+    )
     timeframe: str = Field(default="1h", examples=["1m", "5m", "1h", "1d"])
     from_ts: datetime = Field(..., description="起始时间（含），ISO 8601")
     to_ts: datetime = Field(..., description="结束时间（含），ISO 8601")
@@ -321,8 +329,16 @@ class SubmitOrderRequest(BaseModel):
     不维持持仓 / 不写库。给 orchestration 层的 ``executeTradePlan`` tool 用。
     """
 
-    venue: str = Field(default="binance")
-    symbol: str = Field(..., examples=["BTC/USDT"])
+    venue: str = Field(
+        default="binance",
+        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→akshare / 全球指数→yfinance / FRED→fred",
+        examples=["binance", "yfinance", "alpaca", "akshare", "fred"],
+    )
+    symbol: str = Field(
+        ...,
+        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+        examples=["BTC/USDT", "AAPL", "^N225", "sh.600519", "DFF"],
+    )
     side: Literal["BUY", "SELL"]
     order_type: Literal["MARKET", "LIMIT"] = Field(default="MARKET", alias="type")
     quantity: float = Field(..., gt=0, examples=[0.001])
@@ -442,8 +458,16 @@ class CreatePlanRequest(BaseModel):
     """
 
     intent: Literal["open_long", "open_short", "close", "rebalance"]
-    venue: str = Field(default="binance")
-    symbol: str = Field(..., examples=["BTC/USDT"])
+    venue: str = Field(
+        default="binance",
+        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→akshare / 全球指数→yfinance / FRED→fred",
+        examples=["binance", "yfinance", "alpaca", "akshare", "fred"],
+    )
+    symbol: str = Field(
+        ...,
+        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+        examples=["BTC/USDT", "AAPL", "^N225", "sh.600519", "DFF"],
+    )
     side: Literal["BUY", "SELL"]
     order_type: Literal["MARKET", "LIMIT"] = Field(default="MARKET", alias="type")
     quantity: float = Field(..., gt=0)

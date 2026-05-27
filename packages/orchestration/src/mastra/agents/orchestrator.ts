@@ -294,7 +294,10 @@ data.* / paper.run_backtest 的 fromTs / toTs 都是 optional，省略时默认"
 
 **下单 / 回测 当前状态（D-9）**：
 - research.deep_dive —— 5 venue 全支持，自动按 market_type 切 prompt
-- paper.run_backtest —— 内核资产中立，但需后端有该 venue 的历史 K 线（先 backfill）
+- paper.run_backtest —— 内核资产中立，**全市场可跑**（crypto / 美股 / A 股 /
+  港股 / 全球指数 / FRED 宏观）；需后端有该 venue 的历史 K 线（先 backfill）
+- swarm.run_backtest_grid —— 同 paper.run_backtest，**全市场可 grid**；不要
+  因为旧 prompt 印象拒绝美股 / A 股 / 指数的 grid 请求
 - trade.create_plan —— 当前 paper service 撮合只对 crypto 完整测过；其它市场跑通需 D-10+ 工作
 
 ## 多空意识（D-9 起 · 不预设方向）

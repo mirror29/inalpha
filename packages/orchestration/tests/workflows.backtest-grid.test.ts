@@ -14,6 +14,7 @@ import { clearSettings, setSettings } from "../src/config.js";
 import { mastra } from "../src/mastra/index.js";
 import {
   computeParetoFrontier,
+  GridInputSchema,
   pickTopK,
 } from "../src/mastra/workflows/backtest-grid.js";
 
@@ -381,6 +382,26 @@ describe("backtest_grid workflow (end-to-end)", () => {
     )?.report;
     expect(builtinShim?.baseline).toBeNull();
     expect(candidateShim?.baseline).not.toBeNull();
+  });
+
+  // D-9 multi-market 回归：grid SymbolSchema 不应拒 crypto 之外的市场
+  it.each([
+    ["crypto", "BTC/USDT"],
+    ["us_stock", "AAPL"],
+    ["us_index", "^GSPC"],
+    ["jp_index", "^N225"],
+    ["cn_stock_akshare", "sh.600519"],
+    ["hk_stock_akshare", "hk.00700"],
+    ["kr_stock_yfinance", "005930.KS"],
+    ["fred_macro", "DFF"],
+  ])("GridInputSchema accepts multi-market symbol: %s -> %s", (_label, sym) => {
+    const parsed = GridInputSchema.safeParse({
+      strategies: ["sma_cross"],
+      symbols: [sym],
+      venue: "binance", // venue 字段对 schema 校验无影响，只是默认值
+      timeframe: "1h",
+    });
+    expect(parsed.success).toBe(true);
   });
 
   it("rejects grid with neither strategies nor candidateIds", async () => {

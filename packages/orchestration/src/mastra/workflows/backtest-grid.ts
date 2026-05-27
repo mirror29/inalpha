@@ -33,9 +33,17 @@ import { getSettings } from "../../config.js";
 
 const StrategyIdSchema = z.enum(["sma_cross", "buy_and_hold", "mean_reversion"]);
 const TimeframeSchema = z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]);
+// D-9 multi-market：与 tools/paper.ts 保持一致——5 venue × 5 资产全覆盖。
+// crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / akshare 'sh.600519' /
+// yfinance '005930.KS' / FRED 'DFF' 都应通过。
 const SymbolSchema = z
   .string()
-  .regex(/^[A-Z0-9]+\/[A-Z0-9]+$/, "symbol 必须是 CCXT 风格 'BASE/QUOTE'");
+  .min(1)
+  .max(50)
+  .regex(
+    /^[\^A-Za-z0-9._/-]+$/,
+    "symbol 不能为空 / 含空格；支持 crypto 'BTC/USDT' / 普通 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+  );
 
 // **Note**：strategies + candidateIds "至少一个非空 / 总数 ≤ 5" 的校验放在
 // expandStep 内部抛错，不放 .superRefine —— mastra 1.36 + zod 4 的 standard-schema
