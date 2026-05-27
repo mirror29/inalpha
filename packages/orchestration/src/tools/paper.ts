@@ -88,43 +88,54 @@ export const paperRunBacktestTool = createTool({
     - equity_curve：[(ts, equity)] 序列，前端可直接画图
     - final_positions：结束时残留持仓（趋势策略可能持有到尾盘）
   `.trim(),
-  inputSchema: z.object({
-    strategyId: z
-      .string()
-      .describe("已注册策略 ID（用 paper.list_strategies 查；目前 sma_cross / mean_reversion / buy_and_hold）"),
-    params: z
-      .record(z.string(), z.unknown())
-      .default({})
-      .describe("策略参数；sma_cross: { fast_period, slow_period, trade_size }"),
-    venue: z.string().default("binance"),
-    symbol: SymbolSchema,
-    timeframe: TimeframeSchema.default("1h"),
-    fromTs: z
-      .string()
-      .datetime()
-      .optional()
-      .describe("ISO 8601 起始时间；**省略时默认 = 当前时间往前回推 1 年**"),
-    toTs: z
-      .string()
-      .datetime()
-      .optional()
-      .describe("ISO 8601 结束时间；**省略时默认 = 当前时间**"),
-    initialCash: z.number().positive().default(10_000),
-    feeRate: z.number().min(0).lt(1).default(0.001),
-    researchId: z
-      .string()
-      .uuid()
-      .optional()
-      .describe(
-        "D-8c 起：若本次回测由 research.deep_dive 驱动，把对应 research_id 透传过来；后续 trade.create_plan 可用同 research_id 关联血缘。",
-      ),
-    strategyHint: z
-      .record(z.string(), z.unknown())
-      .optional()
-      .describe(
-        "D-8c 起：触发本次回测的 strategy_hint（来自 compose_strategy.reasoning 上游）",
-      ),
-  }),
+  inputSchema: z
+    .object({
+      strategyId: z
+        .string()
+        .optional()
+        .describe("已注册策略 ID（用 paper.list_strategies 查；目前 sma_cross / mean_reversion / buy_and_hold）。与 candidateId 互斥。"),
+      candidateId: z
+        .string()
+        .uuid()
+        .optional()
+        .describe("D-9 起：LLM 自创策略候选 UUID（paper.author_strategy 落库后）；与 strategyId 互斥。"),
+      params: z
+        .record(z.string(), z.unknown())
+        .default({})
+        .describe("策略参数；sma_cross: { fast_period, slow_period, trade_size }"),
+      venue: z.string().default("binance"),
+      symbol: SymbolSchema,
+      timeframe: TimeframeSchema.default("1h"),
+      fromTs: z
+        .string()
+        .datetime()
+        .optional()
+        .describe("ISO 8601 起始时间；**省略时默认 = 当前时间往前回推 1 年**"),
+      toTs: z
+        .string()
+        .datetime()
+        .optional()
+        .describe("ISO 8601 结束时间；**省略时默认 = 当前时间**"),
+      initialCash: z.number().positive().default(10_000),
+      feeRate: z.number().min(0).lt(1).default(0.001),
+      researchId: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "D-8c 起：若本次回测由 research.deep_dive 驱动，把对应 research_id 透传过来；后续 trade.create_plan 可用同 research_id 关联血缘。",
+        ),
+      strategyHint: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          "D-8c 起：触发本次回测的 strategy_hint（来自 compose_strategy.reasoning 上游）",
+        ),
+    })
+    .refine(
+      (v) => (v.strategyId != null) !== (v.candidateId != null),
+      { message: "必须给 strategyId 或 candidateId，二选一（不能同给也不能都不给）" },
+    ),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);

@@ -49,12 +49,19 @@ class BacktestReport:
     sharpe: float | None = None
     #: 年化 Sortino；样本不足或无下行时为 ``None``
     sortino: float | None = None
-    #: 最大回撤百分比（正数，无回撤为 0.0）
+    #: 最大回撤百分比（正数，无回撤为 0.0，**cap 100.0**）
     max_drawdown_pct: float = 0.0
     #: 胜率百分比；没 round-trip 时为 ``None``
     win_rate: float | None = None
     #: ``[(ts_ns, equity)]`` 序列
     equity_curve: list[tuple[int, float]] = field(default_factory=list)
+    #: 账户是否"穿仓"——任意时点 equity 跌破 -1% × initial_cash（物理上 spot
+    #: 账户 equity 不应 < 0）。True 表示本次回测结果在物理上不可信，agent /
+    #: 前端应当显式警告，不要直接渲染 Sharpe / 收益率（数学正确但语义无效）。
+    blew_up: bool = False
+    #: 物理一致性警告列表，例如 "账户穿仓"、"现金最终为负"。空列表 = 干净。
+    #: 前端 / orchestrator agent 见非空时必须告警，禁止无声渲染。
+    health_warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_portfolio(
@@ -74,10 +81,28 @@ class BacktestReport:
         equity_values = [eq for _ts, eq in equity_curve]
         returns = metrics.bar_returns(equity_values)
         ppy = metrics.periods_per_year(timeframe)
+        final_equity_v = portfolio.equity()
+        final_cash_v = portfolio.cash
+
+        blew_up = metrics.detect_blew_up(equity_values, portfolio.initial_cash)
+        warnings: list[str] = []
+        if blew_up:
+            warnings.append(
+                "账户穿仓：回测期间 equity 跌破 -1% × initial_cash，物理上不应发生；"
+                "通常意味着撮合层未拦透支或 SHORT 爆仓，本次 Sharpe / 收益率不可信"
+            )
+        if final_cash_v < -0.01 * portfolio.initial_cash:
+            warnings.append(
+                f"现金最终为负 ({final_cash_v:.2f})：撮合层透支拦截缺失"
+            )
+        if final_equity_v < 0:
+            warnings.append(
+                f"最终 equity 为负 ({final_equity_v:.2f})：账户实际已破产"
+            )
 
         return cls(
             initial_cash=portfolio.initial_cash,
-            final_equity=portfolio.equity(),
+            final_equity=final_equity_v,
             total_return_pct=portfolio.total_return_pct(),
             num_trades=portfolio.trade_count,
             total_fees=portfolio.total_fees,
@@ -90,6 +115,8 @@ class BacktestReport:
             max_drawdown_pct=metrics.max_drawdown_pct(equity_values),
             win_rate=metrics.win_rate(portfolio.closed_trade_pnls),
             equity_curve=equity_curve,
+            blew_up=blew_up,
+            health_warnings=warnings,
         )
 
     def __str__(self) -> str:

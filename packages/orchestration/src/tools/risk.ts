@@ -131,8 +131,9 @@ export const riskUnlockTool = createTool({
 // 一键导出（接入 index.ts 时引用）
 // ────────────────────────────────────────────────────────────────────
 
-export const riskRuleTools = {
-  describeRules: riskDescribeRulesTool,
-  listLocks: riskListLocksTool,
-  unlock: riskUnlockTool,
-};
+/** 数组形态——给 ``tools/index.ts`` 的 spread / forEach / wireToolList 用。 */
+export const riskRuleTools = [
+  riskDescribeRulesTool,
+  riskListLocksTool,
+  riskUnlockTool,
+] as const;

@@ -28,8 +28,10 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "paper.list_orders",
     "paper.list_positions",
     "paper.list_backtest_runs",
+    "paper.list_candidates",
     "paper.run_backtest",
     "paper.compose_strategy",
+    "paper.author_strategy",
     "paper.health",
     "paper.get_*",
     "research.deep_dive",
@@ -49,6 +51,13 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "trade.execute_plan",
     "trade.reject_plan",
     "trade.get_plan",
+
+    // D-9 · 候选 → 正式策略。**前端 askUserChoice 还没接**，permission ask 等同
+    // 阻塞 agent 闭环；MVP 暂时放 allow，靠"agent prompt 调前自检 + 后端硬校验"两道防御：
+    //   1. orchestrator.ts 要求 agent 调前必须给用户报完整 metrics + 等用户口头确认
+    //   2. 后端 endpoint 强校验 fitness IS NOT NULL + status='candidate'
+    // ADR-0018 askUserChoice 接通后改回 ask（届时 agent 调用会变成对话内气泡确认）。
+    "paper.promote_candidate",
 
     // D-9 spike：沙盒（ADR-0020 第二道运行隔离）
     // 60s 内的运行允许（spike + 临时计算）；更长走 ask（人工审批）。

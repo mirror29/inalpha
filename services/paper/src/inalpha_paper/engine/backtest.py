@@ -73,6 +73,9 @@ class BacktestEngine:
             lock_store=lock_store,
         )
         self.portfolio = Portfolio(self.msgbus, initial_cash=initial_cash, fee_rate=fee_rate)
+        # spot 守门：让 SimulatedExchange 撮合前能 query portfolio cash / position
+        # （ADR-0032 BuyingPowerRule 撮合层兜底实现，旧 BTC -98% bug 同源防御）
+        self.exchange.bind_portfolio(self.portfolio)
 
         self._strategies: list[Strategy] = []
         self._num_bars: int = 0

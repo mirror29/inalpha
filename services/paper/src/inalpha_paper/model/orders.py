@@ -51,6 +51,9 @@ _VALID_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
         OrderStatus.PARTIALLY_FILLED,
         OrderStatus.FILLED,
         OrderStatus.CANCELED,
+        # D-9 ADR-0032：venue 接受订单后在撮合阶段被守门（cash / position）拒。
+        # 业界惯例（broker 后置 risk gate / margin check）也允许这条路径。
+        OrderStatus.REJECTED,
     },
     OrderStatus.PARTIALLY_FILLED: {OrderStatus.FILLED, OrderStatus.CANCELED},
     # 终态

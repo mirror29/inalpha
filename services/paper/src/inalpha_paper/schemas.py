@@ -14,16 +14,29 @@ def _assume_utc_if_naive(v: datetime) -> datetime:
 
 
 class BacktestRequest(BaseModel):
-    """``POST /backtest`` 请求体。"""
+    """``POST /backtest`` 请求体。
 
-    strategy_id: str = Field(
-        ...,
-        description="已注册的策略 ID，目前仅支持 'sma_cross'",
+    D-9 起：``strategy_id`` 与 ``candidate_id`` 二选一。
+
+    - 传 ``strategy_id`` → 走内置注册表（sma_cross / mean_reversion / buy_and_hold）
+    - 传 ``candidate_id`` → 走 LLM 自创策略路径（从 strategy_candidates 表读 code，
+      二次过 ast_audit 后 dynamic_loader 加载）
+    """
+
+    strategy_id: str | None = Field(
+        default=None,
+        description="已注册的内置策略 ID（sma_cross / mean_reversion / buy_and_hold）；"
+        "与 candidate_id 二选一",
         examples=["sma_cross"],
+    )
+    candidate_id: UUID | None = Field(
+        default=None,
+        description="D-9 起：LLM 自创策略候选 ID（来自 POST /strategy_candidates 响应）；"
+        "与 strategy_id 二选一",
     )
     params: dict[str, Any] = Field(
         default_factory=dict,
-        description="策略参数 dict；SMA cross 支持 fast_period / slow_period / trade_size",
+        description="策略参数 dict；内置策略各有签名；候选策略由 LLM 在源码里写明",
         examples=[{"fast_period": 10, "slow_period": 30, "trade_size": 0.01}],
     )
 
@@ -51,6 +64,18 @@ class BacktestRequest(BaseModel):
     def _ensure_aware(cls, v: datetime) -> datetime:
         return _assume_utc_if_naive(v)
 
+    @model_validator(mode="after")
+    def _exactly_one_strategy_source(self) -> BacktestRequest:
+        """``strategy_id`` 与 ``candidate_id`` 必须二选一。"""
+        has_id = bool(self.strategy_id)
+        has_cand = self.candidate_id is not None
+        if has_id == has_cand:  # 都给或都不给
+            raise PydanticCustomError(
+                "strategy_source",
+                "must provide exactly one of strategy_id / candidate_id, not both / neither",
+            )
+        return self
+
 
 class PositionSnapshot(BaseModel):
     instrument_id: str  # "BTC/USDT@binance"
@@ -58,6 +83,31 @@ class PositionSnapshot(BaseModel):
     avg_open_price: float
     realized_pnl: float
     generation: int
+
+
+class BaselineSnapshot(BaseModel):
+    """D-9 · candidate 回测的 baseline 对照（默认 buy_and_hold 同 symbol/timeframe）。
+
+    alpha 的定义 = candidate.fitness 显著高于 baseline.fitness。内置策略路径下不带 baseline
+    （内置本身就是基线，无需重复跑）。
+    """
+
+    strategy_id: str = Field(
+        ...,
+        description="baseline 策略 ID（默认 'buy_and_hold'）",
+    )
+    fitness: float | None
+    sharpe: float | None
+    max_drawdown_pct: float = Field(
+        ...,
+        description="最大回撤百分比（正数，**cap 100.0**）；超 100% 的物理穿仓由 blew_up 表达",
+    )
+    total_return_pct: float
+    num_trades: int
+    blew_up: bool = Field(
+        default=False,
+        description="账户是否穿仓（equity 跌破 -1%×initial_cash）；True 表示回测物理不可信",
+    )
 
 
 class EquityPoint(BaseModel):
@@ -84,6 +134,19 @@ class BacktestResponse(BaseModel):
     )
 
     strategy_id: str
+    candidate_id: UUID | None = Field(
+        default=None,
+        description="D-9 起：若本次回测走候选路径，回填 candidate_id，便于前端串血缘",
+    )
+    fitness: float | None = Field(
+        default=None,
+        description="D-9 起：多目标 fitness（ADR-0020 §适应度函数）；裸 Sharpe 排序不可用",
+    )
+    baseline: BaselineSnapshot | None = Field(
+        default=None,
+        description="D-9 起：candidate 路径下自动并跑的 buy_and_hold 对照；"
+        "内置路径下为 null（内置本身就是基线，无需重复）",
+    )
     venue: str
     symbol: str
     timeframe: str
@@ -110,7 +173,7 @@ class BacktestResponse(BaseModel):
     )
     max_drawdown_pct: float = Field(
         default=0.0,
-        description="最大回撤百分比（正数）",
+        description="最大回撤百分比（正数，**cap 100.0**）；超 100% 的物理穿仓由 blew_up 表达",
     )
     win_rate: float | None = Field(
         default=None,
@@ -121,6 +184,17 @@ class BacktestResponse(BaseModel):
         description="每根 bar 的 (ts, equity)；前端可直接画图",
     )
 
+    blew_up: bool = Field(
+        default=False,
+        description="账户是否穿仓（任意时点 equity ≤ -1%×initial_cash）；True 表示本次回测"
+        "物理上不可信，前端 / orchestrator 应当显式告警而非直接渲染 Sharpe / 收益率",
+    )
+    health_warnings: list[str] = Field(
+        default_factory=list,
+        description="回测物理一致性警告列表（如账户穿仓、现金透支）；非空时禁止无声渲染，"
+        "agent 必须把警告原样转给用户",
+    )
+
     final_positions: list[PositionSnapshot]
 
 
@@ -128,6 +202,97 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     service: str
     version: str
+
+
+# ────────────────────────────────────────────────────────────────────
+# D-9 · LLM 自创策略候选（ADR-0020 E1 MVP）
+# ────────────────────────────────────────────────────────────────────
+
+
+class AuthorStrategyRequest(BaseModel):
+    """``POST /strategy_candidates`` 请求体。
+
+    服务端会跑三道沙盒：ast_audit（白名单） → dynamic_loader（受限 exec） →
+    contract_check（必须继承 Strategy + 覆写 on_bar）。任何一道失败返 422 + 详细
+    findings，让 LLM 自己改源码重试。
+    """
+
+    code: str = Field(
+        ...,
+        min_length=20,
+        max_length=20_480,
+        description="完整 Python 源码（含 1 个 Strategy 子类）。不需要 import inalpha 内部"
+        "符号，已注入 globals。允许 import: math/statistics/collections/dataclasses/typing/enum/json",
+    )
+    description: str = Field(
+        default="",
+        max_length=2000,
+        description="人话说明这个策略的逻辑 / 适用场景 / 关键参数",
+    )
+
+
+class StrategyCandidateRecord(BaseModel):
+    """``GET /strategy_candidates/...`` 响应。"""
+
+    id: UUID
+    code: str
+    code_hash: str
+    description: str
+    author: Literal["llm", "user", "system"]
+    author_id: UUID | None = None
+    status: Literal["candidate", "rejected", "promoted"]
+    metrics: dict[str, Any] | None = None
+    fitness: float | None = None
+    last_backtest_run_id: UUID | None = None
+    audit: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StrategyCandidateSummary(BaseModel):
+    """``GET /strategy_candidates`` 列表响应里的一行（不带 ``code``，省带宽）。"""
+
+    id: UUID
+    code_hash: str
+    description: str
+    author: Literal["llm", "user", "system"]
+    status: Literal["candidate", "rejected", "promoted"]
+    metrics: dict[str, Any] | None = None
+    fitness: float | None = None
+    last_backtest_run_id: UUID | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AuthorStrategyResponse(BaseModel):
+    """``POST /strategy_candidates`` 响应。"""
+
+    candidate_id: UUID
+    code_hash: str
+    created: bool = Field(
+        ...,
+        description="True = 新落库；False = 撞到现有 code_hash，返已有 ID（幂等）",
+    )
+    audit: dict[str, Any] = Field(
+        default_factory=dict,
+        description="审计摘要：通过时 {ok: true, findings: []}；失败由 422 走，"
+        "本字段只在通过路径出现",
+    )
+
+
+class PromoteCandidateRequest(BaseModel):
+    """``POST /strategy_candidates/{id}/promote`` 请求体。
+
+    审批门要求 LLM / 用户写明 promote 理由（dataset / period / fitness vs baseline），
+    落 ``audit.promotion`` 便于事后复盘"为什么把它推上线"。
+    """
+
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=1000,
+        description="为什么 promote：建议写明使用的回测区间、fitness vs baseline 对比、风控指标",
+    )
 
 
 class BacktestRunSummary(BaseModel):

@@ -47,8 +47,8 @@ class SMACrossStrategy(Strategy):
         self._fast_period = fast_period
         self._slow_period = slow_period
         self._trade_size = trade_size
-        # position_pct + initial_cash 同时给且 >0 时按本金比例下单（每根信号 bar
-        # 实时按当前 bar.open 算 qty）；否则回退到 trade_size 绝对量旧语义。
+        # position_pct + initial_cash 同时给且 >0 时按本金比例下单（每根信号
+        # bar 实时按当前 bar.open 算 qty）；否则回退到 trade_size 绝对量旧语义。
         self._position_pct = position_pct
         self._initial_cash = initial_cash
 
@@ -59,6 +59,9 @@ class SMACrossStrategy(Strategy):
 
         # 仓位状态（避免重复发单）
         self._is_long: bool = False
+        # 记开仓 qty，平仓时复用（避免 SELL qty 用本金重算与持仓不一致 →
+        # 撮合守门 can_afford_sell 拒）
+        self._open_qty: float = 0.0
         # 计数用于测试
         self.signal_count: int = 0
 
@@ -99,34 +102,42 @@ class SMACrossStrategy(Strategy):
 
     def on_position_opened(self, event: PositionOpened) -> None:
         self._is_long = event.quantity > 0
+        self._open_qty = abs(event.quantity)
 
     def on_position_closed(self, event: PositionClosed) -> None:
         self._is_long = False
+        self._open_qty = 0.0
 
     # ─── 内部 ───
 
     def _resolve_quantity(self, bar: Bar) -> float:
         """按 position_pct 算"满仓比例" qty；缺参数时回退 trade_size 绝对量。
 
-        除以 (1 + 0.001) 留 fee buffer，避免 cash 透支（撮合层目前不校验 cash，
-        见 plan follow-up）。bar.open 用作市价单的成交价基准（与 SimulatedExchange
-        市价单成交价对齐）。
+        基准价用 ``bar.close``（信号 bar 的收盘），撮合发生在**下一根** bar.open。
+        + 5% buffer 抗 bar-to-bar 价格 jitter（振荡市单根 K 线跳变可达 3-5%）+
+        fee + 滑点。"满仓" 实际是 95% 本金，剩 5% 留 cushion 避免撮合层守门拒。
         """
         if (
             self._position_pct is not None
             and self._position_pct > 0
             and self._initial_cash > 0
-            and bar.open > 0
+            and bar.close > 0
         ):
-            return (self._initial_cash * self._position_pct) / bar.open / (1.0 + 0.001)
+            return (self._initial_cash * self._position_pct) / bar.close / (1.0 + 0.05)
         return self._trade_size
 
     def _submit_market(self, side: OrderSide, bar: Bar) -> None:
+        # SELL 平仓时用 _open_qty（避免和持仓数量不一致被守门拒）；BUY 时按
+        # position_pct / trade_size 算
+        if side == OrderSide.SELL and self._open_qty > 0:
+            qty = self._open_qty
+        else:
+            qty = self._resolve_quantity(bar)
         order = Order(
             client_order_id=ClientOrderId(f"sma-{self.name}-{uuid4().hex[:8]}"),
             instrument_id=self._instrument_id,
             side=side,
             type=OrderType.MARKET,
-            quantity=self._resolve_quantity(bar),
+            quantity=qty,
         )
         self.submit_order(order)

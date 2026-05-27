@@ -1,86 +1,208 @@
 {
   "meta": {
-    "title": "Inalpha — Conversational AI agents for quant",
-    "description": "Open-source quant trading framework. Multi-agent LLM research, unified kernel where backtest = paper = live."
+    "title": "Inalpha — Agents that disagree. Records that don't.",
+    "description": "Open-source quant trading framework. Multi-agent debate, unified kernel, every decision auditable."
   },
   "nav": {
     "github": "GitHub",
-    "docs": "Docs"
+    "docs": "Docs",
+    "demoAnchor": "Live demo"
   },
   "hero": {
-    "tagline": "Find alpha with a fox's eye.",
-    "subtitle": "The quant familiar · backtest = paper = live",
-    "blurb": "Conversational AI agents for quantitative research, strategy authoring, and paper trading — wired with Claude Code–grade engineering discipline.",
-    "cta": {
-      "github": "View on GitHub",
-      "docs": "Read the docs"
-    }
-  },
-  "loop": {
-    "eyebrow": "The loop",
-    "title": "One loop. User → agents → kernels → strategy.",
-    "blurb": "An orchestrator routes your prompt across three Python kernels. Decisions flow back into the conversation — fully transparent.",
-    "nodes": {
-      "user": "You",
-      "orchestrator": "Orchestrator",
-      "data": "data",
-      "paper": "paper",
-      "research": "research",
-      "strategy": "Strategy"
-    }
-  },
-  "kernels": {
-    "eyebrow": "Three kernels",
-    "title": "Three Python services, one conversation.",
-    "data": {
-      "title": "data",
-      "desc": "Multi-venue feeds: crypto, US, A-share, HK, JP, KR, AU, IN, UK, DE equities, global indices, FRED macro.",
-      "code": "from inalpha_data import get_bars"
+    "wordmark": "Inalpha",
+    "title": "Agents that disagree.",
+    "titleAlt": "Records that don't.",
+    "sub": "Open-source quant framework. Multi-agent debate, unified kernel, every decision auditable.",
+    "ctaPrimary": "git clone",
+    "ctaSecondary": "Live demo",
+    "stats": {
+      "stars": "stars",
+      "contributors": "contributors",
+      "commitsThisWeek": "this week"
     },
-    "paper": {
-      "title": "paper",
-      "desc": "In-memory matching, backtest engine, and persistent paper trading with replay-able state.",
-      "code": "from inalpha_paper import run_backtest"
-    },
-    "research": {
-      "title": "research",
-      "desc": "Multi-analyst LLM debate. Freshness-anchored. No stale numbers passed off as insight.",
-      "code": "from inalpha_research import debate"
+    "widget": {
+      "prompt": "Should we long BTC?",
+      "bullLabel": "bull",
+      "bearLabel": "bear",
+      "consensusLabel": "spread",
+      "cycleHint": "auto-cycling 6 cases"
     }
   },
-  "principles": {
-    "eyebrow": "Why Inalpha",
-    "title": "Engineering discipline, not vibes.",
-    "items": {
-      "unified": {
-        "title": "Unified kernel",
-        "desc": "One strategy codebase across backtest, paper, and live. Behavior must be identical — or nothing is meaningful."
+  "problem": {
+    "eyebrow": "01 / Problem",
+    "title": "You're not doing quant.",
+    "titleAlt": "You're trusting a black box.",
+    "sub": "Most LLM trading stacks return a single score and a paragraph. You can't replay it. You can't audit it. You can't disagree with it.",
+    "table": {
+      "header": {
+        "want": "What you want",
+        "blackbox": "Black-box LLM",
+        "inalpha": "Inalpha"
       },
-      "agents": {
-        "title": "Agents are first-class",
-        "desc": "Research, decision, risk, and review have dedicated agents — opposing stances, distinct toolsets, traceable decisions."
+      "signal": {
+        "want": "Signal",
+        "blackbox": "One score",
+        "inalpha": "Three opposing analysts"
       },
-      "transparency": {
-        "title": "Transparency over precision",
-        "desc": "Prefer an agent that says “I don't know” over one that sounds certain but cannot show its evidence."
+      "reason": {
+        "want": "Reasoning",
+        "blackbox": "\"trust me\"",
+        "inalpha": "Structured decision record"
       },
-      "discipline": {
-        "title": "Discipline over shortcuts",
-        "desc": "Decision records, tests, declarative guards come first. Clever code is a bug nursery."
-      },
-      "compounding": {
-        "title": "Long-horizon compounding",
-        "desc": "Solid infrastructure before flashy features. Surviving long matters more than running fast."
+      "replay": {
+        "want": "Replay",
+        "blackbox": "Not reproducible",
+        "inalpha": "JSONL on disk, replay any decision"
       }
     }
   },
-  "markets": {
-    "eyebrow": "Coverage",
-    "title": "Markets we already cover.",
-    "blurb": "Crypto-first, multi-venue from day one. Each market routes through the same kernel and the same agent prompts.",
+  "thesis": {
+    "eyebrow": "02 / Why Inalpha",
+    "title": "Two non-negotiables.",
+    "titleAlt": "Both must hold.",
+    "columnA": {
+      "header": "A. Agents are first-class",
+      "items": [
+        "Opposing stances by design",
+        "Distinct toolsets per role",
+        "Traceable decisions, not vibes",
+        "Replay-able from any timestamp"
+      ],
+      "footer": "Not just an LLM call wrapped in a UI."
+    },
+    "columnB": {
+      "header": "B. Engineering discipline is the floor",
+      "items": [
+        "Hooks on every tool call",
+        "Permissions scoped per role",
+        "Decision records on disk",
+        "Declarative configs, not ad-hoc code"
+      ],
+      "footer": "Not vibes. Auditable."
+    },
+    "conclusion": "A alone is just a chat wrapper. B alone is just another backtest framework. Both — that's Inalpha."
+  },
+  "demo": {
+    "eyebrow": "03 / Demo",
+    "title": "Watch them disagree in real time.",
+    "blurb": "Prompt in. Four agents with opposing stances, distinct toolsets, separate data. Output is a structured decision record — not a paragraph.",
+    "promptLabel": "$ inalpha>",
+    "replay": "Replay",
+    "tryAnother": "Try another prompt",
+    "decisionLabel": "decision_record.jsonl",
+    "agents": {
+      "research": "research",
+      "bull": "bull",
+      "bear": "bear",
+      "risk": "risk"
+    },
+    "status": {
+      "idle": "idle",
+      "thinking": "thinking",
+      "done": "done"
+    },
+    "cases": {
+      "btc": {
+        "label": "BTC / FOMC",
+        "prompt": "Should we long BTC into the FOMC print?"
+      },
+      "tsla": {
+        "label": "TSLA / Earnings",
+        "prompt": "Short TSLA into earnings — fade the rally?"
+      },
+      "csi500": {
+        "label": "CSI 500",
+        "prompt": "CSI 500 oversold — buy the dip?"
+      },
+      "usdjpy": {
+        "label": "USDJPY",
+        "prompt": "Is USDJPY 158 a BOJ intervention zone?"
+      },
+      "spyskew": {
+        "label": "SPY skew",
+        "prompt": "SPY put-call skew steep — buy puts?"
+      },
+      "fred10y": {
+        "label": "US 10Y",
+        "prompt": "10Y yields 4.6% — duration trade?"
+      }
+    },
+    "reducedMotionFallback": "Motion disabled. Showing decision_record snapshot."
+  },
+  "kernel": {
+    "eyebrow": "04 / Kernel",
+    "title": "One codebase.",
+    "titleAlt": "Three modes.",
+    "sub": "The same strategy runs as backtest, paper, and live. If behavior diverges anywhere, none of them is meaningful.",
+    "diff": {
+      "beforeLabel": "backtest",
+      "afterLabel": "live",
+      "lineChanged": "engine = LiveEngine(broker=ibkr)"
+    },
+    "lineageNodes": {
+      "user": "you",
+      "orchestrator": "orchestrator",
+      "data": "data",
+      "paper": "paper",
+      "research": "research",
+      "strategy": "strategy"
+    },
+    "services": {
+      "data": {
+        "title": "data",
+        "version": "v0.x",
+        "desc": "Multi-venue feeds. Freshness-anchored. Same client across markets.",
+        "code": "from inalpha_data import get_bars"
+      },
+      "paper": {
+        "title": "paper",
+        "version": "v0.x",
+        "desc": "In-memory matching, backtest engine, persistent paper trading. State is replay-able.",
+        "code": "from inalpha_paper import run_backtest"
+      },
+      "research": {
+        "title": "research",
+        "version": "v0.x",
+        "desc": "Multi-analyst LLM debate. Opposing stances. No stale numbers passed as insight.",
+        "code": "from inalpha_research import debate"
+      }
+    }
+  },
+  "harness": {
+    "eyebrow": "05 / Harness",
+    "title": "Inspired by Claude Code.",
+    "titleAlt": "Adapted for trading.",
+    "sub": "Declarative configs decide what each agent can call. Plan-then-execute prevents runaway loops. Subagents isolate risk. MCP plugs in tools without hand-rolled glue.",
+    "configSample": "research:\n  allow:\n    - data.get_bars\n    - data.get_news\n  deny:\n    - paper.place_order\n\nrisk:\n  allow: [\"*\"]\n  require_human: [\"place_order > 0.5\"]",
+    "chips": {
+      "hooks": "hooks",
+      "permissions": "permissions",
+      "plan-exec": "plan-exec",
+      "subagent": "subagent",
+      "mcp": "MCP",
+      "swarm": "Swarm"
+    },
+    "chipDescs": {
+      "hooks": "Middleware runs on every tool call.",
+      "permissions": "Tool access scoped per agent role.",
+      "plan-exec": "Plan first, execute once, no runaway loops.",
+      "subagent": "Risk and review live in isolated subagents.",
+      "mcp": "Model Context Protocol native, no glue code.",
+      "swarm": "Parallel workers run grid backtests."
+    }
+  },
+  "coverage": {
+    "eyebrow": "06 / Coverage",
+    "title": "Same kernel. Same prompts. Same agents.",
+    "sub": "All markets route through one orchestrator. Add a venue, every agent gets it for free.",
+    "groups": {
+      "crypto": "Crypto",
+      "equities": "Equities",
+      "macro": "Macro"
+    },
     "tags": {
       "crypto": "Crypto",
-      "us": "US Equities",
+      "us": "US",
       "cn": "A-share",
       "hk": "Hong Kong",
       "jp": "Japan",
@@ -91,41 +213,48 @@
       "de": "Germany",
       "indices": "Global Indices",
       "macro": "FRED Macro"
-    }
-  },
-  "discipline": {
-    "eyebrow": "Built different",
-    "title": "Claude Code–grade engineering harness.",
-    "blurb": "Declarative, config-driven, and reviewable. Not a chat wrapper.",
-    "chips": {
-      "hooks": "hooks",
-      "permissions": "permissions",
-      "plan-exec": "plan-exec",
-      "subagent": "subagent",
-      "mcp": "MCP",
-      "swarm": "Swarm"
     },
-    "chipDescs": {
-      "hooks": "Middleware on every tool call.",
-      "permissions": "Role-scoped tool access.",
-      "plan-exec": "Plan-then-execute with one-shot tokens.",
-      "subagent": "Isolated subagents for risk and review.",
-      "mcp": "Model Context Protocol native.",
-      "swarm": "Parallel workers for grid backtests."
+    "stats": {
+      "starsSuffix": "stars",
+      "contributorsSuffix": "contributors",
+      "commitsSuffix": "commits",
+      "qualityLabel": "alpha quality"
+    },
+    "currentState": {
+      "title": "Where we are honest with you",
+      "items": [
+        "D-9 in flight: multi-venue + 5 asset classes, signal layer long/short",
+        "RiskEngine next, then LLM strategy authoring",
+        "No real-money deployment yet — paper only"
+      ]
     }
   },
   "cta": {
-    "eyebrow": "Get started",
+    "eyebrow": "07 / Get started",
     "title": "Star it. Read it. Tear it apart.",
-    "blurb": "Inalpha is alpha-stage and AGPL-3.0. No real money yet — but every line is on GitHub.",
-    "command": "git clone https://github.com/mirror29/inalpha",
+    "sub": "Inalpha is alpha-stage and AGPL-3.0. No real money yet — every line is on GitHub.",
+    "tabs": {
+      "git": "git clone",
+      "pip": "pip install"
+    },
+    "commands": {
+      "git": "git clone https://github.com/mirror29/inalpha",
+      "pip": "pip install inalpha"
+    },
     "copy": "Copy",
     "copied": "Copied",
-    "github": "View on GitHub"
+    "github": "View on GitHub",
+    "contributorsLabel": "contributors"
   },
   "footer": {
     "license": "AGPL-3.0",
     "tagline": "Find alpha with a fox's eye.",
-    "rights": "Inalpha · open source · 2026"
+    "rights": "Inalpha · open source · 2026",
+    "fineprintMotion": "Motion follows your system preference."
+  },
+  "common": {
+    "skipToContent": "Skip to content",
+    "loading": "Loading…",
+    "error": "Something went wrong."
   }
 }

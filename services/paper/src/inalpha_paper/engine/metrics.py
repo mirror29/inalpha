@@ -126,12 +126,16 @@ def sortino_ratio(
 
 
 def max_drawdown_pct(equity_curve: list[float]) -> float:
-    """最大回撤百分比（正数）。
+    """最大回撤百分比（正数，**cap 在 100.0**）。
 
     ``max((peak - trough) / peak * 100)``，要求 ``peak > 0``。
 
     - 空序列返 ``0.0``
     - 单调递增返 ``0.0``
+    - 物理上回撤最多 100%（账户全亏归零）；equity 跌穿零是"穿仓"信号，
+      此时数学公式会算出 > 100% 的怪值（如 116.79% 来自 cash 透支 +
+      持仓估值倒挂），无意义且误导。
+      **本函数 cap 在 100.0**；穿仓信号由 ``detect_blew_up`` 单独提供。
     """
     if not equity_curve:
         return 0.0
@@ -145,7 +149,23 @@ def max_drawdown_pct(equity_curve: list[float]) -> float:
             dd = (peak - v) / peak * 100.0
             if dd > max_dd:
                 max_dd = dd
-    return max_dd
+    return min(max_dd, 100.0)
+
+
+def detect_blew_up(equity_curve: list[float], initial_cash: float) -> bool:
+    """检测账户是否"穿仓"——任意时点 equity ≤ 0 或 < -1% 初始本金的边界。
+
+    物理意义上 spot 账户 equity 不应跌穿零（cash + 持仓估值最低 0）。出现 ≤ 0
+    意味着撮合层未拦透支 / SHORT 爆仓 / 持仓估值因数据异常倒挂——这些场景下
+    回测的 Sharpe / 收益率都是无意义数字，agent 应据此把整次回测标红或忽略。
+
+    阈值不是严格 ``<= 0``：允许微小浮点误差（-1% × initial_cash），避免因
+    fee 累计 cash 极小负数误报。
+    """
+    if not equity_curve or initial_cash <= 0:
+        return False
+    threshold = -0.01 * initial_cash
+    return any(v <= threshold for v in equity_curve)
 
 
 def win_rate(trade_pnls: list[float]) -> float | None:

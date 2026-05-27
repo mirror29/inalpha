@@ -34,6 +34,11 @@ export {
   defaultInjectCurrentDateRegistration,
 } from "./handlers/inject-current-date.js";
 export type { InjectCurrentDateOptions } from "./handlers/inject-current-date.js";
+export {
+  createStrategyCodeAuditHandler,
+  defaultStrategyCodeAuditRegistration,
+} from "./handlers/strategy-code-audit.js";
+export type { StrategyCodeAuditOptions } from "./handlers/strategy-code-audit.js";
 
 // Stop hook handlers（ADR-0010 §Stop hook 补丁）
 export { createPendingPlanCheckHandler } from "./handlers/pending-plan-check.js";

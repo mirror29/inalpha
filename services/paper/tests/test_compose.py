@@ -97,7 +97,12 @@ def test_mean_reversion_routes_correctly() -> None:
     )
     out = compose_strategy(hint, [])
     assert out.strategy_id == "mean_reversion"
-    assert out.params == {"period": 15, "std_mult": 2.0, "trade_size": 0.02}
+    assert out.params == {
+        "period": 15,
+        "std_mult": 2.0,
+        "trade_size": 0.02,
+        "position_pct": 1.0,
+    }
 
 
 def test_mean_reversion_accepts_num_std_alias() -> None:
@@ -140,9 +145,8 @@ def test_buy_hold_defaults() -> None:
     hint = StrategyHint(family="buy_hold", params={})
     out = compose_strategy(hint, [])
     assert out.strategy_id == "buy_and_hold"
-    # D-9 修复：默认从绝对量语义出发取保守 0.01，避免 LLM 误以为 0.5 是"50% 仓位"
-    # 而触发巨额订单（详见 services/paper/.../strategies/compose.py:_compose_buy_hold）。
-    # runner 层 candidate baseline qty 由 initial_cash/first_open 预算，不走这条默认。
+    # D-9 修复：默认从绝对量语义出发取保守 0.01（旧默认 0.5 被 LLM 误解为
+    # "50% 仓位"触发 -98% bug）。candidate baseline qty 由 runner 预算。
     assert out.params["trade_size"] == 0.01
 
 
@@ -223,7 +227,12 @@ def test_sma_cross_params_match_constructor_signature() -> None:
 
 def test_mean_reversion_params_match_constructor_signature() -> None:
     out = compose_strategy(StrategyHint(family="mean_reversion", params={}), [])
-    assert set(out.params.keys()) == {"period", "std_mult", "trade_size"}
+    assert set(out.params.keys()) == {
+        "period",
+        "std_mult",
+        "trade_size",
+        "position_pct",
+    }
 
 
 def test_buy_hold_params_match_constructor_signature() -> None:
