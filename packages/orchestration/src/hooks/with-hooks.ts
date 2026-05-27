@@ -51,25 +51,38 @@ type GenericTool = {
 };
 
 /**
- * 默认 sessionId 抽取器：按优先级从 Mastra runtime context 取 ID 字段。
+ * 默认 sessionId 抽取器：按优先级从 Mastra runtime context 取**conversation 级**
+ * 稳定的 ID。
  *
- * Mastra 1.x ``ToolExecutionContext`` 会带 ``threadId`` / ``runId`` / ``agentId``
- * （详见 @mastra/core/tools）；本项目自有的 ``requestContext.sessionId`` 作为兜底
- * （任何手动构造的 ctx 走这条）。
+ * Mastra 1.10 实测 ``ToolExecutionContext`` 结构：
  *
- * 优先级：``threadId`` > ``runId`` > ``requestContext.sessionId`` > ``sessionId``
- * （顶层）。命中即停。
+ * - ``ctx.agent.threadId`` —— **整个对话线程**内稳定（这是想要的）
+ * - ``ctx.agent.resourceId`` —— per-user / per-resource，跨 thread 稳定
+ * - ``ctx.runId`` —— **每个 user-turn 一个新值**（不稳定，跨 turn 会变）
+ * - 顶层 ``ctx.threadId`` 在 1.10 已**不再存在**（被移进 ``ctx.agent``）
  *
- * 这样 audit-log 拿到的 sessionId 既覆盖 Mastra playground 调用，也覆盖测试 / 手
- * 工脚本。
+ * 因此优先级：``ctx.agent.threadId`` > ``ctx.agent.resourceId`` >
+ * ``requestContext.sessionId`` > 顶层 ``sessionId`` > ``runId``（兜底，知道不稳定）。
+ *
+ * 这样 askCache 跨 turn 也能命中，audit-log 也能按 thread 聚合。
  */
 export function defaultGetSessionId(ctx: unknown): string | undefined {
   if (!ctx || typeof ctx !== "object") return undefined;
   const c = ctx as Record<string, unknown>;
+
+  // Mastra 1.10：threadId / resourceId 在 ctx.agent 下（thread-level 稳定）
+  const agent = c.agent;
+  if (agent && typeof agent === "object") {
+    const a = agent as Record<string, unknown>;
+    const tid = pickString(a.threadId);
+    if (tid) return tid;
+    const rid = pickString(a.resourceId);
+    if (rid) return rid;
+  }
+
+  // 老 Mastra / 自构造 ctx fallback
   const threadId = pickString(c.threadId);
   if (threadId) return threadId;
-  const runId = pickString(c.runId);
-  if (runId) return runId;
   const rc = c.requestContext;
   if (rc && typeof rc === "object") {
     const sid = pickString((rc as Record<string, unknown>).sessionId);
@@ -77,6 +90,10 @@ export function defaultGetSessionId(ctx: unknown): string | undefined {
   }
   const sid = pickString(c.sessionId);
   if (sid) return sid;
+
+  // 最后 fallback：runId —— turn-level 不稳定，会让 askCache 跨 turn miss
+  const runId = pickString(c.runId);
+  if (runId) return runId;
   return undefined;
 }
 
@@ -218,19 +235,25 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
               toolName,
               toolInput: effectiveInput,
               message:
-                `Tool "${toolName}" requires explicit user approval (permission policy=ask).\n\n` +
-                `LLM action guide (reply in the user's language — match their latest message; ` +
-                `never hardcode Chinese / English):\n` +
-                `  1. Explain the action in plain words. Don't speak the raw tool id; ` +
-                `translate it into a user-meaningful phrase (e.g. paper.promote_candidate ` +
-                `→ "add this strategy to the live pool" / "把这条策略加入正式策略池"). ` +
-                `Include the *why* and key inputs (use human-friendly labels alongside IDs).\n` +
-                `  2. Wait for an explicit user confirmation. If they agree, retry the ` +
-                `**same tool with the same input** — the system has a 60-second one-shot ` +
-                `bypass that will let the retry through. If they refuse / hesitate / ` +
-                `give an ambiguous answer, tell them you've cancelled and do NOT retry.\n` +
-                `  3. Don't mention tokens, "__approval", or technical bypass details to ` +
-                `the user — they just need to say "ok / 允许 / yes" in plain language.`,
+                `APPROVAL_REQUIRED: tool "${toolName}" needs explicit user consent.\n\n` +
+                `**There is NO UI button, NO popup, NO admin page.** The user can ONLY ` +
+                `reply with chat text. Never tell them to "click 允许" or "在界面上" / ` +
+                `"open the admin page" — they can't.\n\n` +
+                `Steps (reply in the user's language; match their latest message — never ` +
+                `hardcode Chinese or English):\n` +
+                `  1. Translate the tool id into a plain user-meaningful phrase ` +
+                `(e.g. paper.promote_candidate → "add this strategy to the live pool" / ` +
+                `"把这条策略加入正式策略池"). Show the *why* + key inputs (use human ` +
+                `labels alongside IDs). Ask the user to confirm in chat.\n` +
+                `  2. When the user replies with explicit consent ("ok / yes / allow / ` +
+                `允许 / 同意 / 好 / 上"), call this tool again with the **same input** ` +
+                `(no extra fields, no token; the retry just works).\n` +
+                `  3. If they refuse / hesitate / give ambiguous answer → tell them ` +
+                `you've cancelled, do NOT retry.\n` +
+                `  4. Never invent reasons like "the 60-second window timed out" / ` +
+                `"the system needs a popup" — if a retry returns this same APPROVAL_REQUIRED, ` +
+                `the most likely cause is that the LLM (you) changed the input between calls. ` +
+                `Re-explain to the user and ask again with the *exact* same args.`,
             };
           }
         }
