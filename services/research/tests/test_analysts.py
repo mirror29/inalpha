@@ -447,4 +447,6 @@ async def test_macro_handles_no_events_in_window(data_client: DataClient) -> Non
 
     assert brief.stance == "neutral"
     user_prompt = llm.calls[0]["user"]
-    assert "(none in ±14d window)" in user_prompt
+    # D-9：events 拆 past / upcoming 后，空窗口表现为两组分别 "(none)"
+    assert "past_macro_events_last_14d: (none)" in user_prompt
+    assert "upcoming_macro_events_next_14d: (none)" in user_prompt

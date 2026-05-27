@@ -70,10 +70,11 @@ export const paperRunBacktestTool = createTool({
     - 用户问"这个策略历史表现怎样"
     - 调参对比（fast/slow period 不同跑几次比一下）
     - 验证 entry/exit 信号触发频率
+    - **D-9：跑 LLM 自创策略候选** —— 传 candidateId（来自 paper.author_strategy）而非 strategyId
 
     何时不用：
     - 实时跑模拟盘 → 用 paper.start_strategy（D-7 还没做）
-    - 跨多标的批量 → 用 swarm.backtest_grid（D-7 还没做）
+    - **跨多标的 / 多候选 批量** → 用 swarm.run_backtest_grid（D-9 已支持全市场）
     - 单纯查 K 线走势 → data.get_bars
 
     坑：
@@ -81,10 +82,12 @@ export const paperRunBacktestTool = createTool({
       （报错 NO_BARS_AVAILABLE 时按 hint 操作）
     - params 是策略特定 dict，sma_cross 支持 fast_period / slow_period / trade_size
     - 报告里 num_trades=0 不一定是 bug，可能是趋势单边没触发交叉
+    - **strategyId 与 candidateId 必须二选一**（都给 / 都不给 → 422）
 
     报告字段（D-7+）：
     - 基础：total_return_pct / num_trades / total_fees / final_equity / num_bars_processed
     - 绩效：sharpe / sortino / max_drawdown_pct / win_rate（数据不足时为 null）
+    - D-9：fitness（多目标合成，ADR-0020）—— 排序候选用这个，不要用裸 Sharpe
     - equity_curve：[(ts, equity)] 序列，前端可直接画图
     - final_positions：结束时残留持仓（趋势策略可能持有到尾盘）
   `.trim(),
@@ -132,10 +135,17 @@ export const paperRunBacktestTool = createTool({
           "D-8c 起：触发本次回测的 strategy_hint（来自 compose_strategy.reasoning 上游）",
         ),
     })
-    .refine(
-      (v) => (v.strategyId != null) !== (v.candidateId != null),
-      { message: "必须给 strategyId 或 candidateId，二选一（不能同给也不能都不给）" },
-    ),
+    .superRefine((data, ctx) => {
+      const hasId = typeof data.strategyId === "string" && data.strategyId.length > 0;
+      const hasCand = typeof data.candidateId === "string" && data.candidateId.length > 0;
+      if (hasId === hasCand) {
+        ctx.addIssue({
+          code: "custom",
+          message: "必须给 strategyId 或 candidateId，二选一（不能同给也不能都不给）",
+          path: ["strategyId"],
+        });
+      }
+    }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
@@ -148,6 +158,7 @@ export const paperRunBacktestTool = createTool({
 
     return await client.runBacktest({
       strategyId: inputData.strategyId,
+      candidateId: inputData.candidateId,
       params: inputData.params ?? {},
       venue: inputData.venue ?? "binance",
       symbol: inputData.symbol,
@@ -184,21 +195,24 @@ const FactorInputSchema = z.object({
 export const paperComposeStrategyTool = createTool({
   id: "paper.compose_strategy",
   description: `
-    把 research.deep_dive 输出的 strategy_hint + factors 路由到具体 strategy_id + 正规化参数。
+    把 research.deep_dive 输出的 strategy_hint + factors 路由到内置 baseline 策略 +
+    正规化参数。**D-9 起这是"快速通道"而非默认路径**——研究链路默认走 author_strategy。
 
-    何时用：
-    - 拿到 research.deep_dive 的产物后，**先 compose** 再 paper.run_backtest
-    - 用户问"基于这个研究跑回测"——你不需要自己脑补参数，让 compose 翻译
+    何时用（少数）：
+    - 用户**明确点名**内置策略（"用 sma_cross 跑下 fast=5 slow=20"）
+    - 用户**明确**要看 buy_and_hold 基线表现本身
+    - sanity-check：想快速看 hint 对应的内置策略表现作直觉对照
 
-    何时不用：
-    - 用户明确指定了 strategy_id + params → 直接 run_backtest，不必 compose
-    - hint.family === "none" → compose 会拒绝（rejected_reason 非空），需要换思路或不跑回测
+    何时不用（默认情况）：
+    - 任何"针对当下行情设计策略"的需求 → 走 paper.author_strategy（详见其 description）
+    - hint.family === "none" → 不要硬走 compose；直接 author_strategy 根据 factors 写代码
+    - 想要 buy_and_hold 作 alpha 对照 → **不需要**：run_backtest(candidateId=...) 自动并跑
 
     返回字段：
     - strategy_id：'sma_cross' / 'mean_reversion' / 'buy_and_hold'，或 null（拒绝）
-    - params：可直接喂给 paper.run_backtest 的 params
+    - params：可直接喂给 paper.run_backtest(strategyId=...) 的 params
     - reasoning：组装解释（reasonable 链路）
-    - rejected_reason：non-null 表示拒绝，研究结果不足以驱动策略
+    - rejected_reason：non-null 表示拒绝——这种情况下应转 author_strategy，不是放弃
   `.trim(),
   inputSchema: z.object({
     hint: StrategyHintSchema,

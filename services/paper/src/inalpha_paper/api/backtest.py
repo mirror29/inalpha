@@ -32,7 +32,12 @@ async def post_backtest(
     _user: Annotated[User, Depends(get_current_user)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> BacktestResponse:
-    """跑回测：拉数据 → 实例化策略 → 跑引擎 → 落库 → 返回报告。"""
+    """跑回测：拉数据 → 实例化策略 → 跑引擎 → 落库 → 返回报告。
+
+    D-9 起：``strategy_id`` 与 ``candidate_id`` 二选一（Pydantic ``model_validator``
+    保证两者必有其一）。candidate 路径下 strategy_id 校验跳过——LLM 候选不在内置
+    注册表里。
+    """
     # 业务校验
     if req.from_ts >= req.to_ts:
         raise ValidationError(
@@ -40,12 +45,14 @@ async def post_backtest(
             details={"from_ts": req.from_ts.isoformat(), "to_ts": req.to_ts.isoformat()},
         )
 
-    available = list_strategies()
-    if req.strategy_id not in available:
-        raise ValidationError(
-            f"unknown strategy_id {req.strategy_id!r}",
-            details={"available": available},
-        )
+    # 内置策略路径才查注册表；candidate 路径在 runner 里读 DB 自带校验
+    if req.strategy_id is not None:
+        available = list_strategies()
+        if req.strategy_id not in available:
+            raise ValidationError(
+                f"unknown strategy_id {req.strategy_id!r}",
+                details={"available": available},
+            )
 
     # 取 forward 用的 JWT（用户 token），用来调 data-service
     if not authorization or not authorization.startswith("Bearer "):

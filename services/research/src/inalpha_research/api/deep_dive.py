@@ -38,6 +38,9 @@ async def post_deep_dive(
         base_url=settings.llm_base_url,
         model=settings.llm_model,
         timeout_seconds=settings.llm_timeout_seconds,
+        max_concurrent=settings.llm_max_concurrent,
+        max_retries=settings.llm_max_retries,
+        retry_base_seconds=settings.llm_retry_base_seconds,
     )
 
     try:

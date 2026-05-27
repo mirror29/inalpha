@@ -19,6 +19,7 @@ import {
   defaultGridSizeCapRegistration,
   defaultIdempotencyRegistrations,
   defaultInjectCurrentDateRegistration,
+  defaultStrategyCodeAuditRegistration,
   withHooks,
 } from "../hooks/index.js";
 import { DEFAULT_PERMISSIONS, PermissionEngine } from "../permissions/index.js";
@@ -39,6 +40,8 @@ function buildDefaultRunner(
   runner.register(defaultGridSizeCapRegistration());
   // D-9 fix：SessionStart 注入今天日期，挡 LLM 训练 cutoff 早导致日期猜错
   runner.register(defaultInjectCurrentDateRegistration());
+  // D-9 · ADR-0020 E1：自创策略源码 PreToolUse 限长 + 注入串拦截
+  runner.register(defaultStrategyCodeAuditRegistration());
   // ADR-0025 follow-up：DeepSeek 在 Mastra agent loop 偶尔 retry 同 swarm 调用
   // 多次（同 input 同输出）；这对 hook 把重复 deny 掉并把上次结果摘要给 LLM
   const idem = defaultIdempotencyRegistrations();
