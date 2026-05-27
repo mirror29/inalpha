@@ -1,5 +1,9 @@
 name: Claude
 
+# Interactive entry point: @claude mentions in PR / issue / review comments trigger a conversation.
+# Auto-review lives in claude-review.yml (runs once on PR open).
+# Auth: Max/Pro subscription OAuth via CLAUDE_CODE_OAUTH_TOKEN (generate locally with `claude setup-token`).
+#
 # 互动入口：在 PR / issue / review comment 里 @claude 触发对话
 # 自动 review 见 claude-review.yml（PR 打开时无脑跑一次）
 # 鉴权：走 Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
@@ -16,7 +20,7 @@ on:
 
 jobs:
   claude:
-    name: Claude · @mention 触发
+    name: Claude · triggered by @mention / @mention 触发
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||

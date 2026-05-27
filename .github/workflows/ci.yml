@@ -8,7 +8,7 @@ on:
 
 jobs:
   consistency:
-    name: 跨文件一致性检验
+    name: Cross-file consistency check / 跨文件一致性检验
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

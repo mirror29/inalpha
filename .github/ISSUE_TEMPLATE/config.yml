@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 设计讨论 / Open-ended design discussion
+  - name: Open-ended design discussion / 设计讨论
     url: https://github.com/{OWNER}/{REPO}/discussions
-    about: 设计问题、开放性讨论、"这样做对吗"——请去 GitHub Discussions，不要开 issue。
-  - name: 安全漏洞 / Security vulnerability
+    about: Design questions and open-ended "is this the right approach?" threads belong in GitHub Discussions — please don't open an issue. / 设计问题、开放性讨论、"这样做对吗"——请去 GitHub Discussions，不要开 issue。
+  - name: Security vulnerability / 安全漏洞
     url: https://github.com/{OWNER}/{REPO}/blob/main/SECURITY.md
-    about: 请通过 SECURITY.md 指定的渠道私下报告，不要开 public issue。
+    about: Please report privately via the channel specified in SECURITY.md — do not open a public issue. / 请通过 SECURITY.md 指定的渠道私下报告，不要开 public issue。

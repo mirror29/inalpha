@@ -1,5 +1,9 @@
 name: Claude PR Review
 
+# Trigger: PR open / new commit pushed / reopen — auto-review the diff once each time.
+# Interactive @claude mentions live in claude.yml.
+# Auth: Max/Pro subscription OAuth via CLAUDE_CODE_OAUTH_TOKEN (generate locally with `claude setup-token`).
+#
 # 触发：PR 打开 / 推新 commit / reopen 时自动跑一次 review
 # 互动入口见 claude.yml（在 PR 里 @claude 触发对话）
 # 鉴权：走 Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
@@ -10,12 +14,12 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 手动指定 PR 编号（留空 = 用 workflow_dispatch 的当前分支）
+        description: Manually specify PR number (leave blank to use the current branch via workflow_dispatch) / 手动指定 PR 编号（留空 = 用 workflow_dispatch 的当前分支）
         required: false
 
 jobs:
   review:
-    name: Claude · 自动 review PR diff
+    name: Claude · auto-review PR diff / 自动 review PR diff
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,8 +39,9 @@ jobs:
             PR NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
 
             按 Inalpha 仓库 CLAUDE.md（§3 协作硬约束 + §3.1 金融时效性 + §3.2 prompt 工程纪律 + §4 CI 红线）review 本 PR diff。
+            (Review this PR's diff against the Inalpha rules in CLAUDE.md — §3 collaboration hard constraints, §3.1 financial freshness, §3.2 prompt-engineering discipline, §4 CI red lines.)
 
-            ## 必查 red flag
+            ## 必查 red flag / Required red-flag checks
 
             1. **Prompt / Agent 工程纪律**（§3.2）：
                - tool description 缺三段式（功能 + 何时用 + 何时不用 + 坑）
@@ -53,7 +58,7 @@ jobs:
 
             3. **commit 完整性**（§4）：
                - 新加 import 但被引用的实现文件未出现在 diff（漏 git add）
-               - 历史踩坑：grid-size-cap.ts / scheduler/ / _base.py
+               - 历史踩坑示例：grid-size-cap.ts / _base.py / 各类 hook handler 文件
 
             4. **CI 红线**（§4）：
                - 公开文档（README / AGENTS / docs/00-04）引用了 docs/miro/ 私有路径
@@ -69,11 +74,36 @@ jobs:
                - 改了 services/_shared/ 但 PR 描述没说明
                - .mastra/ / docs/miro/ 出现在 diff（应 gitignored）
 
-            ## review 行为
+            7. **通用 bug pattern**（仓库历史 fix commit 反复踩过 · lint/typecheck 抓不住）：
+               - 异常处理：`except ... as e: code = e.code` 时 `e.code` 拿到的是实例属性还是类属性？子类 override 是否真的生效？（参考 cd502c3）
+               - 时间精度：`datetime.fromtimestamp(ns / 1e9)` / float64 时间戳跨越大数值时丢精度 → 时间戳碰撞（参考 dfea66e）
+               - 资源上限：HTTP / DB / backfill 跨度参数有没有 cap？无限循环 / 大批量同步阻塞 worker？（参考 f8c9e8e backfill 1y 1m = 525k 条超时）
+               - 并发 ID：`self.counter += 1` / nonce / order_id 在多 worker / 多 process 是否会重复 → 撮合混乱
+               - 事务原子性：多步状态转变中间步失败是否回滚？token 消费 / 余额扣减先于真正动作完成会卡死状态（参考 022e076）
+               - 域守门：`BUY` 现金不足 / `SELL` 仓位不足是否拒单？反向开仓（flip）的 round-trip PnL 记账完整否？穿仓守门？
+
+            8. **系统优化意识**：
+               - N+1：循环里调远程 API / DB query（`for s in symbols: client.get_bars(s)` → 应批量 / 并发）
+               - 顶层 eager 副作用：模块 import 时调 `getSettings()` / 起连接 / 读文件 → 测试难注入，需在 `tests/setup.ts` 兜底
+               - 重复实现：新写的 util 是否已有？优先翻 `services/_shared/`、`packages/orchestration/src/mastra/`
+               - 不必要的同步阻塞：长任务没走 async / 没 timeout / 没分页
+
+            9. **可维护性 / 复杂度**：
+               - 单函数 > 80 行 或 嵌套 > 4 层 → 提示拆分
+               - 魔法数字（金融阈值、超时秒数、滑点 bps）散落代码里没抽常量
+               - 关键路径缺日志 / 可观测点（订单状态变更、外部 API 调用失败、LLM 返回非预期格式）
+
+            ## review 行为 / Review behavior
 
             - PR 分支已 checkout 在当前工作目录
-            - 找到 red flag → 用 `mcp__github_inline_comment__create_inline_comment`（带 `confirmed: true`）贴到具体 line + 引用 CLAUDE.md 哪条
-            - 顶层总结用 `gh pr comment` 发；没问题 → 一段中文 LGTM 总结即可，不要硬挑刺
+            - **severity 阈值**：只贴 `≥ medium` 的 inline 评论；`nit` / 风格 / 主观偏好 → 跳过，不要刷屏
+            - **不重复 lint**：ruff / tsc / mypy 已能抓的（import 顺序、类型不匹配、async 漏 await、未用变量等）不要再提
+            - 找到 red flag → 用 `mcp__github_inline_comment__create_inline_comment`（带 `confirmed: true`）贴到具体 line
+            - **inline 格式**：`[critical|major|medium] 一句描述 — 依据 CLAUDE.md §X.X 或 review §7/8/9 的哪条`
+            - 顶层总结用 `gh pr comment` 发，分两段：
+              1. **必修**（critical / major）
+              2. **可选优化**（medium）
+              没问题 → 一段中文 LGTM 即可，不要硬挑刺
             - 措辞参考 CLAUDE.md 简洁风格：不堆模板话、不复读用户 diff
             - 用户措辞翻译表（见 packages/orchestration/src/mastra/agents/orchestrator.ts）
               对你也适用：不要在 review 输出里搬 promote / iterate / verdict / pass /
