@@ -186,7 +186,7 @@ describe("wireToolList · permission + audit-log integration", () => {
     });
   });
 
-  it("ask-decision times out → deny (D-9.1b)", async () => {
+  it("ask-decision 返 requiresApproval 结构体 (D-9.1b 会话驱动)", async () => {
     const { PendingApprovalsStore } = await import("../src/permissions/pending.js");
     const store = new PendingApprovalsStore();
     const tool = {
@@ -199,13 +199,18 @@ describe("wireToolList · permission + audit-log integration", () => {
       hookRunner: new HookRunner(),
       permissionEngine: new PermissionEngine(DEFAULT_PERMISSIONS),
       pendingApprovals: store,
-      askTimeoutMs: 50,
     });
 
-    const out = (await wrapped!.execute!({})) as { isError: boolean; deniedBy: string };
+    const out = (await wrapped!.execute!({})) as {
+      isError: boolean;
+      deniedBy: string;
+      requiresApproval: boolean;
+    };
     expect(out.isError).toBe(true);
-    expect(out.deniedBy).toBe("permission-ask-timeout");
+    expect(out.deniedBy).toBe("permission-ask");
+    expect(out.requiresApproval).toBe(true);
     expect(tool.execute).not.toHaveBeenCalled();
+    store.clearAll();
   });
 });
 

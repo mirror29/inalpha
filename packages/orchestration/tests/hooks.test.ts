@@ -317,13 +317,13 @@ describe("withHooks", () => {
     expect(out.deniedBy).toBe("permission");
   });
 
-  it("permissionResolver=ask + user allow → tool executes (D-9.1b)", async () => {
+  it("permissionResolver=ask → 立即返 requiresApproval 不调 execute (D-9.1b 会话驱动)", async () => {
     const { PendingApprovalsStore } = await import(
       "../src/permissions/pending.js"
     );
     const store = new PendingApprovalsStore();
     const runner = new HookRunner();
-    const exec = vi.fn().mockResolvedValue({ ran: true });
+    const exec = vi.fn();
     const tool = { id: "test.tool", description: "", execute: exec };
     const wrapped = withHooks(tool, {
       runner,
@@ -332,67 +332,45 @@ describe("withHooks", () => {
       askTimeoutMs: 5_000,
     });
 
-    const promise = wrapped.execute!({ x: 1 });
-    // 等 request 进 store
-    await vi.waitFor(() => expect(store.size()).toBe(1));
+    const out = (await wrapped.execute!({ x: 1 })) as {
+      isError: boolean;
+      deniedBy: string;
+      requiresApproval: boolean;
+      toolName: string;
+      toolInput: unknown;
+      message: string;
+    };
+
+    expect(exec).not.toHaveBeenCalled();
+    expect(out.isError).toBe(true);
+    expect(out.deniedBy).toBe("permission-ask");
+    expect(out.requiresApproval).toBe(true);
+    expect(out.toolName).toBe("test.tool");
+    expect(out.toolInput).toEqual({ x: 1 });
+    expect(out.message).toContain("test.tool");
+    expect(out.message).toContain("允许");
+  });
+
+  it("permissionResolver=ask 也把请求挂进 store (CLI / Web 备用入口)", async () => {
+    const { PendingApprovalsStore } = await import(
+      "../src/permissions/pending.js"
+    );
+    const store = new PendingApprovalsStore();
+    const runner = new HookRunner();
+    const tool = { id: "test.tool", execute: vi.fn() };
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => "ask",
+      pendingApprovals: store,
+      askTimeoutMs: 5_000,
+    });
+
+    await wrapped.execute!({ y: 2 });
+    expect(store.size()).toBe(1);
     const pending = store.list()[0]!;
     expect(pending.toolName).toBe("test.tool");
-    expect(pending.toolInput).toEqual({ x: 1 });
-
-    // 前端 allow
-    expect(store.respond(pending.requestId, "allow")).toBe(true);
-
-    const out = await promise;
-    expect(exec).toHaveBeenCalledOnce();
-    expect(out).toEqual({ ran: true });
-  });
-
-  it("permissionResolver=ask + user deny → tool blocked (D-9.1b)", async () => {
-    const { PendingApprovalsStore } = await import(
-      "../src/permissions/pending.js"
-    );
-    const store = new PendingApprovalsStore();
-    const runner = new HookRunner();
-    const exec = vi.fn();
-    const tool = { id: "test.tool", description: "", execute: exec };
-    const wrapped = withHooks(tool, {
-      runner,
-      permissionResolver: () => "ask",
-      pendingApprovals: store,
-      askTimeoutMs: 5_000,
-    });
-
-    const promise = wrapped.execute!({});
-    await vi.waitFor(() => expect(store.size()).toBe(1));
-    const pending = store.list()[0]!;
-    store.respond(pending.requestId, "deny");
-
-    const out = (await promise) as { isError: boolean; deniedBy: string };
-    expect(exec).not.toHaveBeenCalled();
-    expect(out.isError).toBe(true);
-    expect(out.deniedBy).toBe("permission-ask-user-deny");
-  });
-
-  it("permissionResolver=ask + timeout → deny (D-9.1b)", async () => {
-    const { PendingApprovalsStore } = await import(
-      "../src/permissions/pending.js"
-    );
-    const store = new PendingApprovalsStore();
-    const runner = new HookRunner();
-    const exec = vi.fn();
-    const tool = { id: "test.tool", description: "", execute: exec };
-    const wrapped = withHooks(tool, {
-      runner,
-      permissionResolver: () => "ask",
-      pendingApprovals: store,
-      askTimeoutMs: 50, // 50ms 超时
-    });
-
-    const out = (await wrapped.execute!({})) as { isError: boolean; deniedBy: string };
-    expect(exec).not.toHaveBeenCalled();
-    expect(out.isError).toBe(true);
-    expect(out.deniedBy).toBe("permission-ask-timeout");
-    expect(store.size()).toBe(0);
+    expect(pending.toolInput).toEqual({ y: 2 });
+    store.clearAll();
   });
 
   it("hook permissionOverride=allow wins over permissionResolver=deny", async () => {

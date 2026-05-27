@@ -164,29 +164,46 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
         }
 
         if (permDecision === "ask") {
-          // D-9.1b / ADR-0018：把请求挂进 PendingApprovalsStore，等前端 POST
-          // /permissions/:id/respond 决策。30s 超时自动 deny。
+          // D-9.1b / ADR-0018 · 会话驱动模式：
+          //
+          // 不阻塞等 HTTP POST 决策——Mastra dev playground 没有原生气泡 UI，
+          // 阻塞 tool execute 等不到响应只会撞超时。
+          //
+          // 这里**立即返**结构化错误，agent 接到 ``requiresApproval=true`` 后应
+          // 在 chat 里向用户说明操作内容 + 等用户口头确认 + 然后**重调本 tool**。
+          // 后端硬校验（如 promote_candidate 的 ``fitness IS NOT NULL`` + status
+          // 检查）作为第二道防线，防 agent 漏掉用户确认环节就重调。
+          //
+          // 进程内 ``PendingApprovalsStore`` 仍然为未来 CLI / Web UI 模式保留
+          // （已经导出 HTTP API），现阶段不依赖它。
+          //
+          // 同时把请求挂进 store 一份——CLI 用户跑 curl /permissions/pending 也能
+          // 看到 + respond，让 "未来 CLI / Web 模式" 不用改本文件就能用。
           const store = opts.pendingApprovals ?? defaultPendingApprovals;
           const timeoutMs =
             opts.askTimeoutMs && opts.askTimeoutMs > 0 ? opts.askTimeoutMs : undefined;
-          const { decision, requestId, via } = await store.request({
+          // fire-and-forget：store 自动 timeout deny，回结果没人 await，丢弃即可
+          void store.request({
             toolName,
             toolInput: effectiveInput,
             sessionId,
             timeoutMs,
           });
-          if (decision === "deny") {
-            return {
-              isError: true,
-              message:
-                via === "timeout"
-                  ? `tool ${toolName} denied (no user response in time, request ${requestId})`
-                  : `tool ${toolName} denied by user (request ${requestId})`,
-              deniedBy: via === "timeout" ? "permission-ask-timeout" : "permission-ask-user-deny",
-              requestId,
-            };
-          }
-          // decision === "allow" → 继续走 execute
+          return {
+            isError: true,
+            deniedBy: "permission-ask",
+            requiresApproval: true,
+            toolName,
+            toolInput: effectiveInput,
+            message:
+              `操作 ${toolName} 需要用户明确批准（permission policy=ask）。` +
+              `\n\nLLM 行动指引：` +
+              `\n  1. 用中文向用户说明操作内容与依据（input=${JSON.stringify(effectiveInput)}）；` +
+              `\n  2. 等用户**明确**回复"允许 / 同意 / yes / 上 / 推"再重调本 tool；` +
+              `\n  3. 用户未明确允许 / 拒绝 / 含糊 → 不要重试；告诉用户已取消。` +
+              `\n\n（CLI / web 入口：可 curl POST /permissions/<id>/respond，` +
+              `但当前会话驱动模式只看用户回复）`,
+          };
         }
 
         // 3. execute

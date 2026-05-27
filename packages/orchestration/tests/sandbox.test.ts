@@ -158,24 +158,25 @@ describe("sandbox.run_code tool · wireToolList integration", () => {
     expect(out.stdout).toContain("hello-sandbox-spike");
   });
 
-  it("超 60s timeoutMs 命中 ask predicate → 等用户决策 → 超时 deny (D-9.1b)", async () => {
+  it("超 60s timeoutMs 命中 ask predicate → 返 requiresApproval (D-9.1b 会话驱动)", async () => {
     const { PendingApprovalsStore } = await import("../src/permissions/pending.js");
     const store = new PendingApprovalsStore();
     const [wrapped] = wireToolList([sandboxRunCodeTool], {
       hookRunner: new HookRunner(),
       permissionEngine: new PermissionEngine(DEFAULT_PERMISSIONS),
       pendingApprovals: store,
-      askTimeoutMs: 50,
     });
 
     const out = (await wrapped!.execute!({
       code: "console.log('not reached')",
       language: "node",
       timeoutMs: 120_000, // > 60_000 predicate threshold
-    })) as { isError: boolean; deniedBy: string };
+    })) as { isError: boolean; deniedBy: string; requiresApproval: boolean };
 
     expect(out.isError).toBe(true);
-    expect(out.deniedBy).toBe("permission-ask-timeout");
+    expect(out.deniedBy).toBe("permission-ask");
+    expect(out.requiresApproval).toBe(true);
+    store.clearAll();
   });
 });
 
