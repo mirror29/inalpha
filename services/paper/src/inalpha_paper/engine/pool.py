@@ -4,8 +4,11 @@
 
 - **spawn context**：跨平台一致（macOS Py 3.8+ 默认就是 spawn；Linux 显式选 spawn 避免 fork
   + asyncio loop 状态在子进程里残留）
-- **worker init 设 rlimit**：每个子进程启动时调一次，CPU 软上限 ``settings.job_timeout_s``，
-  数据段 ``settings.job_mem_gb`` GB（macOS 上 RLIMIT_DATA 部分有效，mmap-only path 仍能绕开）
+- **worker init 设 rlimit + 限 BLAS 线程**：每个子进程启动时调一次，CPU 软上限
+  ``settings.job_timeout_s``，数据段 ``settings.job_mem_gb`` GB（macOS 上 RLIMIT_DATA 部分有效，
+  mmap-only path 仍能绕开）；同时把 ``OMP/MKL/OPENBLAS/NUMEXPR/VECLIB`` 五个 BLAS 线程数环境
+  变量 setdefault 为 ``"1"``——避免 N worker × M BLAS thread/each 超额抢核（spawn 子进程 numpy
+  在 task 反序列化时才 import，此处 setdefault 生效）
 - **预热**：``init_pool()`` 末尾 submit N 个 ``_noop`` 把 worker fork + 关键 import 提前跑完，
   首批真 job 不付 ~200ms 启动税
 - **生命周期**：``init_pool()`` 在 FastAPI lifespan startup 调一次；``shutdown_pool()`` 在
@@ -34,6 +37,29 @@ logger = logging.getLogger(__name__)
 _pool: ProcessPoolExecutor | None = None
 
 
+_BLAS_THREAD_VARS = (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
+
+def _set_blas_threads(n: str = "1") -> None:
+    """限制 BLAS / OpenMP 等数值库每进程线程数。
+
+    Why: ProcessPool worker × M BLAS thread/each 会超额抢核（6 worker × 8 thread = 48
+    线程抢 8 核），反而拖慢回测、P99 抖动。spawn 子进程在 ``_worker_init`` 阶段还没
+    import numpy（``inalpha_paper.engine.pool`` 顶层不 import numpy），此时 setdefault
+    这几个环境变量，task 反序列化触发 numpy import 时会读到正确值。
+
+    用 ``setdefault`` 不是 ``=``：用户显式 ``OMP_NUM_THREADS=2`` 时尊重外部覆盖。
+    """
+    for var in _BLAS_THREAD_VARS:
+        os.environ.setdefault(var, n)
+
+
 def _set_rlimits(*, cpu_soft: int, mem_bytes: int) -> None:
     """worker 子进程启动时调一次。失败不 raise（rlimit 不可设也要让 worker 起来）。"""
     try:
@@ -57,7 +83,10 @@ def _worker_init(cpu_soft: int, mem_bytes: int) -> None:
 
     设计取舍：rlimit 只在 worker 内设而不在 main 里设 —— main 进程要处理 N 个并发请求
     + DB pool + httpx client，限太死会自伤；worker 是隔离单元，限严格点没副作用。
+
+    BLAS 线程数在 rlimit 之前设：即使 rlimit 失败也要让 worker 拿到正确的线程上限。
     """
+    _set_blas_threads()
     _set_rlimits(cpu_soft=cpu_soft, mem_bytes=mem_bytes)
 
 

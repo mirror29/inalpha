@@ -134,6 +134,43 @@ def test_noop_runs_in_subprocess() -> None:
     assert worker_pid != os.getpid()
 
 
+def _get_blas_env() -> dict[str, str | None]:
+    """worker 进程内读 BLAS 相关 env vars（top-level 才 picklable）。"""
+    keys = (
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+    )
+    return {k: os.environ.get(k) for k in keys}
+
+
+def test_worker_init_sets_blas_thread_limits() -> None:
+    """spawn worker 内 5 个 BLAS 线程 env vars 都被 setdefault 为 "1"。
+
+    Why: 避免 N worker × M BLAS thread 超额抢核（ADR-0025 §C2 后续护栏）。
+    """
+    pool = init_pool(_make_settings(pool_size=1))
+    assert pool is not None
+    env = pool.submit(_get_blas_env).result(timeout=15)
+    for key, val in env.items():
+        assert val == "1", f"{key}={val!r}, expected '1'"
+
+
+def test_worker_init_respects_external_blas_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """用 setdefault 不是 = —— 用户显式 OMP=2 时尊重外部值。"""
+    monkeypatch.setenv("OMP_NUM_THREADS", "2")
+    pool = init_pool(_make_settings(pool_size=1))
+    assert pool is not None
+    env = pool.submit(_get_blas_env).result(timeout=15)
+    assert env["OMP_NUM_THREADS"] == "2"
+    # 其余未显式设的仍 default 为 "1"
+    assert env["MKL_NUM_THREADS"] == "1"
+
+
 def test_pool_runs_engine_with_buy_and_hold() -> None:
     """端到端：ProcessPool 跑一次 buy_and_hold backtest 返 BacktestReport。"""
     pool = init_pool(_make_settings(pool_size=2))

@@ -13,11 +13,16 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import random
 from collections.abc import Mapping
 from typing import Any, Protocol
 
 from inalpha_shared.errors import InalphaError
+
+logger = logging.getLogger(__name__)
 
 
 class LLMError(InalphaError):
@@ -55,6 +60,14 @@ class DeepSeekLLMClient:
     """走 DeepSeek API（OpenAI 兼容）。
 
     用 openai-python SDK 是因为 DeepSeek 文档明确推荐这条路，且文件少。
+
+    并发与重试护栏（D-9）：
+
+    - ``max_concurrent``：实例级 ``asyncio.Semaphore``。同一 client 被 5 analyst +
+      Bull/Bear + manager 共享 → 限流放这里就够，不需要单独 wrapper
+    - ``max_retries``：对 ``RateLimitError / APITimeoutError / InternalServerError``
+      指数退避重试；其他异常（认证 / 400 / json parse）直接抛 ``LLMError`` 不重试
+    - 退避公式：``base * 2^attempt + uniform(0, base*0.5)`` 抖动，避免雪崩同步
     """
 
     def __init__(
@@ -64,6 +77,9 @@ class DeepSeekLLMClient:
         base_url: str = "https://api.deepseek.com/v1",
         model: str = "deepseek-chat",
         timeout_seconds: float = 60.0,
+        max_concurrent: int = 5,
+        max_retries: int = 3,
+        retry_base_seconds: float = 1.0,
     ) -> None:
         if not api_key:
             raise ValueError("DeepSeekLLMClient: api_key is required")
@@ -76,6 +92,63 @@ class DeepSeekLLMClient:
             timeout=timeout_seconds,
         )
         self._model = model
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self._max_retries = max_retries
+        self._retry_base_seconds = retry_base_seconds
+
+    async def _call_with_retry(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+    ) -> Any:
+        """实际 SDK 调用，对可重试错误指数退避。
+
+        可重试：``RateLimitError``（429）/ ``APITimeoutError`` / ``InternalServerError``（5xx）。
+        不重试：``AuthenticationError`` / ``BadRequestError`` / ``LLMError`` 等。
+        """
+        from openai import APITimeoutError, InternalServerError, RateLimitError
+
+        retriable = (RateLimitError, APITimeoutError, InternalServerError)
+        last_err: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                return await self._client.chat.completions.create(
+                    model=self._model,
+                    messages=messages,  # type: ignore[arg-type]
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                )
+            except retriable as e:
+                last_err = e
+                if attempt >= self._max_retries:
+                    break
+                backoff = self._retry_base_seconds * (2**attempt)
+                jitter = random.uniform(0, self._retry_base_seconds * 0.5)
+                sleep_s = backoff + jitter
+                logger.warning(
+                    "LLM retriable error (attempt %d/%d): %s; sleeping %.2fs",
+                    attempt + 1,
+                    self._max_retries + 1,
+                    type(e).__name__,
+                    sleep_s,
+                )
+                await asyncio.sleep(sleep_s)
+
+        # 走到这说明可重试错误把次数用光
+        assert last_err is not None
+        raise LLMError(
+            f"DeepSeek API call failed after {self._max_retries + 1} attempts: {last_err}",
+            code="LLM_PROVIDER_ERROR",
+            details={
+                "provider": "deepseek",
+                "model": self._model,
+                "error_type": type(last_err).__name__,
+            },
+        ) from last_err
 
     async def complete_json(
         self,
@@ -85,23 +158,27 @@ class DeepSeekLLMClient:
         max_tokens: int = 2048,
         temperature: float = 0.2,
     ) -> dict[str, Any]:
-        try:
-            r = await self._client.chat.completions.create(
-                model=self._model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"},
-            )
-        except Exception as e:
-            raise LLMError(
-                f"DeepSeek API call failed: {e}",
-                code="LLM_PROVIDER_ERROR",
-                details={"provider": "deepseek", "model": self._model},
-            ) from e
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+
+        async with self._semaphore:
+            try:
+                r = await self._call_with_retry(
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            except LLMError:
+                # _call_with_retry 已经包过了，原样抛
+                raise
+            except Exception as e:
+                raise LLMError(
+                    f"DeepSeek API call failed: {e}",
+                    code="LLM_PROVIDER_ERROR",
+                    details={"provider": "deepseek", "model": self._model},
+                ) from e
 
         choices = r.choices
         if not choices:
@@ -205,12 +282,17 @@ def build_llm_client(
     base_url: str,
     model: str,
     timeout_seconds: float,
+    max_concurrent: int = 5,
+    max_retries: int = 3,
+    retry_base_seconds: float = 1.0,
 ) -> LLMClient:
     """按 settings 构造 LLM client。
 
     ``provider``:
-    - ``"deepseek"``：真 DeepSeek API（require api_key）
-    - ``"fake"``：返空 FakeLLMClient —— 没注 response 就抛错，**不要在生产用**
+    - ``"deepseek"``：真 DeepSeek API（require api_key）；新增 ``max_concurrent /
+      max_retries / retry_base_seconds`` 由 ``ResearchSettings`` 控制护栏
+    - ``"fake"``：返空 FakeLLMClient —— 没注 response 就抛错，**不要在生产用**；
+      不接收护栏参数（测试不需要限流和退避）
     """
     p = provider.lower()
     if p == "deepseek":
@@ -219,6 +301,9 @@ def build_llm_client(
             base_url=base_url,
             model=model,
             timeout_seconds=timeout_seconds,
+            max_concurrent=max_concurrent,
+            max_retries=max_retries,
+            retry_base_seconds=retry_base_seconds,
         )
     if p == "fake":
         return FakeLLMClient()

@@ -49,6 +49,30 @@ class ResearchSettings(BaseSettings):
         alias="LLM_TIMEOUT_SECONDS",
         description="单次 LLM 调用超时（秒）",
     )
+    llm_max_concurrent: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        alias="LLM_MAX_CONCURRENT",
+        description="单个 LLM client 实例的并发上限（asyncio.Semaphore）。"
+        "Deep dive 5 analyst + Bull/Bear + manager 共享同一 client，默认 5 不阻塞单链路；"
+        "D-9 swarm grid×N 会把多个 deep dive 串起来跑，超额时第 N+1 个调用排队等放行。",
+    )
+    llm_max_retries: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        alias="LLM_MAX_RETRIES",
+        description="LLM 调用因可重试错误（RateLimitError / APITimeoutError / InternalServerError）"
+        "失败时的最大重试次数。0 = 不重试。",
+    )
+    llm_retry_base_seconds: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=30.0,
+        alias="LLM_RETRY_BASE_SECONDS",
+        description="指数退避基础间隔（秒），实际退避 = base * 2^attempt + jitter。",
+    )
 
     # ─── Debate ──────────────────────────────────────────────────────
     max_debate_rounds: int = Field(
