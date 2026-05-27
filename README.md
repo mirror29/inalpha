@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
 </p>
 
-<p><em>Every factor proposed, every strategy mutated, every order routed — logged, versioned, reviewable. The LLM writes the code; the engineering harness signs every decision.</em></p>
+<p><em>Every factor proposed, every strategy mutated, every order routed — logged, versioned, reviewable. Every number the agents reason on — sourced, <code>as_of</code>-stamped, freshness-checked. The LLM writes the code; the engineering harness signs every decision.</em></p>
 
 </div>
 
@@ -29,6 +29,8 @@
 ## Overview
 
 Inalpha is a **professional quant agent framework, governed by engineering discipline**. It treats LLM agents not as black-box signal generators, but as code-writing collaborators bounded by hooks, permissions, plan-then-execute approval, and a one-shot signature on every order path.
+
+**Source-attributed by default.** Below the decision harness sits a data discipline: every bar, every quote, every macro print the agents reason on carries its source, its `as_of` timestamp, and a freshness check. Financial reasoning that quietly ages into stale data is the most common way an agent fails *without anyone noticing* — Inalpha refuses to compile that failure mode.
 
 Four capability lines sit on top of that harness:
 
@@ -121,6 +123,35 @@ Real quant research is concurrent by nature: 5 symbols × 3 factor families × 4
 Inalpha splits *scheduling* from *compute*. The agent runtime fans out the grid and aggregates results; a Python worker pool inside `services/paper` actually runs the backtests in parallel processes with resource limits. "Run momentum / mean-reversion / breakout across BTC, ETH, SOL, BNB, AVAX for 2024" becomes one workflow call that returns a Pareto frontier.
 
 > Current implementation (S1): single-host process pool, concurrency 4, grid capped at 20 backtests per call.
+
+---
+
+## Roadmap
+
+Where each capability stands today. Live module inventory and the end-to-end decision sequence diagram live in [`docs/04-current-state.md`](docs/04-current-state.md).
+
+| Status | Capability | Phase | Highlight |
+|---|---|---|---|
+| ✅ Shipped | Plan/Exec audit trail + Hooks + Permission Engine | D-8a | three-step orders · one-shot signing token · 5 lifecycle hook events · allow / ask / deny tri-state |
+| ✅ Shipped | Research → strategy → backtest lineage | D-8c | `deep_dive → compose_strategy → run_backtest` with `research_id` / `backtest_id` threaded through |
+| ✅ Shipped | LLM-authored strategies — E1 MVP | D-9 | three sandbox gates (AST · subprocess · `Strategy` contract) + multi-objective fitness + baseline auto-run |
+| ✅ Shipped | Risk engine at the HTTP boundary | D-9 | declarative `risk_rules.toml` · pre-trade `enforce` · `risk_locks` table with independent commit |
+| ✅ Shipped | Bull / bear researcher debate | D-9 | opposing-stance researchers under `services/research` |
+| ✅ Shipped | Scheduler / cron agent mode | D-9 | `scheduler_jobs` + advisory lock + `/api/scheduler/*` management plane |
+| ✅ Shipped | RiskGuard per-account isolation | D-9.1a | `RiskGuardFactory` removes cross-account state bleed |
+| ⏭️ In Flight | Risk engine — remaining rules | D-9 closing | `cooldown` / `stoploss_guard` / `market_hours` need real `trade_repo` + `market_calendar` |
+| ⏭️ In Flight | `askUserChoice` front-end | D-10 (issue #2) | brings the `ask` permission state back from workaround |
+| ⏭️ In Flight | `permissions.yaml` configuration | D-8b (issue #4) | replaces the hard-coded `defaults.ts` |
+| 🗓️ Planned | Live runner | D-10 (issue #1) | tick-driven `on_bar` writing `paper_positions` / `paper_trades` |
+| 🗓️ Planned | Strategy evolution — E2 | D-11 | multi-generation loop + MAP-Elites + Island Model + `unified-diff` mutations |
+| 🗓️ Planned | Research-hub nested supervisor | D-10+ | 4 analysts + bull/bear/risk debate as a single closed loop |
+| 🗓️ Planned | Factor discovery — L0 → L1 | D-11+ | walk-forward IC + multiple-testing correction + `factor_candidates` table |
+| 🔬 Exploring | Skills as procedural memory | TBD | reusable markdown skills with auto-discovery |
+| 🔬 Exploring | Alpha Zoo cold start | E1+ | seed factor library with public alphas (Qlib / Kakushadze / GTJA) |
+| 🔬 Exploring | E4 `evolve_strategy` MCP tool | E4 | evolution loop exposed to the orchestrator as one MCP tool |
+| 🔬 Exploring | Analog backtesting | TBD | similarity-window-driven backtest range selection (STUMPY) |
+
+> **Legend** — ✅ Shipped: behavior already lives in `main` · ⏭️ In Flight: actively in this phase · 🗓️ Planned: scoped for an upcoming phase, not started · 🔬 Exploring: research recorded, no commit date.
 
 ---
 
