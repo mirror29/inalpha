@@ -10,8 +10,9 @@
  * `risk.unlock` 走 [ADR-0018 askUserChoice](../../../../docs/miro/decisions/0018-ask-user-question-as-tool.md)
  * 的等价 UI 人工确认。LLM 不应直接调，但 client 层一致暴露，权限隔离在 tool 层。
  *
- * **未接入 wired-tools / index.ts** —— 用户 review 后手动接入（避免与 D-9 并行
- * 工作的 untracked 改动冲突）。
+ * **D-9.1b 接入清单**（`tools/index.ts:orchestratorToolList`）：
+ * - `riskDescribeRulesTool` + `riskListLocksTool` ✅ 挂到 orchestrator
+ * - `riskUnlockTool` ❌ 不挂（`modelInvocable: false`，仅 admin UI / CLI 走 allTools 通路）
  */
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";

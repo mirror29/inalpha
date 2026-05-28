@@ -31,6 +31,16 @@ interface AskCacheEntry {
 const DEFAULT_TTL_MS = 60_000;
 
 /**
+ * Telemetry sink —— 默认 ``console.log(JSON.stringify(record))``，与 ``audit-log.ts``
+ * 同款 stdout-friendly 格式。测试可注入自定义 sink。
+ */
+export type AskCacheTelemetrySink = (record: Record<string, unknown>) => void;
+
+const defaultTelemetrySink: AskCacheTelemetrySink = (r) => {
+  console.log(JSON.stringify(r));
+};
+
+/**
  * **稳定** JSON stringify —— object keys 按字典序，避免 ``{a,b}`` vs ``{b,a}`` 撞不上。
  *
  * 必须用 stable 形式：DeepSeek / GPT 生成 tool call JSON 时 key 顺序在两次调用之间
@@ -48,10 +58,14 @@ function stableStringify(value: unknown): string {
 export class AskApprovalCache {
   private readonly entries = new Map<string, AskCacheEntry>();
   private readonly ttlMs: number;
+  private readonly telemetry: AskCacheTelemetrySink;
+  /** 记录已打过 __global__ fallback warning，避免每次 mark/consume 都刷屏。 */
+  private warnedGlobalFallback = false;
 
-  constructor(ttlMs: number = DEFAULT_TTL_MS) {
+  constructor(ttlMs: number = DEFAULT_TTL_MS, telemetry?: AskCacheTelemetrySink) {
     if (ttlMs <= 0) throw new Error(`ttlMs must be positive, got ${ttlMs}`);
     this.ttlMs = ttlMs;
+    this.telemetry = telemetry ?? defaultTelemetrySink;
   }
 
   /** 拼 cache key。无 sessionId 时回退到 ``"__global__"`` —— 单进程 dev 环境够用。 */
@@ -64,18 +78,47 @@ export class AskApprovalCache {
     return `${sid}::${toolName}::${stableStringify(input)}`;
   }
 
+  /** 进程内仅 warn 一次 sessionId 缺失：多用户场景下不同用户的 ask 会撞同一个 __global__ entry。 */
+  private maybeWarnGlobalFallback(
+    sessionId: string | undefined,
+    op: string,
+    toolName: string,
+  ): void {
+    if (this.warnedGlobalFallback) return;
+    if (sessionId && sessionId.length > 0) return;
+    this.warnedGlobalFallback = true;
+    console.warn(
+      `[ask-cache] sessionId missing for ${op}("${toolName}"); falling back to "__global__". ` +
+        "Multi-user safety degraded. Check defaultGetSessionId in with-hooks.ts.",
+    );
+  }
+
   /**
    * 标记 (sessionId, toolName, input) 已被 ask 过；TTL 后自动失效。
    * 若已存在条目，重置 TTL（连续多次 ask 同一动作不需要重启计时）。
    */
   mark(sessionId: string | undefined, toolName: string, input: unknown): void {
+    this.maybeWarnGlobalFallback(sessionId, "mark", toolName);
     const key = AskApprovalCache.keyFor(sessionId, toolName, input);
     const existing = this.entries.get(key);
     if (existing) clearTimeout(existing.timer);
     const timer = setTimeout(() => {
       this.entries.delete(key);
+      this.telemetry({
+        event: "ask_cache_expired",
+        toolName,
+        sessionId: sessionId ?? null,
+        ttlMs: this.ttlMs,
+        ts: new Date().toISOString(),
+      });
     }, this.ttlMs);
     this.entries.set(key, { markedAt: Date.now(), timer });
+    this.telemetry({
+      event: "ask_marked",
+      toolName,
+      sessionId: sessionId ?? null,
+      ts: new Date().toISOString(),
+    });
   }
 
   /**
@@ -92,21 +135,45 @@ export class AskApprovalCache {
     input: unknown,
     debugSink?: (msg: string) => void,
   ): boolean {
+    this.maybeWarnGlobalFallback(sessionId, "consume", toolName);
     const key = AskApprovalCache.keyFor(sessionId, toolName, input);
     const entry = this.entries.get(key);
     if (!entry) {
       if (debugSink) this.debugWhyMiss(sessionId, toolName, input, debugSink);
+      this.telemetry({
+        event: "ask_consume_miss",
+        toolName,
+        sessionId: sessionId ?? null,
+        reason: "no_entry",
+        ts: new Date().toISOString(),
+      });
       return false;
     }
+    const latency_ms = Date.now() - entry.markedAt;
     // 双保险：即便 setTimeout 未触发，超时仍按未命中处理
-    if (Date.now() - entry.markedAt > this.ttlMs) {
+    if (latency_ms > this.ttlMs) {
       clearTimeout(entry.timer);
       this.entries.delete(key);
       if (debugSink) debugSink(`AskCache: entry expired for ${toolName} (sid=${sessionId})`);
+      this.telemetry({
+        event: "ask_consume_miss",
+        toolName,
+        sessionId: sessionId ?? null,
+        reason: "expired_double_check",
+        latency_ms,
+        ts: new Date().toISOString(),
+      });
       return false;
     }
     clearTimeout(entry.timer);
     this.entries.delete(key);
+    this.telemetry({
+      event: "ask_consumed",
+      toolName,
+      sessionId: sessionId ?? null,
+      latency_ms,
+      ts: new Date().toISOString(),
+    });
     return true;
   }
 

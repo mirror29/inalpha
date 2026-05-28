@@ -66,6 +66,10 @@ type GenericTool = {
  *
  * 这样 askCache 跨 turn 也能命中，audit-log 也能按 thread 聚合。
  */
+/** Module-level flag：进程内仅 warn 一次 runId fallback / 完全失败，避免每次 tool 调用刷屏。 */
+let _warnedRunIdFallback = false;
+let _warnedNoSessionId = false;
+
 export function defaultGetSessionId(ctx: unknown): string | undefined {
   if (!ctx || typeof ctx !== "object") return undefined;
   const c = ctx as Record<string, unknown>;
@@ -93,7 +97,23 @@ export function defaultGetSessionId(ctx: unknown): string | undefined {
 
   // 最后 fallback：runId —— turn-level 不稳定，会让 askCache 跨 turn miss
   const runId = pickString(c.runId);
-  if (runId) return runId;
+  if (runId) {
+    if (!_warnedRunIdFallback) {
+      _warnedRunIdFallback = true;
+      console.warn(
+        "[with-hooks] defaultGetSessionId falling back to ctx.runId — runId changes per user-turn, " +
+          "askCache will miss across turns. Check if ctx.agent.threadId/resourceId is populated by Mastra runtime.",
+      );
+    }
+    return runId;
+  }
+  if (!_warnedNoSessionId) {
+    _warnedNoSessionId = true;
+    console.warn(
+      "[with-hooks] defaultGetSessionId could not extract any stable id from ctx; " +
+        "ask-path will fall back to __global__ cache key (multi-user unsafe).",
+    );
+  }
   return undefined;
 }
 
