@@ -126,4 +126,54 @@
   .caret-blink {
     animation: caret 1.06s steps(1, end) infinite;
   }
+
+  /* ── Hero backdrop ───────────────────────────────────────────
+     Decision-log stream: dot grid drifts slowly underneath while
+     half-transparent JSONL audit lines rise from the bottom edge,
+     fade in, drift past the title, fade out at the top. Mono only
+     — looks like a live audit trail playing behind the wordmark.
+     prefers-reduced-motion handled at the bottom of this file. */
+  @keyframes drift-dots {
+    0%   { background-position:   0px   0px; }
+    100% { background-position: 280px -280px; }
+  }
+  .drift-dots {
+    animation: drift-dots 70s linear infinite;
+  }
+
+  /* `top` animation (NOT transform) so the travel is relative to the
+     containing LogColumn (which has inset-y-0 → full hero height),
+     not the element's own ~16px line height. */
+  @keyframes log-rise {
+    0%   { top: 105%; opacity: 0;    }
+    8%   {            opacity: 0.85; }
+    55%  {            opacity: 0.85; }
+    92%  {            opacity: 0.45; }
+    100% { top: -8%;  opacity: 0;    }
+  }
+  .log-rise {
+    animation-name: log-rise;
+    animation-iteration-count: infinite;
+    animation-timing-function: linear;
+    will-change: top, opacity;
+  }
+}
+
+/* Honor system-level motion preferences for animations that strobe /
+   flicker / fast-pan. log-rise is deliberately excluded — it's a slow,
+   linear drift used as the Hero's *content surface*; killing it leaves
+   the hero visually empty and harms vestibular users more than the
+   gentle drift itself. */
+@media (prefers-reduced-motion: reduce) {
+  .drift-dots,
+  .ticker-scroll,
+  .pulse-glow,
+  .caret-blink {
+    animation: none !important;
+  }
+  /* Slow log-rise way down rather than killing it, so motion-sensitive
+     users still see the audit-trail content but without a sense of speed. */
+  .log-rise {
+    animation-duration: 240s !important;
+  }
 }

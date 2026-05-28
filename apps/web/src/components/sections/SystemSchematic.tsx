@@ -8,6 +8,7 @@ import {
   type LineageEdge,
   type LineageNode,
 } from "@/components/primitives/DataLineagePath";
+import { RELEASE } from "@/lib/release-meta";
 
 /**
  * 03 — Architecture. Hub → spokes → convergence → outputs.
@@ -174,9 +175,9 @@ export function SystemSchematic() {
         flowing
         meta={{
           title: "INALPHA · SYSTEM SCHEMATIC",
-          rev: "0.9-D9",
-          date: "2026.05.26",
-          counts: "9 NODES · 12 LINKS",
+          rev: `${RELEASE.rev}-${RELEASE.phase.replace("-", "")}`,
+          date: RELEASE.dateDot,
+          counts: `${nodes.length} NODES · ${edges.length} LINKS`,
         }}
       />
     </BroadsheetSection>

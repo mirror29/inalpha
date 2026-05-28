@@ -30,29 +30,24 @@
   },
   "problem": {
     "eyebrow": "01 / 问题",
-    "title": "你以为在做量化研究，",
-    "titleAlt": "实则在仰仗一个黑盒。",
-    "sub": "大多数 LLM 量化框架，只给你一个分值加一段散文。无法回放、无法审计，也无从质疑。Inalpha 把每一个因子、计划、订单都当作有版本的记录看待——不是凭感觉的猜测。",
+    "title": "LLM 把策略写出来，很容易。",
+    "titleAlt": "替它的每个决策签名，才是工程。",
+    "sub": "现在大部分「LLM + 量化」长这样：prompt 进去，「做多 BTC 0.62」出来，broker SDK 就在隔壁。亏了找不到是哪段 prompt、哪份数据出的错；赚了也分不清是 alpha 还是过拟合。Inalpha 把 Claude Code 那套工程绑带（hooks / permissions / plan-exec）搬到 LLM 量化——LLM 只负责写代码，每个决策有签名、每次回测可重放、订单路径走不到 LLM 嘴边。",
     "table": {
-      "header": {
-        "want": "你想要的",
-        "blackbox": "黑盒 LLM 给的",
-        "inalpha": "Inalpha 给的"
-      },
-      "signal": {
-        "want": "信号",
-        "blackbox": "一个分值",
-        "inalpha": "带 rationale 的 plan + 对立分析师"
-      },
-      "reason": {
-        "want": "依据",
-        "blackbox": "「相信我」",
-        "inalpha": "Hooks 强制的决策记录"
+      "lineage": {
+        "want": "lineage · 血缘",
+        "blackbox": "「建议做多 BTC 0.62」——源数据、prompt、模型版本一概不留痕，亏了无从复盘",
+        "inalpha": "research_id → backtest_run_id → plan_id 全链 UUID 串联，每个决策可反查上游"
       },
       "replay": {
-        "want": "回放",
-        "blackbox": "无法复现",
-        "inalpha": "JSONL 落盘 + token 签名审计链"
+        "want": "replay · 重放",
+        "blackbox": "上次的 sharpe 2.14 是怎么跑出来的？参数和数据切片忘了，凭印象再算一次",
+        "inalpha": "strategy_id + params_hash + as_of 三联做指纹，任意时间点重放数字一致"
+      },
+      "guardrail": {
+        "want": "guardrail · 护栏",
+        "blackbox": "LLM 直接握着 broker SDK：一次 prompt 越狱、一句模型幻觉 = 一笔真亏钱",
+        "inalpha": "permissions.yaml deny + plan/exec 一次性 TTL token，订单路径 LLM 永远绕不过"
       }
     }
   },
@@ -173,22 +168,38 @@
     "title": "Claude Code 的工程哲学，",
     "titleAlt": "应用于量化交易。",
     "sub": "声明式配置规定每个 agent 的工具调用权限。Plan → approve → execute 由一次性、短 TTL 的 token 强制——LLM 永远不会绕过审批触达订单路径。subagent 隔离风险与复盘。MCP 协议接入工具，免去胶水代码。",
-    "configSample": "research:\n  allow:\n    - data.get_bars\n    - data.get_news\n  deny:\n    - paper.place_order\n\nrisk:\n  allow: [\"*\"]\n  require_human: [\"place_order > 0.5\"]",
+    "hint": "── 点击右侧机制查看真实代码片段",
     "chips": {
-      "hooks": "hooks",
       "permissions": "permissions",
+      "hooks": "hooks",
       "plan-exec": "plan-exec",
       "subagent": "subagent",
       "mcp": "MCP",
       "swarm": "Swarm"
     },
     "chipDescs": {
-      "hooks": "每个 tool call 都走中间件。",
       "permissions": "工具权限按角色 scope。",
+      "hooks": "每个 tool call 都走中间件。",
       "plan-exec": "先 plan 后 exec，one-shot token。",
       "subagent": "风险与复盘住在独立子 agent。",
       "mcp": "原生支持 Model Context Protocol。",
       "swarm": "并行 worker 跑参数网格回测。"
+    },
+    "captions": {
+      "permissions": "config/permissions.default.yaml",
+      "hooks": "hooks/handlers/audit-log.ts · PostToolUse",
+      "plan-exec": "tools/trade-plan.ts · 3-step · ADR-0012",
+      "subagent": "agents/orchestrator.ts · D-8a → D-8a'",
+      "mcp": "scripts/smoke-coingecko-mcp.ts · spike",
+      "swarm": "tools/swarm.ts × workflows/backtest-grid"
+    },
+    "samples": {
+      "permissions": "defaultMode: ask           # fail-closed\n\nallow:\n  - \"data.*\"               # 只读行情 / 新闻 / 宏观\n  - \"paper.run_backtest\"\n  - \"research.*\"\n  - \"trade.create_plan\"    # 提案可以写\n  - \"trade.approve_plan\"\n  - \"trade.execute_plan\"\n\ndeny:                        # 这条 LLM 永远绕不过\n  - \"paper.submit_order\"   # 旧直下单路径\n  - \"live.submit_order(notional>=10000)\"\n  - \"live.emergency_stop_all\"",
+      "hooks": "// PostToolUse · 业务 tool 全量审计\n// matcher: paper.* | live.* | factor.* | research.*\nexport const auditLog: HookHandler = async (ctx) => {\n  await jsonl.append(`audit/${today()}.jsonl`, {\n    ts:        nowIso(),\n    tool:      ctx.toolName,\n    sessionId: ctx.sessionId,\n    isError:   ctx.isError,\n    input:     redact(ctx.toolInput),   // apiKey / approvalToken\n    output:    redact(ctx.toolOutput),  // wallet / ssn / cvv → [REDACTED]\n  });\n  // blocking: false —— 审计是副作用，绝不卡业务路径\n};",
+      "plan-exec": "$ trade.create_plan\n    intent=open_long   symbol=BTCUSDT   side=buy   qty=0.05\n    rationale=\"4h breakout · bull 论据成立\"\n    researchId=rs_8f3a   backtestRunId=bt_91c2     # ← 血缘链\n→ planId=pln_7c91   status=pending   expireAt=+300s\n\n$ trade.approve_plan { planId, reason=\"risk gate pass\" }\n→ approvalToken=tk_…   one-shot · 60s TTL\n\n$ trade.execute_plan { planId, approvalToken }\n→ ok · orderId=ord_4d2a   token consumed",
+      "subagent": "// D-8a：trader / risk subagent 嵌套（4 跳 LLM call · ~15s）\n// D-8a'：拆掉嵌套，全部 tool 直挂 orchestrator —— 性能 ×4\n//        权限边界改由 permissions.yaml 的 deny 强约束\n\n// subagent 仍保留给\"长上下文、可隔离\"的子任务：\nconst reflect = await orch.subagent(\"backtest-reflect\", {\n  prompt: `分析 ${runId} 归因 + 找 lookahead bias 段`,\n  tools:  [\"paper.reflect_backtest\", \"data.get_news\"],  // scoped\n  contextBudget: 8_000,                                  // 不污染主对话\n});",
+      "mcp": "// scripts/smoke-coingecko-mcp.ts —— D-9 spike\nimport { Client } from \"@modelcontextprotocol/sdk/client\";\nimport { StreamableHTTPClientTransport }\n  from \"@modelcontextprotocol/sdk/client/streamableHttp\";\n\nconst t = new StreamableHTTPClientTransport(\n  new URL(\"https://mcp.api.coingecko.com/mcp\"),  // 官方公开端点\n);\nconst client = new Client({ name: \"inalpha\", version: \"0.9\" });\nawait client.connect(t);\nconst tools = await client.listTools();\n// → CoinGecko 32 个 tool 直接挂进 orchestrator · 零胶水",
+      "swarm": "$ swarm.run_backtest_grid\n    candidateIds: [c_3a1, c_7c9, c_5e2]   # D-9 LLM 自创策略\n    symbols:      [BTCUSDT, ETHUSDT, SOLUSDT]\n    venue: binance   timeframe: 1h\n    from: 2025-01-01    to: 2026-05-26\n\n→ grid:     3 × 3 = 9 runs    (cap ≤ 20 by grid-size-cap hook)\n→ workers:  6   wall: 4.2s    ok: 9 / errored: 0\n→ pareto:   3 points (Sharpe ↑  · maxDD ↓)\n→ top1:     c_3a1 on ETHUSDT   fitness=1.84\n            baseline(buy_and_hold)=0.92  ·  alpha ✓"
     }
   },
   "coverage": {
@@ -218,7 +229,7 @@
       "starsSuffix": "stars",
       "contributorsSuffix": "贡献者",
       "commitsSuffix": "提交",
-      "qualityLabel": "alpha 阶段"
+      "qualityLabel": "暂不用于真金"
     },
     "currentState": {
       "title": "诚实告知 ——",
@@ -233,13 +244,8 @@
     "eyebrow": "07 / 开始",
     "title": "Star 它。读它。彻底拆解它。",
     "sub": "Inalpha 仍在 alpha 阶段，AGPL-3.0 协议。请暂缓真金部署——但每一行代码都在 GitHub 公开。",
-    "tabs": {
-      "git": "git clone",
-      "pip": "pip install"
-    },
     "commands": {
-      "git": "git clone https://github.com/mirror29/inalpha",
-      "pip": "pip install inalpha"
+      "git": "git clone https://github.com/mirror29/inalpha"
     },
     "copy": "复制",
     "copied": "已复制",
