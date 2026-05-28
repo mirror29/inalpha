@@ -205,17 +205,19 @@ A single `.env` at the repo root is read by Mastra (TS) **and** all Python servi
 cp .env.example .env
 ```
 
-Inside `.env`, set `LLM_PROVIDER` to one of `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` and fill in the matching key:
+Inside `.env`, set `LLM_PROVIDER` to one of `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` and fill in the matching key.
 
-| Provider | env var | Default model | Get a key |
+Defaults pick each vendor's **current flagship** as of 2026-05. Override with `LLM_MODEL=...` if you want a reasoning / cheaper variant.
+
+| Provider | env var | Default model (2026-05) | Get a key |
 |---|---|---|---|
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-pro` | [platform.deepseek.com](https://platform.deepseek.com) |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-7` | [console.anthropic.com](https://console.anthropic.com) |
-| `openai` | `OPENAI_API_KEY` | `gpt-5` | [platform.openai.com](https://platform.openai.com) |
-| `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash-exp` | [aistudio.google.com](https://aistudio.google.com) |
-| `kimi` | `KIMI_API_KEY` | `moonshot-v1-8k` | [platform.moonshot.cn](https://platform.moonshot.cn) |
-| `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` | [open.bigmodel.cn](https://open.bigmodel.cn) |
-| `ollama` | — (local) | `llama3.2` | `ollama pull llama3.2` |
+| `openai` | `OPENAI_API_KEY` | `gpt-5.5` | [platform.openai.com](https://platform.openai.com) |
+| `gemini` | `GEMINI_API_KEY` | `gemini-3-pro` | [aistudio.google.com](https://aistudio.google.com) |
+| `kimi` | `KIMI_API_KEY` | `kimi-k2.6` | [platform.moonshot.ai](https://platform.moonshot.ai) |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-5.1` | [open.bigmodel.cn](https://open.bigmodel.cn) |
+| `ollama` | — (local) | `llama4` | `ollama pull llama4` |
 
 Override the default model by setting `LLM_MODEL=...` in the same file. Mastra and `services/research` both read this one file — no per-service config to juggle.
 

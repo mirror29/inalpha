@@ -205,17 +205,19 @@ uv sync     # Python 包（services/_shared, data, paper, research）
 cp .env.example .env
 ```
 
-在 `.env` 里把 `LLM_PROVIDER` 设成 `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` 之一，填对应 key：
+在 `.env` 里把 `LLM_PROVIDER` 设成 `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` 之一，填对应 key。
 
-| Provider | env 字段 | 默认模型 | 获取 key |
+默认值是各家 **2026-05 当前主流旗舰**；要 reasoning / 廉价变体，`LLM_MODEL=...` 覆盖即可。
+
+| Provider | env 字段 | 默认模型（2026-05）| 获取 key |
 |---|---|---|---|
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-pro` | [platform.deepseek.com](https://platform.deepseek.com) |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-7` | [console.anthropic.com](https://console.anthropic.com) |
-| `openai` | `OPENAI_API_KEY` | `gpt-5` | [platform.openai.com](https://platform.openai.com) |
-| `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash-exp` | [aistudio.google.com](https://aistudio.google.com) |
-| `kimi` | `KIMI_API_KEY` | `moonshot-v1-8k` | [platform.moonshot.cn](https://platform.moonshot.cn) |
-| `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` | [open.bigmodel.cn](https://open.bigmodel.cn) |
-| `ollama` | — （本地） | `llama3.2` | `ollama pull llama3.2` |
+| `openai` | `OPENAI_API_KEY` | `gpt-5.5` | [platform.openai.com](https://platform.openai.com) |
+| `gemini` | `GEMINI_API_KEY` | `gemini-3-pro` | [aistudio.google.com](https://aistudio.google.com) |
+| `kimi` | `KIMI_API_KEY` | `kimi-k2.6` | [platform.moonshot.ai](https://platform.moonshot.ai) |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-5.1` | [open.bigmodel.cn](https://open.bigmodel.cn) |
+| `ollama` | — （本地） | `llama4` | `ollama pull llama4` |
 
 要换模型？把 `LLM_MODEL=...` 一起填。Mastra 和 `services/research` 共读这一份配置——不再需要在每个 service 各自维护 .env。
 

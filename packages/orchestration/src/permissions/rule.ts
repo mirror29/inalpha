@@ -32,11 +32,21 @@ export function parseRule(source: string, decision: Decision): ParsedRule {
   return { toolPattern, predicate, decision, source };
 }
 
-/** tool pattern 匹配 —— 精确 / ``.*`` 前缀 / ``*``（不支持 ``|`` OR；如要多模式拆多行）。 */
+/** tool pattern 匹配 —— 精确 / 通用 ``*`` glob（任意位置）。
+ *
+ * 支持：``*`` 全部；``paper.*`` 前缀；``paper.get_*`` 中段；``*.health`` 后缀；
+ * ``foo.*.bar`` 中间任意。不支持 ``|`` OR 多模式（要多模式拆多行）。
+ */
 export function patternMatches(pattern: string, toolName: string): boolean {
   if (pattern === "*") return true;
+  if (pattern === toolName) return true;
+  if (!pattern.includes("*")) return false;
+  // 兼容老语义：``paper.*`` 也匹 ``paper`` 自身（不带 ``.``）
   if (pattern.endsWith(".*")) {
-    return toolName === pattern.slice(0, -2) || toolName.startsWith(pattern.slice(0, -1));
+    const stem = pattern.slice(0, -2);
+    if (toolName === stem) return true;
   }
-  return pattern === toolName;
+  // 通用 glob：转义 regex 元字符，把 ``*`` 替成 ``.*``，全字符串匹配
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`).test(toolName);
 }

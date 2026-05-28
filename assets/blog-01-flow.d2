@@ -1,0 +1,94 @@
+# Blog 01 · Four-Layer Defense flow diagram
+# Source for assets/blog-01-flow.svg
+# Build: d2 assets/blog-01-flow.d2 assets/blog-01-flow.svg
+#
+# Style aligned with assets/agent-runtime.d2 (project visual identity).
+
+direction: right
+
+# ─── LLM lives outside the trading path ───
+llm: "LLM\n(orchestrator)" {
+  shape: cloud
+  style: {
+    fill: "#1a1714"
+    stroke: "#888"
+    stroke-dash: 5
+    font-color: "#F5F5DC"
+  }
+}
+
+# ─── 4-stage state machine ───
+create: "1 · create_plan\n→ pending_approval" {
+  shape: rectangle
+  style: {
+    fill: "#1a1714"
+    stroke: "#D4A744"
+    stroke-width: 2
+    font-color: "#F5F5DC"
+  }
+}
+
+approve: "2 · approve_plan\nmints approval_token\nUUID · 5min TTL · 1-shot" {
+  shape: rectangle
+  style: {
+    fill: "#1a1714"
+    stroke: "#D4A744"
+    stroke-width: 2
+    font-color: "#F5F5DC"
+  }
+}
+
+execute: "3 · execute_plan(token)\n→ paper /orders/submit\ntoken consumed → null" {
+  shape: rectangle
+  style: {
+    fill: "#1a1714"
+    stroke: "#D4A744"
+    stroke-width: 2
+    font-color: "#F5F5DC"
+  }
+}
+
+audit: "4 · audit_log\nsha256 signature\n[REDACTED] sensitive" {
+  shape: rectangle
+  style: {
+    fill: "#1a1714"
+    stroke: "#C8463C"
+    stroke-width: 2
+    font-color: "#F5F5DC"
+  }
+}
+
+# ─── Deny barrier ───
+deny: "🚫  DENY: paper.submit_order  ·  live.*\n(not overridable by hooks)" {
+  shape: text
+  style: {
+    fill: "#C8463C"
+    font-color: "#F5F5DC"
+    bold: true
+  }
+}
+
+# ─── Edges ───
+llm -> create: "rationale\n(LLM-driven)" {
+  style: {
+    stroke: "#888"
+    stroke-dash: 5
+  }
+}
+
+create -> approve
+
+approve -> execute: "token (1-shot)" {
+  style.stroke: "#D4A744"
+}
+
+execute -> audit: "PostToolUse hook\nJSON line" {
+  style.stroke: "#C8463C"
+}
+
+llm -> deny: "blocked at\ntool-bucket + deny-list" {
+  style: {
+    stroke: "#C8463C"
+    stroke-dash: 3
+  }
+}
