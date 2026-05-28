@@ -54,10 +54,25 @@ export interface PendingRequestResult {
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
+ * Telemetry sink —— 默认 ``console.log(JSON.stringify(record))``，与 ``audit-log.ts``
+ * + ``ask-cache.ts`` 同款 stdout-friendly 格式。测试可注入自定义 sink。
+ */
+export type PendingTelemetrySink = (record: Record<string, unknown>) => void;
+
+const defaultPendingTelemetrySink: PendingTelemetrySink = (r) => {
+  console.log(JSON.stringify(r));
+};
+
+/**
  * 进程内挂起池。``mastra/index.ts`` 在 runtime 启动时共享单例；测试可 new 独立实例。
  */
 export class PendingApprovalsStore {
   private readonly pending = new Map<string, PendingApprovalRecord>();
+  private readonly telemetry: PendingTelemetrySink;
+
+  constructor(telemetry?: PendingTelemetrySink) {
+    this.telemetry = telemetry ?? defaultPendingTelemetrySink;
+  }
 
   /**
    * 注册一个挂起审批，返 promise 等用户决策。
@@ -70,11 +85,30 @@ export class PendingApprovalsStore {
     const createdAt = new Date();
     const deadline = new Date(createdAt.getTime() + timeoutMs);
 
+    this.telemetry({
+      event: "ask_pending_requested",
+      requestId,
+      toolName: args.toolName,
+      sessionId: args.sessionId ?? null,
+      timeoutMs,
+      ts: createdAt.toISOString(),
+    });
+
     return new Promise<PendingRequestResult>((resolve) => {
       const timer = setTimeout(() => {
         const record = this.pending.get(requestId);
         if (record) {
           this.pending.delete(requestId);
+          this.telemetry({
+            event: "ask_pending_resolved",
+            requestId,
+            toolName: args.toolName,
+            sessionId: args.sessionId ?? null,
+            decision: "deny",
+            via: "timeout",
+            latency_ms: timeoutMs,
+            ts: new Date().toISOString(),
+          });
           resolve({ decision: "deny", requestId, via: "timeout" });
         }
       }, timeoutMs);
@@ -90,6 +124,16 @@ export class PendingApprovalsStore {
         resolve: (decision) => {
           clearTimeout(timer);
           this.pending.delete(requestId);
+          this.telemetry({
+            event: "ask_pending_resolved",
+            requestId,
+            toolName: args.toolName,
+            sessionId: args.sessionId ?? null,
+            decision,
+            via: "user",
+            latency_ms: Date.now() - createdAt.getTime(),
+            ts: new Date().toISOString(),
+          });
           resolve({ decision, requestId, via: "user" });
         },
       };
@@ -114,29 +158,6 @@ export class PendingApprovalsStore {
     const record = this.pending.get(requestId);
     if (!record) return false;
     record.resolve(decision);
-    return true;
-  }
-
-  /**
-   * 尝试用 ``requestId`` token 消费一个挂起项（D-9.1b token threading 模式）。
-   *
-   * 与 ``respond`` 区别：``respond`` 是外部按钮 / curl 主动决策；本方法是
-   * **检查"用户口头同意"后，agent 重调原 tool 时携带 token 走的快速放行通道**。
-   *
-   * 安全约束：必须 toolName + toolInput 完全匹配创建时的快照，防止 agent 拿一个
-   * tool 的 token 去激活另一个 tool。
-   *
-   * 命中返 ``true``：从池中删除该挂起项并解为 ``"allow"``。
-   * 未命中（id 不存在 / 已超时 / toolName/Input 不匹配）返 ``false``。
-   */
-  tryConsume(requestId: string, toolName: string, toolInput: unknown): boolean {
-    const record = this.pending.get(requestId);
-    if (!record) return false;
-    if (record.toolName !== toolName) return false;
-    // JSON 字符串化比较——对纯 JSON 对象 / 数组 / 标量足够；对含 Date/Function
-    // 的复杂结构不可靠，但 tool input 通过 zod schema 校验，基本都是 JSON 安全的
-    if (JSON.stringify(record.toolInput) !== JSON.stringify(toolInput)) return false;
-    record.resolve("allow"); // 内部会 clearTimeout + delete from map
     return true;
   }
 

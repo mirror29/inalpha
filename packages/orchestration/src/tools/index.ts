@@ -182,6 +182,9 @@ export const orchestratorToolList = [
   schedulerListRunsTool,
   // D-9 spike：沙盒（ADR-0020 第二道运行隔离）
   sandboxRunCodeTool,
+  // D-9.1b · ADR-0006 §D6：agent 自检 + 解释风控（unlock 不挂，admin UI 用 allTools 走）
+  riskDescribeRulesTool,
+  riskListLocksTool,
 ] as const;
 
 /** 名字 → tool 索引，给 framework 路由用。 */
