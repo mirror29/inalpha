@@ -85,13 +85,13 @@ async def app_with_lifespan() -> AsyncIterator[Any]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _isolate_risk_state_in_tests(app_with_lifespan: Any) -> AsyncIterator[None]:
-    """D-9：测试环境隔离 RiskGuard 副作用。
+    """D-9.1a：测试环境隔离 RiskGuardFactory 副作用。
 
     两层隔离：
 
-    1. **强置 ``app.state.risk_guard = None``** —— 让 happy-path 测试（test_api_orders /
-       test_end_to_end_loop 等）不被 ``.env`` 里的 ``INALPHA_RISK_DEMO_ACCOUNT_SUB``
-       开启的 PostgresTradeRepository 拦截。需要测 risk 的用例（test_api_risk_e2e）
+    1. **强置 ``app.state.risk_guard_factory = None``** —— 让 happy-path 测试
+       （test_api_orders / test_end_to_end_loop 等）不被 lifespan 默认加载的
+       per-account RiskGuard 拦截。需要测 risk 的用例（test_api_risk_e2e）
        自己用 fixture override 这个值。
 
     2. **TRUNCATE risk_locks** —— test_api_risk_e2e.py 写测试锁后残留会污染
@@ -101,7 +101,7 @@ async def _isolate_risk_state_in_tests(app_with_lifespan: Any) -> AsyncIterator[
     """
     from inalpha_shared.db import get_conn
 
-    app_with_lifespan.state.risk_guard = None
+    app_with_lifespan.state.risk_guard_factory = None
     async with get_conn() as conn:
         async with conn.cursor() as cur:
             await cur.execute("TRUNCATE TABLE risk_locks RESTART IDENTITY")

@@ -1,11 +1,11 @@
 """HTTP 端到端：POST /orders/submit + POST /plans/{id}/execute 接 RiskGuard 拦截。
 
 测试策略：lifespan 加载的 risk_rules.toml 命中条件复杂（需要 trade_repo 真接），
-直接 monkeypatch ``app.state.risk_guard`` 注入一个 always-fail mock guard，验证：
+直接 monkeypatch ``app.state.risk_guard_factory`` 注入一个 fake factory，验证：
 
 1. POST /orders/submit 命中 → 409 + body.code='RISK_REJECTED' + risk_locks 表新增
 2. 第二次同条件 → 命中现有锁，仍 409
-3. ``risk_guard=None``（disabled / 加载失败）→ pass-through，下单成功
+3. ``risk_guard_factory=None``（disabled / 加载失败）→ pass-through，下单成功
 4. POST /plans/{id}/execute 也走同样拦截
 """
 from __future__ import annotations
@@ -69,11 +69,25 @@ async def _truncate_risk_locks(app_with_lifespan):  # type: ignore[no-untyped-de
     yield
 
 
+class _FixedGuardFactory:
+    """Test-only fake of RiskGuardFactory —— 对所有 account_id 返同一个 guard。
+
+    与 RiskGuardFactory.get_for_check 同签名，但忽略 account_id（per-account 隔离
+    本测试不需要）。
+    """
+
+    def __init__(self, guard: RiskGuard) -> None:
+        self._guard = guard
+
+    async def get_for_check(self, _account_id: Any) -> RiskGuard:
+        return self._guard
+
+
 @pytest.fixture
 def failing_guard(app_with_lifespan: Any) -> RiskGuard:
-    """注入一个 always-fail RiskGuard 到 app.state，覆盖 lifespan 默认加载。"""
+    """注入一个 always-fail RiskGuard 到 app.state.risk_guard_factory（fake 包装）。"""
     guard = RiskGuard(rules=[_AlwaysFailSymbolRule()], starting_balance=10_000.0)
-    app_with_lifespan.state.risk_guard = guard
+    app_with_lifespan.state.risk_guard_factory = _FixedGuardFactory(guard)
     return guard
 
 
@@ -141,8 +155,8 @@ def test_post_orders_submit_passes_when_guard_disabled(
     auth_headers: dict[str, str],
     app_with_lifespan: Any,
 ) -> None:
-    """app.state.risk_guard=None（risk_engine_enabled=false / 加载失败）→ pass-through。"""
-    app_with_lifespan.state.risk_guard = None
+    """app.state.risk_guard_factory=None（risk_engine_enabled=false / 加载失败）→ pass-through。"""
+    app_with_lifespan.state.risk_guard_factory = None
 
     r = client.post(
         "/orders/submit",
@@ -166,7 +180,9 @@ def test_post_orders_submit_passes_when_no_rules(
     app_with_lifespan: Any,
 ) -> None:
     """rules=[] 的 RiskGuard 也是 pass-through。"""
-    app_with_lifespan.state.risk_guard = RiskGuard(rules=[], starting_balance=10_000.0)
+    app_with_lifespan.state.risk_guard_factory = _FixedGuardFactory(
+        RiskGuard(rules=[], starting_balance=10_000.0)
+    )
 
     r = client.post(
         "/orders/submit",

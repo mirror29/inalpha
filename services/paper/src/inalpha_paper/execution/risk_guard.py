@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+from uuid import UUID
 
 from inalpha_shared.db import get_conn
 from inalpha_shared.errors import ConflictError
@@ -29,6 +31,9 @@ from ..kernel.identifiers import InstrumentId
 from ..storage import risk_locks as locks_store
 from .risk_rules import RiskRule
 from .risk_rules.base import Side
+
+if TYPE_CHECKING:
+    from .risk_guard_factory import RiskGuardFactory
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,15 +201,16 @@ def _http_side_to_rule_side(side: str) -> Side:
 
 
 async def enforce(
-    guard: RiskGuard | None,
+    factory: RiskGuardFactory | None,
     *,
+    account_id: UUID,
     venue: str,
     symbol: str,
     side: str,
 ) -> None:
-    """HTTP route 一行调用入口：风控通过返 None，命中抛 409 ``RISK_REJECTED``。
+    """HTTP route 一行调用入口：按 account_id 拿对应 RiskGuard 后跑 check。
 
-    ``guard=None`` → fail-open（``INALPHA_RISK_ENGINE_ENABLED=false`` 或 TOML 加载失败时
+    ``factory=None`` → fail-open（``INALPHA_RISK_ENGINE_ENABLED=false`` 或 TOML 加载失败时
     走这条；不阻塞下单，但 lifespan 已 log warning / error）。
 
     **独立连接 + 显式 commit**：本函数内部用 ``get_conn()`` 拿独立 connection 写
@@ -213,7 +219,8 @@ async def enforce(
     connection 保证锁能持久化，下一次同条件请求才能命中 ``from_existing_lock=True``。
 
     Args:
-        guard: ``app.state.risk_guard`` 取出来的实例（可能为 None）
+        factory: ``app.state.risk_guard_factory`` 取出来的实例（可能为 None）
+        account_id: caller 派生的 account UUID（来自 JWT sub），用于隔离 trade history
         venue: 如 ``'binance'`` / ``'nasdaq'``
         symbol: 如 ``'BTC/USDT'`` / ``'AAPL'``
         side: ``'BUY'`` / ``'SELL'``（API 层用 BUY/SELL 命名）
@@ -222,9 +229,10 @@ async def enforce(
         ConflictError: 409 ``RISK_REJECTED``，details 含 rule_name / reason /
             locked_until / lock_scope / from_existing_lock
     """
-    if guard is None:
+    if factory is None:
         return
 
+    guard = await factory.get_for_check(account_id)
     instrument_id = InstrumentId(symbol=symbol, venue=venue)
     rule_side = _http_side_to_rule_side(side)
     async with get_conn() as lock_conn:
