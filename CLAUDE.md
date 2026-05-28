@@ -54,7 +54,8 @@ Inalpha 是**金融 agent**——任何"看起来很新但其实 stale"的输出
 pnpm i && uv sync && bash scripts/dev.sh   # data:8001 + paper:8002 + mastra:4111
 ```
 
-D-9：E1 LLM 改策略（ADR-0020）；live runner（issue #1）；askUserChoice（issue #2）
+D-9：E1 LLM 改策略（ADR-0020）；closed_trades 写入链路接入（D-9 闭环）；
+D-10：live runner（issue #1）；askUserChoice（issue #2）
 
 ---
 

@@ -6,8 +6,9 @@
 - 所有函数接 ``AsyncConnection`` 参数，让调用方控制事务
 - 返回 ``dict[str, Any]`` (dict_row)
 
-**写入路径未接入**：当前 Portfolio fill 路径还没监听 close 事件 + 写入本表。
-独立 ADR-0007 处理 fill → closed_trades 写入逻辑（涉及核心 fill 流程）。
+D-9.1a：写入路径已接入 HTTP 订单流
+（``api/orders._apply_fill_to_positions_and_cash`` → ``positions.apply_fill``
+检测平仓 → 同事务写入 ``closed_trades``）。
 """
 from __future__ import annotations
 

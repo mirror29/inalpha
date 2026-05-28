@@ -13,6 +13,7 @@ D-8b 升级：
 """
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -34,6 +35,7 @@ from ..schemas import (
     SubmitOrderResponse,
 )
 from ..storage import accounts as accounts_store
+from ..storage import closed_trades as closed_trades_store
 from ..storage import orders as orders_store
 from ..storage import positions as positions_store
 
@@ -109,6 +111,10 @@ async def post_submit_order(
         )
 
         if result["status"] == "FILLED":
+            ts_event = result["ts_event"]
+            order_id = result["client_order_id"]
+            assert isinstance(ts_event, datetime)
+            assert isinstance(order_id, str)
             await _apply_fill_to_positions_and_cash(
                 db,
                 account_id=account_id,
@@ -118,6 +124,8 @@ async def post_submit_order(
                 quantity=Decimal(str(result["filled_quantity"])),
                 fill_price=Decimal(str(result["avg_fill_price"])),
                 fee=Decimal(str(result["fee"])),
+                ts_event=ts_event,
+                order_id=order_id,
             )
 
     return SubmitOrderResponse(**result)  # type: ignore[arg-type]
@@ -217,13 +225,18 @@ async def _apply_fill_to_positions_and_cash(
     quantity: Decimal,
     fill_price: Decimal,
     fee: Decimal,
+    ts_event: datetime,
+    order_id: str,
 ) -> None:
-    """一笔 fill 同时更新 positions + cash（在调用方的事务里）。"""
+    """一笔 fill 同时更新 positions + cash + closed_trades（在调用方的事务里）。
+
+    D-9.1a：positions.apply_fill 现在返回 ClosedTradeInfo | None，
+    检测到平仓时同事务写入 closed_trades 表。
+    """
     notional = quantity * fill_price
-    # BUY: -notional - fee；SELL: +notional - fee
     cash_delta = (-notional if side == "BUY" else notional) - fee
     await accounts_store.apply_cash_delta(db, account_id, cash_delta)
-    await positions_store.apply_fill(
+    _, close_info = await positions_store.apply_fill(
         db,
         account_id=account_id,
         venue=venue,
@@ -231,7 +244,27 @@ async def _apply_fill_to_positions_and_cash(
         side=side,
         fill_qty=quantity,
         fill_price=fill_price,
+        ts_event=ts_event,
+        order_id=order_id,
     )
+    if close_info is not None:
+        await closed_trades_store.insert_close(
+            db,
+            account_id=close_info.account_id,
+            venue=close_info.venue,
+            symbol=close_info.symbol,
+            side=close_info.side,
+            open_ts=close_info.open_ts,
+            close_ts=close_info.close_ts,
+            open_price=close_info.open_price,
+            close_price=close_info.close_price,
+            quantity=close_info.closed_qty,
+            close_profit_pct=close_info.close_profit_pct,
+            close_profit_abs=close_info.close_profit_abs,
+            exit_reason=close_info.exit_reason,
+            open_order_id=close_info.open_order_id,
+            close_order_id=close_info.close_order_id,
+        )
 
 
 def _row_to_order_record(row: dict[str, Any]) -> OrderRecord:

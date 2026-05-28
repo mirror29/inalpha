@@ -139,7 +139,7 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 | ✅ Shipped | Bull / bear researcher debate | D-9 | opposing-stance researchers under `services/research` |
 | ✅ Shipped | Scheduler / cron agent mode | D-9 | `scheduler_jobs` + advisory lock + `/api/scheduler/*` management plane |
 | ✅ Shipped | RiskGuard per-account isolation | D-9.1a | `RiskGuardFactory` removes cross-account state bleed |
-| ⏭️ In Flight | Risk engine — remaining rules | D-9 closing | `cooldown` / `stoploss_guard` / `market_hours` need real `trade_repo` + `market_calendar` |
+| ✅ Shipped | Risk engine — all 5 rules live in HTTP path | D-9 closed | `closed_trades` writes from HTTP order flow; `RoutingCalendar` for US equity + crypto; all trade-based rules trigger on real data |
 | ⏭️ In Flight | `askUserChoice` front-end | D-10 (issue #2) | brings the `ask` permission state back from workaround |
 | ⏭️ In Flight | `permissions.yaml` configuration | D-8b (issue #4) | replaces the hard-coded `defaults.ts` |
 | 🗓️ Planned | Live runner | D-10 (issue #1) | tick-driven `on_bar` writing `paper_positions` / `paper_trades` |

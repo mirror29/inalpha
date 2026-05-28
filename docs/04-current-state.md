@@ -1,7 +1,7 @@
-# 04 · D-8a 当前状态：Plan/Exec 闭环 + 工程护栏
+# 04 · D-9 当前状态：Plan/Exec 闭环 + 工程护栏
 
-> 状态：**D-8a 完成（2026-05-21）**。下一里程碑 D-8b（trade_plans / approval_tokens
-> Postgres 表持久化）/ D-9（RiskEngine 规则化 + paper-service 真接入）。
+> 状态：**D-9 完成（2026-05-28）**。下一里程碑 D-10（live runner issue #1）
+> / D-8b（permissions.yaml issue #4）。
 >
 > 本文回答的问题：**clone 仓库后，"现在到底做到哪里、决策链路长什么样"。**
 > 详细架构与设计取舍见 [`docs/03-kernel-design.md`](./03-kernel-design.md)；
@@ -158,6 +158,15 @@ sequenceDiagram
   目前是 Noop / crypto-only 实现，cooldown / stoploss_guard 真激活留 follow-up
   issue；前端 askUserChoice 接通前 ask 路径仍是 workaround
 
+- **D-9.1a · closed_trades 写入链路接入**（2026-05-28）：
+  `positions` 表加 `ts_opened` / `open_order_id` 列（migration 0008）；
+  `positions.apply_fill()` 增强为返回 `ClosedTradeInfo | None`，在 HTTP
+  订单流同事务内写入 `closed_trades` 表。至此 trade-based RiskRule 5 件套
+  （Cooldown / LowProfit / MaxDrawdown / StoplossGuard / MarketHoursRule）
+  在 HTTP 路径全可触发——前提是 `closed_trades` 表有平仓数据（HTTP 订单流
+  本身产生）。MarketHoursRule 通过 `RoutingCalendar` 对 crypto（永远开市）
+  和美股（9:30-16:00 ET）生效。D-9 闭环完成。
+
 不在范围（下一阶段）：MAP-Elites / Island Model / 多代演化 / unified-diff 变异（E2/E3）；
 `services/evolver/` 独立服务（等多代演化需求出现再拆）；promoted 候选的 live tick
 runner（按行情自动下单、写 `paper_positions` / `paper_trades`）。
@@ -167,17 +176,11 @@ runner（按行情自动下单、写 `paper_positions` / `paper_trades`）。
 ## 未完成 / 下一步
 
 - **D-8b**：`permissions.yaml` 配置文件化（目前在 `defaults.ts` 硬编码，issue #4）
-- **D-9 · RiskEngine 接入后续**：cooldown / stoploss_guard / low_profit 真激活需要接
-  `trade_repo`（历史 fills 查询）；market_hours 真激活需要接 `services/data` 真日历；
-  目前 paper HTTP 已经过 RiskGuard 但只有 MaxDrawdown 能真触发（trade_repo=Noop）
-- **D-9 · 定时 agent 模式**：类 Hermes cron 接入已落地 — `packages/orchestration/src/scheduler/`
-  + `scheduler_jobs` / `scheduler_runs` 两张表（migration 0004）+ croner 调度 + advisory lock
-  + `/api/scheduler/*` HTTP 管理面 + `scripts/scheduler-admin.html`。
-  默认 `SCHEDULER_ENABLED=false`；种子两个 job（`daily_btc_deep_dive` / `hourly_btc_backfill`）
-  enabled=false，需手动开启。
+- **D-10 · live runner**（issue #1）：tick-driven `on_bar` 写 `paper_positions` / `paper_trades`
+- **D-10 · askUserChoice**（issue #2）：前端接通，让 `ask` 权限状态从 workaround 回归
 - **delegation hop**（ADR-0012 补丁）：sub-strategy 派生计划的转授权链
 - **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate）尚未落地
-- **E1 MVP 已上**（D-9 · ADR-0020）：LLM 写完整源码 + 沙盒 + fitness；下一里程碑 E2 多代演化
+- **E1 MVP 已上**（D-9 · ADR-0020）：LLM 写完整源码 + 沙盒 + fitness；下一里程碑 E2 多代演化（issue #7）
 
 ---
 
