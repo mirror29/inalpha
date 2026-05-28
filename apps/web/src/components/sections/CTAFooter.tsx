@@ -3,24 +3,22 @@
 import { ArrowUpRight } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { useState } from "react";
 import { useTranslations } from "next-intl";
 
 import { CopyableCommand } from "@/components/primitives/CopyableCommand";
-import { cn } from "@/lib/cn";
+import { LINKS } from "@/lib/links";
 import { fadeUp } from "@/lib/motion";
-
-type TabKey = "git" | "pip";
+import { releaseFootline } from "@/lib/release-meta";
 
 /**
  * 07 — Closing CTA + footer.
  * Same bracketed-header rhythm as the other broadsheet sections so the
- * page closes the way it opens. Tabs flip between `git clone` and `pip install`.
+ * page closes the way it opens. Single `git clone` command — no pip yet
+ * (package not published to PyPI, kept off the page to avoid copy-paste 404s).
  */
 export function CTAFooter() {
   const t = useTranslations("cta");
   const tf = useTranslations("footer");
-  const [tab, setTab] = useState<TabKey>("git");
 
   return (
     <section className="relative border-t border-fg/12">
@@ -58,31 +56,9 @@ export function CTAFooter() {
             {t("sub")}
           </motion.p>
 
-          {/* Tab toggle */}
-          <motion.div
-            variants={fadeUp}
-            className="mt-12 inline-flex border border-fg/15 font-mono text-[11px] uppercase tracking-[0.2em]"
-          >
-            {(["git", "pip"] as TabKey[]).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setTab(key)}
-                className={cn(
-                  "px-4 py-2 transition-colors",
-                  tab === key
-                    ? "bg-fg text-bg"
-                    : "text-fg-muted hover:bg-bg-deep hover:text-fg",
-                )}
-              >
-                {t(`tabs.${key}`)}
-              </button>
-            ))}
-          </motion.div>
-
-          <motion.div variants={fadeUp} className="mt-3 max-w-xl">
+          <motion.div variants={fadeUp} className="mt-12 max-w-xl">
             <CopyableCommand
-              command={t(`commands.${tab}`)}
+              command={t("commands.git")}
               copyLabel={t("copy")}
               copiedLabel={t("copied")}
             />
@@ -93,7 +69,7 @@ export function CTAFooter() {
             className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-3"
           >
             <Link
-              href="https://github.com/mirror29/inalpha"
+              href={LINKS.github}
               target="_blank"
               rel="noreferrer"
               className="group inline-flex items-center gap-2 border border-fg/20 px-5 py-2.5 font-mono text-[12px] uppercase tracking-[0.22em] text-fg transition-colors hover:border-cyan hover:text-cyan"
@@ -102,7 +78,7 @@ export function CTAFooter() {
               <ArrowUpRight className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
             </Link>
             <Link
-              href="https://github.com/mirror29/inalpha/blob/main/LICENSE"
+              href={LINKS.license}
               target="_blank"
               rel="noreferrer"
               className="font-mono text-[11px] uppercase tracking-[0.22em] text-fg-muted underline-offset-4 hover:text-fg hover:underline"
@@ -126,7 +102,7 @@ export function CTAFooter() {
           </div>
           <div className="col-span-6 md:col-span-3">
             <p className="text-fg/40">rev</p>
-            <p className="mt-1.5 text-fg-muted">0.9-D9 · 2026.05.26</p>
+            <p className="mt-1.5 text-fg-muted">{releaseFootline}</p>
           </div>
           <div className="col-span-6 md:col-span-3">
             <p className="text-fg/40">© rights</p>

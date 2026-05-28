@@ -9,6 +9,9 @@ import { Hero } from "@/components/sections/Hero";
 import { SystemSchematic } from "@/components/sections/SystemSchematic";
 import { UnifiedKernel } from "@/components/sections/UnifiedKernel";
 import { TickerStrip } from "@/components/primitives/TickerStrip";
+import { getGithubStats } from "@/lib/github";
+import { REPO_COORDS } from "@/lib/links";
+import { RELEASE } from "@/lib/release-meta";
 
 export default async function HomePage({
   params,
@@ -18,12 +21,18 @@ export default async function HomePage({
   const { locale } = await params;
   setRequestLocale(locale);
 
+  // server-side fetch；1h ISR；失败时 GlobalCoverage 自己走兜底
+  const githubStats = await getGithubStats({
+    owner: REPO_COORDS.owner,
+    repo: REPO_COORDS.name,
+  });
+
   const tickerItems = [
     "INALPHA",
     "OPEN-SOURCE QUANT AGENT FRAMEWORK",
-    "D-9",
-    "REV 0.9",
-    "2026.05.26",
+    RELEASE.phase,
+    `REV ${RELEASE.rev}`,
+    RELEASE.dateDot,
     "AUDIT-GRADE EVOLUTION",
     "FACTOR LAB · RISK ENGINE",
     "PLAN · APPROVE · EXECUTE",
@@ -45,7 +54,7 @@ export default async function HomePage({
         <SystemSchematic />
         <UnifiedKernel />
         <EngineeringHarness />
-        <GlobalCoverage />
+        <GlobalCoverage stats={githubStats} />
       </main>
 
       <CTAFooter />

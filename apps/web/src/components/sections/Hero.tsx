@@ -6,8 +6,11 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 
 import { CopyableCommand } from "@/components/primitives/CopyableCommand";
+import { HeroBackdrop } from "@/components/primitives/HeroBackdrop";
 import { LocaleSwitcher } from "@/components/primitives/LocaleSwitcher";
+import { LINKS } from "@/lib/links";
 import { fadeUp } from "@/lib/motion";
+import { releaseTag } from "@/lib/release-meta";
 
 /**
  * Page hero — broadsheet aesthetic, refined.
@@ -21,12 +24,14 @@ export function Hero() {
   const tCta = useTranslations("cta");
 
   return (
-    <header className="relative border-b border-fg/12">
+    <header className="relative overflow-hidden border-b border-fg/12">
+      <HeroBackdrop />
+
       <div className="absolute right-6 top-6 z-50">
         <LocaleSwitcher />
       </div>
 
-      <div className="mx-auto max-w-6xl px-6 pt-16 pb-24 md:px-12 md:pt-24 md:pb-32">
+      <div className="relative z-10 mx-auto max-w-6xl px-6 pt-16 pb-24 md:px-12 md:pt-24 md:pb-32">
         <motion.div
           initial="hidden"
           animate="visible"
@@ -45,7 +50,7 @@ export function Hero() {
             <span className="text-fg-muted/50">/</span>
             <span>open-source quant framework</span>
             <span className="ml-3 hidden h-px w-12 bg-fg/20 sm:inline-block" />
-            <span className="hidden text-fg-muted/60 sm:inline">rev 0.9 · D-9</span>
+            <span className="hidden text-fg-muted/60 sm:inline">{releaseTag}</span>
           </motion.div>
 
           <motion.h1
@@ -76,7 +81,7 @@ export function Hero() {
               className="min-w-[22rem] max-w-md"
             />
             <Link
-              href="https://github.com/mirror29/inalpha"
+              href={LINKS.github}
               target="_blank"
               rel="noreferrer"
               className="group inline-flex items-center gap-2 border-b border-fg/30 pb-1 font-mono text-[12px] uppercase tracking-[0.22em] text-fg-muted transition-colors hover:border-fg hover:text-fg"

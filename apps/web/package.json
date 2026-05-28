@@ -10,9 +10,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "next dev --port 3000",
+    "dev": "next dev",
     "build": "next build",
-    "start": "next start --port 3000",
+    "start": "next start",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
