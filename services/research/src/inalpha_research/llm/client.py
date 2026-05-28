@@ -75,7 +75,7 @@ class DeepSeekLLMClient:
         *,
         api_key: str,
         base_url: str = "https://api.deepseek.com/v1",
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-pro",
         timeout_seconds: float = 60.0,
         max_concurrent: int = 5,
         max_retries: int = 3,
@@ -366,7 +366,7 @@ class GeminiLLMClient:
         self,
         *,
         api_key: str,
-        model: str = "gemini-2.0-flash-exp",
+        model: str = "gemini-3-pro",
         timeout_seconds: float = 60.0,
         max_concurrent: int = 5,
         max_retries: int = 3,
@@ -553,20 +553,22 @@ class FakeLLMClient:
 # ────────────────────────────────────────────────────────────────────
 
 
-# 各 provider 默认 base_url（OpenAI-compat 家族）
+# 各 provider 默认 base_url + 默认模型（OpenAI-compat 家族）。
+# 模型选型原则（2026-05 更新）：每家当前主流旗舰。
+# 详见 packages/orchestration/src/mastra/llm/provider.ts DEFAULT_MODELS 注释表。
 _OPENAI_COMPAT_DEFAULTS: dict[str, tuple[str, str]] = {
     # provider -> (default_base_url, default_model)
-    "deepseek": ("https://api.deepseek.com/v1", "deepseek-chat"),
-    "openai": ("https://api.openai.com/v1", "gpt-5"),
-    "kimi": ("https://api.moonshot.cn/v1", "moonshot-v1-8k"),
-    "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "glm-4-plus"),
-    "ollama": ("http://localhost:11434/v1", "llama3.2"),
+    "deepseek": ("https://api.deepseek.com/v1", "deepseek-v4-pro"),
+    "openai": ("https://api.openai.com/v1", "gpt-5.5"),
+    "kimi": ("https://api.moonshot.cn/v1", "kimi-k2.6"),
+    "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "glm-5.1"),
+    "ollama": ("http://localhost:11434/v1", "llama4"),
 }
 
 # 非 OpenAI-compat provider 的默认模型
 _NATIVE_DEFAULTS: dict[str, str] = {
     "anthropic": "claude-opus-4-7",
-    "gemini": "gemini-2.0-flash-exp",
+    "gemini": "gemini-3-pro",
 }
 
 SUPPORTED_PROVIDERS = (
