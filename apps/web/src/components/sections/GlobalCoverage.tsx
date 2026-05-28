@@ -14,13 +14,26 @@ const TAG_GROUPS = {
   macro: ["indices", "macro"] as const,
 };
 
+const TOTAL_MARKETS = Object.values(TAG_GROUPS).reduce(
+  (acc, group) => acc + group.length,
+  0,
+);
+
+interface GlobalCoverageProps {
+  /** Server-side fetched GitHub stats; `null` 时退回静态兜底（仓库当前真实数值）。 */
+  stats?: { stars: number; contributors: number; commits: number } | null;
+}
+
 /**
  * 06 — Global coverage + current state (transparency).
  * Markets grouped + animated stat row + alpha-quality LiveBadges.
  */
-export function GlobalCoverage() {
+export function GlobalCoverage({ stats }: GlobalCoverageProps = {}) {
   const t = useTranslations("coverage");
   const items = t.raw("currentState.items") as string[];
+
+  // 拿不到 GitHub API（rate-limit / 离线 build）时用一个真实但保守的兜底
+  const safeStats = stats ?? { stars: 1, contributors: 1, commits: 170 };
 
   return (
     <BroadsheetSection
@@ -43,16 +56,16 @@ export function GlobalCoverage() {
               <motion.div
                 key={group}
                 variants={fadeUp}
-                className="bg-bg p-6"
+                className="group/coverage relative bg-bg p-6 transition-colors duration-300 hover:bg-bg-deep/60"
               >
-                <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-fg-muted/60">
+                <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-fg-muted/60 transition-colors group-hover/coverage:text-cyan/85">
                   ── {t(`groups.${group}`)} / {tags.length}
                 </p>
                 <ul className="mt-5 flex flex-wrap gap-2">
                   {tags.map((tag) => (
                     <li
                       key={tag}
-                      className="border border-fg/15 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted transition-colors hover:border-cyan hover:text-cyan"
+                      className="cursor-default border border-fg/15 bg-transparent px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.04] hover:border-cyan hover:bg-cyan/10 hover:text-cyan hover:shadow-[0_0_14px_-4px_rgba(95,179,255,0.5)]"
                     >
                       {t(`tags.${tag}`)}
                     </li>
@@ -71,12 +84,19 @@ export function GlobalCoverage() {
           transition={{ duration: 0.55 }}
           className="flex flex-wrap items-end gap-x-12 gap-y-6 border-y border-fg/12 py-10"
         >
-          <Stat target={142} suffix={t("stats.starsSuffix")} accent="text-cyan" />
-          <Stat target={23} suffix={t("stats.contributorsSuffix")} />
-          <Stat target={487} suffix={t("stats.commitsSuffix")} />
-          <Stat target={12} suffix="markets" accent="text-gold" />
+          <Stat
+            target={safeStats.stars}
+            suffix={t("stats.starsSuffix")}
+            accent="text-cyan"
+          />
+          <Stat
+            target={safeStats.contributors}
+            suffix={t("stats.contributorsSuffix")}
+          />
+          <Stat target={safeStats.commits} suffix={t("stats.commitsSuffix")} />
+          <Stat target={TOTAL_MARKETS} suffix="markets" accent="text-gold" />
           <div className="ml-auto">
-            <LiveBadge label={t("stats.qualityLabel")} />
+            <LiveBadge label={t("stats.qualityLabel")} tint="fox" />
           </div>
         </motion.div>
 
@@ -124,12 +144,12 @@ function Stat({
   accent?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="group/stat flex cursor-default flex-col gap-1.5 transition-transform duration-200 hover:-translate-y-0.5">
       <StatCounter
         target={target}
-        className={`font-mono leading-none tabular-nums text-[clamp(2.25rem,4.4vw,3.75rem)] tracking-tight ${accent}`}
+        className={`font-mono leading-none tabular-nums text-[clamp(2.25rem,4.4vw,3.75rem)] tracking-tight transition-[text-shadow,filter] duration-300 group-hover/stat:[text-shadow:0_0_22px_rgba(95,179,255,0.45)] ${accent}`}
       />
-      <span className="font-mono text-[10px] uppercase tracking-[0.26em] text-fg-muted/70">
+      <span className="font-mono text-[10px] uppercase tracking-[0.26em] text-fg-muted/70 transition-colors group-hover/stat:text-fg/90">
         ── {suffix}
       </span>
     </div>

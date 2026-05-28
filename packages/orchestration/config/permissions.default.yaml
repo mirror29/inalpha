@@ -1,0 +1,85 @@
+# Inalpha 默认 Permission 规则（ADR-0011 / D-8b 外置版本）
+#
+# 内容 1:1 等价于 packages/orchestration/src/permissions/defaults.ts 中的
+# DEFAULT_PERMISSIONS 常量；常量保留作为兜底与测试基线。运行时优先级：
+#
+#   INALPHA_PERMISSIONS_FILE env var  →  本文件  →  DEFAULT_PERMISSIONS const
+#
+# 修改本文件后需重启进程（D-8b 不做 hot reload）。
+#
+# 三态语义（ADR-0011）：
+#   - allow：直接执行
+#   - ask：走审批后才执行（前端 askUserChoice 未接通前，部分 ask 被 workaround 为 allow）
+#   - deny：直接拒绝；deny 永不可被下层覆盖（ADR-0011 §关键约定 1）
+#
+# 优先级：deny > allow > ask > defaultMode
+#
+# defaultMode = ask：保守 fail-closed（D-8b' review B7 切换），未列名 tool 必须显式声明。
+
+defaultMode: ask
+
+allow:
+  # 只读 / 信息查询
+  - "data.*"
+  - "paper.list_*"
+  - "paper.get_*"
+  - "paper.run_backtest"
+  - "paper.run_backtest_with_reflection"
+  - "paper.reflect_backtest"
+  - "paper.compose_strategy"
+  - "paper.author_strategy"
+  - "paper.health"
+  - "research.deep_dive"
+  - "research.*"
+  - "factor.*"
+  - "scheduler.list_*"
+  - "scheduler.get_*"
+  - "scheduler.create_job"
+  - "scheduler.set_enabled"
+  - "scheduler.trigger_job"
+
+  # Swarm 批量回测（ADR-0025）：只读，无下单路径
+  - "swarm.*"
+
+  # 策略 lifecycle（D-8b 起会有）
+  - "paper.start_strategy"
+  - "paper.stop_strategy"
+
+  # Plan/Exec 工具（ADR-0012）
+  # 把 plan 三件套全部 allow ——LLM 想交易必须走完整链路；approval_token 是真正的护栏
+  - "trade.create_plan"
+  - "trade.approve_plan"
+  - "trade.execute_plan"
+  - "trade.reject_plan"
+  - "trade.get_plan"
+
+  # D-9 spike：沙盒（ADR-0020 第二道运行隔离）
+  # 60s 内的运行允许（spike + 临时计算）；更长走 ask（人工审批）。
+  # 第一道 AST 审计 + 第三道协议契约校验留给 Phase B 接入。
+  - "sandbox.run_code(timeoutMs<=60000)"
+
+ask:
+  # D-8a 暂无 live 引擎；规则提前写好作 forward-compat
+  - "live.submit_order(notional<1000)"
+  - "risk.update_config"
+
+  # D-9 · 候选 → 正式策略（ADR-0018 / D-9.1b：askUserChoice 接通后改回 ask）
+  # 后端硬校验仍在（fitness IS NOT NULL + status='candidate'）作为第二道防线
+  - "paper.promote_candidate"
+
+deny:
+  # 旧的"直接下单"路径全部禁——强制走 ADR-0012 plan/exec
+  - "paper.submit_order"
+  - "paper.submit_order_intent"
+
+  # live 大额 / 全局动作
+  - "live.submit_order(notional>=10000)"
+  - "live.close_all_positions"
+  - "live.cancel_all_orders"
+  - "live.emergency_stop_all"
+
+  # 不可逆破坏操作
+  - "strategy.delete_history"
+  - "risk.disable_all_checks"
+  - "secret.rotate_api_key"
+  - "system.shutdown"

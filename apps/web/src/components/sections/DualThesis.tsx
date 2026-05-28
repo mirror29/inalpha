@@ -85,20 +85,31 @@ function ThesisColumn({
 }) {
   const accentColor = accent === "cyan" ? "text-cyan" : "text-gold";
   const accentBar = accent === "cyan" ? "bg-cyan" : "bg-gold";
+  const accentGlow =
+    accent === "cyan"
+      ? "radial-gradient(ellipse at 0% 0%, rgba(95,179,255,0.10), transparent 60%)"
+      : "radial-gradient(ellipse at 0% 0%, rgba(212,167,68,0.10), transparent 60%)";
   const dotColor = accent === "cyan" ? "bg-cyan/70" : "bg-gold/70";
   return (
     <motion.article
       variants={slideInTilt}
       custom={direction}
-      className="group relative flex flex-col gap-8 bg-bg p-8 md:p-10"
+      className="group relative flex flex-col gap-8 overflow-hidden bg-bg p-8 transition-all duration-300 hover:-translate-y-0.5 hover:bg-bg-deep md:p-10"
     >
+      {/* accent 竖线：rest 1px/opacity 70，hover 2px/opacity 100 */}
       <span
         aria-hidden
-        className={`absolute left-0 top-0 h-full w-px ${accentBar} opacity-70`}
+        className={`absolute left-0 top-0 h-full w-px opacity-70 transition-all duration-300 group-hover:w-[2px] group-hover:opacity-100 ${accentBar}`}
       />
-      <header className="space-y-3">
+      {/* accent radial glow：rest 隐藏，hover 淡入 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{ background: accentGlow }}
+      />
+      <header className="relative space-y-3">
         <p
-          className={`font-mono text-[11px] uppercase tracking-[0.32em] ${accentColor}`}
+          className={`font-mono text-[11px] uppercase tracking-[0.32em] transition-all duration-300 group-hover:tracking-[0.4em] ${accentColor}`}
         >
           {letter}.
         </p>
@@ -109,7 +120,7 @@ function ThesisColumn({
           {header}
         </h3>
       </header>
-      <ul className="space-y-3.5">
+      <ul className="relative space-y-3.5">
         {items.map((item) => (
           <li
             key={item}
@@ -117,13 +128,13 @@ function ThesisColumn({
           >
             <span
               aria-hidden
-              className={`mt-2 inline-block size-1.5 shrink-0 rounded-full ${dotColor} transition-transform group-hover/item:scale-125`}
+              className={`mt-2 inline-block size-1.5 shrink-0 rounded-full transition-transform group-hover/item:scale-125 ${dotColor}`}
             />
             <span>{item}</span>
           </li>
         ))}
       </ul>
-      <footer className="mt-auto border-t border-fg/10 pt-5 font-mono text-[11px] uppercase tracking-[0.18em] text-fg-muted">
+      <footer className="relative mt-auto border-t border-fg/10 pt-5 font-mono text-[11px] uppercase tracking-[0.18em] text-fg-muted transition-colors group-hover:text-fg/80">
         ── {footer}
       </footer>
     </motion.article>

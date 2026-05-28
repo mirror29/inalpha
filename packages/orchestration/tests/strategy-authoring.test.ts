@@ -262,16 +262,15 @@ describe("paper.promote_candidate", () => {
     ).rejects.toThrow(/CANDIDATE_NOT_BACKTESTED|400/);
   });
 
-  it("DEFAULT_PERMISSIONS allows paper.promote_candidate (D-9 MVP: agent 自助闭环)", () => {
-    // 前端 askUserChoice 还没接通，permission ask 会让 agent 撞墙；MVP 暂时放 allow，
-    // 由 LLM prompt 自检 + 后端硬校验替代 permission 拦截。
-    // ADR-0018 askUserChoice 接通后改回 ask（届时本测试断言改为 'ask'）。
+  it("DEFAULT_PERMISSIONS requires ask for paper.promote_candidate (D-9.1b: ADR-0018)", () => {
+    // ADR-0018 askUserChoice 接通后，promote_candidate 走 permission 'ask' ——
+    // agent 调时前端弹气泡让用户允许 / 拒绝。LLM 仍须调前自检 + 后端硬校验。
     const engine = new PermissionEngine(DEFAULT_PERMISSIONS);
     const result = engine.authorize("paper.promote_candidate", {
       candidateId,
       reason: validReason,
     });
-    expect(result.decision).toBe("allow");
+    expect(result.decision).toBe("ask");
   });
 });
 

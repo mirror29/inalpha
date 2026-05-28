@@ -26,6 +26,14 @@
  *   让 Mastra runtime 把它当 tool 报错处理（LLM 看到错误消息能下一轮决策）。
  * - 现阶段不接 permission engine，仅留 ``permissionResolver`` 参数。task #3 接入。
  */
+import {
+  type AskApprovalCache,
+  defaultAskCache,
+} from "../permissions/ask-cache.js";
+import {
+  type PendingApprovalsStore,
+  pendingApprovals as defaultPendingApprovals,
+} from "../permissions/pending.js";
 import type { HookRunner } from "./runner.js";
 
 /**
@@ -43,25 +51,42 @@ type GenericTool = {
 };
 
 /**
- * 默认 sessionId 抽取器：按优先级从 Mastra runtime context 取 ID 字段。
+ * 默认 sessionId 抽取器：按优先级从 Mastra runtime context 取**conversation 级**
+ * 稳定的 ID。
  *
- * Mastra 1.x ``ToolExecutionContext`` 会带 ``threadId`` / ``runId`` / ``agentId``
- * （详见 @mastra/core/tools）；本项目自有的 ``requestContext.sessionId`` 作为兜底
- * （任何手动构造的 ctx 走这条）。
+ * Mastra 1.10 实测 ``ToolExecutionContext`` 结构：
  *
- * 优先级：``threadId`` > ``runId`` > ``requestContext.sessionId`` > ``sessionId``
- * （顶层）。命中即停。
+ * - ``ctx.agent.threadId`` —— **整个对话线程**内稳定（这是想要的）
+ * - ``ctx.agent.resourceId`` —— per-user / per-resource，跨 thread 稳定
+ * - ``ctx.runId`` —— **每个 user-turn 一个新值**（不稳定，跨 turn 会变）
+ * - 顶层 ``ctx.threadId`` 在 1.10 已**不再存在**（被移进 ``ctx.agent``）
  *
- * 这样 audit-log 拿到的 sessionId 既覆盖 Mastra playground 调用，也覆盖测试 / 手
- * 工脚本。
+ * 因此优先级：``ctx.agent.threadId`` > ``ctx.agent.resourceId`` >
+ * ``requestContext.sessionId`` > 顶层 ``sessionId`` > ``runId``（兜底，知道不稳定）。
+ *
+ * 这样 askCache 跨 turn 也能命中，audit-log 也能按 thread 聚合。
  */
+/** Module-level flag：进程内仅 warn 一次 runId fallback / 完全失败，避免每次 tool 调用刷屏。 */
+let _warnedRunIdFallback = false;
+let _warnedNoSessionId = false;
+
 export function defaultGetSessionId(ctx: unknown): string | undefined {
   if (!ctx || typeof ctx !== "object") return undefined;
   const c = ctx as Record<string, unknown>;
+
+  // Mastra 1.10：threadId / resourceId 在 ctx.agent 下（thread-level 稳定）
+  const agent = c.agent;
+  if (agent && typeof agent === "object") {
+    const a = agent as Record<string, unknown>;
+    const tid = pickString(a.threadId);
+    if (tid) return tid;
+    const rid = pickString(a.resourceId);
+    if (rid) return rid;
+  }
+
+  // 老 Mastra / 自构造 ctx fallback
   const threadId = pickString(c.threadId);
   if (threadId) return threadId;
-  const runId = pickString(c.runId);
-  if (runId) return runId;
   const rc = c.requestContext;
   if (rc && typeof rc === "object") {
     const sid = pickString((rc as Record<string, unknown>).sessionId);
@@ -69,6 +94,26 @@ export function defaultGetSessionId(ctx: unknown): string | undefined {
   }
   const sid = pickString(c.sessionId);
   if (sid) return sid;
+
+  // 最后 fallback：runId —— turn-level 不稳定，会让 askCache 跨 turn miss
+  const runId = pickString(c.runId);
+  if (runId) {
+    if (!_warnedRunIdFallback) {
+      _warnedRunIdFallback = true;
+      console.warn(
+        "[with-hooks] defaultGetSessionId falling back to ctx.runId — runId changes per user-turn, " +
+          "askCache will miss across turns. Check if ctx.agent.threadId/resourceId is populated by Mastra runtime.",
+      );
+    }
+    return runId;
+  }
+  if (!_warnedNoSessionId) {
+    _warnedNoSessionId = true;
+    console.warn(
+      "[with-hooks] defaultGetSessionId could not extract any stable id from ctx; " +
+        "ask-path will fall back to __global__ cache key (multi-user unsafe).",
+    );
+  }
   return undefined;
 }
 
@@ -92,6 +137,20 @@ export type WithHooksOptions = {
   permissionResolver?: PermissionResolver;
   /** 可选 sessionId 提供器；从 tool ctx 中取（依赖 Mastra runtime context） */
   getSessionId?: (toolCtx: unknown) => string | undefined;
+  /**
+   * 可选挂起池（D-9.1b / ADR-0018）。permissionResolver=ask 时把请求挂进去，供
+   * CLI / Web 入口（GET /permissions/pending）查看。缺省用模块级单例（同
+   * ``mastra/index.ts`` 注册 HTTP routes 用的 store）。测试可注入 fresh 实例隔离。
+   */
+  pendingApprovals?: PendingApprovalsStore;
+  /** ask 路径 store 超时毫秒数；缺省 30_000（30 秒）。0 / 负数视作默认。 */
+  askTimeoutMs?: number;
+  /**
+   * 可选 session-scoped 短期通行池（D-9.1b 修订）。让"第一次 ask → 用户在 chat
+   * 说允许 → agent 重调同 tool 同 input → 放行"在不引入 token 的前提下走通。
+   * 缺省用模块级单例；测试可注入 fresh 实例。
+   */
+  askCache?: AskApprovalCache;
 };
 
 /**
@@ -152,13 +211,71 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
         }
 
         if (permDecision === "ask") {
-          // D-8 阶段：没有 ask 实现（用户审批 / Risk Agent 路径，task #5 起接入）。
-          // 暂时把 ask 当 deny + 提示信息，让 LLM 知道这条路需要人工。
-          return {
-            isError: true,
-            message: `tool ${toolName} requires approval (ask path not yet wired; see ADR-0011)`,
-            deniedBy: "permission-ask-pending",
-          };
+          // D-9.1b 修订 · session-scoped 短期通行池：
+          //
+          // 第一次 ask：cache 没命中 → mark + 返 requiresApproval；agent 在 chat
+          //   里向用户说明 + 等用户口头同意。
+          // 第二次 ask（同 sessionId + 同 toolName + 同 input，60s 内）：cache 命中
+          //   → 消费 + 继续走 execute；agent 无需在 input 里塞任何 token。
+          //
+          // 这一改解决了 Mastra dev playground 没有 popup UI 时"用户在 chat 里说
+          // '允许' / agent 重调还是被拦"的死循环。
+          //
+          // 安全模型：agent 是否真等了用户回复完全靠 prompt 纪律 + 后端硬校验
+          // （如 promote 的 fitness > baseline）作护栏；本缓存只解决 UX 死循环，
+          // 不是强制审批门。详见 permissions/ask-cache.ts。
+          //
+          // 同时把请求挂进 PendingApprovalsStore（fire-and-forget）—— GET
+          // /permissions/pending 仍能列出来，为未来 CLI / Web 入口保留。
+          const cache = opts.askCache ?? defaultAskCache;
+          const store = opts.pendingApprovals ?? defaultPendingApprovals;
+          const timeoutMs =
+            opts.askTimeoutMs && opts.askTimeoutMs > 0 ? opts.askTimeoutMs : undefined;
+
+          if (
+            cache.consume(sessionId, toolName, effectiveInput, (msg) =>
+              // stderr 走 mastra dev log，方便 user 实时看 mismatch 原因
+              console.warn(`[askCache] ${msg}`),
+            )
+          ) {
+            // 第二次 ask 命中 cache → 一次性消费 + 放行（继续往下走 execute）
+          } else {
+            // 第一次 ask：mark cache + 挂 store（CLI 入口可见）+ 返 requiresApproval
+            cache.mark(sessionId, toolName, effectiveInput);
+            void store.request({
+              toolName,
+              toolInput: effectiveInput,
+              sessionId,
+              timeoutMs,
+            });
+            return {
+              isError: true,
+              deniedBy: "permission-ask",
+              requiresApproval: true,
+              toolName,
+              toolInput: effectiveInput,
+              message:
+                `APPROVAL_REQUIRED: tool "${toolName}" needs explicit user consent.\n\n` +
+                `**There is NO UI button, NO popup, NO admin page.** The user can ONLY ` +
+                `reply with chat text. Never tell them to "click 允许" or "在界面上" / ` +
+                `"open the admin page" — they can't.\n\n` +
+                `Steps (reply in the user's language; match their latest message — never ` +
+                `hardcode Chinese or English):\n` +
+                `  1. Translate the tool id into a plain user-meaningful phrase ` +
+                `(e.g. paper.promote_candidate → "add this strategy to the live pool" / ` +
+                `"把这条策略加入正式策略池"). Show the *why* + key inputs (use human ` +
+                `labels alongside IDs). Ask the user to confirm in chat.\n` +
+                `  2. When the user replies with explicit consent ("ok / yes / allow / ` +
+                `允许 / 同意 / 好 / 上"), call this tool again with the **same input** ` +
+                `(no extra fields, no token; the retry just works).\n` +
+                `  3. If they refuse / hesitate / give ambiguous answer → tell them ` +
+                `you've cancelled, do NOT retry.\n` +
+                `  4. Never invent reasons like "the 60-second window timed out" / ` +
+                `"the system needs a popup" — if a retry returns this same APPROVAL_REQUIRED, ` +
+                `the most likely cause is that the LLM (you) changed the input between calls. ` +
+                `Re-explain to the user and ask again with the *exact* same args.`,
+            };
+          }
         }
 
         // 3. execute

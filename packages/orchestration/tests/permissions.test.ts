@@ -33,6 +33,23 @@ describe("patternMatches", () => {
   it("global *", () => {
     expect(patternMatches("*", "anything")).toBe(true);
   });
+
+  it("mid-name glob (paper.get_* matches paper.get_account)", () => {
+    // D-9.1b 修复：原 patternMatches 只支持 .* 后缀，下划线前缀 _* 无效，
+    // 导致 paper.get_account 掉到 defaultMode='ask'
+    expect(patternMatches("paper.get_*", "paper.get_account")).toBe(true);
+    expect(patternMatches("paper.get_*", "paper.get_plan")).toBe(true);
+    expect(patternMatches("paper.get_*", "paper.list_orders")).toBe(false);
+    expect(patternMatches("paper.list_*", "paper.list_orders")).toBe(true);
+    expect(patternMatches("paper.list_*", "paper.list_candidates")).toBe(true);
+    expect(patternMatches("paper.list_*", "paper.get_account")).toBe(false);
+  });
+
+  it("suffix glob (*.health)", () => {
+    expect(patternMatches("*.health", "paper.health")).toBe(true);
+    expect(patternMatches("*.health", "data.health")).toBe(true);
+    expect(patternMatches("*.health", "paper.run_backtest")).toBe(false);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────

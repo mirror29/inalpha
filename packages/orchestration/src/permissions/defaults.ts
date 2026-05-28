@@ -24,18 +24,22 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
   allow: [
     // 只读 / 信息查询
     "data.*",
-    "paper.list_strategies",
-    "paper.list_orders",
-    "paper.list_positions",
-    "paper.list_backtest_runs",
-    "paper.list_candidates",
+    "paper.list_*",
+    "paper.get_*",
     "paper.run_backtest",
+    "paper.run_backtest_with_reflection",
+    "paper.reflect_backtest",
     "paper.compose_strategy",
     "paper.author_strategy",
     "paper.health",
-    "paper.get_*",
     "research.deep_dive",
+    "research.*",
     "factor.*",
+    "scheduler.list_*",
+    "scheduler.get_*",
+    "scheduler.create_job",
+    "scheduler.set_enabled",
+    "scheduler.trigger_job",
 
     // Swarm 批量回测（ADR-0025）：只读，无下单路径
     "swarm.*",
@@ -52,13 +56,6 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "trade.reject_plan",
     "trade.get_plan",
 
-    // D-9 · 候选 → 正式策略。**前端 askUserChoice 还没接**，permission ask 等同
-    // 阻塞 agent 闭环；MVP 暂时放 allow，靠"agent prompt 调前自检 + 后端硬校验"两道防御：
-    //   1. orchestrator.ts 要求 agent 调前必须给用户报完整 metrics + 等用户口头确认
-    //   2. 后端 endpoint 强校验 fitness IS NOT NULL + status='candidate'
-    // ADR-0018 askUserChoice 接通后改回 ask（届时 agent 调用会变成对话内气泡确认）。
-    "paper.promote_candidate",
-
     // D-9 spike：沙盒（ADR-0020 第二道运行隔离）
     // 60s 内的运行允许（spike + 临时计算）；更长走 ask（人工审批）。
     // 第一道 AST 审计 + 第三道协议契约校验留给 Phase B 接入。
@@ -69,6 +66,10 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     // D-8a 暂无 live 引擎；规则提前写好作 forward-compat
     "live.submit_order(notional<1000)",
     "risk.update_config",
+
+    // D-9 · 候选 → 正式策略（ADR-0018 / D-9.1b：askUserChoice 接通后改回 ask）
+    // 后端硬校验仍在（fitness IS NOT NULL + status='candidate'）作为第二道防线
+    "paper.promote_candidate",
   ],
 
   deny: [

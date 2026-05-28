@@ -1,52 +1,54 @@
-# 安全策略 / Security Policy
+# Security Policy
 
-> Inalpha 处于 alpha 阶段，**不建议用于真实交易资金**。
-> 仍欢迎你报告任何安全相关问题——尤其是涉及 LLM 工具权限边界、密钥处理、订单提交链路的。
+> Inalpha is in **alpha** and **not recommended for use with real trading capital**.
+> Security reports are still very welcome — especially on LLM tool-permission boundaries, secret handling, and the order-submission path.
 
-## 报告漏洞
+## Reporting a vulnerability
 
-**请不要**在 GitHub 上开 public issue 来报告安全漏洞。
+**Please do not open a public GitHub issue** for security vulnerabilities.
 
-请通过以下任一渠道私下联系维护者：
+Contact the maintainer privately through one of the following channels:
 
-- 邮件：（在仓库 GitHub profile 的公开邮箱）
-- GitHub Security Advisory：`Repository → Security → Report a vulnerability`
+- Email: the public address on the repository's GitHub profile
+- GitHub Security Advisory: `Repository → Security → Report a vulnerability`
 
-报告内容请尽量包含：
+When you report, please include as much of the following as you can:
 
-1. 漏洞类型（如：LLM 工具权限绕过、密钥泄露、订单越权提交、依赖供应链问题）
-2. 受影响 service / 模块
-3. 最小复现步骤
-4. 你认为的潜在影响
+1. **Vulnerability class** — e.g. LLM tool-permission bypass, secret leak, unauthorized order submission, dependency supply-chain issue
+2. **Affected service / module**
+3. **Minimal reproduction steps**
+4. **Your assessment of the potential impact**
 
-## 响应承诺
+Reports in either English or 中文 are equally welcome.
 
-- **首次响应**：5 个工作日内
-- **修复或缓解方案**：根据严重程度，1–30 天
-- **披露**：修复后会在 release notes 中说明（不会公开你的身份，除非你明确希望）
+## Response commitments
 
-## 受支持的版本
+- **First response**: within 5 business days
+- **Fix or mitigation**: 1–30 days depending on severity
+- **Disclosure**: documented in release notes once the fix lands; your identity is kept private unless you explicitly ask otherwise
 
-| 版本 | 是否接受安全报告 |
+## Supported versions
+
+| Version | Accepts security reports |
 |---|---|
 | `main` / unreleased | ✅ |
-| 已发布的 alpha tag（如 `v0.1.0-alpha`） | ✅（只针对最新一个 alpha tag） |
-| 更早的版本 | ❌ |
+| Latest published alpha tag (e.g. `v0.1.0-alpha`) | ✅ (latest alpha tag only) |
+| Older tags | ❌ |
 
-## 范围说明
+## Scope
 
-**在范围内的**：
+**In scope**
 
-- 让 LLM 获得直接下单路径的逻辑漏洞（破坏核心安全模型）
-- `permissions` / `hooks` 绕过
-- 密钥 / token 处理不当
-- 任何 service-to-service 越权
-- 依赖供应链问题（已知 CVE 等）
+- Logic flaws that give an LLM a direct order-placement path (breaks the core safety model)
+- Bypasses of `permissions` / `hooks` middleware
+- Mishandling of secrets or tokens
+- Any service-to-service privilege escalation
+- Dependency supply-chain issues (known CVEs in pinned packages, etc.)
 
-**不在范围内的**：
+**Out of scope**
 
-- 用户在本地配置错误导致的问题（如把 `.env` commit 到 public repo）
-- 第三方依赖本身的 0day（请直接上报到对应项目）
-- 量化策略本身的盈亏表现（这是策略问题，不是安全问题）
+- Local misconfiguration (e.g. committing your `.env` to a public repository)
+- Zero-days in third-party dependencies themselves — please report those upstream
+- Trading strategy P&L performance (that's a strategy problem, not a security issue)
 
-感谢负责任地披露安全问题。
+Thank you for disclosing responsibly.

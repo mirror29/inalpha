@@ -30,29 +30,24 @@
   },
   "problem": {
     "eyebrow": "01 / Problem",
-    "title": "You're not doing quant.",
-    "titleAlt": "You're trusting a black box.",
-    "sub": "Most LLM trading stacks return a single score and a paragraph. You can't replay it, you can't audit it, and you can't disagree with it. Inalpha treats every factor, plan, and order as a versioned record — not a vibe.",
+    "title": "LLM-written strategies are easy.",
+    "titleAlt": "Signing every decision is engineering.",
+    "sub": "Most \"LLM + quant\" stacks today: prompt in, \"long BTC, conf 0.62\" out, broker SDK next door. Lost money — no way to find which prompt or which slice of data broke. Made money — no way to tell alpha from overfit. Inalpha brings the Claude Code engineering harness (hooks / permissions / plan-exec) to LLM quant — the LLM only writes code; every decision is signed, every backtest is replayable, and the order path is never reachable by the LLM directly.",
     "table": {
-      "header": {
-        "want": "What you want",
-        "blackbox": "Black-box LLM",
-        "inalpha": "Inalpha"
-      },
-      "signal": {
-        "want": "Signal",
-        "blackbox": "One score",
-        "inalpha": "Plan with rationale + opposing analysts"
-      },
-      "reason": {
-        "want": "Reasoning",
-        "blackbox": "\"trust me\"",
-        "inalpha": "Hooks-enforced decision record"
+      "lineage": {
+        "want": "lineage",
+        "blackbox": "\"long BTC, conf 0.62\" — source data, prompt, model version: nowhere on record. Nothing to attribute when it loses",
+        "inalpha": "research_id → backtest_run_id → plan_id, every decision traceable back through its full UUID chain"
       },
       "replay": {
-        "want": "Replay",
-        "blackbox": "Not reproducible",
-        "inalpha": "JSONL on disk + token-signed audit trail"
+        "want": "replay",
+        "blackbox": "How was last week's sharpe 2.14 computed? Params forgotten, data slice forgotten — recompute from memory",
+        "inalpha": "strategy_id + params_hash + as_of as a fingerprint. Same numbers any day, any week"
+      },
+      "guardrail": {
+        "want": "guardrail",
+        "blackbox": "The LLM holds the broker SDK directly. One jailbreak prompt, one hallucination = real money out",
+        "inalpha": "permissions.yaml deny + plan/exec one-shot TTL token. The order path is unreachable by the LLM, ever"
       }
     }
   },
@@ -173,22 +168,38 @@
     "title": "Inspired by Claude Code.",
     "titleAlt": "Adapted for trading.",
     "sub": "Declarative configs decide what each agent can call. Plan → approve → execute is enforced by a one-shot, TTL-bound token — the LLM never reaches the order path unsupervised. Subagents isolate risk. MCP plugs in tools without hand-rolled glue.",
-    "configSample": "research:\n  allow:\n    - data.get_bars\n    - data.get_news\n  deny:\n    - paper.place_order\n\nrisk:\n  allow: [\"*\"]\n  require_human: [\"place_order > 0.5\"]",
+    "hint": "── Click a mechanism on the right to inspect real source",
     "chips": {
-      "hooks": "hooks",
       "permissions": "permissions",
+      "hooks": "hooks",
       "plan-exec": "plan-exec",
       "subagent": "subagent",
       "mcp": "MCP",
       "swarm": "Swarm"
     },
     "chipDescs": {
-      "hooks": "Middleware runs on every tool call.",
       "permissions": "Tool access scoped per agent role.",
+      "hooks": "Middleware runs on every tool call.",
       "plan-exec": "Plan first, execute once, no runaway loops.",
       "subagent": "Risk and review live in isolated subagents.",
       "mcp": "Model Context Protocol native, no glue code.",
       "swarm": "Parallel workers run grid backtests."
+    },
+    "captions": {
+      "permissions": "config/permissions.default.yaml",
+      "hooks": "hooks/handlers/audit-log.ts · PostToolUse",
+      "plan-exec": "tools/trade-plan.ts · 3-step · ADR-0012",
+      "subagent": "agents/orchestrator.ts · D-8a → D-8a'",
+      "mcp": "scripts/smoke-coingecko-mcp.ts · spike",
+      "swarm": "tools/swarm.ts × workflows/backtest-grid"
+    },
+    "samples": {
+      "permissions": "defaultMode: ask           # fail-closed\n\nallow:\n  - \"data.*\"               # quotes / news / macro (read)\n  - \"paper.run_backtest\"\n  - \"research.*\"\n  - \"trade.create_plan\"    # proposing is fine\n  - \"trade.approve_plan\"\n  - \"trade.execute_plan\"\n\ndeny:                        # the LLM cannot bypass these\n  - \"paper.submit_order\"   # legacy direct-order path\n  - \"live.submit_order(notional>=10000)\"\n  - \"live.emergency_stop_all\"",
+      "hooks": "// PostToolUse · audits every business tool\n// matcher: paper.* | live.* | factor.* | research.*\nexport const auditLog: HookHandler = async (ctx) => {\n  await jsonl.append(`audit/${today()}.jsonl`, {\n    ts:        nowIso(),\n    tool:      ctx.toolName,\n    sessionId: ctx.sessionId,\n    isError:   ctx.isError,\n    input:     redact(ctx.toolInput),   // apiKey / approvalToken\n    output:    redact(ctx.toolOutput),  // wallet / ssn / cvv → [REDACTED]\n  });\n  // blocking: false — audit is a side effect, never gates business path\n};",
+      "plan-exec": "$ trade.create_plan\n    intent=open_long   symbol=BTCUSDT   side=buy   qty=0.05\n    rationale=\"4h breakout · bull thesis holds\"\n    researchId=rs_8f3a   backtestRunId=bt_91c2     # ← lineage\n→ planId=pln_7c91   status=pending   expireAt=+300s\n\n$ trade.approve_plan { planId, reason=\"risk gate pass\" }\n→ approvalToken=tk_…   one-shot · 60s TTL\n\n$ trade.execute_plan { planId, approvalToken }\n→ ok · orderId=ord_4d2a   token consumed",
+      "subagent": "// D-8a:  trader / risk subagents nested (4-hop LLM · ~15s)\n// D-8a': flatten everything to tools on orchestrator — 4× faster\n//        Permission boundary moves to permissions.yaml deny rules\n\n// Subagents kept for long-context, isolatable subtasks:\nconst reflect = await orch.subagent(\"backtest-reflect\", {\n  prompt: `Attribute ${runId} · find lookahead-bias segments`,\n  tools:  [\"paper.reflect_backtest\", \"data.get_news\"],  // scoped\n  contextBudget: 8_000,                                  // isolated\n});",
+      "mcp": "// scripts/smoke-coingecko-mcp.ts — D-9 spike\nimport { Client } from \"@modelcontextprotocol/sdk/client\";\nimport { StreamableHTTPClientTransport }\n  from \"@modelcontextprotocol/sdk/client/streamableHttp\";\n\nconst t = new StreamableHTTPClientTransport(\n  new URL(\"https://mcp.api.coingecko.com/mcp\"),  // official public endpoint\n);\nconst client = new Client({ name: \"inalpha\", version: \"0.9\" });\nawait client.connect(t);\nconst tools = await client.listTools();\n// → 32 CoinGecko tools land on the orchestrator · zero glue code",
+      "swarm": "$ swarm.run_backtest_grid\n    candidateIds: [c_3a1, c_7c9, c_5e2]   # D-9 LLM-authored\n    symbols:      [BTCUSDT, ETHUSDT, SOLUSDT]\n    venue: binance   timeframe: 1h\n    from: 2025-01-01    to: 2026-05-26\n\n→ grid:     3 × 3 = 9 runs    (cap ≤ 20 by grid-size-cap hook)\n→ workers:  6   wall: 4.2s    ok: 9 / errored: 0\n→ pareto:   3 points (Sharpe ↑  · maxDD ↓)\n→ top1:     c_3a1 on ETHUSDT   fitness=1.84\n            baseline(buy_and_hold)=0.92  ·  alpha ✓"
     }
   },
   "coverage": {
@@ -218,7 +229,7 @@
       "starsSuffix": "stars",
       "contributorsSuffix": "contributors",
       "commitsSuffix": "commits",
-      "qualityLabel": "alpha quality"
+      "qualityLabel": "not for live capital"
     },
     "currentState": {
       "title": "Where we are honest with you",
@@ -233,13 +244,8 @@
     "eyebrow": "07 / Get started",
     "title": "Star it. Read it. Tear it apart.",
     "sub": "Inalpha is alpha-stage and AGPL-3.0. No real money yet — every line is on GitHub.",
-    "tabs": {
-      "git": "git clone",
-      "pip": "pip install"
-    },
     "commands": {
-      "git": "git clone https://github.com/mirror29/inalpha",
-      "pip": "pip install inalpha"
+      "git": "git clone https://github.com/mirror29/inalpha"
     },
     "copy": "Copy",
     "copied": "Copied",

@@ -34,8 +34,8 @@ async def post_deep_dive(
 
     llm = build_llm_client(
         provider=settings.llm_provider,
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
+        api_key=settings.effective_api_key,
+        base_url=settings.effective_base_url,
         model=settings.llm_model,
         timeout_seconds=settings.llm_timeout_seconds,
         max_concurrent=settings.llm_max_concurrent,
