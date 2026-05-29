@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Inalpha — 可审计的量化 agent，能进化的策略。",
-    "description": "开源专业量化 agent 框架：因子实验室、风控引擎、策略进化、审计级 plan/exec。工程纪律源自 Claude Code。"
+    "description": "Inalpha 是开源专业量化 agent 框架，将工程纪律引入 LLM 驱动交易。因子实验室、风控引擎、策略进化、审计级 plan/exec——每个因子提案、每次策略变异、每笔订单路由都有日志、有版本、可复核。LLM 只负责写代码，工程 harness 为每个决策签名。借鉴 Claude Code 的 hooks/permissions 模式和 NautilusTrader 的 backtest=paper=live 统一内核。"
   },
   "nav": {
     "github": "GitHub",
@@ -239,6 +239,36 @@
         "暂不支持真金部署——每一次改动都经 plan/exec 审批，决策记录落盘"
       ]
     }
+  },
+  "faq": {
+    "eyebrow": {
+      "index": "07",
+      "label": "常见问题"
+    },
+    "title": "你可能在想的问题。",
+    "intro": "坦诚回答我们被问得最多的几个问题。",
+    "items": [
+      {
+        "question": "Inalpha 是什么？",
+        "answer": "Inalpha 是一个开源专业量化 agent 框架，将工程纪律引入 LLM 驱动交易。它不是把 AI agent 当作黑盒信号源，而是将 agent 视为受 hooks、permissions、plan-exec 审批和签名审计链约束的代码协作者——LLM 写策略代码，工程 harness 为每个决策签名并执行每条护栏。"
+      },
+      {
+        "question": "Inalpha 和 NautilusTrader、vnpy 这些量化框架有什么不同？",
+        "answer": "Inalpha 继承了 NautilusTrader 的事件驱动内核设计（回测、模拟盘、实盘同一份代码）和 vnpy 的多市场 Gateway 抽象哲学。Inalpha 额外叠加了一层审计级中间件——hooks、scoped permissions、plan-exec 一次性审批 token、签名审计链——借鉴了 Claude Code 的工程模式。传统量化框架关注执行速度，Inalpha 关注让每个决策都可证明、可回放。"
+      },
+      {
+        "question": "现在能用 Inalpha 交易真金白银吗？",
+        "answer": "不能。Inalpha 目前处于 alpha 阶段（Phase D-9）。框架支持回测和模拟盘交易，但尚未集成实盘 broker。实盘执行器计划在 Phase D-10 实现。我们对此非常明确：在实盘路径经过充分加固和审计之前，请不要将真实资金接入 Inalpha。"
+      },
+      {
+        "question": "Inalpha 覆盖哪些市场和资产类别？",
+        "answer": "Inalpha 覆盖加密货币（CEX 通过 CCXT）、美股、A 股、港股、日股、韩股、澳股、印度、英股、德股、全球指数和 FRED 宏观数据——全部通过同一个 orchestrator 和同一套代码库。新增一个 venue，所有 agent 自动获得访问权限。"
+      },
+      {
+        "question": "Inalpha 免费吗？是什么许可证？",
+        "answer": "Inalpha 采用 AGPL-3.0 许可证，个人研究、学术用途和商业内部使用均免费。如果你修改了 Inalpha 并将其作为网络服务提供，必须按相同许可证公开你的修改。如需专有或闭源商业使用，请提 issue 讨论双重许可。"
+      }
+    ]
   },
   "cta": {
     "eyebrow": "07 / 开始",

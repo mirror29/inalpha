@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Inalpha — Quant agents that evolve under audit.",
-    "description": "Open-source quant agent framework: factor lab, risk engine, strategy evolution, audit-grade plan/exec. Engineering discipline borrowed from Claude Code."
+    "description": "Inalpha is an open-source quant agent framework bringing engineering discipline to LLM-driven trading. Factor lab, risk engine, strategy evolution, audit-grade plan/exec — every factor proposed, every strategy mutated, every order routed is logged, versioned, and reviewable. The LLM writes the code; the engineering harness signs every decision. Built on Claude Code hooks/permissions patterns and NautilusTrader's unified backtest=paper=live kernel."
   },
   "nav": {
     "github": "GitHub",
@@ -239,6 +239,36 @@
         "No real-money deployment yet — every change passes plan/exec approval and lands on disk"
       ]
     }
+  },
+  "faq": {
+    "eyebrow": {
+      "index": "07",
+      "label": "FAQ"
+    },
+    "title": "What you're probably wondering.",
+    "intro": "Honest answers to the questions we get asked most.",
+    "items": [
+      {
+        "question": "What is Inalpha?",
+        "answer": "Inalpha is an open-source quant agent framework that applies engineering discipline to LLM-driven trading. It treats AI agents not as black-box signal generators, but as code-writing collaborators bounded by hooks, permissions, plan-exec approval, and signed audit trails. The LLM writes the strategy code; the engineering harness signs every decision and enforces every guardrail."
+      },
+      {
+        "question": "How is Inalpha different from other quant frameworks like NautilusTrader or vnpy?",
+        "answer": "Inalpha inherits the event-driven kernel design from NautilusTrader (same code for backtest, paper, and live) and the multi-market gateway philosophy from vnpy. What Inalpha adds is an audit-grade middleware layer — hooks, scoped permissions, plan-exec approval tokens, and signed audit trails — inspired by Claude Code's engineering patterns. Traditional quant frameworks focus on execution speed; Inalpha focuses on making every decision provable and replayable."
+      },
+      {
+        "question": "Can I trade real money with Inalpha right now?",
+        "answer": "No. Inalpha is in alpha (Phase D-9). The framework supports backtesting and paper trading, but there is no live brokerage integration yet. The live runner is planned for Phase D-10. We are explicit about this: do not route real capital through Inalpha until the live path has been hardened and audited."
+      },
+      {
+        "question": "What markets and asset classes does Inalpha cover?",
+        "answer": "Inalpha routes across crypto (CEX via CCXT), US equities, A-shares, Hong Kong, Japan, Korea, Australia, India, UK, Germany, global indices, and FRED macro data — all through one orchestrator and one codebase. Adding a venue gives every agent access to it automatically."
+      },
+      {
+        "question": "Is Inalpha free? What's the license?",
+        "answer": "Inalpha is licensed under AGPL-3.0, which means it's free for personal research, academic use, and commercial in-house use. If you modify Inalpha and offer it as a network service, you must release your changes under the same license. For proprietary or closed-source commercial use, please open an issue to discuss a dual license."
+      }
+    ]
   },
   "cta": {
     "eyebrow": "07 / Get started",

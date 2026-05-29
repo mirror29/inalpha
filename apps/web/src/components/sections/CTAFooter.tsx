@@ -11,7 +11,7 @@ import { fadeUp } from "@/lib/motion";
 import { releaseFootline } from "@/lib/release-meta";
 
 /**
- * 07 — Closing CTA + footer.
+ * 08 — Closing CTA + footer.
  * Same bracketed-header rhythm as the other broadsheet sections so the
  * page closes the way it opens. Single `git clone` command — no pip yet
  * (package not published to PyPI, kept off the page to avoid copy-paste 404s).
@@ -27,7 +27,7 @@ export function CTAFooter() {
         <div className="border-y border-fg/15">
           <div className="flex items-center justify-between gap-6 py-3 font-mono text-[11px] uppercase tracking-[0.22em] text-fg-muted">
             <span>
-              <span className="text-fg/90">07</span>
+              <span className="text-fg/90">08</span>
               <span className="text-fg-muted/50"> / </span>
               <span>{t("eyebrow")}</span>
             </span>
