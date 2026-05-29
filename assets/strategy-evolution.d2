@@ -2,7 +2,7 @@
 # Aesthetic: engineering schematic · terminal · broadsheet
 #
 # Regenerate:
-#   d2 --theme=0 --pad=32 assets/strategy-evolution.d2 assets/strategy-evolution.svg
+#   d2 --theme=0 --pad=40 assets/strategy-evolution.d2 assets/strategy-evolution.svg
 
 direction: right
 
@@ -15,20 +15,23 @@ vars: {
 
 classes: {
   node: {
+    width: 220; height: 64
     style: {
       stroke: "#1f2740"; stroke-width: 1
-      fill: "#0d1220"; font-color: "#e5e5e7"
-      border-radius: 3; font-size: 13
+      fill: "#0d1220"; font-color: "#c4c9d4"
+      border-radius: 3; font-size: 12
     }
   }
-  node-accent: {
+  node-cyan: {
+    width: 200; height: 64
     style: {
       stroke: "#5fb3ff"; stroke-width: 1
       fill: "#0d1220"; font-color: "#5fb3ff"
-      border-radius: 3; font-size: 13
+      border-radius: 3; font-size: 12
     }
   }
   cyl: {
+    width: 200; height: 64
     style: {
       stroke: "#1f2740"; stroke-width: 1
       fill: "#0a0e1a"; font-color: "#9ba3b4"
@@ -37,27 +40,27 @@ classes: {
   }
   loop: {
     style: {
-      stroke: "#1f2740"; stroke-width: 1; stroke-dash: 4
+      stroke: "#1f2740"; stroke-width: 1; stroke-dash: 5
       fill: "transparent"; font-color: "#6b7280"; font-size: 10
     }
   }
 }
 
-orch: "Orchestrator\nagent runtime\n\n" { class: node-accent }
+orch: "Orchestrator\nagent runtime" { class: node-cyan }
 
-loop: "Strategy Evolution loop\nasync · independent of any single agent turn" {
+loop: "Strategy Evolution loop  ·  async · independent of agent turns" {
   class: loop
 
-  mutator: "LLM Mutator\ndiff-based code edit\n\n" { class: node }
-  sbox:    "3 Sandbox Gates\nAST · subprocess · Strategy contract\n\n" { class: node }
+  mutator: "LLM Mutator\ndiff-based code edit" { class: node }
+  sbox:    "3 Sandbox Gates\nAST · subprocess · contract" { class: node }
   mape:    "MAP-Elites × Island Model\ndiversity preservation" { class: cyl; shape: cylinder }
 
-  mutator -> sbox: "candidate" { style: { stroke: "#1f2740"; stroke-width: 1; font-size: 10 } }
-  sbox -> mape:    "scored"    { style: { stroke: "#1f2740"; stroke-width: 1; font-size: 10 } }
-  mape -> mutator: "seed"      { style: { stroke: "#1f2740"; stroke-width: 1; stroke-dash: 3; font-size: 10 } }
+  mutator -> sbox: "candidate"
+  sbox -> mape:    "scored"
+  mape -> mutator: "seed"
 }
 
-paper: "paper service\nbacktest = paper = live\n\n" { class: node }
+paper: "paper service\nbacktest = paper = live" { class: node }
 
-orch -> loop.mutator: "evolve(strategy_id)\nMCP tool · E4+" { style: { stroke: "#5fb3ff"; stroke-width: 1; stroke-dash: 3; font-color: "#6b7280"; font-size: 10 } }
-loop.mape -> paper:   "promote winners" { style: { stroke: "#1f2740"; stroke-width: 1; font-color: "#6b7280"; font-size: 10 } }
+orch -> loop.mutator: "evolve(strategy_id)" { style: { stroke-dash: 3 } }
+loop.mape -> paper:   "promote winners"

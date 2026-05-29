@@ -1,11 +1,12 @@
 # Inalpha · System Architecture
 # Aesthetic: engineering schematic · terminal · broadsheet
-# No colored boxes. Hairline rules. Mono + cyan accent.
+# Monochrome base + subtle layer differentiation.
 #
 # Regenerate:
-#   d2 --theme=0 --pad=32 assets/agent-runtime.d2 assets/agent-runtime.svg
+#   d2 --theme=0 --pad=40 assets/agent-runtime.d2 assets/agent-runtime.svg
 
 direction: down
+grid-gap: 48
 
 vars: {
   d2-config: {
@@ -16,27 +17,31 @@ vars: {
 
 classes: {
   node: {
+    width: 220; height: 64
     style: {
       stroke: "#1f2740"; stroke-width: 1
-      fill: "#0d1220"; font-color: "#e5e5e7"
-      border-radius: 3; font-size: 13
+      fill: "#0d1220"; font-color: "#c4c9d4"
+      border-radius: 3; font-size: 12
     }
   }
-  node-accent: {
+  node-cyan: {
+    width: 220; height: 64
     style: {
       stroke: "#5fb3ff"; stroke-width: 1
       fill: "#0d1220"; font-color: "#5fb3ff"
-      border-radius: 3; font-size: 13
+      border-radius: 3; font-size: 12
     }
   }
   node-muted: {
+    width: 220; height: 64
     style: {
-      stroke: "#1f2740"; stroke-width: 1; stroke-dash: 3
+      stroke: "#1f2740"; stroke-width: 1; stroke-dash: 4
       fill: "transparent"; font-color: "#6b7280"
-      border-radius: 3; font-size: 13
+      border-radius: 3; font-size: 12
     }
   }
   cyl: {
+    width: 180; height: 64
     style: {
       stroke: "#1f2740"; stroke-width: 1
       fill: "#0a0e1a"; font-color: "#9ba3b4"
@@ -46,70 +51,63 @@ classes: {
   layer: {
     style: {
       stroke: "#1f2740"; stroke-width: 1; stroke-dash: 6
-      fill: "transparent"; font-color: "#6b7280"
+      fill: "#060a14"; font-color: "#4b5563"
       font-size: 10
     }
   }
-  edge: {
+  layer-mid: {
     style: {
-      stroke: "#1f2740"; stroke-width: 1
-      font-color: "#4b5563"; font-size: 10
-      animated: false
-    }
-  }
-  edge-cyan: {
-    style: {
-      stroke: "#5fb3ff"; stroke-width: 1; stroke-dash: 3
-      font-color: "#6b7280"; font-size: 10
-      animated: false
+      stroke: "#2d3750"; stroke-width: 1
+      fill: "#090e1a"; font-color: "#6b7280"
+      border-radius: 6; font-size: 10
     }
   }
 }
 
-# ── L1 ──
 L1: "L1  USER ENTRY" {
   class: layer
-  user: "User\nmastra dev · CLI\n\n" { class: node-accent }
+  user: "User  →  mastra dev / CLI" {
+    class: node-cyan
+  }
 }
 
-# ── L2 ──
-L2: "L2  PACKAGES/ORCHESTRATION  ·  MASTRA" {
-  class: layer
+L2: "L2  PACKAGES / ORCHESTRATION" {
+  class: layer-mid
   grid-columns: 3
+  grid-gap: 28
 
-  agents: "agents/\norchestrator · trader · risk\n\n" { class: node }
-  tools:  "tools/\nplan/exec · data/paper reads\n\n" { class: node }
-  mid:    "middleware/\nhooks · permissions · stop\n\n" { class: node }
-  plans:  "plan-store/\napproval tokens" { class: cyl; shape: cylinder }
-  mem:    "memory/\nMastra + PostgresStore" { class: cyl; shape: cylinder }
-  evt:    "telemetry/ (E+)\nADR-0015" { class: node-muted }
+  agents: "agents\norchestrator · trader · risk" { class: node }
+  tools:  "tools\nplan/exec · data/paper reads"   { class: node }
+  mid:    "middleware\nhooks · permissions · stop" { class: node }
+  plans:  "plan-store\napproval tokens"           { class: cyl; shape: cylinder }
+  mem:    "memory\nMastra + PostgresStore"        { class: cyl; shape: cylinder }
+  evt:    "telemetry  (E+)\nADR-0015"              { class: node-muted }
 }
 
-# ── L3 ──
 L3: "L3  PYTHON KERNEL  ·  FASTAPI" {
   class: layer
-  grid-columns: 3
+  grid-columns: 4
+  grid-gap: 28
 
-  data:     "services/data\nmarket data ingest\n\n" { class: node }
-  paper:    "services/paper\nbacktest · paper · live\n\n" { class: node }
-  research: "services/research (E)\nmulti-agent debate" { class: node-muted }
-  evo:      "Strategy Evolution (E+)\ncode evolution loop" { class: node-muted }
+  data:     "services/data\nmarket data ingest"      { class: node }
+  paper:    "services/paper\nbacktest · paper · live" { class: node }
+  research: "services/research  (E)\nmulti-agent debate" { class: node-muted }
+  evo:      "Strategy Evolution  (E+)\ncode evolution loop" { class: node-muted }
 }
 
-# ── L4 ──
 L4: "L4  PERSISTENCE & EXTERNAL" {
   class: layer
   grid-columns: 3
+  grid-gap: 28
 
-  db:      "Postgres\n+ TimescaleDB" { class: cyl; shape: cylinder }
+  db:      "Postgres  +  TimescaleDB" { class: cyl; shape: cylinder }
   markets: "Exchanges & Markets\nvia CCXT · multi-venue" { class: node }
   llm:     "LLM Provider\nAnthropic · OpenAI · DeepSeek" { class: node }
 }
 
-# ── Connections ──
-L1.user  -> L2.agents { style: { stroke: "#5fb3ff"; stroke-width: 1; font-color: "#6b7280"; font-size: 10 } }
-L2.tools -> L3.data   { style: { stroke: "#1f2740"; stroke-width: 1 } }
-L2.tools -> L3.paper  { style: { stroke: "#1f2740"; stroke-width: 1 } }
-L3.data  -> L4.db     { style: { stroke: "#1f2740"; stroke-width: 1 } }
-L3.paper -> L4.db     { style: { stroke: "#1f2740"; stroke-width: 1 } }
-L3.data  -> L4.markets{ style: { stroke: "#1f2740"; stroke-width: 1 } }
+L1.user  -> L2.agents
+L2.tools -> L3.data
+L2.tools -> L3.paper
+L3.data  -> L4.db
+L3.paper -> L4.db
+L3.data  -> L4.markets
