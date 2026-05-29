@@ -1,129 +1,115 @@
 # Inalpha · System Architecture
-# Style: dark terminal, hairline borders, DESIGN.md color tokens
+# Aesthetic: engineering schematic · terminal · broadsheet
+# No colored boxes. Hairline rules. Mono + cyan accent.
 #
 # Regenerate:
-#   d2 --theme=0 --pad=28 assets/agent-runtime.d2 assets/agent-runtime.svg
+#   d2 --theme=0 --pad=32 assets/agent-runtime.d2 assets/agent-runtime.svg
 
 direction: down
 
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+
 classes: {
-  user: {
+  node: {
     style: {
-      stroke: "#3a7fc2"; stroke-width: 1
-      fill: "#0f172a"; font-color: "#5fb3ff"
-      border-radius: 6
+      stroke: "#1f2740"; stroke-width: 1
+      fill: "#0d1220"; font-color: "#e5e5e7"
+      border-radius: 3; font-size: 13
     }
   }
-  agent: {
+  node-accent: {
     style: {
-      stroke: "#6d5a9e"; stroke-width: 1
-      fill: "#11162a"; font-color: "#a78bfa"
-      border-radius: 6
+      stroke: "#5fb3ff"; stroke-width: 1
+      fill: "#0d1220"; font-color: "#5fb3ff"
+      border-radius: 3; font-size: 13
     }
   }
-  tool: {
+  node-muted: {
     style: {
-      stroke: "#2d6e4e"; stroke-width: 1
-      fill: "#0f1a12"; font-color: "#4ade80"
-      border-radius: 6
-    }
-  }
-  mid: {
-    style: {
-      stroke: "#9e7b4b"; stroke-width: 1
-      fill: "#1a160f"; font-color: "#d4a744"
-      border-radius: 6
-    }
-  }
-  store: {
-    style: {
-      stroke: "#374151"; stroke-width: 1
-      fill: "#111827"; font-color: "#d1d5db"
-      border-radius: 4
-    }
-  }
-  svc-done: {
-    style: {
-      stroke: "#2d6e4e"; stroke-width: 1
-      fill: "#0f1a12"; font-color: "#4ade80"
-      border-radius: 6
-    }
-  }
-  svc-todo: {
-    style: {
-      stroke: "#374151"; stroke-width: 1; stroke-dash: 3
+      stroke: "#1f2740"; stroke-width: 1; stroke-dash: 3
       fill: "transparent"; font-color: "#6b7280"
-      border-radius: 6
+      border-radius: 3; font-size: 13
     }
   }
-  evo: {
+  cyl: {
     style: {
-      stroke: "#9e4f78"; stroke-width: 1
-      fill: "#1a0f17"; font-color: "#f472b6"
-      border-radius: 6
-    }
-  }
-  ext: {
-    style: {
-      stroke: "#374151"; stroke-width: 1
-      fill: "#111827"; font-color: "#d1d5db"
-      border-radius: 6
+      stroke: "#1f2740"; stroke-width: 1
+      fill: "#0a0e1a"; font-color: "#9ba3b4"
+      font-size: 12
     }
   }
   layer: {
     style: {
       stroke: "#1f2740"; stroke-width: 1; stroke-dash: 6
-      fill: "#0d1220"; font-color: "#6b7280"; font-size: 11
+      fill: "transparent"; font-color: "#6b7280"
+      font-size: 10
     }
   }
-  layer-orch: {
+  edge: {
     style: {
-      stroke: "#2d3750"; stroke-width: 1
-      fill: "#0f1628"; font-color: "#9ba3b4"
-      border-radius: 8; font-size: 11
+      stroke: "#1f2740"; stroke-width: 1
+      font-color: "#4b5563"; font-size: 10
+      animated: false
+    }
+  }
+  edge-cyan: {
+    style: {
+      stroke: "#5fb3ff"; stroke-width: 1; stroke-dash: 3
+      font-color: "#6b7280"; font-size: 10
+      animated: false
     }
   }
 }
 
-L1: "L1  User entry" {
+# ── L1 ──
+L1: "L1  USER ENTRY" {
   class: layer
-  user: "User\nmastra dev · CLI" { class: user }
+  user: "User\nmastra dev · CLI\n\n" { class: node-accent }
 }
 
-L2: "L2  packages/orchestration  ·  Mastra" {
-  class: layer-orch
-  grid-columns: 3
-
-  agents: "agents/\norchestrator + trader + risk" { class: agent }
-  tools:  "tools/\nplan/exec · data/paper reads" { class: tool }
-  mid:    "middleware/\nhooks · permissions · stop" { class: mid }
-  plans:  "plan-store/\napproval tokens" { class: store; shape: cylinder }
-  mem:    "memory/\nMastra + PostgresStore" { class: store; shape: cylinder }
-  evt:    "telemetry/ (E+)\nADR-0015" { class: svc-todo }
-}
-
-L3: "L3  Python kernel services  ·  FastAPI" {
-  class: layer
-  grid-columns: 4
-
-  data:     "services/data\nmarket data ingest" { class: svc-done }
-  paper:    "services/paper\nbacktest · paper · live" { class: svc-done }
-  research: "services/research (E)\nmulti-agent debate" { class: svc-todo }
-  evo:      "Strategy Evolution (E+)\ncode evolution loop" { class: evo }
-}
-
-L4: "L4  Persistence & external" {
+# ── L2 ──
+L2: "L2  PACKAGES/ORCHESTRATION  ·  MASTRA" {
   class: layer
   grid-columns: 3
 
-  db:      "Postgres + TimescaleDB" { class: store; shape: cylinder }
-  markets: "Exchanges & Markets\nvia CCXT" { class: ext }
-  llm:     "LLM Provider" { class: ext }
+  agents: "agents/\norchestrator · trader · risk\n\n" { class: node }
+  tools:  "tools/\nplan/exec · data/paper reads\n\n" { class: node }
+  mid:    "middleware/\nhooks · permissions · stop\n\n" { class: node }
+  plans:  "plan-store/\napproval tokens" { class: cyl; shape: cylinder }
+  mem:    "memory/\nMastra + PostgresStore" { class: cyl; shape: cylinder }
+  evt:    "telemetry/ (E+)\nADR-0015" { class: node-muted }
 }
 
-L1.user  -> L2.agents: "dev / direct"
-L2.tools -> L3.data:   "HTTP + WS"
-L2.tools -> L3.paper:  "HTTP + WS"
-L3.data  -> L4.db
-L3.paper -> L4.db
-L3.data  -> L4.markets
+# ── L3 ──
+L3: "L3  PYTHON KERNEL  ·  FASTAPI" {
+  class: layer
+  grid-columns: 3
+
+  data:     "services/data\nmarket data ingest\n\n" { class: node }
+  paper:    "services/paper\nbacktest · paper · live\n\n" { class: node }
+  research: "services/research (E)\nmulti-agent debate" { class: node-muted }
+  evo:      "Strategy Evolution (E+)\ncode evolution loop" { class: node-muted }
+}
+
+# ── L4 ──
+L4: "L4  PERSISTENCE & EXTERNAL" {
+  class: layer
+  grid-columns: 3
+
+  db:      "Postgres\n+ TimescaleDB" { class: cyl; shape: cylinder }
+  markets: "Exchanges & Markets\nvia CCXT · multi-venue" { class: node }
+  llm:     "LLM Provider\nAnthropic · OpenAI · DeepSeek" { class: node }
+}
+
+# ── Connections ──
+L1.user  -> L2.agents { style: { stroke: "#5fb3ff"; stroke-width: 1; font-color: "#6b7280"; font-size: 10 } }
+L2.tools -> L3.data   { style: { stroke: "#1f2740"; stroke-width: 1 } }
+L2.tools -> L3.paper  { style: { stroke: "#1f2740"; stroke-width: 1 } }
+L3.data  -> L4.db     { style: { stroke: "#1f2740"; stroke-width: 1 } }
+L3.paper -> L4.db     { style: { stroke: "#1f2740"; stroke-width: 1 } }
+L3.data  -> L4.markets{ style: { stroke: "#1f2740"; stroke-width: 1 } }
