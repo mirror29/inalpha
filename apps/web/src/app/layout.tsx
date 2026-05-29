@@ -24,6 +24,11 @@ export const metadata: Metadata = {
 /**
  * Root layout — owns <html> and <body> so the locale-less redirect route
  * at `/` can render. Locale-specific concerns live in `[locale]/layout.tsx`.
+ *
+ * NOTE: `lang` is hard-coded to "en" here because Next.js SSG (`output: "export"`)
+ * cannot vary root `<html>` attributes per locale. Search engines rely on
+ * `hreflang` tags (set in `[locale]/layout.tsx` via `alternates.languages`)
+ * for language detection, so this has negligible SEO impact.
  */
 export default function RootLayout({
   children,

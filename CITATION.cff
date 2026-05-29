@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+title: Inalpha
+message: "If you use Inalpha in your research, please cite it as below."
+type: software
+authors:
+  - given-names: Miro
+    family-names: ""
+    alias: mirror29
+repository-code: "https://github.com/mirror29/inalpha"
+url: "https://inalpha.dev"
+abstract: "Inalpha is an open-source quant agent framework that brings engineering discipline to LLM-driven trading. It features a factor lab, risk engine, strategy evolution, and audit-grade plan/exec with hooks, scoped permissions, and signed audit trails — inspired by Claude Code's engineering patterns and NautilusTrader's unified backtest=paper=live kernel."
+keywords:
+  - "quantitative trading"
+  - "agent framework"
+  - "LLM orchestration"
+  - "factor research"
+  - "backtesting"
+  - "algorithmic trading"
+  - "hooks"
+  - "permissions"
+  - "plan-exec"
+  - "audit trail"
+license: AGPL-3.0
+version: "0.9.0"
+date-released: "2026-05-29"

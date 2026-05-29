@@ -1,0 +1,10 @@
+# Inalpha · CODEOWNERS
+# PR 必须有至少一人审核（哪怕是作者自己审核自己）。
+# Every PR must have at least one approving review — self-review is allowed.
+#
+# GitHub repo 侧：Settings → Branches → Branch protection rules →
+#   "Require a pull request before merging" ✅
+#   "Require approvals" ≥ 1 ✅
+#   "Allow actors to approve their own pull requests" ✅
+
+* @mirror29

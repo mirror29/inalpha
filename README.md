@@ -22,6 +22,8 @@
 
 <p><em>Every factor proposed, every strategy mutated, every order routed — logged, versioned, reviewable. Every number the agents reason on — sourced, <code>as_of</code>-stamped, freshness-checked. The LLM writes the code; the engineering harness signs every decision.</em></p>
 
+<p>Inalpha is a <strong>professional quant agent framework</strong> — an open-source system where LLM agents propose, research, mutate, and execute trading strategies under an <strong>audit-grade engineering harness</strong>. It combines the Claude Code hooks/permissions/plan-exec pattern, NautilusTrader's unified backtest=paper=live kernel, and multi-market routing (crypto, US equities, A-shares, global indices, macro) — built for teams that demand <strong>every decision be provable and every order path be unreachable by the LLM directly</strong>.</p>
+
 </div>
 
 ---
@@ -281,6 +283,10 @@ And to every quant researcher who refuses to accept opaque "AI signals" — this
 - Commercial licensing (proprietary / closed-source / hosted SaaS without source release): please open an issue to discuss a dual license
 
 ---
+
+<div align="center">
+  <sub>💬 <a href="https://github.com/mirror29/inalpha/discussions"><strong>Discussions</strong></a> &nbsp;·&nbsp; 📬 <a href="https://inalpha.substack.com"><strong>Subscribe on Substack</strong></a> — engineering notes, ADRs, post-mortems</sub>
+</div>
 
 <div align="center">
   <sub>

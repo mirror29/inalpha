@@ -1,0 +1,25 @@
+# Inalpha — allow all crawlers including AI search engines
+# https://inalpha.dev/robots.txt
+
+User-agent: *
+Allow: /
+Sitemap: https://inalpha.dev/sitemap.xml
+
+# AI search engine crawlers — Inalpha content is their type
+User-agent: GPTBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /

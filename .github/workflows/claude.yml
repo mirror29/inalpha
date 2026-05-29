@@ -1,12 +1,8 @@
 name: Claude
 
-# Interactive entry point: @claude mentions in PR / issue / review comments trigger a conversation.
-# Auto-review lives in claude-review.yml (runs once on PR open).
-# Auth: Max/Pro subscription OAuth via CLAUDE_CODE_OAUTH_TOKEN (generate locally with `claude setup-token`).
-#
-# 互动入口：在 PR / issue / review comment 里 @claude 触发对话
-# 自动 review 见 claude-review.yml（PR 打开时无脑跑一次）
-# 鉴权：走 Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
+# 互动入口：在 PR / issue / review comment 里 @claude 触发对话。
+# 本 workflow 不阻塞 CI/CD，失败不影响 PR 合并。
+# Auth: Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
 
 on:
   issue_comment:
@@ -20,13 +16,15 @@ on:
 
 jobs:
   claude:
-    name: Claude · triggered by @mention / @mention 触发
+    name: Claude · @mention 触发（非阻塞）
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    # 非阻塞：即使 Claude 挂了也不影响其他 CI
+    continue-on-error: true
     permissions:
       contents: write
       pull-requests: write

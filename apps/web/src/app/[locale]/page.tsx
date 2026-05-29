@@ -4,6 +4,7 @@ import { BlackBoxProblem } from "@/components/sections/BlackBoxProblem";
 import { CTAFooter } from "@/components/sections/CTAFooter";
 import { DualThesis } from "@/components/sections/DualThesis";
 import { EngineeringHarness } from "@/components/sections/EngineeringHarness";
+import { FAQ } from "@/components/sections/FAQ";
 import { GlobalCoverage } from "@/components/sections/GlobalCoverage";
 import { Hero } from "@/components/sections/Hero";
 import { SystemSchematic } from "@/components/sections/SystemSchematic";
@@ -54,6 +55,7 @@ export default async function HomePage({
         <SystemSchematic />
         <UnifiedKernel />
         <EngineeringHarness />
+        <FAQ />
         <GlobalCoverage stats={githubStats} />
       </main>
 
