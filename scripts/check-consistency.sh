@@ -152,14 +152,16 @@ fi
 sect "C5 · CLAUDE.md 字符上限（4000）"
 
 if [[ -f CLAUDE.md ]]; then
-    chars=$(wc -c < CLAUDE.md | tr -d ' ')
-    echo "  当前字符数: $chars"
-    if [[ $chars -le 4000 ]]; then
+    # 限的是「字符」数（doc 原文），用 wc -m 而非 wc -c——本仓库 CLAUDE.md 多为
+    # 中文，UTF-8 下 1 个 CJK 字符 = 3 字节，wc -c 会把字符数虚高 ~3 倍误报。
+    chars=$(wc -m < CLAUDE.md | tr -d ' ')
+    echo "  当前字符数: ${chars}"
+    if [[ ${chars} -le 4000 ]]; then
         ok "CLAUDE.md ≤ 4000 字符"
-    elif [[ $chars -le 4500 ]]; then
-        warn "CLAUDE.md 超 4000（$chars），接近硬上限，考虑精简"
+    elif [[ ${chars} -le 4500 ]]; then
+        warn "CLAUDE.md 超 4000（${chars}），接近硬上限，考虑精简"
     else
-        fail "CLAUDE.md 严重超长（$chars > 4500），必须精简"
+        fail "CLAUDE.md 严重超长（${chars} > 4500），必须精简"
     fi
 fi
 
