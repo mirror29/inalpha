@@ -287,11 +287,18 @@ export type PositionRecord = {
 
 export type AccountSnapshot = {
   account_id: string;
+  /** D-11：报告 / 折算目标货币（默认 USD）。 */
+  base_currency: string;
   initial_cash: number;
+  /** D-11：各币种桶折算到 base_currency 后的总现金。 */
   cash: number;
+  /** D-11：折算前的按币种现金桶（如 {"USD": 5000, "USDT": -1000}）。 */
+  cash_balances: Record<string, number>;
   positions_value: number;
   total_equity: number;
   realized_pnl: number;
+  /** D-11：折算时 FX 不可用 / 偏旧的币种告警；非空时须原样转告用户。 */
+  fx_warnings: string[];
   created_at: string;
   updated_at: string;
 };
