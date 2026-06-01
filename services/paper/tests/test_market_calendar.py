@@ -1,214 +1,144 @@
-"""``RoutingCalendar`` / ``CryptoCalendar`` / ``USEquityCalendar`` 单测。
+"""``RoutingCalendar`` + ``exchange_calendars`` 接入单测。
 
-覆盖：
+用**固定历史日期**断言各市场开 / 闭市（午休 / 周末 / 假日），不依赖"今天"。
+锚定日期（均为 UTC）：
 
-- CryptoCalendar 永远 open
-- USEquityCalendar 工作日 9:30-16:00 ET 开 / 周末关 / DST 正确处理
-- USEquityCalendar.next_session_open 三个边界（盘前 / 盘中 / 盘后 + 跨周末）
-- RoutingCalendar venue 派发 / 大小写不敏感 / 未知 venue fail-open
-- 未知 venue + default_open_on_unknown=False → 严格按 closed 处理
+- 2024-01-01 周一 = 美股元旦休市
+- 2024-01-02 周二 = 美股 / A股 / 港股正常交易日
+- 2024-01-04 周四 = 日股正常交易日（1/1–1/3 日本休市）
+- 2024-01-06 周六 = 周末
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime
 
 import pytest
 
-from inalpha_paper.execution.risk_rules.market_calendar import (
-    CryptoCalendar,
-    RoutingCalendar,
-    USEquityCalendar,
-)
-
-ET = ZoneInfo("America/New_York")
+from inalpha_paper.execution.risk_rules.market_calendar import RoutingCalendar
 
 
-def _et(year: int, month: int, day: int, hour: int, minute: int) -> datetime:
-    return datetime(year, month, day, hour, minute, tzinfo=ET)
-
-
-def _utc(year: int, month: int, day: int, hour: int, minute: int) -> datetime:
+def _utc(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
     return datetime(year, month, day, hour, minute, tzinfo=UTC)
 
 
-# ───────────── CryptoCalendar ─────────────
+def test_anchor_weekdays() -> None:
+    """sanity check：锚定日期的星期几。"""
+    assert _utc(2024, 1, 1).weekday() == 0  # Mon（元旦）
+    assert _utc(2024, 1, 2).weekday() == 1  # Tue
+    assert _utc(2024, 1, 4).weekday() == 3  # Thu
+    assert _utc(2024, 1, 6).weekday() == 5  # Sat
 
 
-class TestCryptoCalendar:
+# ───────────── crypto（24/7） ─────────────
+
+
+class TestCrypto:
     def test_always_open(self) -> None:
-        cal = CryptoCalendar()
-        # 周末凌晨 / 节假日 / 任意时间都开
-        assert cal.is_trading_hours("binance", _utc(2026, 1, 1, 0, 0))  # 元旦 0 点
-        assert cal.is_trading_hours("binance", _utc(2026, 5, 30, 3, 0))  # 周六 3 点
-        assert cal.is_trading_hours("binance", _utc(2026, 12, 25, 12, 0))  # 圣诞节
-
-    def test_next_session_open_is_now(self) -> None:
-        cal = CryptoCalendar()
-        now = _utc(2026, 5, 30, 3, 0)
-        assert cal.next_session_open("binance", now) == now
-
-
-# ───────────── USEquityCalendar ─────────────
-
-
-class TestUSEquityCalendarIsOpen:
-    def test_weekday_during_session(self) -> None:
-        """周一 ET 10:00 (盘中) → open。2026-05-26 是周二。"""
-        cal = USEquityCalendar()
-        # 2026-05-26 (Tue) 10:00 ET
-        assert cal.is_trading_hours("nasdaq", _et(2026, 5, 26, 10, 0))
-
-    def test_at_open_boundary(self) -> None:
-        """9:30 ET 整 → open（含等号）。"""
-        cal = USEquityCalendar()
-        assert cal.is_trading_hours("nasdaq", _et(2026, 5, 26, 9, 30))
-
-    def test_just_before_open(self) -> None:
-        cal = USEquityCalendar()
-        assert not cal.is_trading_hours("nasdaq", _et(2026, 5, 26, 9, 29))
-
-    def test_at_close_boundary(self) -> None:
-        """16:00 ET 整 → closed（不含 16:00）。"""
-        cal = USEquityCalendar()
-        assert not cal.is_trading_hours("nasdaq", _et(2026, 5, 26, 16, 0))
-
-    def test_just_before_close(self) -> None:
-        cal = USEquityCalendar()
-        assert cal.is_trading_hours("nasdaq", _et(2026, 5, 26, 15, 59))
-
-    def test_saturday(self) -> None:
-        """周六 ET 10:00 → closed。2026-05-30 是周六。"""
-        cal = USEquityCalendar()
-        assert not cal.is_trading_hours("nasdaq", _et(2026, 5, 30, 10, 0))
-
-    def test_sunday(self) -> None:
-        """周日 ET 10:00 → closed。2026-05-31 是周日。"""
-        cal = USEquityCalendar()
-        assert not cal.is_trading_hours("nasdaq", _et(2026, 5, 31, 10, 0))
-
-    def test_utc_input_dst_active(self) -> None:
-        """UTC 输入 DST 活跃期：2026-05-26 13:30 UTC = 9:30 EDT (UTC-4) → open。"""
-        cal = USEquityCalendar()
-        assert cal.is_trading_hours("nasdaq", _utc(2026, 5, 26, 13, 30))
-
-    def test_utc_input_dst_inactive(self) -> None:
-        """UTC 输入 DST 未生效：2026-01-13 14:30 UTC = 9:30 EST (UTC-5) → open。
-
-        2026-01-13 是周二（standard time period）。
-        """
-        cal = USEquityCalendar()
-        assert cal.is_trading_hours("nasdaq", _utc(2026, 1, 13, 14, 30))
-
-    def test_utc_input_dst_boundary_off_by_one_hour(self) -> None:
-        """DST 期间 14:30 UTC = 10:30 EDT 已经盘中，但不是 open 时刻。"""
-        cal = USEquityCalendar()
-        # 14:30 UTC during DST = 10:30 ET → open (1h into session)
-        assert cal.is_trading_hours("nasdaq", _utc(2026, 5, 26, 14, 30))
-        # 13:29 UTC during DST = 9:29 ET → closed (pre-open)
-        assert not cal.is_trading_hours("nasdaq", _utc(2026, 5, 26, 13, 29))
-
-
-class TestUSEquityCalendarNextOpen:
-    def test_before_open_same_day(self) -> None:
-        """Tue 8:00 ET → next open = 同日 9:30 ET。"""
-        cal = USEquityCalendar()
-        now = _et(2026, 5, 26, 8, 0)
-        nxt = cal.next_session_open("nasdaq", now)
-        assert nxt == _et(2026, 5, 26, 9, 30)
-
-    def test_after_open_to_next_weekday(self) -> None:
-        """Tue 17:00 ET → next open = Wed 9:30 ET。"""
-        cal = USEquityCalendar()
-        now = _et(2026, 5, 26, 17, 0)
-        nxt = cal.next_session_open("nasdaq", now)
-        assert nxt == _et(2026, 5, 27, 9, 30)
-
-    def test_friday_evening_to_monday(self) -> None:
-        """Fri 17:00 ET → 跨周末 → next Mon 9:30 ET。2026-05-29 Fri，6-1 Mon。"""
-        cal = USEquityCalendar()
-        now = _et(2026, 5, 29, 17, 0)
-        nxt = cal.next_session_open("nasdaq", now)
-        assert nxt == _et(2026, 6, 1, 9, 30)
-
-    def test_saturday_to_monday(self) -> None:
-        cal = USEquityCalendar()
-        now = _et(2026, 5, 30, 12, 0)
-        nxt = cal.next_session_open("nasdaq", now)
-        assert nxt == _et(2026, 6, 1, 9, 30)
-
-    def test_utc_input_returns_in_utc(self) -> None:
-        """传 UTC 输入，返也是 UTC（保持 tzinfo 一致）。"""
-        cal = USEquityCalendar()
-        now = _utc(2026, 5, 26, 12, 0)
-        nxt = cal.next_session_open("nasdaq", now)
-        # 2026-05-26 13:30 UTC = 9:30 ET DST
-        assert nxt == _utc(2026, 5, 26, 13, 30)
-        assert nxt.tzinfo == UTC
-
-
-# ───────────── RoutingCalendar ─────────────
-
-
-class TestRoutingCalendar:
-    def test_binance_routes_to_crypto(self) -> None:
         cal = RoutingCalendar()
-        # Sat 凌晨 binance → 仍 open（crypto 永开）
-        assert cal.is_trading_hours("binance", _utc(2026, 5, 30, 3, 0))
-
-    def test_nasdaq_routes_to_us_equity(self) -> None:
-        cal = RoutingCalendar()
-        # Sat nasdaq → closed（美股周末关）
-        assert not cal.is_trading_hours("nasdaq", _utc(2026, 5, 30, 13, 30))
-        # Tue 13:30 UTC = 9:30 EDT → open
-        assert cal.is_trading_hours("nasdaq", _utc(2026, 5, 26, 13, 30))
+        assert cal.is_trading_hours("binance", "BTC/USDT", _utc(2024, 1, 6, 3, 0))  # 周六
+        assert cal.is_trading_hours("binance", "BTC/USDT", _utc(2024, 1, 1, 0, 0))  # 元旦
 
     def test_case_insensitive(self) -> None:
         cal = RoutingCalendar()
-        assert cal.is_trading_hours("BINANCE", _utc(2026, 5, 30, 3, 0))
-        assert cal.is_trading_hours("NASDAQ", _utc(2026, 5, 26, 13, 30))
+        assert cal.is_trading_hours("BINANCE", "BTC/USDT", _utc(2024, 1, 6, 3, 0))
 
-    def test_unknown_venue_default_open(self) -> None:
-        """未注册 venue + default_open=True（默认）→ True。"""
+    def test_next_open_is_now(self) -> None:
         cal = RoutingCalendar()
-        assert cal.is_trading_hours("xyz_unknown", _utc(2026, 5, 26, 0, 0))
+        now = _utc(2024, 1, 6, 3, 0)
+        assert cal.next_session_open("binance", "BTC/USDT", now) == now
 
-    def test_unknown_venue_strict_mode(self) -> None:
-        """default_open=False → 未注册 venue 按 closed 处理。"""
-        cal = RoutingCalendar(default_open_on_unknown=False)
-        assert not cal.is_trading_hours("xyz_unknown", _utc(2026, 5, 26, 0, 0))
 
-    def test_unknown_venue_next_session_open_returns_now(self) -> None:
+# ───────────── 美股 XNYS（yfinance / alpaca） ─────────────
+
+
+class TestUSEquity:
+    def test_open_during_session(self) -> None:
+        # 2024-01-02 Tue 10:00 ET (EST) = 15:00 UTC
+        assert RoutingCalendar().is_trading_hours("yfinance", "AAPL", _utc(2024, 1, 2, 15, 0))
+
+    def test_closed_weekend(self) -> None:
+        assert not RoutingCalendar().is_trading_hours("yfinance", "AAPL", _utc(2024, 1, 6, 15, 0))
+
+    def test_closed_new_year_holiday(self) -> None:
+        # 2024-01-01 元旦休市
+        assert not RoutingCalendar().is_trading_hours("yfinance", "AAPL", _utc(2024, 1, 1, 15, 0))
+
+    def test_alpaca_routes_same(self) -> None:
+        assert RoutingCalendar().is_trading_hours("alpaca", "TSLA", _utc(2024, 1, 2, 15, 0))
+
+    def test_next_open_after_close(self) -> None:
         cal = RoutingCalendar()
-        now = _utc(2026, 5, 26, 0, 0)
-        assert cal.next_session_open("xyz_unknown", now) == now
+        now = _utc(2024, 1, 2, 22, 0)  # 美东盘后
+        nxt = cal.next_session_open("yfinance", "AAPL", now)
+        assert nxt > now
+        assert nxt.tzinfo is not None
 
-    def test_next_session_open_nasdaq(self) -> None:
-        cal = RoutingCalendar()
-        now = _et(2026, 5, 26, 17, 0)
-        nxt = cal.next_session_open("nasdaq", now)
-        assert nxt == _et(2026, 5, 27, 9, 30)
 
-    def test_unknown_warning_logged(
+# ───────────── A股 XSHG（akshare sh./sz.） ─────────────
+
+
+class TestAShare:
+    def test_open_morning(self) -> None:
+        # 2024-01-02 Tue 10:00 CST = 02:00 UTC
+        assert RoutingCalendar().is_trading_hours("akshare", "sh.600519", _utc(2024, 1, 2, 2, 0))
+
+    def test_closed_lunch_break(self) -> None:
+        # 12:00 CST = 04:00 UTC（午休）
+        assert not RoutingCalendar().is_trading_hours("akshare", "sh.600519", _utc(2024, 1, 2, 4, 0))
+
+    def test_shenzhen_routes_same(self) -> None:
+        # sz. 复用 XSHG
+        assert RoutingCalendar().is_trading_hours("akshare", "sz.000001", _utc(2024, 1, 2, 2, 0))
+
+    def test_closed_weekend(self) -> None:
+        assert not RoutingCalendar().is_trading_hours("akshare", "sh.600519", _utc(2024, 1, 6, 2, 0))
+
+
+# ───────────── 港股 XHKG / 日股 XTKS ─────────────
+
+
+class TestHongKongJapan:
+    def test_hk_open_morning(self) -> None:
+        # 2024-01-02 Tue 10:30 HKT = 02:30 UTC
+        assert RoutingCalendar().is_trading_hours("akshare", "hk.00700", _utc(2024, 1, 2, 2, 30))
+
+    def test_hk_closed_weekend(self) -> None:
+        assert not RoutingCalendar().is_trading_hours("akshare", "hk.00700", _utc(2024, 1, 6, 2, 30))
+
+    def test_jp_index_routes_tokyo(self) -> None:
+        # ^N225 → XTKS。2024-01-04 Thu 10:00 JST = 01:00 UTC（1/1–1/3 日本休市）
+        assert RoutingCalendar().is_trading_hours("yfinance", "^N225", _utc(2024, 1, 4, 1, 0))
+
+    def test_jp_closed_holiday(self) -> None:
+        # 2024-01-02 日本仍休市
+        assert not RoutingCalendar().is_trading_hours("yfinance", "7203.T", _utc(2024, 1, 2, 1, 0))
+
+
+# ───────────── fred / 未识别 venue ─────────────
+
+
+class TestFredAndUnknown:
+    def test_fred_always_open_no_warning(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         cal = RoutingCalendar()
         with caplog.at_level("WARNING"):
-            cal.is_trading_hours("strange_venue", _utc(2026, 5, 26, 0, 0))
-        assert any("strange_venue" in rec.message for rec in caplog.records)
+            assert cal.is_trading_hours("fred", "DFF", _utc(2024, 1, 6, 3, 0))
+        assert not any("DFF" in rec.message for rec in caplog.records)
 
+    def test_unknown_venue_fail_open(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cal = RoutingCalendar()
+        with caplog.at_level("WARNING"):
+            assert cal.is_trading_hours("weird_venue", "XYZ", _utc(2024, 1, 6, 3, 0))
+        assert any("weird_venue" in rec.message for rec in caplog.records)
 
-# ───────────── 健全性：日期标定 ─────────────
+    def test_unknown_venue_strict_mode_closed(self) -> None:
+        cal = RoutingCalendar(default_open_on_unknown=False)
+        assert not cal.is_trading_hours("weird_venue", "XYZ", _utc(2024, 1, 6, 3, 0))
 
-
-def test_anchor_dates_are_correct() -> None:
-    """sanity check：测试里假设的日期对应的星期几。"""
-    assert _et(2026, 5, 26, 12, 0).weekday() == 1  # Tue
-    assert _et(2026, 5, 29, 12, 0).weekday() == 4  # Fri
-    assert _et(2026, 5, 30, 12, 0).weekday() == 5  # Sat
-    assert _et(2026, 5, 31, 12, 0).weekday() == 6  # Sun
-    assert _et(2026, 6, 1, 12, 0).weekday() == 0   # Mon
-    # 2026-05-26 处于 DST 期间（EDT, UTC-4）
-    assert _et(2026, 5, 26, 12, 0).utcoffset() == timedelta(hours=-4)
-    # 2026-01-13 处于 standard time（EST, UTC-5）
-    assert _et(2026, 1, 13, 12, 0).utcoffset() == timedelta(hours=-5)
+    def test_unknown_venue_next_open_returns_now(self) -> None:
+        cal = RoutingCalendar()
+        now = _utc(2024, 1, 6, 3, 0)
+        assert cal.next_session_open("weird_venue", "XYZ", now) == now

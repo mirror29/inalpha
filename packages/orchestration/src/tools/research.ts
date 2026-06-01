@@ -39,7 +39,7 @@ export const researchDeepDiveTool = createTool({
   id: "research.deep_dive",
   description: `
     跑一次完整的多 analyst 研究 → 综合 ResearchPlan（TradingAgents 风格）。
-    同步调用，单次 30-90s（取决于 LLM 提供方延迟）。
+     同步调用，单次 90-240s（depends on market, data sources, LLM provider）。
 
     何时用：
     - 用户问 "BTC 现在能不能买" / "这个币现在什么观点"

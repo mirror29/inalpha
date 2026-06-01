@@ -1,7 +1,7 @@
 /**
  * services/data 客户端。
  */
-import { HttpClient } from "./http.js";
+import { HttpClient, HttpClientError } from "./http.js";
 
 export type Bar = {
   ts: string;
@@ -90,5 +90,19 @@ export class DataClient {
       symbol: params.symbol,
       fresh: params.fresh ?? false,
     });
+  }
+
+  async getFundamentals(params: { venue: string; symbol: string }): Promise<Record<string, unknown>> {
+    try {
+      return await this.http.get<Record<string, unknown>>("/fundamentals", {
+        venue: params.venue,
+        symbol: params.symbol,
+      });
+    } catch (err) {
+      if (err instanceof HttpClientError) {
+        return { available: false, reason: `upstream ${err.status}` };
+      }
+      return { available: false, reason: String(err) };
+    }
   }
 }

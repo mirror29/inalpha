@@ -24,6 +24,7 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
   allow: [
     // 只读 / 信息查询
     "data.*",
+    "web.*",
     "paper.list_*",
     "paper.get_*",
     "paper.run_backtest",

@@ -28,6 +28,7 @@ from ..strategy.base import RISK_ENGINE_ENDPOINT
 from .exchange import EXECUTION_ENGINE_ENDPOINT
 from .risk_rules import InMemoryLockStore, LockStore, RiskRule, RiskVerdict
 from .risk_rules.base import Side
+from .risk_rules.exchange_resolver import resolve_calendar_code
 from .risk_rules.lock_store import ActiveLock
 
 if TYPE_CHECKING:
@@ -81,7 +82,13 @@ class RiskEngine:
         for scope in ("global", "market", "symbol"):
             kwargs: dict[str, object] = {"side": side}
             if scope == "market":
-                kwargs["market"] = order.instrument_id.venue
+                # market 锁键用交易所日历 code，无法解析时 fallback venue
+                kwargs["market"] = (
+                    resolve_calendar_code(
+                        order.instrument_id.venue, order.instrument_id.symbol
+                    )
+                    or order.instrument_id.venue
+                )
             elif scope == "symbol":
                 kwargs["symbol"] = str(order.instrument_id)
             existing = self._lock_store.is_locked(now, scope=scope, **kwargs)  # type: ignore[arg-type]
@@ -101,7 +108,7 @@ class RiskEngine:
 
         for rule in self._rules:
             if rule.has_market_check:
-                verdict = rule.check_market(order.instrument_id.venue, now, side, balance)
+                verdict = rule.check_market(order.instrument_id, now, side, balance)
                 if verdict is not None:
                     self._record_and_reject(cmd, verdict, instrument_id=None, now=now)
                     return True

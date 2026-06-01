@@ -523,6 +523,12 @@ def run_engine_in_subprocess(
             strategy_kwargs["initial_cash"] = initial_cash
     except (TypeError, ValueError):
         pass
+    try:
+        sig = inspect.signature(strategy_cls.__init__)
+        if "position_pct" in sig.parameters and "position_pct" not in strategy_kwargs:
+            strategy_kwargs["position_pct"] = 1.0
+    except (TypeError, ValueError):
+        pass
     strategy = strategy_cls(  # type: ignore[call-arg]
         name=strategy_name,
         clock=engine.clock,

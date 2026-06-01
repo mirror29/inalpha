@@ -73,12 +73,12 @@ export class ResearchClient {
   private readonly http: HttpClient;
 
   constructor(opts: { baseUrl: string; token: string; timeoutMs?: number }) {
-    // deep_dive 单次 30-90s（5 个 analyst 并行 LLM call + manager 综合），
-    // 默认 120s 而不是 HttpClient 的 30s 默认（review B18，旧版恰好卡在边界）
+    // deep_dive 单次 90-240s（5 个 analyst 并行 + manager 综合 + 可选 debate），
+    // 默认 300s 而不是 HttpClient 的 30s 默认（A-share backfill 慢路径 ~150s，需留足余量）
     this.http = new HttpClient({
       baseUrl: opts.baseUrl,
       token: opts.token,
-      timeoutMs: opts.timeoutMs ?? 120_000,
+      timeoutMs: opts.timeoutMs ?? 300_000,
     });
   }
 

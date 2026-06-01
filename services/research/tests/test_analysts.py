@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import respx
-from httpx import HTTPStatusError, Response
+from httpx import Response
 
 from inalpha_research.analysts.fundamental import FundamentalAnalyst
 from inalpha_research.analysts.macro import MacroAnalyst
@@ -269,42 +269,64 @@ async def test_sentiment_returns_brief(data_client: DataClient) -> None:
 
 @respx.mock
 async def test_sentiment_propagates_fng_api_error(data_client: DataClient) -> None:
-    """FNG API 5xx 让 analyst 抛错（不静默兜底，让 runner._failed_brief 处理）。"""
+    """FNG API 5xx → web search fallback → LLM call with empty data → brief returned."""
     respx.get("https://api.alternative.me/fng/").mock(
         return_value=Response(503, json={"error": "down"})
     )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
 
-    llm = FakeLLMClient({})
+    llm = FakeLLMClient(
+        {
+            "you are a sentiment analyst": {
+                "stance": "neutral",
+                "confidence": 0.4,
+                "summary": "No FNG data available; limited sentiment signal.",
+                "key_points": ["FNG unavailable", "no web results"],
+            }
+        }
+    )
     analyst = SentimentAnalyst(llm=llm, data=data_client)
-    with pytest.raises(HTTPStatusError):
-        await analyst.run(
-            venue="binance",
-            symbol="BTC/USDT",
-            timeframe="1h",
-            as_of=_as_of(),
-            lookback_days=7,
-        )
-    # 失败应发生在 LLM call 之前
-    assert llm.calls == []
+    brief = await analyst.run(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        lookback_days=7,
+    )
+    assert brief.analyst == "sentiment"
 
 
 @respx.mock
 async def test_sentiment_rejects_unexpected_payload_shape(data_client: DataClient) -> None:
-    """FNG 返回 list 而不是 ``{data: [...]}`` 时应该抛 RuntimeError。"""
+    """FNG returns list instead of dict → web search fallback → LLM → brief."""
     respx.get("https://api.alternative.me/fng/").mock(
         return_value=Response(200, json=[1, 2, 3])  # 非 dict
     )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
 
-    llm = FakeLLMClient({})
+    llm = FakeLLMClient(
+        {
+            "you are a sentiment analyst": {
+                "stance": "neutral",
+                "confidence": 0.35,
+                "summary": "FNG payload malformed; using limited sentiment data.",
+                "key_points": ["FNG parse error", "no web results"],
+            }
+        }
+    )
     analyst = SentimentAnalyst(llm=llm, data=data_client)
-    with pytest.raises(RuntimeError, match="unexpected"):
-        await analyst.run(
-            venue="binance",
-            symbol="BTC/USDT",
-            timeframe="1h",
-            as_of=_as_of(),
-            lookback_days=7,
-        )
+    brief = await analyst.run(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        lookback_days=7,
+    )
+    assert brief.analyst == "sentiment"
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -450,3 +472,145 @@ async def test_macro_handles_no_events_in_window(data_client: DataClient) -> Non
     # D-9：events 拆 past / upcoming 后，空窗口表现为两组分别 "(none)"
     assert "past_macro_events_last_14d: (none)" in user_prompt
     assert "upcoming_macro_events_next_14d: (none)" in user_prompt
+
+
+# ────────────────────────────────────────────────────────────────────
+# D-10: Fundamental with real financial data + Sentiment web search
+# ────────────────────────────────────────────────────────────────────
+
+
+@respx.mock
+async def test_fundamental_with_financials_data(data_client: DataClient) -> None:
+    """D-10: fundamental analyst fetches real financial data and feeds to LLM."""
+    # Mock GET /fundamentals to return real-looking data
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={
+            "venue": "akshare",
+            "symbol": "sh.600519",
+            "available": True,
+            "as_of": "2026-05-29T00:00:00Z",
+            "indicators": {
+                "market_cap": 2.3e12,
+                "pe_ratio": 32.5,
+                "roe": 0.283,
+                "revenue_yoy": 0.153,
+                "profit_yoy": 0.187,
+            },
+        })
+    )
+    # Mock GET /web/search to return empty (simplest case)
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+
+    llm = FakeLLMClient({
+        "fundamental": {
+            "stance": "bullish",
+            "confidence": 0.7,
+            "summary": "Strong financials, ROE 28.3%, revenue +15.3%.",
+            "key_points": ["ROE high", "revenue growing"],
+        }
+    })
+    analyst = FundamentalAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="akshare",
+        symbol="sh.600519",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=180,
+    )
+
+    assert brief.analyst == "fundamental"
+    assert brief.stance == "bullish"
+
+    # Verify financial data made it into the user prompt
+    assert len(llm.calls) == 1
+    user_prompt = llm.calls[0]["user"]
+    assert "financial_data" in user_prompt
+    assert "32.5" in user_prompt  # PE ratio
+    assert "28.3%" in user_prompt  # ROE
+    assert "15.3%" in user_prompt  # revenue_yoy
+
+
+@respx.mock
+async def test_fundamental_financials_unavailable(data_client: DataClient) -> None:
+    """D-10: when financials API returns unavailable, analyst falls back to LLM-only."""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={
+            "available": False,
+            "reason": "no data for this ticker",
+        })
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+
+    llm = FakeLLMClient({
+        "fundamental": {
+            "stance": "neutral",
+            "confidence": 0.4,
+            "summary": "No live data available.",
+            "key_points": ["data unavailable"],
+        }
+    })
+    analyst = FundamentalAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="akshare",
+        symbol="sh.600519",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=180,
+    )
+
+    assert brief.analyst == "fundamental"
+    # Should still work (graceful degradation)
+    assert brief.stance == "neutral"
+
+    user_prompt = llm.calls[0]["user"]
+    assert "not available" in user_prompt.lower()
+    assert "lower confidence" in user_prompt.lower()
+
+
+@respx.mock
+async def test_sentiment_non_crypto_uses_web_search(data_client: DataClient) -> None:
+    """D-10: for A-share (non-crypto), sentiment calls get_news AND get_web_search."""
+    # Mock GET /news (get_news defaults venue=yfinance)
+    respx.get("http://data-mock.test/news").mock(
+        return_value=Response(200, json={"venue": "yfinance", "symbol": "sh.600519", "items": []})
+    )
+    # Mock GET /web/search returning some web results
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={
+            "query": "sh.600519 stock news sentiment analysis",
+            "backend": "auto",
+            "results": [
+                {"title": "茅台股价创新高", "url": "https://x.com/1", "snippet": "贵州茅台今日股价大涨..."},
+                {"title": "机构看好茅台Q1业绩", "url": "https://x.com/2", "snippet": "多家机构上调茅台目标价..."},
+            ],
+        })
+    )
+
+    llm = FakeLLMClient({
+        "sentiment analyst": {
+            "stance": "bullish",
+            "confidence": 0.65,
+            "summary": "Web results show positive sentiment.",
+            "key_points": ["positive news flow", "institutional bullish"],
+        }
+    })
+    analyst = SentimentAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="akshare",
+        symbol="sh.600519",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+
+    assert brief.analyst == "sentiment"
+    assert brief.stance == "bullish"
+
+    user_prompt = llm.calls[0]["user"]
+    # Verify web search results appear in prompt
+    assert "web_search_results" in user_prompt or "web_results" in user_prompt.lower()
+    assert "cn_stock" in user_prompt or "market_type" in user_prompt

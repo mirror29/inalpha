@@ -621,7 +621,7 @@ def build_llm_client(
     if p in _OPENAI_COMPAT_DEFAULTS:
         default_base, default_model = _OPENAI_COMPAT_DEFAULTS[p]
         return DeepSeekLLMClient(
-            api_key=api_key or "ollama",  # ollama 不验 key，给个占位
+            api_key=api_key or ("ollama" if p == "ollama" else ""),
             base_url=base_url or default_base,
             model=model or default_model,
             timeout_seconds=timeout_seconds,

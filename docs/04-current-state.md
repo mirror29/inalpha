@@ -1,7 +1,7 @@
 # 04 · D-9 当前状态：Plan/Exec 闭环 + 工程护栏
 
-> 状态：**D-9 完成（2026-05-28）**。下一里程碑 D-10（live runner issue #1）
-> / D-8b（permissions.yaml issue #4）。
+> 状态：**D-9 完成（2026-05-28）**，D-9.1a 收口（含全市场交易日历）。
+> 下一里程碑：research-hub（issue #6）/ E2 多代演化（issue #7）。
 >
 > 本文回答的问题：**clone 仓库后，"现在到底做到哪里、决策链路长什么样"。**
 > 详细架构与设计取舍见 [`docs/03-kernel-design.md`](./03-kernel-design.md)；
@@ -164,8 +164,10 @@ sequenceDiagram
   订单流同事务内写入 `closed_trades` 表。至此 trade-based RiskRule 5 件套
   （Cooldown / LowProfit / MaxDrawdown / StoplossGuard / MarketHoursRule）
   在 HTTP 路径全可触发——前提是 `closed_trades` 表有平仓数据（HTTP 订单流
-  本身产生）。MarketHoursRule 通过 `RoutingCalendar` 对 crypto（永远开市）
-  和美股（9:30-16:00 ET）生效。D-9 闭环完成。
+  本身产生）。MarketHoursRule 通过 `RoutingCalendar` 接 `exchange_calendars`，
+  按 `(venue, symbol)` 解析真实交易所，对全 D-9 市场（crypto 24/7 / 美股 / A股 /
+  港股 / 日英德 / 韩澳印 / 全球指数）生效——含节假日 / 午休 / 半日市 / DST，锁
+  粒度按交易所 code（issue #8 收口）。D-9 闭环完成。
 
 不在范围（下一阶段）：MAP-Elites / Island Model / 多代演化 / unified-diff 变异（E2/E3）；
 `services/evolver/` 独立服务（等多代演化需求出现再拆）；promoted 候选的 live tick
@@ -175,12 +177,18 @@ runner（按行情自动下单、写 `paper_positions` / `paper_trades`）。
 
 ## 未完成 / 下一步
 
-- **D-8b**：`permissions.yaml` 配置文件化（目前在 `defaults.ts` 硬编码，issue #4）
-- **D-10 · live runner**（issue #1）：tick-driven `on_bar` 写 `paper_positions` / `paper_trades`
-- **D-10 · askUserChoice**（issue #2）：前端接通，让 `ask` 权限状态从 workaround 回归
-- **delegation hop**（ADR-0012 补丁）：sub-strategy 派生计划的转授权链
-- **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate）尚未落地
-- **E1 MVP 已上**（D-9 · ADR-0020）：LLM 写完整源码 + 沙盒 + fitness；下一里程碑 E2 多代演化（issue #7）
+> 重心：模拟盘（paper）先于实盘（live）。
+
+- **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate，issue #6）尚未落地
+- **E2 多代演化**（issue #7 · ADR-0020）：MAP-Elites / Island Model（E1 MVP 已上）
+- **delegation hop**（issue #5 · ADR-0012 补丁）：sub-strategy 派生计划的转授权链
+- **paper live runner**（issue #1）：promoted 候选按行情自动跑（远期，paper 优先）
+
+> 已收口：RiskEngine 接入（#3）、权限 YAML 化（#4）、askUserChoice（#2）、
+> trade_repo 默认化 + 全市场交易日历（#8）。
+
+多市场日历 follow-up（非阻塞）：盘前 / 盘后时段、指数映射表补全、深交所 XSHE /
+印度 XNSE 精确化（当前分别复用 XSHG / XBOM）。
 
 ---
 

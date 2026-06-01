@@ -129,8 +129,10 @@ def test_backtest_e2e_with_mocked_data(
     assert body["num_bars_processed"] == 100
     # 振荡价格 SMA cross 必然触发交易
     assert body["num_trades"] >= 2
-    # equity 接近初始值（振荡市 + 手续费稍亏，不会爆赚爆亏）
-    assert 9_000 <= body["final_equity"] <= 11_000
+    # position_pct=1.0 (auto-injected by runner) → full position sizing →
+    # larger swings in oscillating markets; SMA cross reversals amplify
+    # fee + reversal losses, so equity can dip lower than before.
+    assert 8_000 <= body["final_equity"] <= 11_000
     # 绩效字段（D-7+ 新加）应该全部出现在响应里
     assert "sharpe" in body
     assert "sortino" in body

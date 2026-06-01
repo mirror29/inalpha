@@ -98,12 +98,22 @@ async def backfill_bars(
     inserted_total = 0
 
     while cursor < req.to_ts:
-        bars = await connector.fetch_bars(
-            symbol=req.symbol,
-            timeframe=req.timeframe,
-            since=cursor,
-            limit=_BATCH_LIMIT,
-        )
+        try:
+            bars = await connector.fetch_bars(
+                symbol=req.symbol,
+                timeframe=req.timeframe,
+                since=cursor,
+                limit=_BATCH_LIMIT,
+            )
+        except Exception as exc:
+            _logger.warning(
+                "backfill_connector_failed",
+                venue=req.venue,
+                symbol=req.symbol,
+                error=str(exc),
+                cursor=cursor.isoformat(),
+            )
+            break
         if not bars:
             _logger.info(
                 "backfill_no_more_bars",

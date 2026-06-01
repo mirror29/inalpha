@@ -110,12 +110,21 @@ class YfinanceConnector:
             limit=limit,
         )
 
-        rows = await asyncio.to_thread(
-            _fetch_sync,
-            symbol=symbol,
-            interval=interval,
-            since=since,
-        )
+        try:
+            rows = await asyncio.to_thread(
+                _fetch_sync,
+                symbol=symbol,
+                interval=interval,
+                since=since,
+            )
+        except Exception as exc:
+            _logger.warning(
+                "yfinance_fetch_bars_failed",
+                symbol=symbol,
+                timeframe=timeframe,
+                error=str(exc),
+            )
+            return []
 
         out: list[tuple[datetime, float, float, float, float, float]] = []
         for ts_raw, o, h, low, c, v in rows:
@@ -180,6 +189,36 @@ class YfinanceConnector:
         """
         rows = await asyncio.to_thread(_fetch_news_sync, symbol, limit)
         return rows
+
+    async def fetch_financials(self, symbol: str) -> dict[str, Any]:
+        """拉 Yahoo Finance 财报基本面数据。
+
+        Uses ``yf.Ticker(symbol).info`` for key metrics +
+        ``.quarterly_financials`` for revenue/earnings.
+
+        Returns standardized dict with same structure as akshare version.
+        """
+        _logger.debug("yfinance_fetch_financials", symbol=symbol)
+
+        try:
+            result = await asyncio.to_thread(_fetch_financials_sync, symbol)
+        except Exception as exc:
+            _logger.warning("yfinance_financials_fetch_failed", symbol=symbol, error=str(exc))
+            return {
+                "venue": VENUE,
+                "symbol": symbol,
+                "available": False,
+                "reason": f"yfinance fetch failed: {exc}",
+            }
+
+        if result is None or (isinstance(result, dict) and not result):
+            return {
+                "venue": VENUE,
+                "symbol": symbol,
+                "available": False,
+                "reason": "yfinance returned empty financial data",
+            }
+        return result
 
     async def close(self) -> None:
         return None
@@ -249,6 +288,62 @@ def _fetch_news_sync(symbol: str, limit: int) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def _fetch_financials_sync(symbol: str) -> dict[str, Any]:
+    """同步调 yfinance 财报接口 —— ``Ticker.info`` + ``quarterly_financials``。
+
+    映射 yfinance 字段名到标准化 indicator 名称。
+    """
+    import yfinance as yf
+
+    ticker = yf.Ticker(symbol)
+    info: dict[str, Any] = {}
+    try:
+        info = ticker.info or {}
+    except Exception:
+        pass
+
+    if not info:
+        return {}
+
+    indicators: dict[str, float | None] = {}
+    # yfinance info 字段 → 标准化指标名
+    _field_map = {
+        "marketCap": "market_cap",
+        "trailingPE": "pe_ratio",
+        "forwardPE": "pe_ratio",
+        "priceToBook": "pb_ratio",
+        "returnOnEquity": "roe",
+        "revenueGrowth": "revenue_yoy",
+        "earningsGrowth": "profit_yoy",
+        "grossMargins": "gross_margin",
+        "profitMargins": "net_margin",
+        "debtToEquity": "debt_to_equity",
+    }
+    for yf_key, norm_key in _field_map.items():
+        val = info.get(yf_key)
+        if val is not None:
+            try:
+                indicators[norm_key] = float(val)
+            except (TypeError, ValueError):
+                pass
+
+    # 若 info 里 roe 以小数存（yfinance 行为不一致），防御性转换
+    roe = indicators.get("roe")
+    if roe is not None and roe > 10:
+        indicators["roe"] = roe / 100.0
+
+    from datetime import datetime
+
+    return {
+        "venue": VENUE,
+        "symbol": symbol,
+        "available": True,
+        "as_of": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "indicators": indicators,
+        "raw": info,
+    }
 
 
 def _normalize_news_ts(ts_raw: Any) -> datetime | None:

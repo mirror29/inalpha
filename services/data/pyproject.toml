@@ -16,6 +16,8 @@ dependencies = [
     # yfinance 全球兜底（韩 / 澳 / 印 / 巴西 / 全球指数等 akshare 没覆盖的）
     # 零 key，反爬偶发；同步库
     "yfinance>=0.2.40",
+    # ddgs 聚合搜索（Bing/DuckDuckGo/Google 等，零 key，MIT 协议）
+    "ddgs>=9.0.0",
     # FRED 全球宏观（圣路易斯联储），免费 key 注册；80 万+ 经济序列
     "fredapi>=0.5.2",
 ]
@@ -64,6 +66,7 @@ strict = true
 module = [
     "ccxt", "ccxt.*",
     "akshare", "akshare.*",
+    "ddgs", "ddgs.*",
     "yfinance", "yfinance.*",
     "fredapi", "fredapi.*",
 ]

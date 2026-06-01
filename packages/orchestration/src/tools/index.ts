@@ -5,10 +5,12 @@
  * - D-8a：trade-plan 5 个（create / approve / reject / execute / get）
  * - D-8b：research 1 个（deep_dive）
  * - D-9 spike：sandbox 1 个（run_code），ADR-0020 第二道运行隔离
+ * - D-10：web 2 个（search / search_news）+ fundamentals 1 个（get_fundamentals）
  */
 import {
   dataBackfillBarsTool,
   dataGetBarsTool,
+  dataGetFundamentalsTool,
   dataGetTickerTool,
   dataTools,
 } from "./data.js";
@@ -48,6 +50,7 @@ import {
   paperPromoteCandidateTool,
 } from "./strategy.js";
 import { swarmRunBacktestGridTool, swarmTools } from "./swarm.js";
+import { webSearchNewsTool, webSearchTool, webTools } from "./web.js";
 import {
   approveTradePlanTool,
   createTradePlanTool,
@@ -62,6 +65,7 @@ export {
   createTradePlanTool,
   dataBackfillBarsTool,
   dataGetBarsTool,
+  dataGetFundamentalsTool,
   dataGetTickerTool,
   executeTradePlanTool,
   getTradePlanTool,
@@ -91,6 +95,8 @@ export {
   schedulerSetEnabledTool,
   schedulerTriggerJobTool,
   swarmRunBacktestGridTool,
+  webSearchNewsTool,
+  webSearchTool,
 };
 
 /** 所有 tool 数组，给 Mastra Agent 直接挂载。 */
@@ -103,6 +109,8 @@ export const allTools = [
   ...swarmTools,
   ...schedulerTools,
   ...sandboxTools,
+  // D-10：web 搜索
+  ...webTools,
   // ADR-0006 §D6：risk.* agent 自检 + 解锁（unlock 在 permissions 层禁 LLM 直调）
   riskDescribeRulesTool,
   riskListLocksTool,
@@ -147,6 +155,10 @@ export const orchestratorToolList = [
   dataGetBarsTool,
   dataBackfillBarsTool,
   dataGetTickerTool,
+  dataGetFundamentalsTool,
+  // D-10：web 搜索
+  webSearchTool,
+  webSearchNewsTool,
   paperListStrategiesTool,
   paperRunBacktestTool,
   paperHealthTool,

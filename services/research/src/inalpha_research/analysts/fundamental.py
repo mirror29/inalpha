@@ -98,11 +98,28 @@ class FundamentalAnalyst(Analyst):
         lookback_days: int,
     ) -> str:
         market_type = infer_asset_type(venue=venue, symbol=symbol)
+
+        # Fetch real financial data when available
+        financials = await self._data.get_fundamentals(venue=venue, symbol=symbol)
+        financials_block = _render_financials(financials, market_type)
+
+        # Always try web search as supplementary data source (all markets)
+        # Crypto: fills the gap when yfinance returns limited/no financials data
+        web_block = ""
+        ticker_name = symbol
+        web_results = await self._data.get_web_search(
+            f"{ticker_name} 最新财报 营收 利润 2026", max_results=3
+        )
+        if web_results:
+            web_block = _render_web_results(web_results)
+
         return (
             f"asset: {symbol} @ {venue}\n"
             f"market_type: {market_type}\n"
             f"as_of: {as_of.isoformat()}  ← THIS IS NOW (current research time)\n"
             f"window_days: {lookback_days}\n\n"
+            f"{financials_block}\n"
+            f"{web_block}\n"
             "**IMPORTANT TIME DISCIPLINE**:\n"
             "- `as_of` above is the TRUE current time of this research.\n"
             "- Your training cutoff is likely earlier than `as_of`.\n"
@@ -116,3 +133,68 @@ class FundamentalAnalyst(Analyst):
             "  and say so in summary; do not fabricate.\n\n"
             "Output the required JSON only."
         )
+
+
+def _render_financials(data: dict, market_type: str) -> str:
+    """Format financial data for LLM consumption."""
+    if not data.get("available"):
+        return (
+            f"financial_data: (not available — {data.get('reason', 'unknown')})\n"
+            f"Use training knowledge with lower confidence (cap 0.55)."
+        )
+    ind = data.get("indicators", {})
+    lines = ["financial_data (most recent disclosure):"]
+    labels = {
+        "market_cap": "市值",
+        "pe_ratio": "市盈率",
+        "pb_ratio": "市净率",
+        "roe": "ROE",
+        "revenue_yoy": "营收同比",
+        "profit_yoy": "利润同比",
+        "gross_margin": "毛利率",
+        "net_margin": "净利率",
+        "debt_to_equity": "负债权益比",
+    }
+    for key, label in labels.items():
+        val = ind.get(key)
+        if val is not None:
+            if key in (
+                "roe",
+                "revenue_yoy",
+                "profit_yoy",
+                "gross_margin",
+                "net_margin",
+                "debt_to_equity",
+            ):
+                lines.append(f"  {label}: {val * 100:.1f}%")
+            elif key == "market_cap":
+                if val > 1e12:
+                    lines.append(f"  {label}: {val / 1e12:.1f}万亿")
+                elif val > 1e8:
+                    lines.append(f"  {label}: {val / 1e8:.1f}亿")
+                else:
+                    lines.append(f"  {label}: {val:.0f}")
+            else:
+                lines.append(f"  {label}: {val:.2f}")
+    lines.append("")
+    lines.append(
+        "Anchor your analysis on the above REAL data. Do NOT fabricate numbers."
+    )
+    lines.append(
+        "If data seems stale or incomplete, note it and lower confidence accordingly."
+    )
+    return "\n".join(lines)
+
+
+def _render_web_results(results: list[dict]) -> str:
+    """Format web search results for LLM consumption."""
+    if not results:
+        return ""
+    lines = ["web_search_results (latest):"]
+    for r in results[:3]:
+        title = r.get("title", "")[:100]
+        snippet = r.get("snippet", "")[:200]
+        lines.append(f"  - {title}")
+        if snippet:
+            lines.append(f"    {snippet}")
+    return "\n".join(lines) + "\n"

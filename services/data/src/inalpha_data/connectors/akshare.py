@@ -146,9 +146,185 @@ class AkshareConnector:
             out = out[-limit:]
         return out
 
+    async def fetch_financials(self, symbol: str) -> dict[str, Any]:
+        """拉 A股 / 港股 财报基本面数据。
+
+        A-share: ``ak.stock_financial_abstract(symbol=code)``
+        HK stock: ``ak.stock_hk_financial_abstract(symbol=code)``
+
+        akshare 返回字段因市场不同有差异，做防御性字段映射；
+        缺失字段置 None 不抛异常。
+        """
+        prefix, code = _parse_symbol(symbol)
+        if prefix not in ("sh", "sz", "hk"):
+            return {
+                "venue": VENUE,
+                "symbol": symbol,
+                "available": False,
+                "reason": f"financials not supported for akshare prefix {prefix!r}",
+            }
+
+        _logger.debug("akshare_fetch_financials", symbol=symbol, prefix=prefix, code=code)
+
+        try:
+            raw = await asyncio.to_thread(_fetch_financials_sync, prefix=prefix, code=code)
+        except Exception as exc:
+            _logger.warning("akshare_financials_fetch_failed", symbol=symbol, error=str(exc))
+            return {
+                "venue": VENUE,
+                "symbol": symbol,
+                "available": False,
+                "reason": f"akshare fetch failed: {exc}",
+            }
+
+        if raw is None or (isinstance(raw, (dict, list)) and len(raw) == 0):
+            return {
+                "venue": VENUE,
+                "symbol": symbol,
+                "available": False,
+                "reason": "akshare returned empty financial data",
+            }
+
+        from datetime import datetime as dt_dt
+
+        indicators: dict[str, float | None] = {}
+        # akshare 返回的 dict key 是中文指标名，做模糊匹配映射
+        _indicator_map = {
+            "总市值": "market_cap",
+            "流通市值": "market_cap",
+            "市盈率": "pe_ratio",
+            "市净率": "pb_ratio",
+            "净资产收益率": "roe",
+            "营业收入同比增长": "revenue_yoy",
+            "归属净利润同比增长": "profit_yoy",
+            "毛利率": "gross_margin",
+            "净利率": "net_margin",
+            "资产负债率": "debt_to_equity",
+        }
+        for cn_key, en_key in _indicator_map.items():
+            val = raw.get(cn_key)
+            if val is not None:
+                try:
+                    indicators[en_key] = float(val)
+                except (TypeError, ValueError):
+                    pass
+
+        return {
+            "venue": VENUE,
+            "symbol": symbol,
+            "available": True,
+            "as_of": dt_dt.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "indicators": indicators,
+            "raw": raw,
+        }
+
+    async def fetch_news(self, symbol: str, limit: int = 20) -> list[dict[str, Any]]:
+        """拉 A股 个股新闻（东方财富来源，零 key）。
+
+        Args:
+            symbol: ``"sh.600519"`` / ``"sz.000001"``（仅 A股支持新闻；港股无公开新闻接口）
+            limit: 最多返回多少条
+
+        Returns:
+            list of dict，每条含 ``{title, publisher, link, published_at, summary}``；
+            空列表表示当天无新闻或 symbol 不在 sh/sz。
+        """
+        prefix, code = _parse_symbol(symbol)
+        if prefix not in ("sh", "sz"):
+            _logger.debug("akshare_fetch_news_unsupported_prefix", symbol=symbol, prefix=prefix)
+            return []
+
+        _logger.debug("akshare_fetch_news", symbol=symbol, prefix=prefix, code=code, limit=limit)
+
+        try:
+            raw = await asyncio.to_thread(_fetch_news_sync, symbol=code)
+        except Exception as exc:
+            _logger.warning("akshare_news_fetch_failed", symbol=symbol, error=str(exc))
+            return []
+
+        if not raw or not isinstance(raw, list):
+            return []
+
+
+        out: list[dict[str, Any]] = []
+        for item in raw[:limit]:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title") or item.get("标题") or ""
+            if not title:
+                continue
+            # 东方财富新闻时间格式：'2025-05-21 10:30:00' 或时间戳
+            ts_raw = item.get("time") or item.get("发布时间") or item.get("datetime")
+            published_at: str | None = None
+            if ts_raw:
+                try:
+                    if isinstance(ts_raw, (int, float)):
+                        from datetime import datetime as dt_dt_dt
+                        published_at = dt_dt_dt.fromtimestamp(int(ts_raw), tz=UTC).isoformat()
+                    else:
+                        from datetime import datetime as dt_dt_dt
+                        published_at = dt_dt_dt.strptime(str(ts_raw)[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).isoformat()
+                except (ValueError, OSError):
+                    published_at = None
+
+            out.append({
+                "title": title,
+                "publisher": item.get("source") or item.get("来源") or "",
+                "link": item.get("url") or item.get("链接") or "",
+                "published_at": published_at,
+                "summary": (item.get("content") or item.get("内容") or "")[:500],
+            })
+        return out
+
     async def close(self) -> None:
         # akshare 无连接对象需要关
         return None
+
+
+def _fetch_financials_sync(*, prefix: str, code: str) -> dict[str, Any]:
+    """同步调 akshare 财报接口 —— 按市场前缀路由。
+
+    - A股（sh/sz）：``stock_financial_abstract(symbol=code)``
+    - 港股（hk）  ：``stock_hk_financial_abstract(symbol=code)``
+    """
+    import akshare as ak
+
+    if prefix in ("sh", "sz"):
+        # A股财务指标摘要（主要指标表）
+        raw = ak.stock_financial_abstract(symbol=code)
+    else:
+        # hk
+        raw = ak.stock_hk_financial_abstract(symbol=code)
+
+    # akshare 可能返回 DataFrame（最新一条 row 转 dict）或直接 dict
+    if hasattr(raw, "iloc"):
+        if len(raw) == 0:
+            return {}
+        # 取最新一期的数据（最后一行 / 第一行取决于 akshare 版本）
+        row = raw.iloc[-1] if hasattr(raw, "iloc") else raw.iloc[0]
+        return row.to_dict() if hasattr(row, "to_dict") else dict(row)
+    if isinstance(raw, dict):
+        return raw
+    if raw is None:
+        return {}
+    return {}
+
+
+def _fetch_news_sync(symbol: str) -> list[dict[str, Any]]:
+    """同步调 akshare 新闻接口 —— ``stock_news_em``（东方财富 A股新闻）。
+
+    返回 list of dict，字段含：标题 / 发布时间 / 来源 / 链接 / 内容 等。
+    """
+    import akshare as ak
+
+    raw = ak.stock_news_em(symbol=symbol)
+    if raw is None or (hasattr(raw, "empty") and raw.empty):
+        return []
+    if hasattr(raw, "to_dict"):
+        return raw.to_dict(orient="records")  # type: ignore[no-any-return]
+    if isinstance(raw, list):
+        return raw
+    return []
 
 
 def _fetch_sync(

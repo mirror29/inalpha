@@ -82,7 +82,8 @@ export const paperRunBacktestTool = createTool({
       （报错 NO_BARS_AVAILABLE 时按 hint 操作）
     - params 是策略特定 dict，sma_cross 支持 fast_period / slow_period / trade_size
     - 报告里 num_trades=0 不一定是 bug，可能是趋势单边没触发交叉
-    - **strategyId 与 candidateId 必须二选一**（都给 / 都不给 → 422）
+     - **position sizing: runner 自动注入 position_pct=1.0（满仓）；需要调仓位比例时在 params 里显式传 position_pct（0.0-1.0）**
+     - **strategyId 与 candidateId 必须二选一**（都给 / 都不给 → 422）
 
     报告字段（D-7+）：
     - 基础：total_return_pct / num_trades / total_fees / final_equity / num_bars_processed
@@ -105,7 +106,7 @@ export const paperRunBacktestTool = createTool({
       params: z
         .record(z.string(), z.unknown())
         .default({})
-        .describe("策略参数；sma_cross: { fast_period, slow_period, trade_size }"),
+        .describe("策略参数；sma_cross: { fast_period, slow_period, trade_size, position_pct }；mean_reversion: { period, std_mult, trade_size, position_pct }；position_pct 默认 1.0（满仓），设为 0.0-1.0 间值调仓位比例"),
       venue: z.string().default("binance"),
       symbol: SymbolSchema,
       timeframe: TimeframeSchema.default("1h"),
