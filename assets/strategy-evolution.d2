@@ -1,62 +1,66 @@
 # Inalpha · Strategy Evolution loop (ADR-0020)
-# Generate via:
-#   d2 assets/strategy-evolution.d2 assets/strategy-evolution.svg --theme 0 --pad 30
+# Aesthetic: engineering schematic · terminal · broadsheet
+#
+# Regenerate:
+#   d2 --theme=0 --pad=40 assets/strategy-evolution.d2 assets/strategy-evolution.svg
 
 direction: right
 
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+  }
+}
+
 classes: {
-  agent: {
+  node: {
+    width: 220; height: 64
     style: {
-      fill: "#ede9fe"
-      stroke: "#7c3aed"
-      font-color: "#1e1b4b"
-      border-radius: 8
+      stroke: "#1f2740"; stroke-width: 1
+      fill: "#0d1220"; font-color: "#c4c9d4"
+      border-radius: 3; font-size: 12
     }
   }
-  tool: {
+  node-cyan: {
+    width: 200; height: 64
     style: {
-      fill: "#dcfce7"
-      stroke: "#16a34a"
-      font-color: "#052e16"
-      border-radius: 8
+      stroke: "#5fb3ff"; stroke-width: 1
+      fill: "#0d1220"; font-color: "#5fb3ff"
+      border-radius: 3; font-size: 12
     }
   }
-  evo: {
+  cyl: {
+    width: 200; height: 64
     style: {
-      fill: "#fce7f3"
-      stroke: "#db2777"
-      font-color: "#500724"
-      border-radius: 8
+      stroke: "#1f2740"; stroke-width: 1
+      fill: "#0a0e1a"; font-color: "#9ba3b4"
+      font-size: 12
+    }
+  }
+  loop: {
+    style: {
+      stroke: "#1f2740"; stroke-width: 1; stroke-dash: 5
+      fill: "transparent"; font-color: "#6b7280"; font-size: 10
     }
   }
 }
 
-orch: "Orchestrator\n(agent runtime)" { class: agent }
+orch: "Orchestrator\nagent runtime" { class: node-cyan }
 
-loop: "Strategy Evolution loop\nasync · independent of any single agent turn" {
-  style: {
-    fill: "transparent"
-    stroke: "#db2777"
-    stroke-width: 1
-    stroke-dash: 3
-    font-color: "#831843"
-  }
+loop: "Strategy Evolution loop  ·  async · independent of agent turns" {
+  class: loop
 
-  mutator: "LLM Mutator\ndiff-based code edit\non strategy source" { class: evo }
-
-  sbox: "3 Sandbox Gates\n1. AST audit\n2. subprocess isolation\n3. Strategy protocol contract" { class: evo }
-
-  mape: "MAP-Elites grid\n× Island Model\n(diversity preservation)" {
-    class: evo
-    shape: cylinder
-  }
+  mutator: "LLM Mutator\ndiff-based code edit" { class: node }
+  sbox:    "3 Sandbox Gates\nAST · subprocess · contract" { class: node }
+  mape:    "MAP-Elites × Island Model\ndiversity preservation" { class: cyl; shape: cylinder }
 
   mutator -> sbox: "candidate"
-  sbox -> mape: "scored survivor"
-  mape -> mutator: "seed next gen" { style.stroke-dash: 3 }
+  sbox -> mape:    "scored"
+  mape -> mutator: "seed"
 }
 
-paper: "paper service\nbacktest = paper = live" { class: tool }
+paper: "paper service\nbacktest = paper = live" { class: node }
 
-orch -> loop.mutator: "evolve(strategy_id)\nMCP tool · E4+" { style.stroke-dash: 3 }
-loop.mape -> paper: "promote winners" { style.stroke-dash: 3 }
+orch -> loop.mutator: "evolve(strategy_id)" { style: { stroke-dash: 3 } }
+loop.mape -> paper:   "promote winners"

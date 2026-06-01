@@ -13,6 +13,34 @@ const JSON_LD = {
   en: [
     {
       "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Inalpha",
+      "url": "https://inalpha.dev",
+      "description":
+        "Open-source quant agent framework — factor lab, risk engine, strategy evolution, plan-exec audit trail. Engineering discipline from Claude Code, unified kernel from NautilusTrader.",
+      "sameAs": [
+        "https://github.com/mirror29/inalpha",
+        "https://inalpha.substack.com",
+      ],
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Inalpha",
+      "url": "https://inalpha.dev",
+      "description":
+        "Open-source quant agent framework — factor lab, risk engine, strategy evolution, plan-exec audit trail.",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://inalpha.dev/?q={search_term_string}",
+        },
+        "query-input": "required name=search_term_string",
+      },
+    },
+    {
+      "@context": "https://schema.org",
       "@type": "SoftwareSourceCode",
       name: "Inalpha",
       description:
@@ -79,6 +107,34 @@ const JSON_LD = {
     },
   ],
   zh: [
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Inalpha",
+      "url": "https://inalpha.dev",
+      "description":
+        "开源量化 agent 框架——因子实验室、风控引擎、策略进化、审计级 plan/exec。工程纪律借鉴 Claude Code，统一内核继承 NautilusTrader。",
+      "sameAs": [
+        "https://github.com/mirror29/inalpha",
+        "https://inalpha.substack.com",
+      ],
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Inalpha",
+      "url": "https://inalpha.dev",
+      "description":
+        "开源量化 agent 框架——因子实验室、风控引擎、策略进化、审计级 plan/exec。",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://inalpha.dev/?q={search_term_string}",
+        },
+        "query-input": "required name=search_term_string",
+      },
+    },
     {
       "@context": "https://schema.org",
       "@type": "SoftwareSourceCode",
