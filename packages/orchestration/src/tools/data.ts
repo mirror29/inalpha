@@ -283,4 +283,33 @@ export const dataGetTickerTool = createTool({
   },
 });
 
-export const dataTools = [dataGetBarsTool, dataBackfillBarsTool, dataGetTickerTool] as const;
+// ────────────────────────────────────────────────────────────────────
+// data.get_fundamentals —— 财报基本面（D-10 新增）
+// ────────────────────────────────────────────────────────────────────
+
+export const dataGetFundamentalsTool = createTool({
+  id: "data.get_fundamentals",
+  description: `
+    拉标的的财报基本面数据（市盈率、ROE、营收增速等）。
+    支持 venue=akshare（A股/港股）和 venue=yfinance（美股/全球）。
+
+    何时用：研究个股基本面 / 看估值是否合理 / deep_dive 前预拉数据
+    何时不用：加密货币（无传统财报）/ 指数和宏观（走 FRED 或专用数据源）
+
+    坑：akshare 返回字段因市场不同有差异；缺失字段为 null 不抛错
+  `.trim(),
+  inputSchema: z.object({
+    venue: z.string().default("akshare"),
+    symbol: SymbolSchema,
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.getFundamentals({
+      venue: inputData.venue ?? "akshare",
+      symbol: inputData.symbol,
+    });
+  },
+});
+
+export const dataTools = [dataGetBarsTool, dataBackfillBarsTool, dataGetTickerTool, dataGetFundamentalsTool] as const;
