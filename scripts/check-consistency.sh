@@ -157,7 +157,7 @@ if [[ -f CLAUDE.md ]]; then
     if [[ $chars -le 4000 ]]; then
         ok "CLAUDE.md ≤ 4000 字符"
     elif [[ $chars -le 4500 ]]; then
-        warn "CLAUDE.md 超 4000（$chars），接近硬上限，考虑精简"
+        warn "CLAUDE.md 超 4000（${chars}），接近硬上限，考虑精简"
     else
         fail "CLAUDE.md 严重超长（$chars > 4500），必须精简"
     fi
