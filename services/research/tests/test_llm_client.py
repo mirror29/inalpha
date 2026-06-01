@@ -124,6 +124,7 @@ def _make_client(
     c._semaphore = asyncio.Semaphore(max_concurrent)
     c._max_retries = max_retries
     c._retry_base_seconds = retry_base_seconds
+    c._provider_name = "deepseek"
     return c
 
 

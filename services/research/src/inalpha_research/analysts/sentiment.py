@@ -95,14 +95,23 @@ class SentimentAnalyst(Analyst):
 
         # crypto → 拉 FNG；非 crypto → 拉 yfinance news 喂 LLM
         if market_type == "crypto":
-            entries = await _fetch_fng(limit=_DEFAULT_LIMIT)
+            try:
+                entries = await _fetch_fng(limit=_DEFAULT_LIMIT)
+            except Exception:
+                entries = []
+
             if not entries:
+                # Fallback: web search for crypto sentiment when FNG is unavailable
+                web_results = await self._data.get_web_search(
+                    f"{symbol} crypto market sentiment fear greed 2026", max_results=5
+                )
                 return _format_user_prompt_llm_only(
                     symbol=symbol,
                     as_of=as_of,
                     market_type=market_type,
-                    fng_note="(Fear & Greed API returned empty — fallback to LLM-only)",
+                    fng_note="(Fear & Greed API unavailable — using web search)",
                     news=[],
+                    web_results=web_results,
                 )
             latest = entries[0]
             recent_values = [int(e["value"]) for e in entries]
@@ -116,20 +125,24 @@ class SentimentAnalyst(Analyst):
                 trend=trend,
             )
 
-        # 非 crypto：拉 yfinance ticker news + 用真新闻锚定 sentiment（D-9 L3）
+        # 非 crypto：拉 yfinance ticker news + web search，真新闻锚定 sentiment
         # symbol 不一定能直接给 yfinance（akshare 的 sh.600519 等格式不通）；
         # 这里直接用原 symbol 试一次；data-service 拉不到会返空 list，自然降级 LLM-only。
         news = await self._data.get_news(symbol=symbol, limit=8)
+        web_news = await self._data.get_web_search(
+            f"{symbol} stock news sentiment analysis", max_results=5
+        )
         return _format_user_prompt_llm_only(
             symbol=symbol,
             as_of=as_of,
             market_type=market_type,
             fng_note=(
-                f"(non-crypto market — no Fear & Greed; using {len(news)} live news headlines)"
-                if news
-                else "(non-crypto market — no Fear & Greed; news source returned empty)"
+                f"(non-crypto market — no Fear & Greed; {len(news)} news headlines, {len(web_news)} web results)"
+                if news or web_news
+                else "(non-crypto market — no Fear & Greed; all sources returned empty)"
             ),
             news=news,
+            web_results=web_news,
         )
 
 
@@ -193,17 +206,20 @@ def _format_user_prompt_llm_only(
     market_type: str,
     fng_note: str,
     news: list[dict[str, Any]],
+    web_results: list[dict[str, Any]] | None = None,
 ) -> str:
     news_block = _render_news_block(news)
+    web_block = _render_web_results(web_results or [])
     return (
         f"asset: {symbol}\n"
         f"market_type: {market_type}\n"
         f"as_of: {as_of.isoformat()}\n\n"
         f"crypto_fng: {fng_note}\n\n"
         f"{news_block}\n"
-        f"**Anchor sentiment on the news headlines above when present** "
+        f"{web_block}\n"
+        f"**Anchor sentiment on the news and web results above when present** "
         f"(recent / repeated negative-tone → bearish sentiment; positive flow → bullish).\n"
-        f"When news_block is empty, fall back to training knowledge with **lower confidence**.\n\n"
+        f"When all data blocks are empty, fall back to training knowledge with **lower confidence**.\n\n"
         f"Output the required JSON only."
     )
 
@@ -220,4 +236,17 @@ def _render_news_block(news: list[dict[str, Any]]) -> str:
         if not title:
             continue
         lines.append(f"  - [{ts}] {publisher}: {title}")
+    return "\n".join(lines) + "\n"
+
+
+def _render_web_results(results: list[dict[str, Any]]) -> str:
+    if not results:
+        return ""
+    lines = ["web_search_results (latest):"]
+    for r in results[:3]:
+        title = r.get("title", "")[:100]
+        snippet = r.get("snippet", "")[:200]
+        lines.append(f"  - {title}")
+        if snippet:
+            lines.append(f"    {snippet}")
     return "\n".join(lines) + "\n"

@@ -53,14 +53,15 @@ class DataClient:
         from_ts: datetime,
         to_ts: datetime,
         limit: int = 10_000,
-        fresh: bool = True,
+        fresh: bool = False,
     ) -> list[dict[str, Any]]:
         """``GET /bars`` —— bar dicts (data-service ``BarResponse`` schema)。
 
         Args:
-            fresh: **金融时效性默认 True (D-9)**——先 POST /backfill/bars 补 ``to_ts``
-                之前的 K 线，再 GET /bars。让 analyst / 回测拿到的永远是当前最新。
-                历史回测明确不需要最新数据时显式传 ``fresh=False`` 跳过 backfill。
+            fresh: 默认 False —— orchestrator 已在 deep_dive 前做完 backfill
+                （Step 0: ``data.get_bars(fresh=true)`` + ``data.backfill_bars``），
+                分析师应信任 DB 缓存，不应各自触发 backfill。
+                需要确保最新数据时（如手动回测）显式传 ``fresh=True``。
 
         Backfill 失败时静默继续（不抛）—— Yahoo 反爬 / akshare 代理偶发不应让整条
         deep_dive 链路 500，让 caller 在 DB 缓存基础上工作。
@@ -167,3 +168,43 @@ class DataClient:
             return []
         items = payload.get("items") if isinstance(payload, dict) else None
         return items if isinstance(items, list) else []
+
+    async def get_fundamentals(self, venue: str, symbol: str) -> dict[str, Any]:
+        """``GET /fundamentals`` —— 拉财报基本面数据。
+
+        失败时返 ``{"available": False, ...}``（不阻断整条链路）。
+        """
+        try:
+            r = await self._client.get(
+                "/fundamentals", params={"venue": venue, "symbol": symbol}
+            )
+        except Exception:
+            return {"available": False, "reason": "request failed"}
+        if r.status_code >= 400:
+            return {"available": False, "reason": f"upstream {r.status_code}"}
+        try:
+            return r.json()
+        except Exception:
+            return {"available": False, "reason": "invalid json"}
+
+    async def get_web_search(
+        self, query: str, max_results: int = 5
+    ) -> list[dict[str, Any]]:
+        """``GET /web/search`` —— web 搜索。
+
+        失败时返空 list（不阻断整条链路）。
+        """
+        try:
+            r = await self._client.get(
+                "/web/search",
+                params={"query": query, "max_results": max_results},
+            )
+        except Exception:
+            return []
+        if r.status_code >= 400:
+            return []
+        try:
+            payload = r.json()
+        except Exception:
+            return []
+        return payload.get("results", []) if isinstance(payload, dict) else []
