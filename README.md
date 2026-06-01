@@ -14,7 +14,7 @@
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-C8463C.svg" alt="License" /></a>
-  <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--9-9E7B4B.svg" alt="Phase" />
+  <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--10-9E7B4B.svg" alt="Phase" />
   <img src="https://img.shields.io/badge/built%20with-Mastra%20%2B%20FastAPI-D4A744.svg" alt="Built with" />
   <img src="https://img.shields.io/badge/python-3.12+-1A1714.svg" alt="Python" />
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
@@ -43,7 +43,7 @@ Four capability lines sit on top of that harness:
 
 The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha** (the quant term for excess return).
 
-> **Status:** Inalpha is in **alpha** (Phase D-9 — LLM-authored strategies + risk-engine rules + multi-market routing). Read the code, weigh in on design — **do not run this against real money yet**.
+> **Status:** Inalpha is in **alpha** (Phase D-10 — LLM-authored strategies + risk-engine rules + multi-market data: web search + financial fundamentals + global instrument coverage). Read the code, weigh in on design — **do not run this against real money yet**.
 
 ---
 
@@ -69,7 +69,7 @@ Four layers, top to bottom:
 
 - **L1 · User entry.** Today the user drives the system through the `mastra dev` playground or direct CLI tool calls. A dedicated web UI is deferred to Phase E+.
 - **L2 · `packages/orchestration` (Mastra · TypeScript).** Where agents, tools, hook/permission middleware, the in-memory plan store, conversation memory, and telemetry live side by side. This is the only layer LLMs run in.
-- **L3 · Python kernel services (FastAPI).** Each service is an independent, stateful process. Today: `services/data` (market data ingest), `services/paper` (event-driven kernel running backtest, paper, and live on the same code), and `services/research` (initial multi-agent scaffolding; the full bull/bear debate loop is slated for Phase E+). The asynchronous `Strategy Evolution` loop runs alongside.
+- **L3 · Python kernel services (FastAPI).** Each service is an independent, stateful process. Today: `services/data` (market data ingest + web search + financial fundamentals across A-shares / HK / US / global), `services/paper` (event-driven kernel running backtest, paper, and live on the same code), and `services/research` (initial multi-agent scaffolding; analysts pull fundamentals + web intel with fallback; the full bull/bear debate loop is slated for Phase E+). The asynchronous `Strategy Evolution` loop runs alongside.
 - **L4 · Persistence & external.** Postgres + TimescaleDB stores all time-series and business state. External venues span crypto, US equities, A-shares, Hong Kong, major Asian and European markets, global indices, and FRED macro data — routed automatically by the orchestrator based on market classification.
 
 ### Strategy Evolution loop (Phase E+)
@@ -141,11 +141,12 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 | ✅ Shipped | Bull / bear researcher debate | D-9 | opposing-stance researchers under `services/research` |
 | ✅ Shipped | Scheduler / cron agent mode | D-9 | `scheduler_jobs` + advisory lock + `/api/scheduler/*` management plane |
 | ✅ Shipped | RiskGuard per-account isolation | D-9.1a | `RiskGuardFactory` removes cross-account state bleed |
+| ✅ Shipped | Multi-market data sources — web search + financial fundamentals | D-10 | zero-key DDGS web search · akshare (A-shares/HK) + yfinance (global) fundamentals · analyst integration + fallback · per-market lookbackDays |
 | ✅ Shipped | Risk engine — all 5 rules live in HTTP path | D-9 closed | `closed_trades` writes from HTTP order flow; `RoutingCalendar` for US equity + crypto; all trade-based rules trigger on real data |
 | ⏭️ In Flight | `askUserChoice` front-end | D-10 (issue #2) | brings the `ask` permission state back from workaround |
 | ⏭️ In Flight | `permissions.yaml` configuration | D-8b (issue #4) | replaces the hard-coded `defaults.ts` |
-| 🗓️ Planned | Live runner | D-10 (issue #1) | tick-driven `on_bar` writing `paper_positions` / `paper_trades` |
-| 🗓️ Planned | Strategy evolution — E2 | D-11 | multi-generation loop + MAP-Elites + Island Model + `unified-diff` mutations |
+| ⏭️ In Flight | Multi-market paper trading — Live runner + multi-currency cash | D-11 (issue #1) | tick-driven `on_bar` writing `paper_positions` / `paper_trades` · per-currency cash buckets + FX-converted equity |
+| 🗓️ Planned | Strategy evolution — E2 | D-12 | multi-generation loop + MAP-Elites + Island Model + `unified-diff` mutations |
 | 🗓️ Planned | Research-hub nested supervisor | D-10+ | 4 analysts + bull/bear/risk debate as a single closed loop |
 | 🗓️ Planned | Factor discovery — L0 → L1 | D-11+ | walk-forward IC + multiple-testing correction + `factor_candidates` table |
 | 🔬 Exploring | Skills as procedural memory | TBD | reusable markdown skills with auto-discovery |

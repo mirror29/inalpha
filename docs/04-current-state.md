@@ -1,7 +1,9 @@
-# 04 · D-9 当前状态：Plan/Exec 闭环 + 工程护栏
+# 04 · 当前状态：Plan/Exec 闭环 + 工程护栏 + 多市场数据
 
-> 状态：**D-9 完成（2026-05-28）**，D-9.1a 收口（含全市场交易日历）。
-> 下一里程碑：research-hub（issue #6）/ E2 多代演化（issue #7）。
+> 状态：**D-10 数据源扩展完成（2026-06-01）**——web 搜索 + 财报基本面 +
+> 多市场覆盖，在 D-9（Plan/Exec 闭环 + LLM 自创策略 + 风控引擎）/ D-9.1a
+> 收口（含全市场交易日历）基础上落地。
+> 下一里程碑：**D-11 多市场模拟盘**（paper live runner issue #1 + 跨币种 cash model）。
 >
 > 本文回答的问题：**clone 仓库后，"现在到底做到哪里、决策链路长什么样"。**
 > 详细架构与设计取舍见 [`docs/03-kernel-design.md`](./03-kernel-design.md)；
@@ -175,14 +177,46 @@ runner（按行情自动下单、写 `paper_positions` / `paper_trades`）。
 
 ---
 
+## D-10（2026-06-01）web 搜索 + 财报基本面 + 多市场数据源扩展
+
+D-9 把决策护栏（Plan/Exec + 风控 + 沙盒）做扎实后，D-10 在**数据侧**补齐多市场
+研究所需的两类信息源——让 analyst 不再只盯 K 线，能拉财报基本面 + 实时网络情报，
+且全球品种（A股 / 港股 / 美股 / 日欧等单股 / 全球指数）都覆盖：
+
+- **web 搜索（零 key）**：`services/data` 新增 `GET /web/search` + `/web/news`
+  （`connectors/web_search.py` 用 DDGS 聚合多引擎，按语言自动选后端；ddgs 未装或
+  网络失败时返空列表降级，不阻断链路）。orchestration 侧 `tools/web.ts` 暴露
+  `web.search` / `web.search_news` 两 tool。
+- **财报基本面（多市场）**：`services/data` 新增 `GET /fundamentals`
+  （`api/fundamentals.py` 按 venue 路由：A股 `sh./sz.` + 港股 `hk.` 走
+  `connectors/akshare.py`，美股 / 日欧等全球走 `connectors/yfinance_conn.py`）；
+  字段映射总市值 / 市盈率 / ROE / 营收增速，缺失置 None，拿不到返
+  `available=False` 而非 5xx。orchestration 侧 `data.get_fundamentals` tool。
+- **research analyst 接入**：`FundamentalAnalyst` 调 `/fundamentals`，财报不可用时
+  自动 web 搜索兜底；`SentimentAnalyst` 非 crypto 走 yfinance news + web 搜索，
+  crypto 的 FNG 不可用时 web 搜索兜底（`services/research/.../analysts/`）。
+- **orchestrator 多市场编排**：`agents/orchestrator.ts` 接入新 tool，并按市场分化
+  `lookbackDays`（crypto 1h/4h ≈30d；A股/港股/日股 akshare 1d ≈180d；美股/全球指数
+  yfinance 1d ≈90d），避免"30 天 K 线＜20 根交易日"无统计意义；research client
+  超时放宽到 300s 给 A股慢路径留余量。
+- **金融时效**：web/news 与基本面均无 API key 依赖；analyst 数据源不可用时降级到
+  LLM-only 并标低 confidence，不静默用过时数据。
+
+---
+
 ## 未完成 / 下一步
 
 > 重心：模拟盘（paper）先于实盘（live）。
 
+- **D-11 多市场模拟盘**（下一里程碑·进行中）：合并 **paper live runner**（issue #1）+
+  **跨币种 cash model**。promoted 候选按 timeframe 自动跑 `on_bar` → 走护栏内 plan/exec
+  下单；`engine/portfolio.py` 单币种 cash → 按币种桶 + FX 折算 equity（新增
+  `services/data` 的 `GET /fx`），让 crypto + 美股 + A股 跨市场组合估值正确。
+  注：D-9.1a 已把多市场技术债里的交易日历（`RoutingCalendar`）和 exchange spot-only
+  SHORT 守门修掉，D-11 只剩跨币种 cash 一项。
 - **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate，issue #6）尚未落地
 - **E2 多代演化**（issue #7 · ADR-0020）：MAP-Elites / Island Model（E1 MVP 已上）
 - **delegation hop**（issue #5 · ADR-0012 补丁）：sub-strategy 派生计划的转授权链
-- **paper live runner**（issue #1）：promoted 候选按行情自动跑（远期，paper 优先）
 
 > 已收口：RiskEngine 接入（#3）、权限 YAML 化（#4）、askUserChoice（#2）、
 > trade_repo 默认化 + 全市场交易日历（#8）。
