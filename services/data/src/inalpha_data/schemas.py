@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -90,12 +91,12 @@ class NewsQuery(BaseModel):
 
     venue: str = Field(
         default="yfinance",
-        description="新闻数据源 venue。当前仅支持 yfinance（零 key）；其它 venue 返 422。",
+        description="新闻数据源 venue。支持 yfinance（全球零 key）和 akshare（A股）。",
     )
     symbol: str = Field(
         ...,
-        examples=["AAPL", "^GSPC", "005930.KS"],
-        description="Yahoo ticker；指数（^GSPC）拿宏观新闻，个股拿 ticker-specific。",
+        examples=["AAPL", "^GSPC", "005930.KS", "sh.600519"],
+        description="ticker 标识：yfinance 用 Yahoo ticker，akshare 用 sh./sz. 前缀。",
     )
     limit: int = Field(default=10, ge=1, le=30, description="最多返回多少条")
 
@@ -150,3 +151,51 @@ class TickerResponse(BaseModel):
     source: str = Field(description="数据源：'db_1m' | 'db_1h' | 'binance_ticker'（未来）")
     is_stale: bool = Field(description="距离当前是否超过 5 分钟")
     stale_seconds: int = Field(description="数据相对 now 的秒数")
+
+
+# ────────────────────────────────────────────────────────────────────
+# Financials（D-10 加：财报基本面数据 fetching，给 research analyst 用）
+# ────────────────────────────────────────────────────────────────────
+
+
+class FinancialsIndicator(BaseModel):
+    """标准化财报指标 —— 任一字段缺失时为 None。"""
+
+    market_cap: float | None = None
+    pe_ratio: float | None = None
+    pb_ratio: float | None = None
+    roe: float | None = None
+    revenue_yoy: float | None = None
+    profit_yoy: float | None = None
+    gross_margin: float | None = None
+    net_margin: float | None = None
+    debt_to_equity: float | None = None
+
+
+class FinancialsResponse(BaseModel):
+    """``GET /fundamentals`` 响应：标准化财报基本面数据。"""
+
+    venue: str
+    symbol: str
+    available: bool = True
+    reason: str | None = None
+    as_of: str | None = None
+    indicators: FinancialsIndicator = Field(default_factory=FinancialsIndicator)
+    raw: dict[str, Any] | None = None
+
+
+# ────────────────────────────────────────────────────────────────────
+# Web search（D-9 加：ddgs metasearch，零 key 搜索端）
+# ────────────────────────────────────────────────────────────────────
+
+
+class WebSearchResult(BaseModel):
+    title: str
+    url: str
+    snippet: str = ""
+
+
+class WebSearchResponse(BaseModel):
+    query: str
+    backend: str
+    results: list[WebSearchResult] = Field(default_factory=list)
