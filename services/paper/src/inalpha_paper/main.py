@@ -93,7 +93,7 @@ async def _build_risk_guard_factory(pool: object) -> RiskGuardFactory | None:
     )
     _logger.info(
         "RiskGuardFactory ready: %d rules from %s (per-account LRU cache, "
-        "calendar=RoutingCalendar[crypto+us_equity])",
+        "calendar=RoutingCalendar[exchange_calendars 全市场])",
         factory.rule_count,
         cfg_path,
     )

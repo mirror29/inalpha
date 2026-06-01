@@ -31,6 +31,7 @@ from ..kernel.identifiers import InstrumentId
 from ..storage import risk_locks as locks_store
 from .risk_rules import RiskRule
 from .risk_rules.base import Side
+from .risk_rules.exchange_resolver import resolve_calendar_code
 
 if TYPE_CHECKING:
     from .risk_guard_factory import RiskGuardFactory
@@ -101,13 +102,17 @@ class RiskGuard:
         if not self._rules:
             return None
 
-        venue = instrument_id.venue
         symbol_str = str(instrument_id)
+        # market 锁键用交易所日历 code（同交易所共享开闭市），无法解析时 fallback venue
+        market_key = (
+            resolve_calendar_code(instrument_id.venue, instrument_id.symbol)
+            or instrument_id.venue
+        )
 
         # 1. 现有锁
         for scope, kwargs in (
             ("global", {}),
-            ("market", {"market": venue}),
+            ("market", {"market": market_key}),
             ("symbol", {"symbol": symbol_str}),
         ):
             existing = await locks_store.is_locked(
@@ -129,7 +134,7 @@ class RiskGuard:
 
         for rule in self._rules:
             if rule.has_market_check:
-                verdict = rule.check_market(venue, now, side, balance)
+                verdict = rule.check_market(instrument_id, now, side, balance)
                 if verdict is not None:
                     return await _record_and_build_rejection(
                         conn, verdict, instrument_id=None, now=now

@@ -57,12 +57,12 @@ class _ClosedCalendar:
     """所有市场都闭市。"""
 
     def is_trading_hours(
-        self, market: str, now: datetime, *, include_pre: bool = False,
+        self, venue: str, symbol: str, now: datetime, *, include_pre: bool = False,
         include_after: bool = False,
     ) -> bool:
         return False
 
-    def next_session_open(self, market: str, now: datetime) -> datetime:
+    def next_session_open(self, venue: str, symbol: str, now: datetime) -> datetime:
         return now + timedelta(hours=8)
 
 
@@ -70,12 +70,12 @@ class _OpenCalendar:
     """所有市场都开市。"""
 
     def is_trading_hours(
-        self, market: str, now: datetime, *, include_pre: bool = False,
+        self, venue: str, symbol: str, now: datetime, *, include_pre: bool = False,
         include_after: bool = False,
     ) -> bool:
         return True
 
-    def next_session_open(self, market: str, now: datetime) -> datetime:
+    def next_session_open(self, venue: str, symbol: str, now: datetime) -> datetime:
         return now
 
 

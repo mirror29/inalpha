@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn[standard]>=0.47.0",
     "httpx>=0.28.0",
     "backtester-mcp>=0.1.0",
+    "exchange-calendars>=4.5",
 ]
 
 [dependency-groups]

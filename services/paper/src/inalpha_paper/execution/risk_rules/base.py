@@ -57,7 +57,8 @@ class RiskVerdict:
     lock_side: Side = "*"
     lock_scope: LockScope = "symbol"
     lock_market: str | None = None
-    """当 scope='market' 时使用。venue 字符串（如 'binance' / 'nasdaq'）。"""
+    """当 scope='market' 时使用。交易所日历 code（如 'XNYS' / 'XSHG'），
+    无法解析时 fallback 到 venue 字符串。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,22 +115,25 @@ class TradeRepository(Protocol):
 class MarketCalendar(Protocol):
     """交易日历查询接口。
 
-    venue 字符串作为 market 标识（如 "binance" / "nasdaq" / "shanghai"）。
-    Slice 1-3 用 mock；后续接 `services/data` 真实日历。
+    入参用 ``(venue, symbol)`` 一起定位真实交易所——``venue``（数据源标识，
+    如 "yfinance" / "akshare" / "binance"）单独不够：``yfinance`` 跨美股 / 全球
+    指数 / 韩澳印，``akshare`` 跨 A股 / 港股 / 日英德，需结合 ``symbol`` 前缀 /
+    后缀解析（见 `exchange_resolver`）。
     """
 
     def is_trading_hours(
         self,
-        market: str,
+        venue: str,
+        symbol: str,
         now: datetime,
         *,
         include_pre: bool = False,
         include_after: bool = False,
     ) -> bool:
-        """判断 `market` 在 `now` 是否在交易时段。crypto 永远 True。"""
+        """判断 ``(venue, symbol)`` 在 `now` 是否在交易时段。crypto 永远 True。"""
         ...
 
-    def next_session_open(self, market: str, now: datetime) -> datetime:
+    def next_session_open(self, venue: str, symbol: str, now: datetime) -> datetime:
         """`now` 之后下个开盘时刻。crypto 直接返回 `now`。"""
         ...
 
@@ -179,9 +183,13 @@ class RiskRule(ABC):
         return None
 
     def check_market(
-        self, market: str, now: datetime, side: Side, starting_balance: float
+        self,
+        instrument_id: InstrumentId,
+        now: datetime,
+        side: Side,
+        starting_balance: float,
     ) -> RiskVerdict | None:
-        """按市场拦截。默认 `None`。`market` 用 venue 字符串。"""
+        """按市场拦截。默认 `None`。从 `instrument_id` 取 venue+symbol 定位交易所。"""
         return None
 
     def check_symbol(

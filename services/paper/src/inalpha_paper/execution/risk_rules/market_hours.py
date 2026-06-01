@@ -14,7 +14,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from ...kernel.identifiers import InstrumentId
 from .base import MarketCalendar, RiskRule, RiskVerdict, Side, TradeRepository
+from .exchange_resolver import resolve_calendar_code
 
 
 class MarketHoursRule(RiskRule):
@@ -41,22 +43,31 @@ class MarketHoursRule(RiskRule):
         return f"{self.name} - 非交易时段拦截{suffix}"
 
     def check_market(
-        self, market: str, now: datetime, side: Side, starting_balance: float
+        self,
+        instrument_id: InstrumentId,
+        now: datetime,
+        side: Side,
+        starting_balance: float,
     ) -> RiskVerdict | None:
+        venue = instrument_id.venue
+        symbol = instrument_id.symbol
         if self._calendar.is_trading_hours(
-            market,
+            venue,
+            symbol,
             now,
             include_pre=self._allow_pre_market,
             include_after=self._allow_after_hours,
         ):
             return None
 
-        next_open = self._calendar.next_session_open(market, now)
+        next_open = self._calendar.next_session_open(venue, symbol, now)
+        # 锁键用交易所日历 code（同交易所共享开闭市），无法解析时 fallback venue
+        lock_key = resolve_calendar_code(venue, symbol) or venue
         return RiskVerdict(
             until=next_open,
-            reason=f"市场 {market} 非交易时段（下次开盘 {next_open.isoformat()}）",
+            reason=f"市场 {lock_key} 非交易时段（下次开盘 {next_open.isoformat()}）",
             rule_name=self.name,
             lock_side="*",
             lock_scope="market",
-            lock_market=market,
+            lock_market=lock_key,
         )
