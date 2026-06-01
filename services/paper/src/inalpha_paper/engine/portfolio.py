@@ -5,7 +5,11 @@
 
 设计简化（MVP）：
 
-- 现金账户单一（不区分 base / quote currency；统一记 quote）
+- **单币种 per session**：一次回测 / 一个 live run 是单策略单 symbol（同一计价货币），
+  此处 ``_cash`` 单标量是正确的。**跨币种是账户聚合层的事**（一个账户跨多市场累积
+  多个持仓 / 多次 run）——D-11 在 storage + ``/accounts/me`` 用按币种 cash 桶 + FX 折算
+  处理（见 ``storage/accounts.py`` ``cash_balances`` 与 ``fx.BaseCurrencyConverter``），
+  不在本引擎内。
 - 手续费比例固定（构造时传入），从现金扣
 - 不模拟 margin / 保证金 / 杠杆（D-7+ 接合约时再加）
 """

@@ -427,21 +427,42 @@ class PositionRecord(BaseModel):
     avg_open_price: float
     realized_pnl: float
     generation: int
+    currency: str | None = Field(
+        default=None,
+        description="D-11：持仓计价货币（USD / CNY / USDT …）；旧行可能为 null",
+    )
     updated_at: datetime
 
 
 class AccountSnapshot(BaseModel):
-    """GET /accounts/me 响应。"""
+    """GET /accounts/me 响应。
+
+    D-11 多币种：``cash`` / ``positions_value`` / ``total_equity`` 均已折算到
+    ``base_currency``；``cash_balances`` 给出折算前的按币种原始桶。FX 拿不到的币种被
+    排除出折算并在 ``fx_warnings`` 点名（不静默用旧值 / 不乱猜汇率）。
+    """
 
     account_id: str
+    base_currency: str = Field(default="USD", description="D-11：报告 / 折算目标货币")
     initial_cash: float
-    cash: float
+    cash: float = Field(description="D-11：各币种桶折算到 base_currency 后的总现金")
+    cash_balances: dict[str, float] = Field(
+        default_factory=dict,
+        description="D-11：折算前的按币种现金桶（如 {'USD': 5000, 'USDT': -1000}）",
+    )
     positions_value: float = Field(
         default=0.0,
-        description="所有持仓按 avg_open_price 估值（D-8b 不接实时 mark）",
+        description="所有持仓按 avg_open_price 估值并折算到 base_currency（D-8b 不接实时 mark）",
     )
-    total_equity: float = Field(default=0.0, description="cash + positions_value")
-    realized_pnl: float = Field(default=0.0, description="所有持仓累计实现 PnL")
+    total_equity: float = Field(
+        default=0.0, description="base_currency 计：cash + positions_value"
+    )
+    realized_pnl: float = Field(default=0.0, description="所有持仓累计实现 PnL（未折算，原始币种相加）")
+    fx_warnings: list[str] = Field(
+        default_factory=list,
+        description="D-11：折算时 FX 不可用 / 偏旧的币种告警；非空时估值可能不完整，"
+        "agent 须把告警原样转告用户",
+    )
     created_at: datetime
     updated_at: datetime
 

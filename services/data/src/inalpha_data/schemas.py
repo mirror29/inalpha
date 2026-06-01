@@ -154,6 +154,39 @@ class TickerResponse(BaseModel):
 
 
 # ────────────────────────────────────────────────────────────────────
+# FX（D-11 加：汇率查询，给 paper 跨币种 cash / equity 折算用）
+# ────────────────────────────────────────────────────────────────────
+
+
+class FxQuery(BaseModel):
+    """``GET /fx`` 的 query 参数。``rate`` 语义 = 1 单位 ``base`` 值多少 ``quote``。"""
+
+    base: str = Field(..., examples=["CNY", "JPY", "USD"], description="源货币 code")
+    quote: str = Field(default="USD", examples=["USD"], description="目标货币 code")
+
+
+class FxResponse(BaseModel):
+    """``GET /fx`` 响应。``rate`` = 1 ``base`` 折算成多少 ``quote``。
+
+    取值优先级：
+    1. ``base == quote`` → 1.0（``source='identity'``）
+    2. 两边都是 USD 等价稳定币（USD / USDT / USDC）→ 1.0（``source='stablecoin'``）
+    3. yfinance forex pair（``{base}{quote}=X``）实时价（``source='yfinance'``）
+
+    yfinance 拿不到时抛 ``FX_UNAVAILABLE``（502），由 caller 决定降级（paper equity
+    折算遇此会把该币种排除并显式 warning，不静默用旧值 / 不乱猜汇率）。
+    """
+
+    base: str
+    quote: str
+    rate: float
+    ts: datetime
+    source: str = Field(description="'identity' | 'stablecoin' | 'yfinance'")
+    is_stale: bool = Field(description="距当前是否超过新鲜阈值（FX 放宽到 ~1h）")
+    stale_seconds: int
+
+
+# ────────────────────────────────────────────────────────────────────
 # Financials（D-10 加：财报基本面数据 fetching，给 research analyst 用）
 # ────────────────────────────────────────────────────────────────────
 

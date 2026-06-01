@@ -62,6 +62,7 @@ async def apply_fill(
     fill_price: Decimal,
     ts_event: datetime,
     order_id: str,
+    currency: str | None = None,
 ) -> tuple[dict[str, Any], ClosedTradeInfo | None]:
     """一笔 fill 应用到 positions 表。返回 (更新后的持仓行, 平仓信息或 None)。
 
@@ -69,6 +70,9 @@ async def apply_fill(
 
     D-9.1a 增强：传入 ``ts_event`` / ``order_id`` 用于记录 ts_opened + open_order_id，
     并在检测到平仓时返回 ClosedTradeInfo。
+
+    D-11 增强：``currency`` 记录该持仓的计价货币（``execution.currency_resolver``
+    解析），供 ``/accounts/me`` 跨币种 equity 折算。``None`` 时不更新该列（向后兼容）。
     """
     # 1. 读当前持仓（不存在视为 flat）
     async with conn.cursor() as cur:
@@ -107,14 +111,14 @@ async def apply_fill(
         new_ts_opened = None
         new_open_order_id = None
 
-    # 4. UPSERT
+    # 4. UPSERT（currency 用 COALESCE：传 None 时保留旧值，不覆盖成 NULL）
     async with conn.cursor() as cur:
         await cur.execute(
             """
             INSERT INTO positions (
                 account_id, venue, symbol, quantity, avg_open_price,
-                realized_pnl, generation, ts_opened, open_order_id, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                realized_pnl, generation, ts_opened, open_order_id, currency, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (account_id, venue, symbol) DO UPDATE
               SET quantity       = EXCLUDED.quantity,
                   avg_open_price = EXCLUDED.avg_open_price,
@@ -122,14 +126,16 @@ async def apply_fill(
                   generation     = EXCLUDED.generation,
                   ts_opened      = EXCLUDED.ts_opened,
                   open_order_id  = EXCLUDED.open_order_id,
+                  currency       = COALESCE(EXCLUDED.currency, positions.currency),
                   updated_at     = NOW()
             RETURNING account_id, venue, symbol, quantity, avg_open_price,
-                      realized_pnl, generation, ts_opened, open_order_id, updated_at
+                      realized_pnl, generation, ts_opened, open_order_id,
+                      currency, updated_at
             """,
             (
                 str(account_id), venue, symbol,
                 new_qty, new_avg, new_pnl, new_gen,
-                new_ts_opened, new_open_order_id,
+                new_ts_opened, new_open_order_id, currency,
             ),
         )
         new_row = await cur.fetchone()
@@ -256,7 +262,7 @@ async def list_by_account(
     """列出某 account 的所有持仓。默认过滤掉 quantity=0 的（已平仓但保留行）。"""
     sql = (
         "SELECT venue, symbol, quantity, avg_open_price, realized_pnl, "
-        "generation, ts_opened, open_order_id, updated_at "
+        "generation, ts_opened, open_order_id, currency, updated_at "
         "FROM positions WHERE account_id = %s"
     )
     if not include_flat:
