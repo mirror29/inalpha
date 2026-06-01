@@ -28,12 +28,32 @@ class BuyAndHoldStrategy(Strategy):
         instrument_id: InstrumentId,
         timeframe: str = "1h",
         trade_size: float = 0.01,
+        position_pct: float | None = None,
+        initial_cash: float = 0.0,
     ) -> None:
         super().__init__(name, clock, msgbus)
         self._instrument_id = instrument_id
         self._timeframe = timeframe
         self._trade_size = trade_size
+        self._position_pct = position_pct
+        self._initial_cash = initial_cash
         self._bought: bool = False
+
+    def _resolve_quantity(self, bar: Bar) -> float:
+        """按 position_pct 算"满仓比例" qty；缺参数时回退 trade_size 绝对量。
+
+        基准价用 ``bar.close``（信号 bar 的收盘），撮合发生在**下一根** bar.open。
+        + 5% buffer 抗 bar-to-bar 价格 jitter（振荡市单根 K 线跳变可达 3-5%）+
+        fee + 滑点。"满仓" 实际是 95% 本金，剩 5% 留 cushion 避免撮合层守门拒。
+        """
+        if (
+            self._position_pct is not None
+            and self._position_pct > 0
+            and self._initial_cash > 0
+            and bar.close > 0
+        ):
+            return (self._initial_cash * self._position_pct) / bar.close / (1.0 + 0.05)
+        return self._trade_size
 
     def on_start(self) -> None:
         self.subscribe_bars(self._instrument_id, self._timeframe)
@@ -49,7 +69,7 @@ class BuyAndHoldStrategy(Strategy):
             instrument_id=self._instrument_id,
             side=OrderSide.BUY,
             type=OrderType.MARKET,
-            quantity=self._trade_size,
+            quantity=self._resolve_quantity(bar),
         )
         self.submit_order(order)
         self._bought = True
