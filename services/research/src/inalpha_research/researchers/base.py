@@ -189,7 +189,7 @@ def _format_user_prompt(
 ) -> str:
     """渲染给 Bull/Bear 的 user prompt。
 
-    包含：标的 + as_of + 5 个 analyst brief 摘要 + 完整辩论 history +
+    包含：标的 + as_of + 6 个 analyst brief 摘要 + 完整辩论 history +
     对方上一轮发言（如有）。
     """
     parts: list[str] = [

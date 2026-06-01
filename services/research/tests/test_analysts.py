@@ -1,4 +1,4 @@
-"""Analyst（5 个）单测 —— 用 FakeLLM + respx mock data-service / FNG。"""
+"""Analyst（6 个）单测 —— 用 FakeLLM + respx mock data-service / FNG。"""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -12,6 +12,7 @@ from inalpha_research.analysts.macro import MacroAnalyst
 from inalpha_research.analysts.risk import RiskAnalyst
 from inalpha_research.analysts.sentiment import SentimentAnalyst
 from inalpha_research.analysts.technical import TechnicalAnalyst
+from inalpha_research.analysts.valuation import ValuationAnalyst
 from inalpha_research.data_client import DataClient
 from inalpha_research.llm.client import FakeLLMClient
 from inalpha_research.schemas import AnalystBrief
@@ -614,3 +615,106 @@ async def test_sentiment_non_crypto_uses_web_search(data_client: DataClient) -> 
     # Verify web search results appear in prompt
     assert "web_search_results" in user_prompt or "web_results" in user_prompt.lower()
     assert "cn_stock" in user_prompt or "market_type" in user_prompt
+
+
+# ────────────────────────────────────────────────────────────────────
+# Valuation（D-10，相对估值，借鉴 financial-services comps）
+# ────────────────────────────────────────────────────────────────────
+
+
+@respx.mock
+async def test_valuation_anchors_on_real_fundamentals(data_client: DataClient) -> None:
+    """有 fundamentals 快照 → valuation_inputs 进 prompt，brief.analyst == 'valuation'。"""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(
+            200,
+            json={
+                "available": True,
+                "indicators": {
+                    "market_cap": 2.3e12,
+                    "pe_ratio": 28.5,
+                    "pb_ratio": 12.1,
+                    "roe": 0.31,
+                    "net_margin": 0.25,
+                },
+            },
+        )
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+
+    llm = FakeLLMClient(
+        {
+            "you are a relative valuation analyst": {
+                "stance": "bearish",
+                "confidence": 0.5,
+                "summary": "PE/PB rich vs the ROE profile.",
+                "key_points": ["PE 28.5 elevated", "PB 12 demanding"],
+                "factors": [
+                    {
+                        "name": "pe_vs_quality",
+                        "kind": "macro",
+                        "value": "rich",
+                        "strength": 0.5,
+                        "horizon": "position",
+                        "explanation": "PE high relative to growth/ROE",
+                    }
+                ],
+            }
+        }
+    )
+    analyst = ValuationAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="alpaca",
+        symbol="AAPL",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+
+    assert brief.analyst == "valuation"
+    assert brief.stance == "bearish"
+    # valuation factor 以 macro kind 编码（schema 无专门 valuation kind）
+    assert brief.factors and brief.factors[0].kind == "macro"
+
+    user_prompt = llm.calls[0]["user"]
+    assert "valuation_inputs" in user_prompt
+    assert "市盈率 PE" in user_prompt
+    # 关键纪律：prompt 显式要求"只做相对估值、不做 DCF"
+    assert "relative valuation only" in user_prompt.lower()
+
+
+@respx.mock
+async def test_valuation_degrades_when_no_fundamentals(data_client: DataClient) -> None:
+    """没有 fundamentals → prompt 提示 qualitative-only + cap 0.55，仍返 brief 不抛。"""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={"available": False, "reason": "no data"})
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+
+    llm = FakeLLMClient(
+        {
+            "you are a relative valuation analyst": {
+                "stance": "neutral",
+                "confidence": 0.55,
+                "summary": "No live multiples; qualitative only.",
+                "key_points": ["no peer data"],
+            }
+        }
+    )
+    analyst = ValuationAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+
+    assert brief.analyst == "valuation"
+    user_prompt = llm.calls[0]["user"]
+    assert "not available" in user_prompt
+    assert "qualitative" in user_prompt.lower()

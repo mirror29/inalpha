@@ -1,6 +1,6 @@
 """Bull Researcher —— 看多方发言人。
 
-读 5 个 analyst brief + 辩论史 + Bear 上一轮（若有）→ 输出一段看多论证。
+读 6 个 analyst brief + 辩论史 + Bear 上一轮（若有）→ 输出一段看多论证。
 风格借鉴 TradingAgents/bull_researcher.py，用 Inalpha 的 4 类资产识别版本
 （``asset_type`` 在 prompt 里自适应 crypto / us_stock / cn_stock / hk_stock / global_stock）。
 """

@@ -38,6 +38,12 @@ class DeepDiveRequest(BaseModel):
         default=None,
         description="可选的用户原始问题，给 manager 综合时作为额外 context",
     )
+    personas: list[str] | None = Field(
+        default=None,
+        description="可选：额外启用的投资大师人格 analyst（buffett / lynch / wood / "
+        "burry / druckenmiller / marks，详见 analysts/personas）。None 或空 = 不跑 "
+        "persona，核心 analyst 行为不变；指定时每个 persona 多一次 LLM 调用。",
+    )
 
     @field_validator("as_of", mode="after")
     @classmethod
@@ -131,7 +137,13 @@ class DebateTurn(BaseModel):
 class AnalystBrief(BaseModel):
     """单个 analyst 的输出 —— 1 视角研究简报。"""
 
-    analyst: Literal["technical", "fundamental", "sentiment", "risk", "macro"] = Field(
+    analyst: Literal[
+        "technical", "fundamental", "sentiment", "risk", "macro", "valuation",
+        # ADR-0037 §A：投资大师人格 persona（可选启用）。runner 的合法类型集从本
+        # Literal 动态派生（typing.get_args），新增 persona 只需在这里加值。
+        "persona_buffett", "persona_lynch", "persona_wood",
+        "persona_burry", "persona_druckenmiller", "persona_marks",
+    ] = Field(
         ...,
         description="哪种分析师产出",
     )

@@ -24,7 +24,7 @@ def _as_of() -> datetime:
 def fake_llm_singleton() -> FakeLLMClient:
     """整次测试共享同一个 fake instance，便于断言 .calls。
 
-    5 个 analyst + 1 manager 全套 canned 响应；key 用 "You are a X" 前缀
+    6 个 analyst + 1 manager 全套 canned 响应；key 用 "You are a X" 前缀
     保证无交叉匹配（详见 conftest.fake_llm）。
     """
     return FakeLLMClient(
@@ -58,6 +58,12 @@ def fake_llm_singleton() -> FakeLLMClient:
                 "confidence": 0.5,
                 "summary": "Mc",
                 "key_points": ["fomc post-window"],
+            },
+            "you are a relative valuation analyst": {
+                "stance": "neutral",
+                "confidence": 0.45,
+                "summary": "V",
+                "key_points": ["relative only, no DCF"],
             },
             "you are a research manager": {
                 "rating": "overweight",
@@ -158,12 +164,19 @@ def test_deep_dive_returns_research_plan(
     assert body["confidence"] == 0.6
     assert body["suggested_action"] == "open_long 0.02"
     assert body["horizon"] == "swing"
-    # 5 个 analyst brief 都在
+    # 6 个 analyst brief 都在（D-10 加 valuation）
     analysts = {b["analyst"] for b in body["briefs"]}
-    assert analysts == {"technical", "fundamental", "sentiment", "risk", "macro"}
+    assert analysts == {
+        "technical",
+        "fundamental",
+        "sentiment",
+        "risk",
+        "macro",
+        "valuation",
+    }
 
-    # LLM 共 ≥ 6 次（5 analyst + 1 manager；含可选 Bull/Bear 辩论 2N 轮）
-    assert len(fake_llm_singleton.calls) >= 6
+    # LLM 共 ≥ 7 次（6 analyst + 1 manager；含可选 Bull/Bear 辩论 2N 轮）
+    assert len(fake_llm_singleton.calls) >= 7
 
 
 # ────────────────────────────────────────────────────────────────────

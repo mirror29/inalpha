@@ -74,7 +74,15 @@ export const mastra = new Mastra({
   observability,
   // D-9：scheduler HTTP 管理面 + D-9.1b：permissions ask 审批通道
   // 两套路由共用 4111 端口
-  server: { apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes] },
+  //
+  // timeout：Mastra 网关请求超时（ms）。默认 180s 会在 research.deep_dive 长任务
+  // （多 analyst + persona 大师团 + 辩论，单次可达 3-5min）未返回前就 504 掉，agent
+  // 白等。设 600s 让网关 ≥ ResearchClient 自身 300s 超时 —— 网关不会比工具更早掐断
+  // （ADR-0037 调试记录）。
+  server: {
+    timeout: 600_000,
+    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes],
+  },
 });
 
 // D-9：类 Hermes 定时 agent 模式。默认关闭，需在 .env 设 `SCHEDULER_ENABLED=true` 才启动。

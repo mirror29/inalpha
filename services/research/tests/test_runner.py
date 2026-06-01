@@ -21,7 +21,7 @@ def _as_of() -> datetime:
 
 @respx.mock
 async def test_deep_dive_runs_full_chain(fake_llm: FakeLLMClient) -> None:
-    """5 个 analyst 并行 + manager 综合 → ResearchPlan。
+    """6 个 analyst 并行 + manager 综合 → ResearchPlan。
 
     sentiment 这条因为不 mock api.alternative.me 会失败兜底，但仍计入 briefs。
     """
@@ -62,11 +62,82 @@ async def test_deep_dive_runs_full_chain(fake_llm: FakeLLMClient) -> None:
     assert plan.symbol == "BTC/USDT"
     assert plan.rating in ("overweight", "neutral", "underweight")
     assert plan.confidence == 0.65  # conftest fixture
-    # 5 个 brief 都该在
+    # 6 个 brief 都该在（D-10 加 valuation）
     analysts_seen = {b.analyst for b in plan.briefs}
-    assert analysts_seen == {"technical", "fundamental", "sentiment", "risk", "macro"}
-    # LLM 调 ≥ 6 次（5 analyst + 1 manager；可能含 Bull/Bear 辩论的 2N 轮）
-    assert len(fake_llm.calls) >= 6
+    assert analysts_seen == {
+        "technical",
+        "fundamental",
+        "sentiment",
+        "risk",
+        "macro",
+        "valuation",
+    }
+    # LLM 调 ≥ 7 次（6 analyst + 1 manager；可能含 Bull/Bear 辩论的 2N 轮）
+    assert len(fake_llm.calls) >= 7
+
+
+@respx.mock
+async def test_deep_dive_with_personas_appends_master_briefs(
+    fake_llm: FakeLLMClient,
+) -> None:
+    """ADR-0037 §A：req.personas 指定时，核心 6 analyst 之外追加对应大师 brief。
+
+    - 默认路径（无 personas）仍是 6 brief —— 见 ``test_deep_dive_runs_full_chain``。
+    - 指定 ``["buffett", "wood"]`` → 8 brief，含 ``persona_buffett`` / ``persona_wood``。
+    - 无效 key 被静默忽略，不增加 brief、不抛。
+    """
+    bars = [
+        make_bar_row((_as_of() - timedelta(hours=60 - i)).isoformat(), close=100 + i * 0.1)
+        for i in range(60)
+    ]
+    respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=bars))
+    respx.get("https://api.alternative.me/fng/").mock(
+        return_value=Response(
+            200,
+            json={
+                "data": [
+                    {"value": "22", "value_classification": "Extreme Fear", "timestamp": "1716163200"},
+                    *[
+                        {"value": str(30 + i % 10), "value_classification": "Fear", "timestamp": str(1716163200 - i * 86400)}
+                        for i in range(1, 30)
+                    ],
+                ]
+            },
+        )
+    )
+    # persona 的 fundamentals / web 搜索调用（buffett / wood 都会拉）
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={"available": False, "reason": "crypto"})
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+
+    req = DeepDiveRequest(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        lookback_days=7,
+        personas=["buffett", "wood", "not_a_real_persona"],  # 无效 key 应被忽略
+    )
+
+    async with DataClient("http://data-mock.test", "t") as data:
+        plan = await run_deep_dive(req, llm=fake_llm, data=data)
+
+    analysts_seen = {b.analyst for b in plan.briefs}
+    # 核心 6 + 2 个有效 persona = 8；无效 key 不计入
+    assert analysts_seen == {
+        "technical",
+        "fundamental",
+        "sentiment",
+        "risk",
+        "macro",
+        "valuation",
+        "persona_buffett",
+        "persona_wood",
+    }
+    assert len(plan.briefs) == 8
 
 
 @respx.mock
@@ -130,7 +201,7 @@ async def test_deep_dive_with_debate_includes_bull_bear_log(
     fake_llm: FakeLLMClient,
     monkeypatch: Any,
 ) -> None:
-    """开启 1 轮辩论：5 analyst + Bull + Bear + manager = 8 次 LLM 调用，
+    """开启 1 轮辩论：6 analyst + Bull + Bear + manager = 9 次 LLM 调用，
     且 ``plan.debate_log`` 落 2 条 turn。"""
     from inalpha_research.config import get_research_settings
 
@@ -168,8 +239,8 @@ async def test_deep_dive_with_debate_includes_bull_bear_log(
         async with DataClient("http://data-mock.test", "t") as data:
             plan = await run_deep_dive(req, llm=fake_llm, data=data)
 
-        # 8 = 5 analyst + Bull + Bear + manager
-        assert len(fake_llm.calls) == 8
+        # 9 = 6 analyst + Bull + Bear + manager
+        assert len(fake_llm.calls) == 9
         # 辩论日志落进 plan
         assert len(plan.debate_log) == 2
         assert plan.debate_log[0].role == "bull"
