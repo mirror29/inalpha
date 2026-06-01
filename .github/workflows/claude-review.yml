@@ -33,7 +33,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          # 0 = 拉全历史，让 git log / git blame / git show 有上下文（架构评审需要）
+          fetch-depth: 0
 
       - name: Claude Code Review
         id: review
@@ -46,59 +47,60 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
 
-            按 Inalpha 仓库 CLAUDE.md（§3 协作硬约束 + §3.1 金融时效性 + §3.2 prompt 工程纪律 + §4 CI 红线）review 本 PR diff。
+            你是这个仓库的资深 reviewer。目标：在合并前尽量拦住真正的 bug、设计缺陷、架构失误。
+            **不要只对着固定清单打勾**——清单覆盖不到新功能。要先理解再评审。
 
-            ## 必查 red flag
+            ## Step 1 · 读项目规则（每次都重新读，规则会随项目迭代而变）
 
-            1. **Prompt / Agent 工程纪律**（§3.2）：
-               - tool description 缺三段式（功能 + 何时用 + 何时不用 + 坑）
-               - prompt 预设了具体输入示例 / 锁死预期
-               - prompt 硬编码语言 / 市场 / 品种
-               - 示例 ticker / venue 没标"仅供识别格式"
+            - 用 Read 读仓库根 `CLAUDE.md`；改动目录附近若有 `AGENTS.md` / 相关 `docs/` / ADR 也读。
+            - 把里面的硬约束当成本次 review 的**项目专属规则**——
+              CLAUDE.md 更新了，你的评审标准就自动跟着更新，**无需改这个 workflow**。
+            - 这是项目规则的唯一权威来源；下面 Step 4 的清单只是提示，以你读到的为准。
 
-            2. **金融时效性**（§3.1）：
-               - DataClient.get_bars 意图是"最新 / 现价"但没传 fresh=True
-               - 判 freshness 看 bar 数量而非 bars[-1].ts 与 as_of 的间隔
-               - prompt 引用具体日期 / 数值 / 事件结论无数据源
-               - 新加 connector 未考虑 freshness 默认（金融默认 fresh=True）
+            ## Step 2 · 重建意图 + 圈定影响面
 
-            3. **commit 完整性**（§4）：
-               - 新加 import 但被引用的实现文件未出现在 diff（漏 git add）
+            - 先一句话说清这个 PR 想做什么。
+            - 用 Read / Grep / Glob 看 diff **以外**的代码：改动的函数 / 接口 / 契约有哪些调用方？
+              碰了哪些模块边界（Inalpha 是 Next.js → Mastra(TS) → Python services 三层）？
+            - 只有理解了"改动如何与系统其余部分交互"，才谈得上架构评审。
 
-            4. **CI 红线**（§4）：
-               - 公开文档引用了 docs/miro/ 私有路径
-               - 模块顶层 eager 调 getSettings() 但没在 tests/setup.ts 注入默认 env
+            ## Step 3 · 通用工程评审（适用任何功能，新增功能也自动覆盖）
 
-            5. **多空意识**：
-               - long-only 策略加了 SHORT/COVER 信号
-               - 用 SELL 表示做空（应该用 SHORT 开空、COVER 平空）
+            逐维度想，命中才提：
+            1. **正确性**：边界条件、空值、off-by-one、错误假设、异常路径没处理
+            2. **设计 / 架构**：职责放错层、越过模块边界、重复造轮子（该复用的没复用）、抽象层级不当
+            3. **契约 / 兼容**：改了公共接口 / schema / config / API 是否破坏现有调用方；向后兼容与迁移
+            4. **状态 / 数据流**：状态归属是否清晰、有无单一真相源、并发下 id/counter/nonce 是否冲突、多步状态变更中途失败是否回滚
+            5. **错误处理**：失败是被静默吞掉还是显式处理；降级路径是否一致
+            6. **资源 / 性能**：HTTP / DB / 循环 / 回填跨度有无上限；有无 N+1、无界增长
+            7. **可测性**：新逻辑有无测试；关键边界 / 失败路径是否覆盖
+            8. **安全**：注入、越权、密钥泄漏、不可信输入直接进危险路径
 
-            6. **命名 / 不要碰**：
-               - Python 包不是 inalpha_<service> snake_case
-               - tool 命名不是 <service>.<verb> 或 mcp__<server>__<verb>
-               - 改了 services/_shared/ 但 PR 描述没说明
-               - .mastra/ / docs/miro/ 出现在 diff
+            ## Step 4 · 本仓库历史踩过的坑（提示，不是全部）
 
-            7. **通用 bug pattern**（仓库历史反复踩过）：
-               - 异常处理：子类 override 是否真的生效
-               - 时间精度：float64 时间戳跨越大数值时丢精度
-               - 资源上限：HTTP / DB / backfill 跨度参数有没有 cap
-               - 并发 ID：多 worker 下 counter / nonce / order_id 是否重复
-               - 事务原子性：多步状态转变中间步失败是否回滚
+            顺手扫一眼，但**不要**因为只查这些就忽略 Step 3 的通用维度（权威定义见 Step 1 的 CLAUDE.md）：
+            - 漏 git add：新 import 的实现文件没出现在 diff
+            - 异常处理：子类 override 是否真生效
+            - 时间精度：float64 时间戳大数值丢精度
+            - LLM / prompt：硬编码语言 / 市场 / 品种、tool description 缺三段式、prompt 预设具体输入示例
+            - 金融时效性：要"现价 / 最新"却没传 fresh=True、判 freshness 看 bar 数量而非 bars[-1].ts 距 as_of 的间隔
+            - 多空：long-only 策略加了 SHORT/COVER，或用 SELL 表示做空（应 SHORT 开空、COVER 平空）
 
             ## review 行为
 
             - PR 分支已 checkout 在当前工作目录
             - **severity 阈值**：只贴 ≥ medium 的 inline 评论；nit / 风格 → 跳过
             - **不重复 lint**：ruff / tsc / mypy 已能抓的不要再提
-            - 找到 red flag → 用 `mcp__github_inline_comment__create_inline_comment` 贴到具体 line
-            - **inline 格式**：`[critical|major|medium] 一句描述 — 依据 CLAUDE.md §X.X`
+            - **误报闸**：设计 / 架构类意见必须能说出"在什么输入 / 时序下会真的出问题"的具体失败场景，
+              说不出就降级或不提——宁可漏报一条主观的，不要用噪音淹没真问题
+            - 找到问题 → 用 `mcp__github_inline_comment__create_inline_comment` 贴到具体 line
+            - **inline 格式**：`[critical|major|medium] 一句描述 — 依据(CLAUDE.md §X 或 通用原则:<维度>)`
             - 顶层总结用 `gh pr comment` 发，分两段：1) 必修（critical / major）2) 可选优化（medium）
             - 没问题 → 一段中文 LGTM，不要硬挑刺
             - 只贴 GitHub 评论，不要把审查文字当聊天消息发
 
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
 
       # 即使 Claude 挂了，也记录一下方便排查
       - name: Log review status
