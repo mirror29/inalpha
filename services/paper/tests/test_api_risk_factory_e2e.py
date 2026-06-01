@@ -10,8 +10,8 @@ issue #8 验收：用默认 ``risk_rules.toml`` + lifespan 构造的真 factory 
 - LowProfitRule（12h 内 4 笔同 side 累计 < -5% → 该 symbol-side 锁 1h）
 - MaxDrawdownRule（24h 内 ≥5 笔 + equity 回撤 > 15% → 全局锁 4h）
 
-MarketHoursRule 覆盖在 ``test_market_calendar.py``（不依赖 trade_repo，无需在
-本套 e2e 重复测）。
+MarketHoursRule：规则正确性见 ``test_market_calendar.py``；本套另补一对 e2e
+（monkeypatch ``now`` 注入周六 → 美股闭市拦截 / crypto 放行）确认 HTTP 全链路。
 
 测试隔离：每条用例用 ``fresh_user`` fixture 拿独立 sub → 独立 account_id；
 注入的 closed_trades 仅影响该 account；factory LRU cache 也会按 account 分桶。
@@ -148,6 +148,24 @@ def _submit_btc_sell(
             "side": "SELL",
             "type": "MARKET",
             "quantity": 0.01,
+            "ref_price": ref_price,
+        },
+    )
+
+
+def _submit_aapl_buy(
+    client: TestClient, headers: dict[str, str], *, ref_price: float = 200.0
+) -> Any:
+    """POST /orders/submit AAPL@yfinance BUY 1。"""
+    return client.post(
+        "/orders/submit",
+        headers=headers,
+        json={
+            "symbol": "AAPL",
+            "venue": "yfinance",
+            "side": "BUY",
+            "type": "MARKET",
+            "quantity": 1,
             "ref_price": ref_price,
         },
     )
@@ -430,6 +448,67 @@ async def test_no_history_passes_all_rules(
     """干净账户 + crypto venue（避开 MarketHours）→ 所有 trade-based rule 都不触发。"""
     del real_factory
     headers = {"Authorization": fresh_user["Authorization"]}
+
+    r = _submit_btc_buy(client, headers)
+    assert r.status_code == 200, r.json()
+    assert r.json()["status"] == "FILLED"
+
+
+# ────────────────────────────────────────────────────────────────────
+# MarketHoursRule（多市场 · D-9.1a issue #8）—— monkeypatch now 注入确定性时刻
+# ────────────────────────────────────────────────────────────────────
+
+
+def _freeze_now(monkeypatch: pytest.MonkeyPatch, frozen: datetime) -> None:
+    """把 ``risk_guard.enforce`` 里的 ``datetime.now`` 冻结到 ``frozen``。
+
+    ``enforce`` 写死 ``datetime.now(UTC)``（服务器真实时间），MarketHoursRule 因此
+    无法靠请求注入时间。这里 monkeypatch ``risk_guard.datetime`` 为只覆写 ``now`` 的
+    子类，让 e2e 能确定性命中闭市时段（不依赖跑测试时的真实墙钟）。
+    """
+    import inalpha_paper.execution.risk_guard as rg
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:  # type: ignore[override]
+            return frozen
+
+    monkeypatch.setattr(rg, "datetime", _FrozenDatetime)
+
+
+@pytest.mark.asyncio
+async def test_market_hours_blocks_us_equity_when_closed(
+    client: TestClient,
+    fresh_user: dict[str, str],
+    real_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-05-30 周六 → 美股闭市 → AAPL@yfinance 被 MarketHoursRule 拦（交易所解析 XNYS）。"""
+    del real_factory
+    headers = {"Authorization": fresh_user["Authorization"]}
+    _freeze_now(monkeypatch, datetime(2026, 5, 30, 15, 0, tzinfo=UTC))  # 周六
+
+    r = _submit_aapl_buy(client, headers)
+    assert r.status_code == 409, r.json()
+    body = r.json()
+    assert body["code"] == "RISK_REJECTED"
+    assert body["details"]["rule_name"] == "MarketHoursRule"
+    assert body["details"]["lock_scope"] == "market"
+    # details 不含 lock_market 字段，但 reason 带解析出的交易所 code
+    assert "XNYS" in body["details"]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_market_hours_allows_crypto_when_us_closed(
+    client: TestClient,
+    fresh_user: dict[str, str],
+    real_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同一周六，crypto 24/7 → BTC@binance 不被 MarketHoursRule 拦（无历史 → 成交）。"""
+    del real_factory
+    headers = {"Authorization": fresh_user["Authorization"]}
+    _freeze_now(monkeypatch, datetime(2026, 5, 30, 15, 0, tzinfo=UTC))  # 周六
 
     r = _submit_btc_buy(client, headers)
     assert r.status_code == 200, r.json()
