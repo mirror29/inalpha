@@ -5,8 +5,13 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 import { mintServiceToken } from "../auth.js";
-import { ResearchClient } from "../clients/research.js";
+import { ResearchClient, type PersonaKey } from "../clients/research.js";
 import { getSettings } from "../config.js";
+
+// ADR-0037 §A：投资大师人格 key（与 services/research analysts/personas 对齐）。
+const PersonaSchema = z.enum([
+  "buffett", "lynch", "wood", "burry", "druckenmiller", "marks",
+]);
 
 // D-9 multi-market：与 tools/data.ts 保持一致。
 const TimeframeSchema = z.enum([
@@ -51,6 +56,14 @@ export const researchDeepDiveTool = createTool({
     - 用户已经明确要某个具体动作（"开 0.001 BTC 多单"）→ 直接走 trader 创建 plan
     - 高频 / loop 内调用 —— 单次成本 3 次 LLM 调用，**不要在 N 个标的上循环**
 
+    可选 personas（投资大师视角，ADR-0037 §A）：
+    - 传 personas 时，核心 analyst 之外再叠加对应投资大师风格视角（buffett 价值/护城河、
+      lynch GARP 成长、wood 颠覆创新、burry 逆向/泡沫、druckenmiller 宏观趋势、marks 周期/风险），
+      形成"大师团"多视角 + 对立观点，喂进辩论与综合
+    - 何时用：用户想要"不同投资风格怎么看这个标的""价值派 vs 成长派会怎么吵"这类多视角对照
+    - 何时不用：普通研究不必带（每个 persona 多一次 LLM 调用、成本线性上升）；不确定就省略
+    - 省略 = 只跑核心 analyst（行为与历史一致）
+
     返回字段:
     - research_id: UUID，本次研究的唯一标识；**透传给 paper.run_backtest / paper.list_backtest_runs / trade.create_plan 建立血缘**
     - rating: overweight / neutral / underweight
@@ -91,6 +104,13 @@ export const researchDeepDiveTool = createTool({
       .string()
       .optional()
       .describe("用户原始问题，给 research manager 综合时作 context"),
+    personas: z
+      .array(PersonaSchema)
+      .optional()
+      .describe(
+        "可选：额外启用的投资大师人格视角（每个多一次 LLM 调用）。" +
+          "想要多投资风格 / 对立观点对照时传；普通研究省略",
+      ),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
@@ -102,6 +122,7 @@ export const researchDeepDiveTool = createTool({
       asOf: inputData.asOf,
       lookbackDays: inputData.lookbackDays ?? 30,
       userQuestion: inputData.userQuestion,
+      personas: inputData.personas as PersonaKey[] | undefined,
     });
   },
 });

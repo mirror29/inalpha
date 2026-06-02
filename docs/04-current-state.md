@@ -205,6 +205,31 @@ D-9 把决策护栏（Plan/Exec + 风控 + 沙盒）做扎实后，D-10 在**数
 
 ---
 
+## D-10 · MCP 生态兼容 + 相对估值 analyst（借鉴 anthropics/financial-services）
+
+调研 Anthropic 官方 [`anthropics/financial-services`](https://github.com/anthropics/financial-services)
+后落地的两个增量（两者定位互补：Inalpha 做量化交易闭环 / 自动回测下单，该仓库做
+卖方文档工作流 / 不下单；MCP 决策详见内部 ADR-0009「MCP 作为可插拔 tool 协议」2026-06-01 补充）：
+
+- **MCP client 路径产品化（ADR-0009 从 spike → 落地）**：新增
+  `packages/orchestration/src/mcp/`（`config.ts` + `manager.ts` + `schema.ts`），
+  采用与 financial-services `.mcp.json` **同构**的配置 schema。MCP tool 命名
+  `mcp__<server>__<verb>`，经**现有** `wireToolList` 套同一套 hooks + permissions；
+  orchestrator 的 `tools` 改 dynamic 异步函数，把内置 tool + MCP tool 合并。
+  - **免费优先（硬约束）**：默认 `config/mcp.config.json` 只启用零密钥公开端点
+    （CoinGecko）；FactSet / Morningstar / S&P 等**付费连接器以 `disabled:true` 作模板**，
+    持订阅者改 flag + 配 `requiredEnv` 即用。缺 key / 连接失败 → 跳过 + 不阻塞启动。
+  - 权限：`mcp__coingecko__*`（只读公开源）显式 allow；其余 `mcp__*` 由
+    `defaultMode: ask` fail-closed 兜底。验证：`pnpm smoke:mcp`。
+- **相对估值 analyst（research 第 6 个 analyst）**：新增
+  `services/research/.../analysts/valuation.py`，分析框架借鉴 financial-services
+  的 `comps-analysis` skill（Apache-2.0）——可比公司 / 相对估值。复用免费
+  `/fundamentals` 快照（PE/PB/ROE/margins）+ web 搜索喂入，沿用 D-9 freshness
+  纪律：**只做相对估值、禁止完整 DCF**（无现金流数据会逼 LLM 编数），缺数据降
+  confidence（cap 0.55）。已并入 `ALL_ANALYSTS` 自动参与并行 + bull/bear 辩论。
+
+---
+
 ## D-11（2026-06-02）多市场模拟盘：跨币种 cash + live runner
 
 把"promote 一个策略 → 放到模拟盘"从"只是状态切换"做成"真按行情自动跑"，并让

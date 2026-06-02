@@ -91,13 +91,15 @@ class ResearchSettings(BaseSettings):
         description="单次 LLM 调用超时（秒）",
     )
     llm_max_concurrent: int = Field(
-        default=5,
+        default=8,
         ge=1,
         le=50,
         alias="LLM_MAX_CONCURRENT",
         description="单个 LLM client 实例的并发上限（asyncio.Semaphore）。"
-        "Deep dive 5 analyst + Bull/Bear + manager 共享同一 client，默认 5 不阻塞单链路；"
-        "D-9 swarm grid×N 会把多个 deep dive 串起来跑，超额时第 N+1 个调用排队等放行。",
+        "Deep dive 6 analyst（D-10 加 valuation）+ Bull/Bear + manager 共享同一 client，"
+        "默认 8 让 6 个核心 analyst 全并行 + 留 headroom（再高徒增 provider 限流/502 风险）；"
+        "opt-in personas 把 analyst 数推高时超额者排队，不阻塞主链路。"
+        "D-9 swarm grid×N 串多个 deep dive 时，超额调用排队等放行。",
     )
     llm_max_retries: int = Field(
         default=3,
@@ -123,7 +125,24 @@ class ResearchSettings(BaseSettings):
         alias="RESEARCH_MAX_DEBATE_ROUNDS",
         description="Bull/Bear 辩论轮数；每轮 Bull 一次 + Bear 一次。"
         "0 = 跳过辩论（runner 直接 analyst→manager，保留旧 D-8c 行为）。"
-        "默认 0（debate 新增 ~120s 串行 LLM 开销，MVP 研究不需要；需要时设 1）",
+        "默认 0（debate 新增串行 LLM 开销，MVP 研究不需要；需要时设 1）。"
+        "≥2 轮时第 1 轮开场并行（见 debate.run_debate），后续轮串行反驳。",
+    )
+    debate_max_tokens: int = Field(
+        default=600,
+        ge=128,
+        le=4096,
+        alias="RESEARCH_DEBATE_MAX_TOKENS",
+        description="辩论单次发言的输出 token 上限（#2 优化）。LLM 延迟≈输出长度，"
+        "对喷论证 ~600 token 足够，比默认 2048 明显更快、论证更紧凑。",
+    )
+    debate_timeout_seconds: float = Field(
+        default=90.0,
+        ge=5.0,
+        le=600.0,
+        alias="RESEARCH_DEBATE_TIMEOUT_SECONDS",
+        description="整个辩论阶段的总时限（#4 韧性）。超时返回**已完成**的部分 debate_log，"
+        "不抛错、不拖满下游 tool 预算；配合 manager 兜底保证 deep_dive 端到端不挂。",
     )
 
 

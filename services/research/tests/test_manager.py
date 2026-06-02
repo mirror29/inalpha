@@ -9,7 +9,7 @@ from inalpha_research.manager import (
     briefs_to_compact_text,
     build_plan_from_raw,
 )
-from inalpha_research.schemas import AnalystBrief, ResearchPlan
+from inalpha_research.schemas import AnalystBrief, Factor, ResearchPlan
 
 
 def _as_of() -> datetime:
@@ -70,6 +70,70 @@ async def test_synthesize_returns_validated_plan() -> None:
     assert "should I buy BTC?" in user_prompt
     assert "[technical]" in user_prompt
     assert "[fundamental]" in user_prompt
+
+
+async def test_synthesize_degrades_when_llm_fails() -> None:
+    """manager LLM 调用失败（LLMError）→ 降级返 neutral plan，不抛 502，且保留 briefs。
+
+    回归 ADR-0037 调试发现的 deep_dive 502：manager 综合那次 LLM 调用（截断 / 抽风）
+    失败时，必须降级而不是把整条链路 502 掉、丢光 analyst 成果。
+    ``FakeLLMClient({})`` 对任何 system 都不匹配 → ``complete_json`` 抛 ``LLMError``。
+    """
+    llm = FakeLLMClient({})  # 任何 system 都不命中 → 抛 LLMError
+    mgr = ResearchManager(llm=llm)
+    briefs = [_brief("technical", "bullish"), _brief("persona_buffett", "bearish")]
+    plan = await mgr.synthesize(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=briefs,
+    )
+
+    assert isinstance(plan, ResearchPlan)
+    assert plan.rating == "neutral"
+    assert plan.confidence == 0.0
+    # analyst 成果不丢
+    assert {b.analyst for b in plan.briefs} == {"technical", "persona_buffett"}
+    # thesis 明示综合失败（而非伪装成正常结论）；用英文占位（CLAUDE.md §3，与 system 一致）
+    assert "Synthesis unavailable" in plan.thesis
+    assert plan.suggested_action == "wait"
+
+
+async def test_fallback_does_not_pull_brief_factors_into_strategy() -> None:
+    """manager 失败兜底**不**把 briefs 的 factor 拉进来 → 不会被 kind=macro 误导出策略族。
+
+    回归 CR：persona/valuation factor 都是 kind=macro，若兜底拉进来，_dominant_kind 多数
+    投票会偏 macro → strategy 兜底成 buy_hold。综合本就失败，不该再据此推策略族。
+    """
+    macro_factor = Factor(
+        name="halving_phase",
+        kind="macro",
+        value="post_halving",
+        strength=0.5,
+        horizon="position",
+        explanation="within 12mo of halving",
+    )
+    brief = AnalystBrief(
+        analyst="persona_buffett",  # type: ignore[arg-type]
+        stance="bullish",
+        confidence=0.6,
+        summary="value lens",
+        key_points=["moat"],
+        factors=[macro_factor],
+    )
+    llm = FakeLLMClient({})  # 综合失败 → 走 _fallback_raw
+    plan = await ResearchManager(llm=llm).synthesize(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[brief],
+    )
+    # 兜底 plan 不带任何 factor（不再从 brief 拉 macro factor）
+    assert plan.factors == []
+    # 因此 strategy 不会被 macro 误导成 buy_hold
+    assert plan.strategy_hint.family == "none"
 
 
 # ────────────────────────────────────────────────────────────────────

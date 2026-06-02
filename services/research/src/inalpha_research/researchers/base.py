@@ -46,8 +46,13 @@ class Researcher(ABC):
         briefs: list[AnalystBrief],
         history: list[DebateTurn],
         round_no: int,
+        max_tokens: int = 2048,
     ) -> str:
-        """跑一轮发言。返回 LLM 给出的论证文本。"""
+        """跑一轮发言。返回 LLM 给出的论证文本。
+
+        ``max_tokens`` 控制本次发言的输出上限（#2 优化）：辩论论证不需要 2048，
+        调小可线性降延迟。debate.run_debate 按 ``settings.debate_max_tokens`` 传入。
+        """
         asset_type = infer_asset_type(venue=venue, symbol=symbol)
         system = self.system_prompt(asset_type=asset_type)
         user = _format_user_prompt(
@@ -60,7 +65,7 @@ class Researcher(ABC):
             history=history,
             round_no=round_no,
         )
-        raw = await self._llm.complete_json(system=system, user=user)
+        raw = await self._llm.complete_json(system=system, user=user, max_tokens=max_tokens)
         argument = str(raw.get("argument", "")).strip()
         if not argument:
             argument = "(empty argument from LLM)"
@@ -189,7 +194,7 @@ def _format_user_prompt(
 ) -> str:
     """渲染给 Bull/Bear 的 user prompt。
 
-    包含：标的 + as_of + 5 个 analyst brief 摘要 + 完整辩论 history +
+    包含：标的 + as_of + 6 个 analyst brief 摘要 + 完整辩论 history +
     对方上一轮发言（如有）。
     """
     parts: list[str] = [

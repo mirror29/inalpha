@@ -170,6 +170,9 @@ Inalpha is not invented from scratch. It selectively inherits proven designs fro
 | [**TradingAgents**](https://github.com/TauricResearch/TradingAgents) | Multi-agent opposing stances (bull / bear / risk) for **research** debate — slotted into `services/research` (Phase E+) | Putting the same pattern on the execution path (we route execution through a state machine + permissions instead) |
 | [**Anthropic Claude Code**](https://claude.com/claude-code) | Hooks (PreToolUse / PostToolUse / Stop), declarative permissions, Plan/Exec separation, MCP, subagent isolation, prompt-cache engineering | Coding-specific tools like Bash / file editing (tool set redesigned for trading) |
 | [**Mastra**](https://mastra.ai) | TypeScript agent orchestration scaffolding, `createTool` / `createWorkflow` primitives | — |
+| [**Anthropic Claude for Financial Services**](https://github.com/anthropics/financial-services) | The `.mcp.json` connector-catalog convention (compatible with its FactSet / Morningstar / S&P MCP servers); the `comps-analysis` relative-valuation methodology (Apache-2.0, shipped as a valuation analyst) | Sell-side document-workflow agents (pitch decks / DCF / IC memos / KYC — explicitly no trading); **paid data-source dependencies** — we default to zero-key free sources, paid connectors ship only as `disabled` templates |
+
+> Complementary positioning: Inalpha is a **quant trading loop** (research → backtest → guarded auto-execution); financial-services is a **sell-side document workflow** (Excel/PPT drafts for human review). Inalpha is **MCP-compatible** with its connector catalog — but never requires it, defaults to it, or pays for it.
 
 ---
 

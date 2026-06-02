@@ -168,6 +168,11 @@ Inalpha 不是从零发明——它有选择地继承前人的最优解，并明
 | [**TradingAgents**](https://github.com/TauricResearch/TradingAgents) | Multi-agent 立场对抗（bull / bear / risk）作为**研究**辩论——slotted 进 `services/research`（Phase E+） | 把这套模式放到执行路径（我们把执行交给状态机 + permissions） |
 | [**Anthropic Claude Code**](https://claude.com/claude-code) | Hooks（PreToolUse / PostToolUse / Stop）、声明式 permissions、Plan/Exec 分离、MCP 协议、subagent 隔离、prompt cache 工程化 | Bash / file 这类 coding 域特有的 tool（交易场景重新设计 tool 集） |
 | [**Mastra**](https://mastra.ai) | TypeScript agent 编排骨架、`createTool` / `createWorkflow` 原语 | — |
+| [**Anthropic Claude for Financial Services**](https://github.com/anthropics/financial-services) | `.mcp.json` 连接器目录约定（兼容其 FactSet / Morningstar / S&P 等 MCP）、`comps-analysis` 相对估值方法论（Apache-2.0，已落地 valuation analyst） | 卖方文档工作流 agent（pitch deck / DCF / IC memo / KYC，明确不下单）、**付费数据源依赖**——我们默认零密钥免费源，付费连接器仅作 `disabled` 模板 |
+
+> 定位互补：Inalpha 做**量化交易闭环**（研究→回测→护栏内自动下单），financial-services 做
+> **卖方文档工作流**（产出给人 review 的 Excel/PPT）。Inalpha 通过 MCP **兼容**其连接器目录，
+> 但不强制、不默认、不付费。
 
 ---
 

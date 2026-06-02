@@ -30,9 +30,25 @@ export type StrategyHint = {
   reasoning: string;
 };
 
+/** 投资大师人格 persona key（ADR-0037 §A）；与 services/research analysts/personas 对齐 */
+export type PersonaKey =
+  | "buffett"
+  | "lynch"
+  | "wood"
+  | "burry"
+  | "druckenmiller"
+  | "marks";
+
 /** AnalystBrief —— 与 services/research schemas.py 对齐 */
 export type AnalystBrief = {
-  analyst: "technical" | "fundamental" | "sentiment" | "risk" | "macro";
+  analyst:
+    | "technical"
+    | "fundamental"
+    | "sentiment"
+    | "risk"
+    | "macro"
+    | "valuation"
+    | `persona_${PersonaKey}`;
   stance: "bullish" | "bearish" | "neutral";
   confidence: number;
   summary: string;
@@ -67,6 +83,8 @@ export type DeepDiveParams = {
   asOf: string; // ISO 8601
   lookbackDays?: number;
   userQuestion?: string;
+  /** ADR-0037 §A：额外启用的投资大师人格；省略 = 只跑核心 analyst */
+  personas?: PersonaKey[];
 };
 
 export class ResearchClient {
@@ -90,6 +108,7 @@ export class ResearchClient {
       as_of: params.asOf,
       lookback_days: params.lookbackDays ?? 30,
       user_question: params.userQuestion,
+      personas: params.personas,
     });
   }
 

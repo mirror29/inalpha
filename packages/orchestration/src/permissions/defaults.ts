@@ -45,6 +45,10 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     // Swarm 批量回测（ADR-0025）：只读，无下单路径
     "swarm.*",
 
+    // MCP 只读公开源（ADR-0009）：coingecko 是零密钥公开加密行情，风险类同 data.*/web.*。
+    // 其余 mcp__* 不在此列 → 由 defaultMode:ask fail-closed 兜底（第三方 tool 默认审批）。
+    "mcp__coingecko__*",
+
     // 策略 lifecycle（D-8b 起会有）
     "paper.start_strategy",
     "paper.stop_strategy",
