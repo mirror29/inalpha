@@ -167,3 +167,64 @@ async def mark_running_as_errored(conn: AsyncConnection, *, reason: str) -> int:
             (reason, _RUNNING),
         )
         return cur.rowcount
+
+
+# ─── 复盘决策日志（D-11 issue #1）───
+
+
+async def insert_decision(
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    bar_ts: datetime,
+    bar_close: Decimal,
+    side: str,
+    quantity: Decimal,
+    order_type: str,
+    outcome: str,
+    limit_price: Decimal | None = None,
+    tag: str | None = None,
+    fill_price: Decimal | None = None,
+    fee: Decimal | None = None,
+    plan_id: UUID | None = None,
+    order_id: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """记一行决策事件（策略在某根 bar 产生下单意图 + 撮合结果），供复盘。"""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            INSERT INTO strategy_run_decisions (
+                run_id, bar_ts, bar_close, side, quantity, order_type, limit_price,
+                tag, outcome, fill_price, fee, plan_id, order_id, reason
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                str(run_id), bar_ts, bar_close, side, quantity, order_type, limit_price,
+                tag, outcome, fill_price, fee,
+                str(plan_id) if plan_id is not None else None, order_id, reason,
+            ),
+        )
+
+
+async def list_decisions(
+    conn: AsyncConnection,
+    run_id: UUID,
+    *,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """按时间顺序列出某 run 的决策时间线（复盘用）。"""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT id, run_id, bar_ts, bar_close, side, quantity, order_type, limit_price,
+                   tag, outcome, fill_price, fee, plan_id, order_id, reason, created_at
+            FROM strategy_run_decisions
+            WHERE run_id = %s
+            ORDER BY created_at
+            LIMIT %s
+            """,
+            (str(run_id), limit),
+        )
+        rows = await cur.fetchall()
+    return list(rows)  # type: ignore[arg-type]

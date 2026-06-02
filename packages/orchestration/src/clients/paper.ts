@@ -328,6 +328,26 @@ export type StartStrategyParams = {
   params?: Record<string, unknown>;
 };
 
+/** D-11 · live runner 决策复盘日志一行。 */
+export type StrategyRunDecisionRecord = {
+  id: string;
+  run_id: string;
+  bar_ts: string;
+  bar_close: number;
+  side: "BUY" | "SELL";
+  quantity: number;
+  order_type: string;
+  limit_price: number | null;
+  tag: string | null;
+  outcome: "filled" | "rejected" | "risk_rejected";
+  fill_price: number | null;
+  fee: number | null;
+  plan_id: string | null;
+  order_id: string | null;
+  reason: string | null;
+  created_at: string;
+};
+
 export class PaperClient {
   private readonly http: HttpClient;
 
@@ -550,5 +570,15 @@ export class PaperClient {
     return await this.http.get<StrategyRunRecord[]>("/strategy_runs", {
       status: filter?.status,
     });
+  }
+
+  async listStrategyRunDecisions(
+    runId: string,
+    limit?: number,
+  ): Promise<StrategyRunDecisionRecord[]> {
+    return await this.http.get<StrategyRunDecisionRecord[]>(
+      `/strategy_runs/${runId}/decisions`,
+      { limit },
+    );
   }
 }

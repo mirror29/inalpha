@@ -19,7 +19,11 @@ from inalpha_shared.db import DBConn
 from inalpha_shared.errors import InalphaError, NotFoundError
 
 from ..account_id import account_id_from_user
-from ..schemas import StartStrategyRunRequest, StrategyRunRecord
+from ..schemas import (
+    StartStrategyRunRequest,
+    StrategyRunDecisionRecord,
+    StrategyRunRecord,
+)
 from ..storage import strategy_candidates as candidates_store
 from ..storage import strategy_runs as runs_store
 
@@ -101,6 +105,48 @@ async def list_strategy_runs(
     account_id = account_id_from_user(user)
     rows = await runs_store.list_by_account(db, account_id, status=status)
     return [_row_to_record(r) for r in rows]
+
+
+@router.get("/strategy_runs/{run_id}/decisions", response_model=list[StrategyRunDecisionRecord])
+async def list_strategy_run_decisions(
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+    run_id: Annotated[UUID, Path()],
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+) -> list[StrategyRunDecisionRecord]:
+    """某 run 的决策复盘时间线（仅限本账户）：每根 bar 的下单意图 + 撮合结果。"""
+    account_id = account_id_from_user(user)
+    run = await runs_store.get(db, run_id)
+    if run is None or run["account_id"] != account_id:
+        raise NotFoundError(
+            f"strategy_run {run_id} not found", details={"run_id": str(run_id)}
+        )
+    rows = await runs_store.list_decisions(db, run_id, limit=limit)
+    return [_row_to_decision(r) for r in rows]
+
+
+def _row_to_decision(row: dict[str, Any]) -> StrategyRunDecisionRecord:
+    def _f(v: Any) -> float | None:
+        return float(v) if v is not None else None
+
+    return StrategyRunDecisionRecord(
+        id=row["id"],
+        run_id=row["run_id"],
+        bar_ts=row["bar_ts"],
+        bar_close=float(row["bar_close"]),
+        side=row["side"],
+        quantity=float(row["quantity"]),
+        order_type=row["order_type"],
+        limit_price=_f(row.get("limit_price")),
+        tag=row.get("tag"),
+        outcome=row["outcome"],
+        fill_price=_f(row.get("fill_price")),
+        fee=_f(row.get("fee")),
+        plan_id=row.get("plan_id"),
+        order_id=row.get("order_id"),
+        reason=row.get("reason"),
+        created_at=row["created_at"],
+    )
 
 
 def _row_to_record(row: dict[str, Any]) -> StrategyRunRecord:

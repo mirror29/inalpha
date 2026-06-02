@@ -11,6 +11,7 @@ import {
   dataBackfillBarsTool,
   dataGetBarsTool,
   paperListStrategiesTool,
+  paperListStrategyRunDecisionsTool,
   paperListStrategyRunsTool,
   paperRunBacktestTool,
   paperStartStrategyTool,
@@ -490,5 +491,19 @@ describe("paper.start_strategy / stop / list", () => {
     await paperListStrategyRunsTool.execute!({ status: "running" } as never, ctx());
     expect(capturedUrl).toContain("/strategy_runs");
     expect(capturedUrl).toContain("status=running");
+  });
+
+  it("list_strategy_run_decisions GETs /strategy_runs/{id}/decisions", async () => {
+    let capturedUrl = "";
+    mockFetch(async (url) => {
+      capturedUrl = url;
+      return new Response(JSON.stringify([]), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    });
+    const runId = "550e8400-e29b-41d4-a716-446655440002";
+    await paperListStrategyRunDecisionsTool.execute!({ runId, limit: 50 } as never, ctx());
+    expect(capturedUrl).toContain(`/strategy_runs/${runId}/decisions`);
+    expect(capturedUrl).toContain("limit=50");
   });
 });

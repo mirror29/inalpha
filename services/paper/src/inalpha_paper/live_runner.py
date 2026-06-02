@@ -291,6 +291,9 @@ class LiveRunnerManager:
                 await runs_store.append_error_log(
                     conn, run_id, f"order rejected by risk: {e.message}"
                 )
+                await self._record_decision(
+                    conn, run, order, bar, outcome="risk_rejected", reason=e.message
+                )
             return
 
         # 2. 撮合（纯函数，ref_price = bar.close）
@@ -349,6 +352,17 @@ class LiveRunnerManager:
             await plans_store.record_execution(
                 conn, plan_id=plan_id, resulting_order_id=result["client_order_id"]
             )
+            # 决策复盘日志（与订单同事务，原子）
+            filled = result["status"] == "FILLED"
+            await self._record_decision(
+                conn, run, order, bar,
+                outcome="filled" if filled else "rejected",
+                plan_id=plan_id,
+                order_id=str(result["client_order_id"]),
+                fill_price=Decimal(str(result["avg_fill_price"])) if filled else None,
+                fee=Decimal(str(result["fee"])) if filled else None,
+                reason=None if filled else str(result.get("rejection_reason") or "not filled"),
+            )
 
         # 4. 回灌 session：成交更新 portfolio + 策略持仓视图；未成交清理 ExecutionEngine 状态
         if result["status"] == "FILLED":
@@ -364,6 +378,39 @@ class LiveRunnerManager:
                 reason=str(result.get("rejection_reason") or "not filled"),
                 ts_event=bar.ts_event,
             )
+
+    async def _record_decision(
+        self,
+        conn: Any,
+        run: dict[str, Any],
+        order: Order,
+        bar: Bar,
+        *,
+        outcome: str,
+        plan_id: UUID | None = None,
+        order_id: str | None = None,
+        fill_price: Decimal | None = None,
+        fee: Decimal | None = None,
+        reason: str | None = None,
+    ) -> None:
+        """记一行决策复盘日志（策略在某根 bar 的下单意图 + 撮合结果）。"""
+        await runs_store.insert_decision(
+            conn,
+            run_id=run["id"],
+            bar_ts=_ns_to_dt(bar.ts_event),
+            bar_close=Decimal(str(bar.close)),
+            side=order.side.value,
+            quantity=Decimal(str(order.quantity)),
+            order_type=order.type.value,
+            limit_price=Decimal(str(order.price)) if order.price is not None else None,
+            tag=order.tag,  # 策略可经 Order.tag 透传语义意图（stop_loss / take_profit / ...）
+            outcome=outcome,
+            fill_price=fill_price,
+            fee=fee,
+            plan_id=plan_id,
+            order_id=order_id,
+            reason=reason,
+        )
 
     # ─── 工具 ───
 

@@ -4,6 +4,8 @@ stub ``manager.start`` 为 no-op，避免真起后台 task 打网络；只验 AP
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -12,6 +14,7 @@ from fastapi.testclient import TestClient
 from inalpha_shared.db import get_conn
 
 from inalpha_paper.storage import strategy_candidates as candidates_store
+from inalpha_paper.storage import strategy_runs as runs_store
 
 pytestmark = pytest.mark.integration
 
@@ -125,6 +128,38 @@ async def test_stop_and_list(client: TestClient, app_with_lifespan: Any) -> None
     # stop → status stopped
     stopped = client.post(f"/strategy_runs/{run['id']}/stop", headers=headers).json()
     assert stopped["status"] == "stopped"
+
+
+async def test_list_decisions_and_ownership(client: TestClient, app_with_lifespan: Any) -> None:
+    """GET /strategy_runs/{id}/decisions 返回复盘时间线 + 归属校验。"""
+    _stub_manager(app_with_lifespan)
+    cid = await _make_promoted_candidate()
+    headers = _headers(client)
+    run = client.post(
+        "/strategy_runs", headers=headers,
+        json={"candidate_id": str(cid), "symbol": "BTC/USDT", "timeframe": "1h"},
+    ).json()
+
+    # 直接落一行决策（绕过 runner）
+    async with get_conn() as conn:
+        await runs_store.insert_decision(
+            conn, run_id=UUID(run["id"]), bar_ts=datetime(2026, 6, 2, tzinfo=UTC),
+            bar_close=Decimal("50000"), side="BUY", quantity=Decimal("0.01"),
+            order_type="MARKET", outcome="filled", fill_price=Decimal("50000"),
+            fee=Decimal("0.5"), order_id="ord-x",
+        )
+
+    r = client.get(f"/strategy_runs/{run['id']}/decisions", headers=headers)
+    assert r.status_code == 200, r.json()
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["outcome"] == "filled"
+    assert body[0]["side"] == "BUY"
+    assert body[0]["order_id"] == "ord-x"
+
+    # 别的账户拉别人的 decisions → 404
+    r2 = client.get(f"/strategy_runs/{run['id']}/decisions", headers=_headers(client))
+    assert r2.status_code == 404
 
 
 async def test_stop_other_account_run_404(client: TestClient, app_with_lifespan: Any) -> None:

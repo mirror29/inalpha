@@ -81,6 +81,49 @@ async def test_process_bar_routes_through_plan_exec(app_with_lifespan: Any) -> N
     assert run_fresh is not None
     assert run_fresh["last_bar_ts"] is not None
 
+    # 决策复盘日志：记了一行 filled，交叉引用 plan/order
+    async with get_conn() as conn:
+        decisions = await runs_store.list_decisions(conn, run["id"])
+    assert len(decisions) == 1
+    d = decisions[0]
+    assert d["outcome"] == "filled"
+    assert d["side"] == "BUY"
+    assert float(d["bar_close"]) == 50_000.0
+    assert d["plan_id"] is not None
+    assert d["order_id"] is not None
+    assert d["fill_price"] is not None
+
+
+async def test_process_bar_risk_rejected_records_decision(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """风控拒单：不落单、决策记 risk_rejected、run 不挂、持仓空仓。"""
+    from inalpha_shared.errors import ConflictError
+
+    async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise ConflictError("cooldown active", code="RISK_REJECTED")
+
+    monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _make_session()
+    account_id = uuid4()
+    run = await _insert_run(account_id, uuid4())
+
+    await manager._process_bar(session, run, _bar(1_700_000_000_000_000_000, close=50_000.0))
+
+    async with get_conn() as conn:
+        orders = await orders_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+        run_fresh = await runs_store.get(conn, run["id"])
+    assert orders == []  # 被风控拦下，未落单
+    assert len(decisions) == 1
+    assert decisions[0]["outcome"] == "risk_rejected"
+    assert decisions[0]["reason"] == "cooldown active"
+    assert run_fresh["status"] == "running"  # 拒单不杀 run
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat
+
 
 class _CountingStrategy(Strategy):
     """记录每根 bar 的 close，用于验证预热喂了历史 bar。"""

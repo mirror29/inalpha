@@ -483,6 +483,33 @@ export const paperListStrategyRunsTool = createTool({
   },
 });
 
+export const paperListStrategyRunDecisionsTool = createTool({
+  id: "paper.list_strategy_run_decisions",
+  description: `
+    一个 live run 的**决策复盘时间线**：每根 bar 策略产生的下单意图 + 撮合结果。
+
+    何时用：
+    - 用户问"那个策略都做了哪些决定 / 为什么买在这里 / 复盘一下它的操作"
+
+    返回每行：bar 时点 / 价、side / quantity / 类型 / tag(策略语义意图)、
+    outcome（filled / rejected / risk_rejected）、成交价、plan_id / order_id（可交叉
+    查 trade_plans 的 rationale 与 closed_trades 的盈亏）、reason。
+
+    坑：
+    - 只记**产生了下单意图**的 bar（决策事件流，非逐 bar 全量快照）
+    - 确定性策略"代码即理由"，细粒度信号上下文看 tag / 结合 candidate 源码
+  `.trim(),
+  inputSchema: z.object({
+    runId: z.string().uuid().describe("strategy_run id"),
+    limit: z.number().int().min(1).max(500).default(200),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listStrategyRunDecisions(inputData.runId, inputData.limit);
+  },
+});
+
 export const paperTools = [
   paperListStrategiesTool,
   paperRunBacktestTool,
@@ -495,4 +522,5 @@ export const paperTools = [
   paperStartStrategyTool,
   paperStopStrategyTool,
   paperListStrategyRunsTool,
+  paperListStrategyRunDecisionsTool,
 ] as const;

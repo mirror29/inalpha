@@ -585,3 +585,28 @@ class StrategyRunRecord(BaseModel):
     error_log: list[dict[str, Any]] = Field(default_factory=list)
     started_at: datetime
     stopped_at: datetime | None = None
+
+
+class StrategyRunDecisionRecord(BaseModel):
+    """``GET /strategy_runs/{id}/decisions`` 响应里的一行：复盘决策时间线。
+
+    每次策略在某根 bar 产生下单意图时记一行（市场上下文 + 订单意图 + 撮合结果）。
+    交叉引用：``plan_id`` → trade_plans(rationale)，``order_id`` → orders / closed_trades。
+    """
+
+    id: UUID
+    run_id: UUID
+    bar_ts: datetime
+    bar_close: float
+    side: Literal["BUY", "SELL"]
+    quantity: float
+    order_type: str
+    limit_price: float | None = None
+    tag: str | None = Field(default=None, description="策略经 Order.tag 透传的语义意图")
+    outcome: Literal["filled", "rejected", "risk_rejected"]
+    fill_price: float | None = None
+    fee: float | None = None
+    plan_id: UUID | None = None
+    order_id: str | None = None
+    reason: str | None = None
+    created_at: datetime
