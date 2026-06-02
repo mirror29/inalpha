@@ -184,16 +184,19 @@ async def get_my_account(
     cash_balances: dict[str, Decimal] = {
         cur: Decimal(str(amt)) for cur, amt in (acct["cash_balances"] or {}).items()
     }
-    # 持仓估值（按 avg_open_price）+ 每个持仓的计价货币（NULL 行按 venue/symbol 兜底解析）
+    # 持仓估值（按 avg_open_price）+ realized_pnl，都按计价货币分桶
+    # （NULL 行按 venue/symbol 兜底解析），稍后用同一个 converter 折算到 base。
     pos_value_by_ccy: dict[str, Decimal] = {}
-    realized_pnl = Decimal(0)
+    realized_pnl_by_ccy: dict[str, Decimal] = {}
     for p in pos_rows:
         ccy = p.get("currency") or resolve_currency(
             p["venue"], p["symbol"], default=base_currency
         )
         value = Decimal(p["quantity"]) * Decimal(p["avg_open_price"])
         pos_value_by_ccy[ccy] = pos_value_by_ccy.get(ccy, Decimal(0)) + value
-        realized_pnl += Decimal(p["realized_pnl"])
+        realized_pnl_by_ccy[ccy] = (
+            realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(p["realized_pnl"])
+        )
 
     # 只在存在非本地可解析币种时才开 DataClient（单币种 / crypto-USD 账户零网络）
     all_ccys = set(cash_balances) | set(pos_value_by_ccy)
@@ -219,6 +222,12 @@ async def get_my_account(
             converted = await converter.convert(amt, cur)
             if converted is not None:
                 positions_base += converted
+        # realized_pnl 同样按币种折算（汇率已缓存，无额外网络）；FX 不可用的币种排除
+        realized_pnl_base = Decimal(0)
+        for cur, amt in realized_pnl_by_ccy.items():
+            converted = await converter.convert(amt, cur)
+            if converted is not None:
+                realized_pnl_base += converted
         fx_warnings = converter.warnings
     finally:
         if data_client is not None:
@@ -232,7 +241,7 @@ async def get_my_account(
         cash_balances={cur: float(amt) for cur, amt in cash_balances.items()},
         positions_value=float(positions_base),
         total_equity=float(cash_base + positions_base),
-        realized_pnl=float(realized_pnl),
+        realized_pnl=float(realized_pnl_base),
         fx_warnings=fx_warnings,
         created_at=acct["created_at"],
         updated_at=acct["updated_at"],

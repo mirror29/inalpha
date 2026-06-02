@@ -457,7 +457,10 @@ class AccountSnapshot(BaseModel):
     total_equity: float = Field(
         default=0.0, description="base_currency 计：cash + positions_value"
     )
-    realized_pnl: float = Field(default=0.0, description="所有持仓累计实现 PnL（未折算，原始币种相加）")
+    realized_pnl: float = Field(
+        default=0.0,
+        description="所有持仓累计实现 PnL，按各自计价货币折算到 base_currency 后汇总",
+    )
     fx_warnings: list[str] = Field(
         default_factory=list,
         description="D-11：折算时 FX 不可用 / 偏旧的币种告警；非空时估值可能不完整，"

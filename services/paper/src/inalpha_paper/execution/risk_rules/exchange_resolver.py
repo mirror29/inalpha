@@ -81,6 +81,15 @@ _INDEX_TO_CODE: dict[str, str] = {
 }
 
 
+def is_crypto_venue(venue: str) -> bool:
+    """``venue`` 是否为 crypto 数据源（24/7，无交易日历）。
+
+    给跨模块复用（如 ``currency_resolver``）的公开判定，避免直接导入私有
+    ``_CRYPTO_VENUES`` —— 集合改名时这里仍稳定。
+    """
+    return venue.strip().lower() in _CRYPTO_VENUES
+
+
 def resolve_calendar_code(venue: str, symbol: str) -> str | None:
     """把 ``(venue, symbol)`` 解析成 ``exchange_calendars`` 日历 code。
 
@@ -115,4 +124,4 @@ def resolve_calendar_code(venue: str, symbol: str) -> str | None:
     return None  # 未识别 venue → fail-open
 
 
-__all__ = ["resolve_calendar_code"]
+__all__ = ["is_crypto_venue", "resolve_calendar_code"]

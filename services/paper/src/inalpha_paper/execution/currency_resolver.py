@@ -17,7 +17,7 @@ currency，先得知道每个 cash 桶 / 持仓的计价货币。
 """
 from __future__ import annotations
 
-from .risk_rules.exchange_resolver import _CRYPTO_VENUES, resolve_calendar_code
+from .risk_rules.exchange_resolver import is_crypto_venue, resolve_calendar_code
 
 # exchange_calendars calendar code → 该交易所本币
 # XSHG 复用于沪深（沪深均 CNY）；XBOM 复用于印度 NSE/BSE（均 INR）
@@ -60,8 +60,7 @@ def resolve_currency(venue: str, symbol: str, *, default: str = "USD") -> str:
     Returns:
         计价货币 code（``USD`` / ``CNY`` / ``HKD`` / ``USDT`` …）；fred / 未识别 → ``default``。
     """
-    v = venue.strip().lower()
-    if v in _CRYPTO_VENUES:
+    if is_crypto_venue(venue):
         return _crypto_quote(symbol)
     code = resolve_calendar_code(venue, symbol)
     if code is not None:

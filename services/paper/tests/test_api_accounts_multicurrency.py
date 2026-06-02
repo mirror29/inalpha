@@ -51,6 +51,27 @@ def test_accounts_me_multicurrency_after_crypto_buy(client: TestClient) -> None:
     assert body["fx_warnings"] == []
 
 
+def test_realized_pnl_converted_to_base(client: TestClient) -> None:
+    """部分平仓后 realized_pnl 按计价货币折算到 base（USDT→USD 1.0）汇总，不裸相加。"""
+    _, token = fresh_account_token("mc")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # BUY 0.02 @ 50000，再 SELL 0.01 @ 60000 → 平掉 0.01，realized = (60000-50000)*0.01 = 100 USDT
+    client.post("/orders/submit", headers=headers, json={
+        "symbol": "BTC/USDT", "side": "BUY", "type": "MARKET",
+        "quantity": 0.02, "ref_price": 50_000.0,
+    })
+    client.post("/orders/submit", headers=headers, json={
+        "symbol": "BTC/USDT", "side": "SELL", "type": "MARKET",
+        "quantity": 0.01, "ref_price": 60_000.0,
+    })
+
+    body = client.get("/accounts/me", headers=headers).json()
+    # realized_pnl 经 USDT→USD(1.0) 折算 = 100；走的是分桶折算路径而非裸相加
+    assert body["realized_pnl"] == pytest.approx(100.0)
+    assert body["fx_warnings"] == []
+
+
 def test_positions_carry_currency(client: TestClient) -> None:
     """/positions 行带 currency（crypto → USDT）。"""
     _, token = fresh_account_token("mc")
