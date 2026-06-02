@@ -78,6 +78,17 @@ describe("jsonSchemaToZod", () => {
     expect(jsonSchemaToZod(undefined).safeParse({ anything: 1 }).success).toBe(true);
     expect(jsonSchemaToZod(null).safeParse({}).success).toBe(true);
   });
+
+  it("nullable：type:['string','null'] → 接受 null（LLM 可传 null）", () => {
+    const z = jsonSchemaToZod({
+      type: "object",
+      properties: { note: { type: ["string", "null"] } },
+      required: ["note"],
+    });
+    expect(z.safeParse({ note: "x" }).success).toBe(true);
+    expect(z.safeParse({ note: null }).success).toBe(true);
+    expect(z.safeParse({ note: 1 }).success).toBe(false);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -222,6 +233,31 @@ describe("loadMcpTools", () => {
     // 幂等：再调一次不重复 close
     await closeAllMcpClients();
     expect(closed.sort()).toEqual(["a", "b"]);
+  });
+
+  it("listTools 挂起 → 超时快速跳过该 server，不阻塞，且 close 释放连接", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let closed = false;
+    const factory: McpClientFactory = () => ({
+      async connect() {},
+      listTools(): Promise<{ tools: McpToolDescriptor[] }> {
+        return new Promise(() => {}); // 永不 resolve（模拟端点不可达）
+      },
+      async callTool() {
+        return null;
+      },
+      async close() {
+        closed = true;
+      },
+    });
+    const tools = await loadMcpTools({
+      config: { mcpServers: { slow: { type: "http", url: "x", disabled: false } } },
+      clientFactory: factory,
+      env: {},
+      listToolsTimeoutMs: 20,
+    });
+    expect(tools).toEqual([]);
+    expect(closed).toBe(true); // 超时后该 client 被 close
   });
 
   it("stdio server 挂进程清理监听，resetMcpCleanupHooks 能复位（热重载不孤儿）", async () => {

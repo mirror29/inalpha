@@ -24,7 +24,7 @@ from datetime import datetime
 
 from ..researchers.base import infer_asset_type
 from .base import Analyst
-from .utils import render_web_results
+from .utils import render_financial_indicators, render_web_results
 
 _SYSTEM = """
 You are a relative valuation analyst covering ANY asset class. Your single job:
@@ -143,45 +143,15 @@ class ValuationAnalyst(Analyst):
 
 
 def _render_valuation_inputs(data: dict) -> str:
-    """把 fundamentals 快照里**与估值相关**的指标 format 给 LLM。"""
-    if not data.get("available"):
-        return (
-            f"valuation_inputs: (not available — {data.get('reason', 'unknown')})\n"
+    """把 fundamentals 快照里**与估值相关**的指标 format 给 LLM（共用 utils 渲染）。"""
+    return render_financial_indicators(
+        data,
+        label="valuation_inputs",
+        unavailable_hint=(
             "No live multiples — do qualitative relative valuation only, cap confidence 0.55."
-        )
-    ind = data.get("indicators", {})
-    lines = ["valuation_inputs (most recent disclosure):"]
-    # 估值相关指标优先（倍数 + 盈利质量），增长 / 杠杆作辅助
-    labels = {
-        "market_cap": "市值",
-        "pe_ratio": "市盈率 PE",
-        "pb_ratio": "市净率 PB",
-        "roe": "ROE",
-        "gross_margin": "毛利率",
-        "net_margin": "净利率",
-        "revenue_yoy": "营收同比",
-        "profit_yoy": "利润同比",
-        "debt_to_equity": "负债权益比",
-    }
-    pct_keys = {"roe", "revenue_yoy", "profit_yoy", "gross_margin", "net_margin", "debt_to_equity"}
-    for key, label in labels.items():
-        val = ind.get(key)
-        if val is None:
-            continue
-        if key in pct_keys:
-            lines.append(f"  {label}: {val * 100:.1f}%")
-        elif key == "market_cap":
-            if val > 1e12:
-                lines.append(f"  {label}: {val / 1e12:.1f}万亿")
-            elif val > 1e8:
-                lines.append(f"  {label}: {val / 1e8:.1f}亿")
-            else:
-                lines.append(f"  {label}: {val:.0f}")
-        else:
-            lines.append(f"  {label}: {val:.2f}")
-    lines.append("")
-    lines.append(
-        "Judge cheap / fair / expensive RELATIVE to these indicators + qualitative sector "
-        "norms. Do NOT invent peer multiples. If PE / PB are missing, lower confidence."
+        ),
+        footer=(
+            "Judge cheap / fair / expensive RELATIVE to these indicators + qualitative sector "
+            "norms. Do NOT invent peer multiples. If PE / PB are missing, lower confidence."
+        ),
     )
-    return "\n".join(lines)

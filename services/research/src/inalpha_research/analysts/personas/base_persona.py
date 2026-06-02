@@ -29,7 +29,7 @@ from datetime import datetime
 
 from ...researchers.base import infer_asset_type
 from ..base import Analyst
-from ..utils import render_web_results
+from ..utils import render_financial_indicators, render_web_results
 
 #: 所有 persona 共享的输出契约 —— 拼到每个具体 persona 的风格化 lens 之后。
 #: 放在基类集中维护，保证 6 个 persona 的多市场措辞 / 纪律 / JSON shape 完全一致。
@@ -150,45 +150,16 @@ class PersonaAnalyst(Analyst):
 
 
 def _render_fundamentals(data: dict) -> str:
-    """把 fundamentals 快照里与"生意质量 / 估值"相关的指标 format 给 LLM。
+    """把 fundamentals 快照里与"生意质量 / 估值"相关的指标 format 给 LLM（共用 utils 渲染）。
 
-    与 ``valuation._render_valuation_inputs`` 同构，但标签更偏"质量"维度，服务于
-    persona 的"好生意 / 安全边际"判断。
+    与 ``valuation._render_valuation_inputs`` 共享同一套 labels / 格式化，仅标题与末尾
+    指引不同（这里偏"质量 / 安全边际"维度，服务 persona 风格判断）。
     """
-    if not data.get("available"):
-        return (
-            f"fundamentals: (not available — {data.get('reason', 'unknown')})\n"
+    return render_financial_indicators(
+        data,
+        label="fundamentals",
+        unavailable_hint=(
             "No live indicators — judge qualitatively only and cap confidence at 0.55."
-        )
-    ind = data.get("indicators", {})
-    lines = ["fundamentals (most recent disclosure):"]
-    labels = {
-        "market_cap": "市值",
-        "pe_ratio": "市盈率 PE",
-        "pb_ratio": "市净率 PB",
-        "roe": "ROE",
-        "gross_margin": "毛利率",
-        "net_margin": "净利率",
-        "revenue_yoy": "营收同比",
-        "profit_yoy": "利润同比",
-        "debt_to_equity": "负债权益比",
-    }
-    pct_keys = {"roe", "revenue_yoy", "profit_yoy", "gross_margin", "net_margin", "debt_to_equity"}
-    for key, label in labels.items():
-        val = ind.get(key)
-        if val is None:
-            continue
-        if key in pct_keys:
-            lines.append(f"  {label}: {val * 100:.1f}%")
-        elif key == "market_cap":
-            if val > 1e12:
-                lines.append(f"  {label}: {val / 1e12:.1f}万亿")
-            elif val > 1e8:
-                lines.append(f"  {label}: {val / 1e8:.1f}亿")
-            else:
-                lines.append(f"  {label}: {val:.0f}")
-        else:
-            lines.append(f"  {label}: {val:.2f}")
-    lines.append("")
-    lines.append("Judge through YOUR style's lens. Do NOT invent figures beyond these.")
-    return "\n".join(lines)
+        ),
+        footer="Judge through YOUR style's lens. Do NOT invent figures beyond these.",
+    )

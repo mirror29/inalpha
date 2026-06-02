@@ -57,7 +57,18 @@ export interface LoadMcpToolsOptions {
   clientFactory?: McpClientFactory;
   /** env 来源（缺省 ``process.env``）；单测可注入。 */
   env?: Record<string, string | undefined>;
+  /**
+   * 单个 server ``listTools()`` 超时（毫秒），缺省 ``DEFAULT_LIST_TOOLS_TIMEOUT_MS``（10s）。
+   *
+   * **关键**：orchestrator 的 dynamic tools 首次触发即连接 enabled server；若端点不可达，
+   * 无超时会挂到 OS TCP 超时（Linux ≈2min），期间所有 orchestrator 请求阻塞在 memoized
+   * Promise 上。超时后 try/catch 吞掉该 server、继续其余（永不阻塞主链路）。
+   */
+  listToolsTimeoutMs?: number;
 }
+
+/** 单 server listTools 默认超时（毫秒）。 */
+export const DEFAULT_LIST_TOOLS_TIMEOUT_MS = 10_000;
 
 /** 把 header 值里的 ``${VAR}`` 占位替换成 env 值（缺失留空串）。 */
 function resolveEnvPlaceholders(
@@ -214,6 +225,19 @@ export function resetMcpCleanupHooks(): void {
   _signalHandlers.length = 0;
 }
 
+/** 给 promise 套超时；超时 reject（不取消原 promise，但调用方据此快速 fail）。 */
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} 超时（>${ms}ms）`)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * 加载所有可用 MCP server 的 tool，包成 Mastra raw tool 数组。
  *
@@ -229,6 +253,7 @@ export async function loadMcpTools(
   const env = opts.env ?? process.env;
   const factory =
     opts.clientFactory ?? ((name, server) => buildDefaultClient(name, server, env));
+  const listToolsTimeoutMs = opts.listToolsTimeoutMs ?? DEFAULT_LIST_TOOLS_TIMEOUT_MS;
 
   const tools: RawMcpTool[] = [];
 
@@ -254,7 +279,12 @@ export async function loadMcpTools(
       // HTTP 无子进程，登记只为统一 closeAllMcpClients 语义；仅 stdio 才挂信号清理。
       _liveClients.add(client);
       hookProcessCleanupOnce(server.type === "stdio");
-      const { tools: mcpTools } = await client.listTools();
+      // 超时保护：端点不可达时快速 fail（默认 10s），不挂到 OS TCP 超时阻塞 orchestrator
+      const { tools: mcpTools } = await withTimeout(
+        client.listTools(),
+        listToolsTimeoutMs,
+        `mcp '${name}' listTools`,
+      );
       for (const t of mcpTools) {
         tools.push(wrapMcpTool(name, t, client));
       }

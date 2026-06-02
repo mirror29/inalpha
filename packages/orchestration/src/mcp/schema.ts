@@ -53,6 +53,9 @@ function nodeToZod(node: JsonSchemaNode | undefined): z.ZodTypeAny {
   const type = Array.isArray(node.type)
     ? node.type.find((t) => t !== "null") ?? node.type[0]
     : node.type;
+  // 记录 nullable：["string","null"] → z.string().nullable()，否则 LLM 传 null 会被
+  // zod 先于 MCP server 拒掉（真实 MCP server 的 nullable 参数）。
+  const isNullable = Array.isArray(node.type) && node.type.includes("null");
 
   let base: z.ZodTypeAny;
   switch (type) {
@@ -77,6 +80,7 @@ function nodeToZod(node: JsonSchemaNode | undefined): z.ZodTypeAny {
     default:
       base = z.any();
   }
+  if (isNullable) base = base.nullable();
   return withDescription(base, node.description);
 }
 
