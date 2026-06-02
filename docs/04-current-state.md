@@ -1,9 +1,10 @@
-# 04 · 当前状态：Plan/Exec 闭环 + 工程护栏 + 多市场数据
+# 04 · 当前状态：Plan/Exec 闭环 + 工程护栏 + 多市场模拟盘
 
-> 状态：**D-10 数据源扩展完成（2026-06-01）**——web 搜索 + 财报基本面 +
-> 多市场覆盖，在 D-9（Plan/Exec 闭环 + LLM 自创策略 + 风控引擎）/ D-9.1a
-> 收口（含全市场交易日历）基础上落地。
-> 下一里程碑：**D-11 多市场模拟盘**（paper live runner issue #1 + 跨币种 cash model）。
+> 状态：**D-11 多市场模拟盘完成（2026-06-02）**——跨币种 cash model + paper
+> live runner（promoted 候选按行情自动跑 + 决策复盘日志），在 D-10（web 搜索 +
+> 财报基本面 + 多市场数据）/ D-9（Plan/Exec 闭环 + LLM 自创策略 + 风控引擎）/
+> D-9.1a 收口基础上落地。
+> 下一里程碑：research-hub（issue #6）/ E2 多代演化（issue #7）。
 >
 > 本文回答的问题：**clone 仓库后，"现在到底做到哪里、决策链路长什么样"。**
 > 详细架构与设计取舍见 [`docs/03-kernel-design.md`](./03-kernel-design.md)；
@@ -150,7 +151,7 @@ sequenceDiagram
   (1) orchestrator prompt 强制 agent 调前自检 `fitness > baseline` + 等用户明确指令；
   (2) 后端硬校验 `fitness IS NOT NULL` + 当前 `status='candidate'`，并把
   `reason / promoted_by / promoted_at` 写到候选 `audit.promotion`。promote 仅做状态
-  切换——live trading runner 按行情 tick 调 `on_bar` 仍在 E2 / D-7 范围。
+  切换；按行情 tick 调 `on_bar` 的 live runner 在 **D-11 已接入**（见下方 D-11 小节）。
   ADR-0018 askUserChoice 接通后回归 `ask`
 - **RiskEngine 真接入 paper HTTP 层**（ADR-0006 / issue #3）：lifespan 加载
   `configs/risk_rules.toml` → 构造 async `RiskGuard`（独立于 backtest 的 sync
@@ -172,8 +173,8 @@ sequenceDiagram
   粒度按交易所 code（issue #8 收口）。D-9 闭环完成。
 
 不在范围（下一阶段）：MAP-Elites / Island Model / 多代演化 / unified-diff 变异（E2/E3）；
-`services/evolver/` 独立服务（等多代演化需求出现再拆）；promoted 候选的 live tick
-runner（按行情自动下单、写 `paper_positions` / `paper_trades`）。
+`services/evolver/` 独立服务（等多代演化需求出现再拆）。
+（注：promoted 候选的 live runner 原列在此处，已在 D-11 落地，见下方 D-11 小节。）
 
 ---
 
@@ -204,16 +205,45 @@ D-9 把决策护栏（Plan/Exec + 风控 + 沙盒）做扎实后，D-10 在**数
 
 ---
 
+## D-11（2026-06-02）多市场模拟盘：跨币种 cash + live runner
+
+把"promote 一个策略 → 放到模拟盘"从"只是状态切换"做成"真按行情自动跑"，并让
+跨市场组合估值正确。两半场：
+
+**A · 跨币种 cash model**（PR #32，已并 main）：
+- `accounts.cash` 单标量 → `cash_balances` JSONB 按币种桶 + `base_currency`（migration 0009）；
+  `positions.currency` 列；`execution/currency_resolver.py`（venue/symbol → 计价货币，
+  复用 `exchange_resolver`）。
+- `services/data` 新增 `GET /fx`（identity / USD 稳定币本地 1.0，真实汇率走 yfinance
+  forex，拿不到抛 502 不乱猜）；`/accounts/me` 多币种桶 + 持仓按 FX 折算到 base_currency，
+  透出 `fx_warnings`（FX 不可用 / 偏旧的币种不静默）。架构取舍：跨币种是**账户聚合层**
+  问题（单次回测 / 单 run 是单币种），engine Portfolio 保持单币种。
+
+**B · paper live runner**（PR #34）：
+- 新 migration 0010 `strategy_runs`（`UNIQUE(candidate_id) WHERE status='running'`）；
+  `LiveRunnerManager`（`live_runner.py`）每个 run 一个后台 asyncio task，按 timeframe
+  拉 fresh bar → 喂 `LiveEngineSession`（`engine/live_session.py`，复用回测内核 +
+  `CaptureGateway` 拦截下单不撮合 + `confirm_fill` 回灌保持持仓视图一致）→ 下单意图
+  走**护栏内 plan/exec**（`risk_guard.enforce` + plan create/approve/consume + fills，
+  `approved_by='system:live_runner'` 机器审批）。
+- **启动冷启动预热**：拉 N 根历史 bar 喂策略建指标（不真下单），SMA 等策略 start 后即可出信号。
+- **决策复盘日志**（migration 0011 `strategy_run_decisions`）：每次 on_bar 产生下单意图
+  记一行（bar 上下文 / 订单意图 / outcome filled|rejected|risk_rejected / plan_id /
+  order_id），交叉引用 trade_plans(rationale) + closed_trades(盈亏)。
+- API：`POST /strategy_runs`（promoted 校验）/ `/stop` / `GET` / `GET .../decisions`；
+  orchestration：`paper.start_strategy` / `stop_strategy` / `list_strategy_runs` /
+  `list_strategy_run_decisions`。lifespan 启动 reconcile 残留 running → errored。
+- **信任边界**：机器审批靠"人先 promote + 人显式 start"两道人工闸门（ADR-0020 精神）。
+- follow-up（非阻塞，已开 issue #36/#37/#38）：跨用户 candidate 归属校验 / per-account
+  run 上限 / 风控 fail-closed / 未收盘 bar 守门 / 多实例 reconcile / 沙盒子进程隔离 /
+  service token audience。
+
+---
+
 ## 未完成 / 下一步
 
 > 重心：模拟盘（paper）先于实盘（live）。
 
-- **D-11 多市场模拟盘**（下一里程碑·进行中）：合并 **paper live runner**（issue #1）+
-  **跨币种 cash model**。promoted 候选按 timeframe 自动跑 `on_bar` → 走护栏内 plan/exec
-  下单；`engine/portfolio.py` 单币种 cash → 按币种桶 + FX 折算 equity（新增
-  `services/data` 的 `GET /fx`），让 crypto + 美股 + A股 跨市场组合估值正确。
-  注：D-9.1a 已把多市场技术债里的交易日历（`RoutingCalendar`）和 exchange spot-only
-  SHORT 守门修掉，D-11 只剩跨币种 cash 一项。
 - **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate，issue #6）尚未落地
 - **E2 多代演化**（issue #7 · ADR-0020）：MAP-Elites / Island Model（E1 MVP 已上）
 - **delegation hop**（issue #5 · ADR-0012 补丁）：sub-strategy 派生计划的转授权链

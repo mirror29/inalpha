@@ -9,11 +9,11 @@
 - **不是**开箱即用策略平台 / LangChain / AutoGen 包装
 - **三层**：Next.js + CopilotKit → Mastra（TS）→ Python services。详 `docs/01-architecture-overview.md`
 
-## 2. 文档入口 & 当前 Phase（D-9）
+## 2. 文档入口 & 当前 Phase（D-11）
 
 - `README.md` / `README.zh-CN.md` 首页；`AGENTS.md` 多工具入口；`docs/00-context.md` 背景 / `01-architecture-overview.md` 架构 / `03-kernel-design.md` services / `04-current-state.md` 进度
 - 内部 ADR 在 `docs/miro/`（gitignored，公开文档勿引用）
-- D-8a'~D-8c 闭环；D-9 多 venue + 5 类资产 multi-market；下一 RiskEngine / E1 LLM 改策略
+- D-8~D-9 闭环（Plan/Exec + LLM 自创策略 + 风控）；D-10 多市场数据（web/基本面）；D-11 多市场模拟盘（跨币种 cash + live runner）；下一 research-hub #6 / E2 演化 #7
 
 ## 3. 协作硬约束
 
@@ -54,8 +54,9 @@ Inalpha 是**金融 agent**——任何"看起来很新但其实 stale"的输出
 pnpm i && uv sync && bash scripts/dev.sh   # data:8001 + paper:8002 + mastra:4111
 ```
 
-D-9 + D-9.1a 收口（closed_trades / trade_repo 默认化 / 全市场日历 #8）。
-下一：research-hub #6、E2 演化 #7；live runner #1（远期）
+D-9/D-9.1a 收口 + D-10 多市场数据（web/基本面）+ D-11 多市场模拟盘
+（跨币种 cash + live runner #1：promoted 候选 paper.start_strategy 按行情自动跑 + 决策复盘）已落地。
+下一：research-hub #6、E2 演化 #7
 
 ---
 
