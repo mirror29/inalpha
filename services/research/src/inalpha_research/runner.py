@@ -51,8 +51,10 @@ async def run_deep_dive(
     # ─── 1) analyst 并行 ────────────────────────────────────────────
     # 核心 analyst 永远跑；ADR-0037 §A：req.personas 指定的投资大师人格按需追加
     # （无效 key 静默忽略，不阻断主链路）。
+    # 去重保序：重复 persona key 否则会追加多个同类 analyst → 产出多条相同 brief，
+    # manager 综合时该视角被人为加权、且多耗 LLM 调用（dict.fromkeys 保留首次出现顺序）。
     analyst_classes = list(ALL_ANALYSTS)
-    for key in req.personas or []:
+    for key in dict.fromkeys(req.personas or []):
         persona_cls = PERSONA_ANALYSTS.get(key)
         if persona_cls is not None:
             analyst_classes.append(persona_cls)

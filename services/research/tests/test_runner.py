@@ -141,6 +141,48 @@ async def test_deep_dive_with_personas_appends_master_briefs(
 
 
 @respx.mock
+async def test_deep_dive_dedups_duplicate_personas(fake_llm: FakeLLMClient) -> None:
+    """重复 persona key 去重保序：``["buffett","buffett","wood"]`` 只各跑一次。
+
+    否则同一大师被追加多个 analyst → 多条相同 brief，manager 综合时该视角被人为
+    加权 + 多耗 LLM 调用。
+    """
+    bars = [
+        make_bar_row((_as_of() - timedelta(hours=60 - i)).isoformat(), close=100 + i * 0.1)
+        for i in range(60)
+    ]
+    respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=bars))
+    respx.get("https://api.alternative.me/fng/").mock(
+        return_value=Response(200, json={"data": [{"value": "22", "value_classification": "Extreme Fear", "timestamp": "1716163200"}]})
+    )
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={"available": False, "reason": "crypto"})
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+
+    req = DeepDiveRequest(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        lookback_days=7,
+        personas=["buffett", "buffett", "wood"],  # 重复 buffett
+    )
+
+    async with DataClient("http://data-mock.test", "t") as data:
+        plan = await run_deep_dive(req, llm=fake_llm, data=data)
+
+    analyst_list = [b.analyst for b in plan.briefs]
+    # buffett 只出现一次（去重生效），不是两次
+    assert analyst_list.count("persona_buffett") == 1
+    assert analyst_list.count("persona_wood") == 1
+    # 核心 6 + 去重后 2 = 8
+    assert len(plan.briefs) == 8
+
+
+@respx.mock
 async def test_deep_dive_continues_when_some_analysts_fail() -> None:
     """data-service 500 + 无 FNG mock 让 technical/risk/sentiment 失败，
     fundamental + macro 仍能跑（不依赖外部数据），manager 综合不抛。"""

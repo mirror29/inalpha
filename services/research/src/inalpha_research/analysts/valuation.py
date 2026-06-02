@@ -115,7 +115,7 @@ class ValuationAnalyst(Analyst):
         # web search 补充（peer / 行业估值的定性背景；不当硬数字用）
         web_block = ""
         web_results = await self._data.get_web_search(
-            f"{symbol} 估值 市盈率 行业对比 valuation 2026", max_results=3
+            f"{symbol} 估值 市盈率 行业对比 valuation {as_of.year}", max_results=3
         )
         if web_results:
             web_block = _render_web_results(web_results)
