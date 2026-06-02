@@ -30,7 +30,7 @@ from ..kernel.identifiers import InstrumentId, StrategyId, VenueOrderId
 from ..kernel.msgbus import MessageBus
 from ..model.commands import SubmitOrderCommand
 from ..model.data import Bar
-from ..model.orders import Order
+from ..model.orders import Order, OrderType
 from ..strategy.base import RISK_ENGINE_ENDPOINT, Strategy
 from .portfolio import Portfolio
 
@@ -49,6 +49,21 @@ class _CaptureGateway(Gateway):
         self._collected: list[tuple[Order, StrategyId]] = []
 
     def send_order(self, order: Order, strategy_id: StrategyId) -> None:
+        # 与 SimulatedExchange.send_order 对等守门：只支持 MARKET / LIMIT。
+        # 否则 STOP_MARKET（price=None）会一路走到 OrderExecutor 的 `assert price`
+        # 抛 AssertionError，被 runner 最外层 except 吞成 err_streak，连错几次误杀 run。
+        # 拒掉走 reject_order 路径 → 记入决策日志，语义清晰。
+        if order.type not in (OrderType.MARKET, OrderType.LIMIT):
+            self._msgbus.publish(
+                "internal.venue.rejected",
+                {
+                    "client_order_id": order.client_order_id,
+                    "strategy_id": strategy_id,
+                    "reason": f"OrderType {order.type.value} not supported by live runner",
+                    "ts": self._clock.now_ns(),
+                },
+            )
+            return
         venue_id = VenueOrderId(f"live-{self._next_id}")
         self._next_id += 1
         self._msgbus.publish(

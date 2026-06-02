@@ -71,10 +71,22 @@ async def test_start_requires_promoted_candidate(
     r = client.post(
         "/strategy_runs",
         headers=_headers(client),
-        json={"candidate_id": str(cid), "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
     )
     assert r.status_code == 422
     assert r.json()["code"] == "CANDIDATE_NOT_PROMOTED"
+
+
+async def test_start_requires_venue(client: TestClient, app_with_lifespan: Any) -> None:
+    """venue 必填（不预设市场，CLAUDE.md §3）：缺 venue → 422 请求校验错误。"""
+    _stub_manager(app_with_lifespan)
+    cid = await _make_promoted_candidate()
+    r = client.post(
+        "/strategy_runs",
+        headers=_headers(client),
+        json={"candidate_id": str(cid), "symbol": "BTC/USDT", "timeframe": "1h"},  # 无 venue
+    )
+    assert r.status_code == 400  # 请求体校验失败（本服务把 pydantic 校验映射成 400），不是 binance 静默兜底
 
 
 async def test_start_happy_path_and_duplicate(
@@ -99,7 +111,7 @@ async def test_start_happy_path_and_duplicate(
     r2 = client.post(
         "/strategy_runs",
         headers=headers,
-        json={"candidate_id": str(cid), "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
     )
     assert r2.status_code == 409
     assert r2.json()["code"] == "STRATEGY_RUN_ALREADY_RUNNING"
@@ -118,7 +130,7 @@ async def test_stop_and_list(client: TestClient, app_with_lifespan: Any) -> None
     headers = _headers(client)
     run = client.post(
         "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid), "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
     ).json()
 
     # list 能看到 running
@@ -137,7 +149,7 @@ async def test_list_decisions_and_ownership(client: TestClient, app_with_lifespa
     headers = _headers(client)
     run = client.post(
         "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid), "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
     ).json()
 
     # 直接落一行决策（绕过 runner）
@@ -168,7 +180,7 @@ async def test_stop_other_account_run_404(client: TestClient, app_with_lifespan:
     cid = await _make_promoted_candidate()
     run = client.post(
         "/strategy_runs", headers=_headers(client),
-        json={"candidate_id": str(cid), "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
     ).json()
     # 另一个用户来 stop
     r = client.post(f"/strategy_runs/{run['id']}/stop", headers=_headers(client))

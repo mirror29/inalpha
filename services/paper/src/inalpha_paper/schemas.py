@@ -557,8 +557,9 @@ class StartStrategyRunRequest(BaseModel):
 
     candidate_id: UUID = Field(..., description="promoted candidate 的 id")
     venue: str = Field(
-        default="binance",
-        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→akshare",
+        ...,
+        description="数据源（**必填**，不预设市场/品种，见 CLAUDE.md §3）；按市场分类："
+        "crypto→binance / 美股→yfinance|alpaca / A 股→akshare。**不要留空默认 binance**。",
         examples=["binance", "yfinance", "akshare"],
     )
     symbol: str = Field(..., examples=["BTC/USDT", "AAPL", "sh.600519"])

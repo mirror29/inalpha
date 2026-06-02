@@ -46,6 +46,45 @@ class _BuyOnceStrategy(Strategy):
         self.filled_events.append(event)
 
 
+class _StopOrderStrategy(Strategy):
+    """第一根 bar 提交一个 STOP_MARKET 单（live runner 不支持，应被守门拒）。"""
+
+    def __init__(self, name, clock, msgbus, instrument_id, timeframe, **_kw) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(name, clock, msgbus)
+        self._instrument_id = instrument_id
+        self._timeframe = timeframe
+        self._sent = False
+
+    def on_start(self) -> None:
+        self.subscribe_bars(self._instrument_id, self._timeframe)
+
+    def on_bar(self, bar: Bar) -> None:
+        if not self._sent:
+            self._sent = True
+            self.submit_order(
+                Order(
+                    client_order_id=ClientOrderId(f"stop-{uuid4().hex[:8]}"),
+                    instrument_id=self._instrument_id,
+                    side=OrderSide.SELL,
+                    type=OrderType.STOP_MARKET,
+                    quantity=1.0,
+                )
+            )
+
+
+def test_stop_order_type_rejected_not_collected() -> None:
+    """STOP_MARKET 单被 _CaptureGateway 守门拒（不进 collected），避免下游 assert 崩。"""
+    session = LiveEngineSession(
+        strategy_cls=_StopOrderStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+    orders = session.feed_bar(_bar(1_000_000_000))
+    # 不支持的类型被拒 → 不收集 → 不会流到 plan/exec 触发 AssertionError
+    assert orders == []
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat
+
+
 def _bar(ts_ns: int, close: float = 100.0) -> Bar:
     return Bar(
         instrument_id=_INSTRUMENT, timeframe="1h",
