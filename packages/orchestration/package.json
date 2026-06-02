@@ -23,6 +23,7 @@
     "smoke:sandbox": "tsx scripts/smoke-sandbox.ts",
     "smoke:sandbox-loop": "tsx scripts/smoke-sandbox-loop.ts",
     "smoke:coingecko": "tsx scripts/smoke-coingecko-mcp.ts",
+    "smoke:mcp": "tsx scripts/smoke-mcp.ts",
     "dev": "mastra dev --dir src/mastra"
   },
   "dependencies": {

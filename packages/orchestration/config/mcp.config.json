@@ -1,0 +1,62 @@
+{
+  "_comment": "Inalpha MCP server 配置（ADR-0009）。schema 与 anthropics/financial-services 的 .mcp.json 同构，可直接接其官方连接器。免费优先：默认只启用零密钥公开端点（coingecko）；付费机构连接器以 disabled:true 作模板，配齐 requiredEnv 后改 disabled:false 即用。tool 命名 mcp__<server>__<verb>，自动套 Inalpha hooks+permissions。",
+
+  "mcpServers": {
+    "coingecko": {
+      "type": "http",
+      "url": "https://mcp.api.coingecko.com/mcp",
+      "disabled": false,
+      "description": "CoinGecko 官方公开 MCP（加密行情 / onchain，无需 key）。免费默认启用，已被 scripts/smoke-coingecko-mcp.ts 验证连通。"
+    },
+
+    "daloopa": {
+      "type": "http",
+      "url": "https://mcp.daloopa.com/server/mcp",
+      "disabled": true,
+      "requiredEnv": ["DALOOPA_API_KEY"],
+      "description": "[付费模板] Daloopa 基本面数据。需订阅 + key，配齐后 disabled:false。"
+    },
+    "morningstar": {
+      "type": "http",
+      "url": "https://mcp.morningstar.com/mcp",
+      "disabled": true,
+      "requiredEnv": ["MORNINGSTAR_API_KEY"],
+      "description": "[付费模板] Morningstar。来自 anthropics/financial-services .mcp.json。"
+    },
+    "sp-global": {
+      "type": "http",
+      "url": "https://kfinance.kensho.com/integrations/mcp",
+      "disabled": true,
+      "requiredEnv": ["SP_GLOBAL_API_KEY"],
+      "description": "[付费模板] S&P Global / Kensho kFinance。"
+    },
+    "factset": {
+      "type": "http",
+      "url": "https://mcp.factset.com/mcp",
+      "disabled": true,
+      "requiredEnv": ["FACTSET_API_KEY"],
+      "description": "[付费模板] FactSet。"
+    },
+    "moodys": {
+      "type": "http",
+      "url": "https://api.moodys.com/genai-ready-data/m1/mcp",
+      "disabled": true,
+      "requiredEnv": ["MOODYS_API_KEY"],
+      "description": "[付费模板] Moody's GenAI-ready data。"
+    },
+    "lseg": {
+      "type": "http",
+      "url": "https://api.analytics.lseg.com/lfa/mcp",
+      "disabled": true,
+      "requiredEnv": ["LSEG_API_KEY"],
+      "description": "[付费模板] LSEG（伦交所）分析。"
+    },
+    "pitchbook": {
+      "type": "http",
+      "url": "https://premium.mcp.pitchbook.com/mcp",
+      "disabled": true,
+      "requiredEnv": ["PITCHBOOK_API_KEY"],
+      "description": "[付费模板] PitchBook（私募 / VC 数据）。"
+    }
+  }
+}
