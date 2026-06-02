@@ -92,7 +92,11 @@ class LiveRunnerManager:
         task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
 
     async def stop(self, run_id: UUID) -> None:
-        """停一个 run：cancel task + 置 stopped。"""
+        """停一个 run：cancel task + 置 stopped。
+
+        只在当前仍是 'running' 时才写 'stopped'——避免把已 'errored'（策略崩过、
+        error_log 有记录）的终态静默覆盖成 'stopped'，否则用户看不到策略曾崩（CR）。
+        """
         task = self._tasks.pop(run_id, None)
         if task is not None and not task.done():
             task.cancel()
@@ -101,7 +105,9 @@ class LiveRunnerManager:
             except (asyncio.CancelledError, Exception):
                 pass
         async with get_conn() as conn:
-            await runs_store.set_status(conn, run_id, "stopped")
+            current = await runs_store.get(conn, run_id)
+            if current is not None and current["status"] == "running":
+                await runs_store.set_status(conn, run_id, "stopped")
 
     async def stop_all(self) -> None:
         """服务停机：cancel 所有 task（不改 DB 状态，重启由 reconcile 处理）。"""
@@ -152,11 +158,21 @@ class LiveRunnerManager:
             except Exception as e:
                 err_streak += 1
                 _logger.warning("live run %s error (streak=%d): %s", run_id, err_streak, e)
-                async with get_conn() as conn:
-                    await runs_store.append_error_log(conn, run_id, f"{type(e).__name__}: {e}")
-                if err_streak >= self._settings.live_max_error_streak:
+                # handler 内的 DB 调用也要兜——否则 DB 短暂不可达时异常逃出 while
+                # loop，task 静默死亡、run 永久卡在 'running'（CR）。
+                try:
                     async with get_conn() as conn:
-                        await runs_store.set_status(conn, run_id, "errored")
+                        await runs_store.append_error_log(
+                            conn, run_id, f"{type(e).__name__}: {e}"
+                        )
+                except Exception:
+                    _logger.exception("live run %s: 写 error_log 失败", run_id)
+                if err_streak >= self._settings.live_max_error_streak:
+                    try:
+                        async with get_conn() as conn:
+                            await runs_store.set_status(conn, run_id, "errored")
+                    except Exception:
+                        _logger.exception("live run %s: 置 errored 失败", run_id)
                     return
                 await asyncio.sleep(min(2 ** err_streak, 60))  # 指数退避，cap 60s
 
@@ -313,9 +329,16 @@ class LiveRunnerManager:
             "side": side, "type": order.type.value,
             "quantity": order.quantity, "price": order.price,
         }
-        intent = "open_long" if side == "BUY" else "close"
+        # intent 按"下单前持仓方向 + side"判，别把所有 SELL 当平多（CLAUDE.md §4 多空踩坑）：
+        # SELL 平多=close / SELL 开空=open_short；BUY 平空=close / BUY 开多=open_long。
+        pos = session.portfolio.position(order.instrument_id)
+        cur_qty = pos.quantity if pos is not None else 0.0
+        if side == "BUY":
+            intent = "close" if cur_qty < 0 else "open_long"
+        else:  # SELL
+            intent = "close" if cur_qty > 0 else "open_short"
         rationale = (
-            f"[live_runner run:{run_id}] candidate:{run['candidate_id']} on_bar signal"
+            f"[live_runner run:{run_id}] candidate:{run['candidate_id']} on_bar {side} signal"
         )
         async with get_conn() as conn, conn.transaction():
             await accounts_store.get_or_create(conn, account_id)  # 首单 lazy create 账户

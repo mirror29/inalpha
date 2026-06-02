@@ -125,6 +125,19 @@ async def test_process_bar_risk_rejected_records_decision(
     assert pos is None or pos.is_flat
 
 
+async def test_stop_does_not_overwrite_errored(app_with_lifespan: Any) -> None:
+    """stop 一个已 errored 的 run 不应把状态擦成 stopped（CR：保留崩溃痕迹）。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    run = await _insert_run(uuid4(), uuid4())
+    async with get_conn() as conn:
+        await runs_store.set_status(conn, run["id"], "errored")
+    # run 不在 manager._tasks 里（没 start），stop 只会走 DB 分支
+    await manager.stop(run["id"])
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"  # 未被覆盖成 stopped
+
+
 class _CountingStrategy(Strategy):
     """记录每根 bar 的 close，用于验证预热喂了历史 bar。"""
 

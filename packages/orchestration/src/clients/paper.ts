@@ -322,7 +322,8 @@ export type StrategyRunRecord = {
 
 export type StartStrategyParams = {
   candidateId: string;
-  venue?: string;
+  /** 必填：按 symbol 的市场分类显式选 venue，不预设 binance（CLAUDE.md §3 全球市场）。 */
+  venue: string;
   symbol: string;
   timeframe?: string;
   params?: Record<string, unknown>;
@@ -555,7 +556,7 @@ export class PaperClient {
   async startStrategy(params: StartStrategyParams): Promise<StrategyRunRecord> {
     return await this.http.post<StrategyRunRecord>("/strategy_runs", {
       candidate_id: params.candidateId,
-      venue: params.venue ?? "binance",
+      venue: params.venue,
       symbol: params.symbol,
       timeframe: params.timeframe ?? "1h",
       params: params.params ?? {},
