@@ -29,6 +29,7 @@ from datetime import datetime
 
 from ...researchers.base import infer_asset_type
 from ..base import Analyst
+from ..utils import render_web_results
 
 #: 所有 persona 共享的输出契约 —— 拼到每个具体 persona 的风格化 lens 之后。
 #: 放在基类集中维护，保证 6 个 persona 的多市场措辞 / 纪律 / JSON shape 完全一致。
@@ -128,7 +129,7 @@ class PersonaAnalyst(Analyst):
                 f"{symbol} {self.search_focus} {as_of.year}", max_results=3
             )
             if web_results:
-                web_block = _render_web_results(web_results)
+                web_block = render_web_results(web_results)
 
         return (
             f"asset: {symbol} @ {venue}\n"
@@ -191,17 +192,3 @@ def _render_fundamentals(data: dict) -> str:
     lines.append("")
     lines.append("Judge through YOUR style's lens. Do NOT invent figures beyond these.")
     return "\n".join(lines)
-
-
-def _render_web_results(results: list[dict]) -> str:
-    """web search 结果（定性背景，不当硬数字）。"""
-    if not results:
-        return ""
-    lines = ["web_search_results (qualitative context only, NOT hard numbers):"]
-    for r in results[:3]:
-        title = r.get("title", "")[:100]
-        snippet = r.get("snippet", "")[:200]
-        lines.append(f"  - {title}")
-        if snippet:
-            lines.append(f"    {snippet}")
-    return "\n".join(lines) + "\n"

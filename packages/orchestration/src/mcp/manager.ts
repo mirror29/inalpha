@@ -221,25 +221,26 @@ export async function loadMcpTools(
       continue;
     }
 
+    let client: McpClientLike | undefined;
     try {
-      const client = factory(name, server);
-      const { tools: mcpTools } = await client.listTools();
+      client = factory(name, server);
+      // **先登记再 listTools**：stdio transport 在 factory→listTools 之间即可能 fork
+      // 子进程，若 listTools 抛错而此前未登记，子进程就孤儿化（ADR-0009 §约定）。
+      // HTTP 无子进程，登记只为统一 closeAllMcpClients 语义；仅 stdio 才挂信号清理。
       _liveClients.add(client);
       hookProcessCleanupOnce(server.type === "stdio");
+      const { tools: mcpTools } = await client.listTools();
       for (const t of mcpTools) {
         tools.push(wrapMcpTool(name, t, client));
       }
       console.info(`[mcp] server '${name}' 加载 ${mcpTools.length} 个 tool`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[mcp] server '${name}' 连接 / listTools 失败：${msg}；跳过该 server`);
-    }
-      for (const t of mcpTools) {
-        tools.push(wrapMcpTool(name, t, client));
+      // 失败的 server：立刻关掉可能已 fork 的子进程并移出注册表，别留孤儿
+      if (client) {
+        await client.close().catch(() => {});
+        _liveClients.delete(client);
       }
-      console.info(`[mcp] server '${name}' 加载 ${mcpTools.length} 个 tool`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[mcp] server '${name}' 连接 / listTools 失败：${msg}；跳过该 server`);
     }
   }

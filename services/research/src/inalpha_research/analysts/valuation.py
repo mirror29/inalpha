@@ -24,6 +24,7 @@ from datetime import datetime
 
 from ..researchers.base import infer_asset_type
 from .base import Analyst
+from .utils import render_web_results
 
 _SYSTEM = """
 You are a relative valuation analyst covering ANY asset class. Your single job:
@@ -118,7 +119,7 @@ class ValuationAnalyst(Analyst):
             f"{symbol} 估值 市盈率 行业对比 valuation {as_of.year}", max_results=3
         )
         if web_results:
-            web_block = _render_web_results(web_results)
+            web_block = render_web_results(web_results)
 
         return (
             f"asset: {symbol} @ {venue}\n"
@@ -182,17 +183,3 @@ def _render_valuation_inputs(data: dict) -> str:
         "norms. Do NOT invent peer multiples. If PE / PB are missing, lower confidence."
     )
     return "\n".join(lines)
-
-
-def _render_web_results(results: list[dict]) -> str:
-    """web search 结果（定性背景，不当硬数字）。"""
-    if not results:
-        return ""
-    lines = ["web_search_results (qualitative context only, NOT hard numbers):"]
-    for r in results[:3]:
-        title = r.get("title", "")[:100]
-        snippet = r.get("snippet", "")[:200]
-        lines.append(f"  - {title}")
-        if snippet:
-            lines.append(f"    {snippet}")
-    return "\n".join(lines) + "\n"

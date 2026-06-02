@@ -155,8 +155,9 @@ describe("loadMcpTools", () => {
     expect(tools.map((t) => t.id)).toEqual(["mcp__factset__x"]);
   });
 
-  it("单 server 连接失败 → 其余照常加载，不抛", async () => {
+  it("单 server 连接失败 → 其余照常加载，不抛，且失败 client 被 close（不泄漏子进程）", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    let brokenClosed = false;
     const factory: McpClientFactory = (name) => {
       if (name === "broken") {
         return {
@@ -167,7 +168,9 @@ describe("loadMcpTools", () => {
           async callTool() {
             return null;
           },
-          async close() {},
+          async close() {
+            brokenClosed = true;
+          },
         };
       }
       return fakeClient([{ name: "ok_tool" }]);
@@ -183,6 +186,8 @@ describe("loadMcpTools", () => {
       env: {},
     });
     expect(tools.map((t) => t.id)).toEqual(["mcp__good__ok_tool"]);
+    // listTools 抛错后，失败 client 被显式 close（释放可能已 fork 的 stdio 子进程）
+    expect(brokenClosed).toBe(true);
   });
 
   it("closeAllMcpClients 关闭所有已连接 client（释放 stdio 子进程）", async () => {

@@ -4,8 +4,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 import respx
 from httpx import Response
+from pydantic import ValidationError
 
 from inalpha_research.data_client import DataClient
 from inalpha_research.llm.client import FakeLLMClient
@@ -84,7 +86,8 @@ async def test_deep_dive_with_personas_appends_master_briefs(
 
     - 默认路径（无 personas）仍是 6 brief —— 见 ``test_deep_dive_runs_full_chain``。
     - 指定 ``["buffett", "wood"]`` → 8 brief，含 ``persona_buffett`` / ``persona_wood``。
-    - 无效 key 被静默忽略，不增加 brief、不抛。
+    - 无效 key 现在由 ``DeepDiveRequest`` field_validator 在边界拒绝（422），见
+      ``test_deep_dive_request_rejects_unknown_persona``。
     """
     bars = [
         make_bar_row((_as_of() - timedelta(hours=60 - i)).isoformat(), close=100 + i * 0.1)
@@ -119,7 +122,7 @@ async def test_deep_dive_with_personas_appends_master_briefs(
         timeframe="1h",
         as_of=_as_of(),
         lookback_days=7,
-        personas=["buffett", "wood", "not_a_real_persona"],  # 无效 key 应被忽略
+        personas=["buffett", "wood"],
     )
 
     async with DataClient("http://data-mock.test", "t") as data:
@@ -138,6 +141,29 @@ async def test_deep_dive_with_personas_appends_master_briefs(
         "persona_wood",
     }
     assert len(plan.briefs) == 8
+
+
+def test_deep_dive_request_rejects_unknown_persona() -> None:
+    """未知 persona key 在 DeepDiveRequest 边界即被拒（422），而非静默丢弃。
+
+    保护直接调用 Python 服务的场景（集成测试 / 未来新调用方）——orchestrator 侧
+    TS z.enum 已挡，但 Python list[str] 之前无校验。
+    """
+    with pytest.raises(ValidationError) as ei:
+        DeepDiveRequest(
+            venue="binance",
+            symbol="BTC/USDT",
+            timeframe="1h",
+            as_of=_as_of(),
+            personas=["buffett", "not_a_real_persona"],
+        )
+    assert "unknown persona key" in str(ei.value)
+    # 合法 key 不受影响
+    ok = DeepDiveRequest(
+        venue="binance", symbol="BTC/USDT", timeframe="1h", as_of=_as_of(),
+        personas=["buffett", "wood"],
+    )
+    assert ok.personas == ["buffett", "wood"]
 
 
 @respx.mock

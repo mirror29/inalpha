@@ -50,6 +50,28 @@ class DeepDiveRequest(BaseModel):
     def _ensure_aware(cls, v: datetime) -> datetime:
         return _assume_utc_if_naive(v)
 
+    @field_validator("personas", mode="after")
+    @classmethod
+    def _validate_personas(cls, v: list[str] | None) -> list[str] | None:
+        """拒绝未知 persona key —— 直接调用方（集成测试 / 未来新调用方）的防线。
+
+        orchestrator 侧 TS ``z.enum`` 已挡非法 key，但 Python 服务被直接调用时
+        ``list[str]`` 无校验：无效 key 会在 runner 里静默丢弃、返 HTTP 200 且 briefs
+        里没有对应 persona、无任何报错。这里在 API 边界 fail-fast，给清楚的错误。
+
+        合法 key 从 ``PERSONA_ANALYSTS`` 注册表动态派生（懒 import 避免与 analysts
+        包的循环依赖），新增 persona 无需改本处。
+        """
+        if not v:
+            return v
+        from .analysts.personas import PERSONA_ANALYSTS
+
+        unknown = [k for k in v if k not in PERSONA_ANALYSTS]
+        if unknown:
+            valid = ", ".join(sorted(PERSONA_ANALYSTS))
+            raise ValueError(f"unknown persona key(s): {unknown}; valid keys: {valid}")
+        return v
+
 
 # ────────────────────────────────────────────────────────────────────
 # 因子 / 信号 / 策略提示 —— D-8c 新增（research→strategy 机器路径）
