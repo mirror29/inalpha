@@ -1,6 +1,6 @@
 """Bear Researcher —— 看空方发言人。
 
-读 5 个 analyst brief + 辩论史 + Bull 上一轮（若有）→ 输出一段看空论证。
+读 6 个 analyst brief + 辩论史 + Bull 上一轮（若有）→ 输出一段看空论证。
 风格借鉴 TradingAgents/bear_researcher.py，4 类资产识别。
 """
 from __future__ import annotations

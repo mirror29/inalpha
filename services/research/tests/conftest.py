@@ -65,7 +65,7 @@ def make_bar_row(ts_iso: str, close: float = 100.0) -> dict[str, Any]:
 
 @pytest.fixture
 def fake_llm() -> FakeLLMClient:
-    """5 analyst + manager 全套预设。
+    """6 核心 analyst + manager + 6 投资大师 persona（ADR-0037 §A）全套预设。
 
     ``FakeLLMClient`` 按 system prompt 子串匹配，**key 必须是唯一锚定的**：
 
@@ -74,6 +74,8 @@ def fake_llm() -> FakeLLMClient:
     - 不能用 ``"macro analyst"``      ── fundamental.py opening 是
       "You are a fundamental / macro analyst" 会误中
     - 都用 ``"You are a X"`` 全开头前缀，互相不交叉
+    - persona 用大师全名锚定（``"you are warren buffett"`` 等），与核心 analyst 的
+      ``"you are a X"`` 前缀不交叉
     """
     return FakeLLMClient(
         {
@@ -106,6 +108,59 @@ def fake_llm() -> FakeLLMClient:
                 "confidence": 0.5,
                 "summary": "FOMC in 4 weeks; calendar light near-term.",
                 "key_points": ["no imminent FOMC", "post-CPI window"],
+            },
+            "you are a relative valuation analyst": {
+                "stance": "neutral",
+                "confidence": 0.45,
+                "summary": "No live peer multiples; PE/PB look mid-range qualitatively.",
+                "key_points": ["relative valuation only", "no DCF — lacks cash-flow data"],
+            },
+            # ─── 投资大师 persona（ADR-0037 §A）—— 仅在 req.personas 指定时被消费 ───
+            "you are warren buffett": {
+                "stance": "neutral",
+                "confidence": 0.5,
+                "summary": "Decent moat but no clear margin of safety here.",
+                "key_points": ["moat present", "margin of safety thin"],
+                "factors": [
+                    {
+                        "name": "moat_width",
+                        "kind": "macro",
+                        "value": "narrow",
+                        "strength": 0.5,
+                        "horizon": "position",
+                        "explanation": "moat exists but not durable enough",
+                    }
+                ],
+            },
+            "you are peter lynch": {
+                "stance": "bullish",
+                "confidence": 0.6,
+                "summary": "Growth reasonable vs the multiple; understandable business.",
+                "key_points": ["GARP", "category: fast grower"],
+            },
+            "you are cathie wood": {
+                "stance": "bullish",
+                "confidence": 0.7,
+                "summary": "Early on a steep adoption S-curve; large TAM.",
+                "key_points": ["disruptive", "TAM expanding"],
+            },
+            "you are michael burry": {
+                "stance": "bearish",
+                "confidence": 0.55,
+                "summary": "Crowded, stretched valuation with fragile setup.",
+                "key_points": ["overvalued", "leverage risk"],
+            },
+            "you are stanley druckenmiller": {
+                "stance": "bullish",
+                "confidence": 0.6,
+                "summary": "Liquidity tailwind and trend aligned; worth a concentrated tilt.",
+                "key_points": ["liquidity tailwind", "trend up"],
+            },
+            "you are howard marks": {
+                "stance": "neutral",
+                "confidence": 0.5,
+                "summary": "Mid-cycle; risk not richly compensated at current price.",
+                "key_points": ["mid cycle", "risk-adjusted neutral"],
             },
             "you are a research manager": {
                 "rating": "overweight",

@@ -17,7 +17,9 @@ from collections import Counter
 from datetime import datetime
 from typing import Any
 
-from .llm.client import LLMClient
+from inalpha_shared import get_logger
+
+from .llm.client import LLMClient, LLMError
 from .schemas import (
     AnalystBrief,
     DebateTurn,
@@ -27,6 +29,13 @@ from .schemas import (
     StrategyFamily,
     StrategyHint,
 )
+
+_logger = get_logger(__name__)
+
+# manager 综合输出比单个 analyst 大得多（thesis + risks + factors + signals +
+# strategy_hint，且要消化 6-8 个 briefs + 辩论）。默认 2048 容易截断 → 残缺 JSON →
+# LLMError（历史上的 deep_dive 502 根因，ADR-0037 调试记录）。给足余量。
+_MANAGER_MAX_TOKENS = 4096
 
 _SYSTEM = """
 You are a research manager + debate judge synthesizing analyst briefs and a
@@ -133,7 +142,16 @@ class ResearchManager:
             debate_log=debate_log or [],
             user_question=user_question,
         )
-        raw = await self._llm.complete_json(system=_SYSTEM, user=user_prompt)
+        try:
+            raw = await self._llm.complete_json(
+                system=_SYSTEM, user=user_prompt, max_tokens=_MANAGER_MAX_TOKENS
+            )
+        except LLMError as e:
+            # manager 综合失败不应丢掉 analyst 成果——对齐 analyst ``_failed_brief`` /
+            # debate ``_safe_speak`` 的容错哲学：降级返 neutral plan（带上 briefs /
+            # debate_log），而不是让整条 deep_dive 抛 502。
+            _logger.warning("manager_synthesis_failed", symbol=symbol, error=repr(e))
+            raw = _fallback_raw(repr(e))
         return _build_plan(
             raw=raw,
             venue=venue,
@@ -208,6 +226,36 @@ def _format_user_prompt(
     return "\n".join(parts)
 
 
+def _fallback_raw(error: str) -> dict[str, Any]:
+    """manager LLM 调用失败时的降级 raw —— 喂给 ``_build_plan`` 产出 neutral plan。
+
+    ``_merge_factors`` 会从 briefs 兜底因子，``_parse_strategy_hint`` 会从 rating /
+    factors 兜底推断，因此即便综合失败，下游仍拿到一个可用（虽保守）的 plan + 全部
+    analyst briefs，而不是 502 丢掉一切。
+    """
+    # thesis / risks 是面向用户的字段。这里用**英文**占位与 manager 英文 system prompt
+    # 一致（CLAUDE.md §3：禁在 prompt/输出里写死中英文）；面向用户的语言由 orchestrator
+    # 按用户最近一条消息的语言翻译呈现，不在此层固定中文。
+    return {
+        "rating": "neutral",
+        "confidence": 0.0,
+        "thesis": (
+            "Synthesis unavailable: the manager LLM call failed; this result is based "
+            "solely on the individual analyst briefs below — judge accordingly. "
+            f"detail: {error[:200]}"
+        ),
+        "risks": [
+            "Manager synthesis failed — no cross-analyst reconciliation / debate "
+            "adjudication was performed"
+        ],
+        "suggested_action": "wait",
+        # 显式空 factors：阻止 _merge_factors 把 briefs 的 factor 全拉进来。否则
+        # persona/valuation 的 kind=macro factor 会让 _dominant_kind 多数投票偏向 macro
+        # → strategy 兜底成 buy_hold（综合本就失败，不该再据此推策略族）。
+        "factors": [],
+    }
+
+
 def _build_plan(
     *,
     raw: dict[str, Any],
@@ -270,13 +318,15 @@ def _merge_factors(
     raw_factors: Any,
     briefs: list[AnalystBrief],
 ) -> list[Factor]:
-    """优先用 LLM 给的 factors；缺失或解析失败则从 briefs 收集兜底。
+    """factors 是 list（含空 []）即权威；只有 None / 缺字段才从 briefs 兜底。
 
-    兜底保证下游 compose 引擎永远拿得到至少 0 个 factor（空列表也接受），
-    不会因为 LLM 漏字段而报 KeyError。
+    关键：之前空列表也会触发 briefs 兜底——manager 失败的 _fallback_raw 走 _build_plan
+    时，会把 persona/valuation 的 kind=macro factor 全拉进来，让 _dominant_kind 多数投票
+    偏向 macro → strategy 兜底成 buy_hold（综合本就失败，不该再据此推策略族）。
+    改为：显式提供 list 就用它（即便空），不再回落 briefs。
     """
-    merged: list[Factor] = []
     if isinstance(raw_factors, list):
+        merged: list[Factor] = []
         for item in raw_factors:
             if not isinstance(item, dict):
                 continue
@@ -284,9 +334,8 @@ def _merge_factors(
                 merged.append(Factor.model_validate(item))
             except Exception:
                 continue
-    if merged:
         return merged[:6]
-    # 兜底：直接复用 analyst factor（已经在 base._parse 校验过）
+    # raw_factors 不是 list（None / 缺字段）→ 从 briefs 兜底，保证下游有 factor
     out: list[Factor] = []
     for b in briefs:
         out.extend(b.factors)

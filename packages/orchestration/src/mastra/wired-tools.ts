@@ -32,6 +32,7 @@ import {
   riskTools,
   traderTools,
 } from "../tools/index.js";
+import { getMcpToolsCached } from "../mcp/index.js";
 
 /** 默认 hook runner —— audit-log + grid-size-cap + tool-idempotency + inject-current-date。 */
 function buildDefaultRunner(
@@ -151,3 +152,23 @@ export const wiredRiskTools = wireToolList(riskTools, sharedOpts);
 
 /** orchestrator 用的 wrapped 子集（路由层级 tool + research.deep_dive）。 */
 export const wiredOrchestratorTools = wireToolList(orchestratorToolList, sharedOpts);
+
+// ────────────────────────────────────────────────────────────────────
+// MCP tool（ADR-0009）：可插拔第三方 tool，与内置 tool 走同一套 hooks + permissions。
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * 加载 MCP server 暴露的 tool 并套上**同一个**共享 hook runner + permission engine。
+ *
+ * - 命名 ``mcp__<server>__<verb>``；未显式 allow 的 MCP tool 由 ``defaultMode: ask``
+ *   fail-closed 兜底（permissions.default.yaml），只读公开源（如 coingecko）可显式 allow。
+ * - 永不抛错（``getMcpToolsCached`` 内部吞错）：MCP 全挂时返回空数组，orchestrator 照常工作。
+ * - memoize：进程内只真正连一次 MCP server。
+ *
+ * @returns 已 wire 的 MCP tool 数组（可能为空）
+ */
+export async function loadWiredMcpTools(): Promise<WiredTool[]> {
+  const rawMcpTools = await getMcpToolsCached();
+  if (rawMcpTools.length === 0) return [];
+  return wireToolList(rawMcpTools, sharedOpts);
+}

@@ -11,6 +11,7 @@ from inalpha_research.llm.client import (
     DeepSeekLLMClient,
     FakeLLMClient,
     LLMError,
+    _parse_json_response,
     build_llm_client,
 )
 
@@ -42,6 +43,108 @@ async def test_fake_no_match_raises_with_code() -> None:
     # D-8b' review 修复后构造器会把 code 写到 self；现在双轨都能查
     assert ei.value.code == "LLM_FAKE_NO_MATCH"
     assert ei.value.detail["code"] == "LLM_FAKE_NO_MATCH"
+
+
+# ────────────────────────────────────────────────────────────────────
+# _parse_json_response —— 围栏剥离 + 解析失败语义（ADR-0037 502 修复）
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_parse_json_plain_dict() -> None:
+    assert _parse_json_response('{"a": 1}', provider="deepseek", model="m") == {"a": 1}
+
+
+def test_parse_json_strips_markdown_fence() -> None:
+    """模型把 JSON 包进 ```json 围栏时也能解析（上下文长时常见）。"""
+    fenced = '```json\n{"a": 1}\n```'
+    assert _parse_json_response(fenced, provider="deepseek", model="m") == {"a": 1}
+    # 无语言标注的围栏也剥
+    assert _parse_json_response('```\n{"b": 2}\n```', provider="x", model="m") == {"b": 2}
+
+
+def test_parse_json_truncated_raises_500_not_502() -> None:
+    """被 max_tokens 截断的残缺 JSON → LLMError，status_code=500（非 502）。
+
+    用 502（Bad Gateway）会误导 orchestrator agent 以为 provider 宕机
+    （把"截断"叙述成"DeepSeek API 故障"）。
+    """
+    truncated = '{"thesis": "a very long unfinished'
+    with pytest.raises(LLMError) as ei:
+        _parse_json_response(truncated, provider="deepseek", model="m")
+    assert ei.value.code == "LLM_INVALID_JSON"
+    assert ei.value.status_code == 500
+
+
+def test_parse_json_non_dict_raises_500() -> None:
+    with pytest.raises(LLMError) as ei:
+        _parse_json_response("[1, 2, 3]", provider="deepseek", model="m")
+    assert ei.value.code == "LLM_INVALID_JSON"
+    assert ei.value.status_code == 500
+
+
+# ────────────────────────────────────────────────────────────────────
+# 并发信号量 —— 验证 "N 个分析师一波并发"（LLM_MAX_CONCURRENT）
+# ────────────────────────────────────────────────────────────────────
+
+
+def _stub_resp(content: str) -> Any:
+    """伪造 OpenAI SDK 响应对象：只需 ``.choices[0].message.content``。"""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+    )
+
+
+class _ConcurrencyProbe:
+    """记录同一时刻在 ``_call_with_retry`` 里并发执行的数量峰值。"""
+
+    def __init__(self) -> None:
+        self.current = 0
+        self.peak = 0
+
+    async def call(self, **_kwargs: Any) -> Any:
+        self.current += 1
+        self.peak = max(self.peak, self.current)
+        try:
+            await asyncio.sleep(0.05)  # 模拟在途 LLM 调用，制造重叠窗口
+            return _stub_resp('{"ok": 1}')
+        finally:
+            self.current -= 1
+
+
+async def test_semaphore_allows_full_wave_of_8() -> None:
+    """``max_concurrent=8`` + 同时发起 8 次 → 8 个一波全并发（峰值并发=8）。
+
+    这正是 "6 核心 analyst + 2 persona = 8 个一次性触发" 依赖的机制：deep_dive 里
+    ``asyncio.gather`` 同时发起，所有调用共享同一个 client 的 ``asyncio.Semaphore``。
+    """
+    client = DeepSeekLLMClient(api_key="test-key", max_concurrent=8)
+    probe = _ConcurrencyProbe()
+    client._call_with_retry = probe.call  # type: ignore[method-assign]
+
+    await asyncio.gather(
+        *[client.complete_json(system="s", user=f"u{i}") for i in range(8)]
+    )
+
+    assert probe.peak == 8  # 8 个真的同时在途，没有被拆成两波
+
+
+async def test_semaphore_throttles_when_cap_below_demand() -> None:
+    """``max_concurrent=5`` + 发起 8 次 → 峰值并发被压到 5（多出的排队）。
+
+    反向证明信号量确实在限流：把 ``LLM_MAX_CONCURRENT`` 调回 5 就会拆成两波，
+    这就是之前 8 分析师变慢的原因。
+    """
+    client = DeepSeekLLMClient(api_key="test-key", max_concurrent=5)
+    probe = _ConcurrencyProbe()
+    client._call_with_retry = probe.call  # type: ignore[method-assign]
+
+    await asyncio.gather(
+        *[client.complete_json(system="s", user=f"u{i}") for i in range(8)]
+    )
+
+    assert probe.peak == 5
 
 
 async def test_fake_first_match_wins_on_ambiguity() -> None:

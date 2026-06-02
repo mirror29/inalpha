@@ -30,6 +30,51 @@ class LLMError(InalphaError):
     status_code = 502
 
 
+def _strip_code_fence(content: str) -> str:
+    """剥掉 ```json ... ``` / ``` ... ``` markdown 围栏，返回内部内容。
+
+    模型偶尔会把 JSON 包在代码块里（尤其上下文长时）；不剥会让 ``json.loads`` 直接失败。
+    """
+    text = content.strip()
+    if not text.startswith("```"):
+        return text
+    lines = text.split("\n")
+    if lines and lines[0].startswith("```"):  # 去掉首行 ``` 或 ```json
+        lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):  # 去掉结尾 ```
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _parse_json_response(content: str, *, provider: str, model: str) -> dict[str, Any]:
+    """把 LLM 文本解析成 JSON dict，容错 markdown 围栏。
+
+    解析失败（含被 ``max_tokens`` 截断的残缺 JSON、或夹杂散文）抛 ``LLMError``，
+    **status_code=500**——这是"我方拿到了响应但没解析成功"，不是上游网关不可达。
+    用 502（Bad Gateway）会误导调用方 / orchestrator agent 以为 provider 宕机，
+    继而把"截断"叙述成"DeepSeek API 故障"（ADR-0037 调试记录）。
+    """
+    text = _strip_code_fence(content)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise LLMError(
+            f"{provider} response was not valid JSON "
+            f"(likely truncated at max_tokens or wrapped in prose): {e}",
+            code="LLM_INVALID_JSON",
+            status_code=500,
+            details={"provider": provider, "model": model, "raw": content[:500]},
+        ) from e
+    if not isinstance(data, dict):
+        raise LLMError(
+            f"{provider} returned non-dict JSON: {type(data).__name__}",
+            code="LLM_INVALID_JSON",
+            status_code=500,
+            details={"provider": provider, "model": model},
+        )
+    return data
+
+
 class LLMClient(Protocol):
     """所有 LLM client 必须实现：传 system + user prompt，返 JSON dict。
 
@@ -191,20 +236,7 @@ class DeepSeekLLMClient:
                 code="LLM_EMPTY_RESPONSE",
             )
         content = choices[0].message.content or ""
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError as e:
-            raise LLMError(
-                f"{self._provider_name} did not return valid JSON: {e}",
-                code="LLM_INVALID_JSON",
-                details={"raw": content[:500]},
-            ) from e
-        if not isinstance(data, dict):
-            raise LLMError(
-                f"{self._provider_name} returned non-dict JSON: {type(data).__name__}",
-                code="LLM_INVALID_JSON",
-            )
-        return data
+        return _parse_json_response(content, provider=self._provider_name, model=self._model)
 
     async def aclose(self) -> None:
         await self._client.close()
@@ -327,24 +359,7 @@ class AnthropicLLMClient:
                 "anthropic returned no content blocks", code="LLM_EMPTY_RESPONSE"
             )
         text = getattr(blocks[0], "text", "") or ""
-        # 偶尔模型会在 JSON 前后包 markdown fence；剥一下
-        text = text.strip()
-        if text.startswith("```"):
-            text = text.strip("`").lstrip("json").strip()
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise LLMError(
-                f"anthropic did not return valid JSON: {e}",
-                code="LLM_INVALID_JSON",
-                details={"raw": text[:500]},
-            ) from e
-        if not isinstance(data, dict):
-            raise LLMError(
-                f"anthropic returned non-dict JSON: {type(data).__name__}",
-                code="LLM_INVALID_JSON",
-            )
-        return data
+        return _parse_json_response(text, provider="anthropic", model=self._model)
 
     async def aclose(self) -> None:
         await self._client.close()
@@ -464,20 +479,7 @@ class GeminiLLMClient:
                 ) from e
 
         text = getattr(r, "text", "") or ""
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise LLMError(
-                f"gemini did not return valid JSON: {e}",
-                code="LLM_INVALID_JSON",
-                details={"raw": text[:500]},
-            ) from e
-        if not isinstance(data, dict):
-            raise LLMError(
-                f"gemini returned non-dict JSON: {type(data).__name__}",
-                code="LLM_INVALID_JSON",
-            )
-        return data
+        return _parse_json_response(text, provider="gemini", model=self._model)
 
     async def aclose(self) -> None:
         # google-genai 没有显式 close
