@@ -26,7 +26,11 @@ from ..account_id import account_id_from_user
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
 from ..execution import risk_guard as risk_guard_mod
+from ..execution.currency_resolver import resolve_currency
 from ..execution.order_executor import OrderExecutor
+from ..fills import apply_fill_to_positions_and_cash
+from ..fx import BaseCurrencyConverter
+from ..fx import needs_network as fx_needs_network
 from ..schemas import (
     AccountSnapshot,
     OrderRecord,
@@ -35,7 +39,6 @@ from ..schemas import (
     SubmitOrderResponse,
 )
 from ..storage import accounts as accounts_store
-from ..storage import closed_trades as closed_trades_store
 from ..storage import orders as orders_store
 from ..storage import positions as positions_store
 
@@ -115,7 +118,7 @@ async def post_submit_order(
             order_id = result["client_order_id"]
             assert isinstance(ts_event, datetime)
             assert isinstance(order_id, str)
-            await _apply_fill_to_positions_and_cash(
+            await apply_fill_to_positions_and_cash(
                 db,
                 account_id=account_id,
                 venue=req.venue,
@@ -162,27 +165,90 @@ async def list_positions(
 @router.get("/accounts/me", response_model=AccountSnapshot)
 async def get_my_account(
     db: DBConn,
+    settings: Annotated[PaperSettings, Depends(get_paper_settings)],
     user: Annotated[User, Depends(get_current_user)],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> AccountSnapshot:
-    """当前账户快照：cash + 持仓估值（按 avg_open_price）+ 累计 realized PnL。"""
+    """当前账户快照：多币种 cash 桶 + 持仓估值（按 avg_open_price），折算到 base_currency。
+
+    D-11：cash / 持仓可能跨币种，按 base_currency FX 折算汇总。本地可解析的币种
+    （同币种 / USD 稳定币）不打网络；其余调 data ``/fx``，拿不到的币种排除 + warning。
+    """
     account_id = account_id_from_user(user)
     acct = await accounts_store.get_or_create(db, account_id)
+    base_currency = acct["base_currency"]
 
-    pos_rows = await positions_store.list_by_account(db, account_id, include_flat=False)
-    positions_value = Decimal(0)
-    realized_pnl = Decimal(0)
+    # include_flat=True：已平仓行（quantity=0）对 positions_value 贡献 0，但仍携带累计
+    # realized_pnl——纳入才能让账户总已实现盈亏完整（CR：避免漏计已平仓持仓的 PnL）。
+    pos_rows = await positions_store.list_by_account(db, account_id, include_flat=True)
+
+    # 原始按币种桶
+    cash_balances: dict[str, Decimal] = {
+        cur: Decimal(str(amt)) for cur, amt in (acct["cash_balances"] or {}).items()
+    }
+    # 持仓估值（按 avg_open_price）+ realized_pnl，都按计价货币分桶
+    # （NULL 行按 venue/symbol 兜底解析），稍后用同一个 converter 折算到 base。
+    pos_value_by_ccy: dict[str, Decimal] = {}
+    realized_pnl_by_ccy: dict[str, Decimal] = {}
     for p in pos_rows:
-        positions_value += Decimal(p["quantity"]) * Decimal(p["avg_open_price"])
-        realized_pnl += Decimal(p["realized_pnl"])
+        ccy = p.get("currency") or resolve_currency(
+            p["venue"], p["symbol"], default=base_currency
+        )
+        value = Decimal(p["quantity"]) * Decimal(p["avg_open_price"])
+        pos_value_by_ccy[ccy] = pos_value_by_ccy.get(ccy, Decimal(0)) + value
+        realized_pnl_by_ccy[ccy] = (
+            realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(p["realized_pnl"])
+        )
 
-    cash = Decimal(acct["cash"])
+    # 只在存在非本地可解析币种时才开 DataClient（单币种 / crypto-USD 账户零网络）
+    all_ccys = set(cash_balances) | set(pos_value_by_ccy) | set(realized_pnl_by_ccy)
+    # token 实际上必非空：get_current_user 依赖已保证 Bearer header 合法，否则先行 401；
+    # 这里 token=None 分支是防御性的（理论不可达），保留以防未来调用方绕过 auth。
+    token = (
+        authorization.removeprefix("Bearer ").strip()
+        if authorization and authorization.startswith("Bearer ")
+        else None
+    )
+    data_client = (
+        DataClient(settings.data_service_url, token)
+        if token and fx_needs_network(all_ccys, base_currency)
+        else None
+    )
+    # try 前初始化，确保即便 convert() 抛非预期异常也不会在 return 处 NameError（CR）
+    fx_warnings: list[str] = []
+    try:
+        converter = BaseCurrencyConverter(base_currency, data_client)
+        cash_base = Decimal(0)
+        for cur, amt in cash_balances.items():
+            converted = await converter.convert(amt, cur)
+            if converted is not None:
+                cash_base += converted
+        positions_base = Decimal(0)
+        for cur, amt in pos_value_by_ccy.items():
+            converted = await converter.convert(amt, cur)
+            if converted is not None:
+                positions_base += converted
+        # realized_pnl 同样按币种折算（汇率已缓存，无额外网络）；FX 不可用的币种排除
+        realized_pnl_base = Decimal(0)
+        for cur, amt in realized_pnl_by_ccy.items():
+            converted = await converter.convert(amt, cur)
+            if converted is not None:
+                realized_pnl_base += converted
+        fx_warnings = converter.warnings
+    finally:
+        if data_client is not None:
+            await data_client.close()
+
     return AccountSnapshot(
         account_id=str(acct["account_id"]),
+        base_currency=base_currency,
         initial_cash=float(Decimal(acct["initial_cash"])),
-        cash=float(cash),
-        positions_value=float(positions_value),
-        total_equity=float(cash + positions_value),
-        realized_pnl=float(realized_pnl),
+        cash=float(cash_base),
+        cash_balances={cur: float(amt) for cur, amt in cash_balances.items()},
+        positions_value=float(positions_base),
+        total_equity=float(cash_base + positions_base),
+        realized_pnl=float(realized_pnl_base),
+        fx_warnings=fx_warnings,
         created_at=acct["created_at"],
         updated_at=acct["updated_at"],
     )
@@ -213,58 +279,6 @@ async def _resolve_ref_price(
                 details={"venue": req.venue, "symbol": req.symbol},
             ) from e
     return float(ticker["price"])
-
-
-async def _apply_fill_to_positions_and_cash(
-    db: Any,
-    *,
-    account_id: Any,
-    venue: str,
-    symbol: str,
-    side: str,
-    quantity: Decimal,
-    fill_price: Decimal,
-    fee: Decimal,
-    ts_event: datetime,
-    order_id: str,
-) -> None:
-    """一笔 fill 同时更新 positions + cash + closed_trades（在调用方的事务里）。
-
-    D-9.1a：positions.apply_fill 现在返回 ClosedTradeInfo | None，
-    检测到平仓时同事务写入 closed_trades 表。
-    """
-    notional = quantity * fill_price
-    cash_delta = (-notional if side == "BUY" else notional) - fee
-    await accounts_store.apply_cash_delta(db, account_id, cash_delta)
-    _, close_info = await positions_store.apply_fill(
-        db,
-        account_id=account_id,
-        venue=venue,
-        symbol=symbol,
-        side=side,
-        fill_qty=quantity,
-        fill_price=fill_price,
-        ts_event=ts_event,
-        order_id=order_id,
-    )
-    if close_info is not None:
-        await closed_trades_store.insert_close(
-            db,
-            account_id=close_info.account_id,
-            venue=close_info.venue,
-            symbol=close_info.symbol,
-            side=close_info.side,
-            open_ts=close_info.open_ts,
-            close_ts=close_info.close_ts,
-            open_price=close_info.open_price,
-            close_price=close_info.close_price,
-            quantity=close_info.closed_qty,
-            close_profit_pct=close_info.close_profit_pct,
-            close_profit_abs=close_info.close_profit_abs,
-            exit_reason=close_info.exit_reason,
-            open_order_id=close_info.open_order_id,
-            close_order_id=close_info.close_order_id,
-        )
 
 
 def _row_to_order_record(row: dict[str, Any]) -> OrderRecord:

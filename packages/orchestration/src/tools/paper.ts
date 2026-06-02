@@ -377,14 +377,21 @@ export const paperListPositionsTool = createTool({
 export const paperGetAccountTool = createTool({
   id: "paper.get_account",
   description: `
-    当前账户快照：现金 / 初始本金 / 持仓估值 / 总权益 / 累计实现 PnL。
+    当前账户快照：现金 / 初始本金 / 持仓估值 / 总权益 / 累计实现 PnL（D-11 多币种）。
 
     何时用：
     - 用户问"我账户余额 / 我赚了多少 / 我账户总权益"
 
+    返回（D-11）：
+    - cash / positions_value / total_equity 均已折算到 base_currency（默认 USD）
+    - cash_balances 给出折算前的按币种原始桶（如 {"USD": 5000, "USDT": -1000}）
+    - fx_warnings：折算时 FX 不可用 / 偏旧的币种告警
+
     坑：
     - 持仓估值用 avg_open_price 兜底（D-8b 不接实时 mark）；实际权益略偏保守
-    - 默认初始 10000 USDT，首次下单时 lazy create
+    - **fx_warnings 非空时必须原样转告用户**——表示某些币种 FX 拿不到被排除出估值，
+      或汇率偏旧，总权益可能不完整（金融时效硬约束）
+    - 默认初始 10000，首次下单时 lazy create
   `.trim(),
   inputSchema: z.object({}),
   execute: async (_input, ctx) => {

@@ -89,6 +89,49 @@ class DataClient:
             )
         return result
 
+    async def get_fx(
+        self,
+        *,
+        base: str,
+        quote: str,
+    ) -> dict[str, Any]:
+        """``GET /fx`` —— 汇率查询（D-11，给跨币种 equity 折算用）。
+
+        ``rate`` = 1 单位 ``base`` 折算成多少 ``quote``。
+
+        Returns dict with: ``base, quote, rate, ts, source, is_stale, stale_seconds``。
+        拿不到时 data 返 502 FX_UNAVAILABLE → 这里抛 ``DataServiceError``（caller 决定
+        是否把该币种排除出 equity + warning，不静默用旧值）。
+        """
+        try:
+            r = await self._client.get(
+                "/fx",
+                params={"base": base, "quote": quote},
+            )
+        except httpx.RequestError as e:
+            raise DataServiceError(
+                f"failed to reach data-service: {e}",
+                code="DATA_SERVICE_UNREACHABLE",
+            ) from e
+
+        if r.status_code >= 400:
+            try:
+                detail = r.json()
+            except Exception:
+                detail = {"message": r.text}
+            raise DataServiceError(
+                f"data-service {r.status_code}: {detail.get('message', 'unknown')}",
+                code=detail.get("code", "DATA_SERVICE_ERROR"),
+                details={"upstream_status": r.status_code, "upstream_body": detail},
+            )
+
+        result = r.json()
+        if not isinstance(result, dict):
+            raise DataServiceError(
+                f"unexpected fx response shape: {type(result).__name__}"
+            )
+        return result
+
     async def get_bars(
         self,
         *,

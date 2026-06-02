@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
@@ -28,6 +29,7 @@ from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
 from ..execution import risk_guard as risk_guard_mod
 from ..execution.order_executor import OrderExecutor
+from ..fills import apply_fill_to_positions_and_cash
 from ..schemas import (
     ApprovePlanRequest,
     CreatePlanRequest,
@@ -39,7 +41,6 @@ from ..schemas import (
 )
 from ..storage import accounts as accounts_store
 from ..storage import orders as orders_store
-from ..storage import positions as positions_store
 from ..storage import trade_plans as plans_store
 from ..storage.trade_plans import PlanError
 
@@ -314,18 +315,23 @@ async def execute_plan(
             trade_plan_id=plan_id,
         )
         if result["status"] == "FILLED":
-            notional = Decimal(str(result["notional"]))
-            fee = Decimal(str(result["fee"]))
-            cash_delta = (-notional if side == "BUY" else notional) - fee
-            await accounts_store.apply_cash_delta(db, account_id, cash_delta)
-            await positions_store.apply_fill(
+            ts_event = result["ts_event"]
+            order_id = result["client_order_id"]
+            assert isinstance(ts_event, datetime)
+            assert isinstance(order_id, str)
+            # D-11：统一走共享 fills helper（多币种桶 + positions.currency + closed_trades）。
+            # 顺带修了原 plan 路径漏传 ts_event/order_id（apply_fill 必填）+ 漏写 closed_trades。
+            await apply_fill_to_positions_and_cash(
                 db,
                 account_id=account_id,
                 venue=venue,
                 symbol=symbol,
                 side=side,
-                fill_qty=Decimal(str(result["filled_quantity"])),
+                quantity=Decimal(str(result["filled_quantity"])),
                 fill_price=Decimal(str(result["avg_fill_price"])),
+                fee=Decimal(str(result["fee"])),
+                ts_event=ts_event,
+                order_id=order_id,
             )
         # plan 切 executed（即使 result.status=REJECTED 也 executed —— "已尝试"是事实）
         await plans_store.record_execution(

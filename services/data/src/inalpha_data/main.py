@@ -17,7 +17,7 @@ from inalpha_shared import (
 )
 
 from . import __version__
-from .api import backfill, bars, fundamentals, health, news, ticker, web_search
+from .api import backfill, bars, fundamentals, fx, health, news, ticker, web_search
 from .config import get_data_settings
 from .connectors import akshare as akshare_conn
 from .connectors import alpaca as alpaca_conn
@@ -77,4 +77,5 @@ app.include_router(backfill.router)
 app.include_router(ticker.router)
 app.include_router(news.router)
 app.include_router(fundamentals.router)
+app.include_router(fx.router)
 app.include_router(web_search.router)
