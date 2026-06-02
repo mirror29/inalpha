@@ -143,6 +143,7 @@ def _row_to_decision(row: dict[str, Any]) -> StrategyRunDecisionRecord:
         order_type=row["order_type"],
         limit_price=_f(row.get("limit_price")),
         tag=row.get("tag"),
+        intent=row.get("intent"),
         outcome=row["outcome"],
         fill_price=_f(row.get("fill_price")),
         fee=_f(row.get("fee")),

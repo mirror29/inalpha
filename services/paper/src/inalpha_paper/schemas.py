@@ -604,6 +604,10 @@ class StrategyRunDecisionRecord(BaseModel):
     order_type: str
     limit_price: float | None = None
     tag: str | None = Field(default=None, description="策略经 Order.tag 透传的语义意图")
+    intent: Literal["open_long", "open_short", "close"] | None = Field(
+        default=None,
+        description="按下单前持仓方向 + side 判的开/平意图，补 side（仅 BUY/SELL）缺失的多空语义",
+    )
     outcome: Literal["filled", "rejected", "risk_rejected"]
     fill_price: float | None = None
     fee: float | None = None

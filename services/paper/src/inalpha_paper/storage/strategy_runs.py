@@ -182,6 +182,7 @@ async def insert_decision(
     quantity: Decimal,
     order_type: str,
     outcome: str,
+    intent: str | None = None,
     limit_price: Decimal | None = None,
     tag: str | None = None,
     fill_price: Decimal | None = None,
@@ -190,18 +191,22 @@ async def insert_decision(
     order_id: str | None = None,
     reason: str | None = None,
 ) -> None:
-    """记一行决策事件（策略在某根 bar 产生下单意图 + 撮合结果），供复盘。"""
+    """记一行决策事件（策略在某根 bar 产生下单意图 + 撮合结果），供复盘。
+
+    ``intent``：open_long / open_short / close（按下单前持仓方向 + side 判），补 side
+    缺失的做多/做空语义。
+    """
     async with conn.cursor() as cur:
         await cur.execute(
             """
             INSERT INTO strategy_run_decisions (
                 run_id, bar_ts, bar_close, side, quantity, order_type, limit_price,
-                tag, outcome, fill_price, fee, plan_id, order_id, reason
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                tag, intent, outcome, fill_price, fee, plan_id, order_id, reason
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 str(run_id), bar_ts, bar_close, side, quantity, order_type, limit_price,
-                tag, outcome, fill_price, fee,
+                tag, intent, outcome, fill_price, fee,
                 str(plan_id) if plan_id is not None else None, order_id, reason,
             ),
         )
@@ -218,7 +223,7 @@ async def list_decisions(
         await cur.execute(
             """
             SELECT id, run_id, bar_ts, bar_close, side, quantity, order_type, limit_price,
-                   tag, outcome, fill_price, fee, plan_id, order_id, reason, created_at
+                   tag, intent, outcome, fill_price, fee, plan_id, order_id, reason, created_at
             FROM strategy_run_decisions
             WHERE run_id = %s
             ORDER BY created_at, id

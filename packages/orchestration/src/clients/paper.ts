@@ -340,6 +340,8 @@ export type StrategyRunDecisionRecord = {
   order_type: string;
   limit_price: number | null;
   tag: string | null;
+  /** 开/平意图（按下单前持仓方向 + side 判），补 side 缺失的做多/做空语义。 */
+  intent: "open_long" | "open_short" | "close" | null;
   outcome: "filled" | "rejected" | "risk_rejected";
   fill_price: number | null;
   fee: number | null;

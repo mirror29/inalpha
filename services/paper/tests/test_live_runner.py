@@ -88,6 +88,7 @@ async def test_process_bar_routes_through_plan_exec(app_with_lifespan: Any) -> N
     d = decisions[0]
     assert d["outcome"] == "filled"
     assert d["side"] == "BUY"
+    assert d["intent"] == "open_long"  # 空仓 BUY → 开多（补 side 缺失的多空语义）
     assert float(d["bar_close"]) == 50_000.0
     assert d["plan_id"] is not None
     assert d["order_id"] is not None
@@ -119,6 +120,7 @@ async def test_process_bar_risk_rejected_records_decision(
     assert orders == []  # 被风控拦下，未落单
     assert len(decisions) == 1
     assert decisions[0]["outcome"] == "risk_rejected"
+    assert decisions[0]["intent"] == "open_long"  # 风控拒单也带 intent
     assert decisions[0]["reason"] == "cooldown active"
     assert run_fresh["status"] == "running"  # 拒单不杀 run
     pos = session.portfolio.position(_INSTRUMENT)

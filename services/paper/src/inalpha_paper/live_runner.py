@@ -289,9 +289,10 @@ class LiveRunnerManager:
                 symbol=run["symbol"],
                 timeframe=run["timeframe"],
                 from_ts=from_ts,
-                # limit=3：最新一根可能未收盘要丢，多取一根保证仍有已收盘 bar
+                # limit=5：最新一根可能未收盘要丢；时间边界极端情况下可能有多根 forming，
+                # 多取几根保证仍有已收盘 bar，边际数据成本可忽略（CR medium）。
                 to_ts=now,
-                limit=3,
+                limit=5,
                 fresh=True,
             )
         if not raw:
@@ -306,13 +307,20 @@ class LiveRunnerManager:
         orders = session.feed_bar(bar)
         for order, strategy_id in orders:
             await self._route_through_plan_exec(session, order, strategy_id, run, bar)
-        async with get_conn() as conn:
-            await runs_store.update_progress(
-                conn,
-                run["id"],
-                last_bar_ts=_ns_to_dt(bar.ts_event),
-                cumulative_pnl=Decimal(str(session.cumulative_pnl())),
-            )
+        # 进度写做 best-effort（CR medium）：本根 bar 的下单意图已落账 + confirm_fill 已回灌，
+        # 这些副作用**不幂等**。若 update_progress 因 DB 瞬时错误抛出，绝不能让它逃出本函数——
+        # 否则 _run_loop 的内存 last_bar_ts 不前进 → 下轮重喂同一根 bar → 重复下单 / 指标污染。
+        # 进度行只用于观测 / reconcile，落后一根可接受；内存 last_bar_ts 才是去重权威。
+        try:
+            async with get_conn() as conn:
+                await runs_store.update_progress(
+                    conn,
+                    run["id"],
+                    last_bar_ts=_ns_to_dt(bar.ts_event),
+                    cumulative_pnl=Decimal(str(session.cumulative_pnl())),
+                )
+        except Exception:
+            _logger.exception("live run %s: update_progress 失败（best-effort，不重喂 bar）", run["id"])
 
     async def _route_through_plan_exec(
         self,
@@ -329,6 +337,16 @@ class LiveRunnerManager:
         run_id: UUID = run["id"]
         side = order.side.value  # "BUY" / "SELL"
 
+        # intent 按"下单前持仓方向 + side"判，别把所有 SELL 当平多（CLAUDE.md §4 多空踩坑）：
+        # SELL 平多=close / SELL 开空=open_short；BUY 平空=close / BUY 开多=open_long。
+        # 在风控之前算好 → risk_rejected 决策行也带上 intent（复盘做空语义不丢）。
+        pos = session.portfolio.position(order.instrument_id)
+        cur_qty = pos.quantity if pos is not None else 0.0
+        if side == "BUY":
+            intent = "close" if cur_qty < 0 else "open_long"
+        else:  # SELL
+            intent = "close" if cur_qty > 0 else "open_short"
+
         # 1. 风控（DB-backed RiskGuard）；命中 → 拒单 + 记 error_log，不杀 run
         try:
             await risk_guard_mod.enforce(
@@ -344,7 +362,8 @@ class LiveRunnerManager:
                     conn, run_id, f"order rejected by risk: {e.message}"
                 )
                 await self._record_decision(
-                    conn, run, order, bar, outcome="risk_rejected", reason=e.message
+                    conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                    reason=e.message,
                 )
             return
 
@@ -365,14 +384,6 @@ class LiveRunnerManager:
             "side": side, "type": order.type.value,
             "quantity": order.quantity, "price": order.price,
         }
-        # intent 按"下单前持仓方向 + side"判，别把所有 SELL 当平多（CLAUDE.md §4 多空踩坑）：
-        # SELL 平多=close / SELL 开空=open_short；BUY 平空=close / BUY 开多=open_long。
-        pos = session.portfolio.position(order.instrument_id)
-        cur_qty = pos.quantity if pos is not None else 0.0
-        if side == "BUY":
-            intent = "close" if cur_qty < 0 else "open_long"
-        else:  # SELL
-            intent = "close" if cur_qty > 0 else "open_short"
         rationale = (
             f"[live_runner run:{run_id}] candidate:{run['candidate_id']} on_bar {side} signal"
         )
@@ -416,6 +427,7 @@ class LiveRunnerManager:
             await self._record_decision(
                 conn, run, order, bar,
                 outcome="filled" if filled else "rejected",
+                intent=intent,
                 plan_id=plan_id,
                 order_id=str(result["client_order_id"]),
                 fill_price=Decimal(str(result["avg_fill_price"])) if filled else None,
@@ -446,6 +458,7 @@ class LiveRunnerManager:
         bar: Bar,
         *,
         outcome: str,
+        intent: str | None = None,
         plan_id: UUID | None = None,
         order_id: str | None = None,
         fill_price: Decimal | None = None,
@@ -463,6 +476,7 @@ class LiveRunnerManager:
             order_type=order.type.value,
             limit_price=Decimal(str(order.price)) if order.price is not None else None,
             tag=order.tag,  # 策略可经 Order.tag 透传语义意图（stop_loss / take_profit / ...）
+            intent=intent,  # open_long / open_short / close（补 side 缺失的多空语义）
             outcome=outcome,
             fill_price=fill_price,
             fee=fee,
