@@ -146,8 +146,12 @@ function buildDefaultClient(
 
 /** 已连接的 MCP client 注册表，供退出清理。 */
 const _liveClients = new Set<McpClientLike>();
-let _beforeExitHooked = false;
-let _signalHooked = false;
+/** 已注册的清理监听引用——保留以便热重载 / 测试时 removeListener 复位（见 resetMcpCleanupHooks）。 */
+let _beforeExitHandler: (() => void) | null = null;
+const _signalHandlers: Array<[NodeJS.Signals, () => void]> = [];
+
+/** 信号 → 约定退出码（128 + signo）。覆盖成 0 会让 Docker/K8s on-failure restart 失效。 */
+const _SIGNAL_EXIT_CODES: Record<string, number> = { SIGINT: 130, SIGTERM: 143 };
 
 /**
  * 关闭所有已建立的 MCP client（释放 stdio 子进程）。
@@ -173,20 +177,41 @@ export async function closeAllMcpClients(): Promise<void> {
  * @param hasStdio - 本次连接的 server 是否为 stdio transport
  */
 function hookProcessCleanupOnce(hasStdio: boolean): void {
-  if (!_beforeExitHooked) {
-    _beforeExitHooked = true;
-    process.once("beforeExit", () => {
+  if (!_beforeExitHandler) {
+    _beforeExitHandler = () => {
       void closeAllMcpClients();
-    });
+    };
+    process.once("beforeExit", _beforeExitHandler);
   }
-  if (hasStdio && !_signalHooked) {
-    _signalHooked = true;
+  if (hasStdio && _signalHandlers.length === 0) {
     for (const sig of ["SIGINT", "SIGTERM"] as const) {
-      process.once(sig, () => {
-        void closeAllMcpClients().finally(() => process.exit(0));
-      });
+      const handler = () => {
+        // 关子进程后按约定码退出（SIGINT→130 / SIGTERM→143），不要用 0——
+        // 否则 Docker/K8s on-failure restart policy 会把信号 kill 误判成正常结束。
+        void closeAllMcpClients().finally(() => process.exit(_SIGNAL_EXIT_CODES[sig] ?? 0));
+      };
+      _signalHandlers.push([sig, handler]);
+      process.once(sig, handler);
     }
   }
+}
+
+/**
+ * 移除已注册的进程清理监听并复位（热重载 / 测试用）。
+ *
+ * ``_beforeExitHandler`` / ``_signalHandlers`` 是模块级状态，``process.once`` 注册后
+ * 不会自复位。热重载路径若不复位，新一轮的 stdio client 因标志仍"已挂"而不再注册
+ * 清理钩子。**调用前通常应先 ``closeAllMcpClients()``** 关掉存量 client。
+ */
+export function resetMcpCleanupHooks(): void {
+  if (_beforeExitHandler) {
+    process.removeListener("beforeExit", _beforeExitHandler);
+    _beforeExitHandler = null;
+  }
+  for (const [sig, handler] of _signalHandlers) {
+    process.removeListener(sig, handler);
+  }
+  _signalHandlers.length = 0;
 }
 
 /**
@@ -255,9 +280,10 @@ function wrapMcpTool(
   client: McpClientLike,
 ): RawMcpTool {
   const id = `mcp__${serverName}__${descriptor.name}`;
+  // description 是喂给 LLM 的 tool schema，统一英文（与 MCP server 原 description 同语言）
   const description =
     (descriptor.description ?? `MCP tool ${descriptor.name} (server: ${serverName})`) +
-    `\n\n[来源：MCP server '${serverName}'，经 Inalpha hooks + permissions 管控]`;
+    `\n\n[Source: MCP server '${serverName}', governed by Inalpha hooks + permissions]`;
 
   const tool = createTool({
     id,

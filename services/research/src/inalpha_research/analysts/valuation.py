@@ -115,8 +115,10 @@ class ValuationAnalyst(Analyst):
 
         # web search 补充（peer / 行业估值的定性背景；不当硬数字用）
         web_block = ""
+        # 英文 query：面向全球资产（US/JP/EU/A股…）的中性检索；中文 query 会让
+        # ddgs 偏向中文/A股视角结果（CLAUDE.md §3「面向全球用户」）。
         web_results = await self._data.get_web_search(
-            f"{symbol} 估值 市盈率 行业对比 valuation {as_of.year}", max_results=3
+            f"{symbol} valuation PE PB ratio peer comparison {as_of.year}", max_results=3
         )
         if web_results:
             web_block = render_web_results(web_results)

@@ -210,7 +210,8 @@ async def test_run_debate_timeout_returns_partial_log_without_raising() -> None:
     """
 
     async def _slow(*, system: str, user: str) -> None:
-        await asyncio.sleep(0.5)
+        # 远大于 timeout（5s vs 0.05s），给慢 CI 留充足余量、避免 race flaky
+        await asyncio.sleep(5.0)
 
     llm = FakeLLMClient(
         {

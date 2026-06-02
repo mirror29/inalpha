@@ -8,7 +8,13 @@
  *
  * @module mcp
  */
-import { loadMcpTools, type LoadMcpToolsOptions, type RawMcpTool } from "./manager.js";
+import {
+  closeAllMcpClients,
+  loadMcpTools,
+  resetMcpCleanupHooks,
+  type LoadMcpToolsOptions,
+  type RawMcpTool,
+} from "./manager.js";
 
 export {
   loadMcpConfig,
@@ -19,7 +25,7 @@ export {
 } from "./config.js";
 export type { McpConfig, McpServerConfig } from "./config.js";
 export { jsonSchemaToZod } from "./schema.js";
-export { loadMcpTools, closeAllMcpClients } from "./manager.js";
+export { loadMcpTools, closeAllMcpClients, resetMcpCleanupHooks } from "./manager.js";
 export type {
   McpClientLike,
   McpClientFactory,
@@ -50,7 +56,17 @@ export function getMcpToolsCached(opts?: LoadMcpToolsOptions): Promise<RawMcpToo
   return _cache;
 }
 
-/** 清空 memoize（测试 / 热重载用）。 */
+/**
+ * 重置 MCP 子系统状态（测试 / 热重载用）。
+ *
+ * 不只清 memoize：同时 ``closeAllMcpClients()`` 关掉存量 client（释放 stdio 子进程）+
+ * ``resetMcpCleanupHooks()`` 移除已注册的 beforeExit/信号监听并复位标志——否则热重载后
+ * 新 stdio client 因"已挂"标志不再注册清理钩子，子进程孤儿化累积。
+ *
+ * close 是 fire-and-forget（本函数同步）；需确定关完再用时直接 await closeAllMcpClients()。
+ */
 export function resetMcpToolsCache(): void {
   _cache = null;
+  void closeAllMcpClients();
+  resetMcpCleanupHooks();
 }

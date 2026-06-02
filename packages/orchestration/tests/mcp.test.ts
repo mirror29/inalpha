@@ -13,6 +13,7 @@ import { jsonSchemaToZod } from "../src/mcp/schema.js";
 import {
   closeAllMcpClients,
   loadMcpTools,
+  resetMcpCleanupHooks,
   type McpClientFactory,
   type McpClientLike,
   type McpToolDescriptor,
@@ -20,8 +21,9 @@ import {
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  // 清空模块级 _liveClients，避免跨用例污染（closeAllMcpClients 幂等）
+  // 清空模块级 _liveClients + 移除进程清理监听，避免跨用例污染
   await closeAllMcpClients();
+  resetMcpCleanupHooks();
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -220,6 +222,25 @@ describe("loadMcpTools", () => {
     // 幂等：再调一次不重复 close
     await closeAllMcpClients();
     expect(closed.sort()).toEqual(["a", "b"]);
+  });
+
+  it("stdio server 挂进程清理监听，resetMcpCleanupHooks 能复位（热重载不孤儿）", async () => {
+    const beforeExit0 = process.listenerCount("beforeExit");
+    const sigint0 = process.listenerCount("SIGINT");
+    const factory: McpClientFactory = () => fakeClient([{ name: "t" }]);
+    await loadMcpTools({
+      config: { mcpServers: { local: { type: "stdio", command: "x", disabled: false } } },
+      clientFactory: factory,
+      env: {},
+    });
+    // stdio → beforeExit + SIGINT + SIGTERM 监听都挂上
+    expect(process.listenerCount("beforeExit")).toBe(beforeExit0 + 1);
+    expect(process.listenerCount("SIGINT")).toBe(sigint0 + 1);
+
+    resetMcpCleanupHooks();
+    // 复位后监听数回到基线（热重载下次连接才能重新挂）
+    expect(process.listenerCount("beforeExit")).toBe(beforeExit0);
+    expect(process.listenerCount("SIGINT")).toBe(sigint0);
   });
 
   it("execute 把 input 透传给 client.callTool", async () => {
