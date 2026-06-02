@@ -95,8 +95,8 @@ async def test_synthesize_degrades_when_llm_fails() -> None:
     assert plan.confidence == 0.0
     # analyst 成果不丢
     assert {b.analyst for b in plan.briefs} == {"technical", "persona_buffett"}
-    # thesis 明示综合失败（而非伪装成正常结论）
-    assert "综合阶段暂不可用" in plan.thesis
+    # thesis 明示综合失败（而非伪装成正常结论）；用英文占位（CLAUDE.md §3，与 system 一致）
+    assert "Synthesis unavailable" in plan.thesis
     assert plan.suggested_action == "wait"
 
 

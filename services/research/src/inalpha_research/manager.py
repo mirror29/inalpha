@@ -233,14 +233,21 @@ def _fallback_raw(error: str) -> dict[str, Any]:
     factors 兜底推断，因此即便综合失败，下游仍拿到一个可用（虽保守）的 plan + 全部
     analyst briefs，而不是 502 丢掉一切。
     """
+    # thesis / risks 是面向用户的字段。这里用**英文**占位与 manager 英文 system prompt
+    # 一致（CLAUDE.md §3：禁在 prompt/输出里写死中英文）；面向用户的语言由 orchestrator
+    # 按用户最近一条消息的语言翻译呈现，不在此层固定中文。
     return {
         "rating": "neutral",
         "confidence": 0.0,
         "thesis": (
-            "（综合阶段暂不可用：manager LLM 调用失败，本结论仅基于下方各 analyst "
-            f"独立 briefs，请据此自行判断。detail: {error[:200]}）"
+            "Synthesis unavailable: the manager LLM call failed; this result is based "
+            "solely on the individual analyst briefs below — judge accordingly. "
+            f"detail: {error[:200]}"
         ),
-        "risks": ["manager 综合失败，未做跨 analyst 交叉验证 / 辩论裁决"],
+        "risks": [
+            "Manager synthesis failed — no cross-analyst reconciliation / debate "
+            "adjudication was performed"
+        ],
         "suggested_action": "wait",
     }
 

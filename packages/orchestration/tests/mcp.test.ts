@@ -11,14 +11,17 @@ import {
 } from "../src/mcp/config.js";
 import { jsonSchemaToZod } from "../src/mcp/schema.js";
 import {
+  closeAllMcpClients,
   loadMcpTools,
   type McpClientFactory,
   type McpClientLike,
   type McpToolDescriptor,
 } from "../src/mcp/manager.js";
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  // 清空模块级 _liveClients，避免跨用例污染（closeAllMcpClients 幂等）
+  await closeAllMcpClients();
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -180,6 +183,38 @@ describe("loadMcpTools", () => {
       env: {},
     });
     expect(tools.map((t) => t.id)).toEqual(["mcp__good__ok_tool"]);
+  });
+
+  it("closeAllMcpClients 关闭所有已连接 client（释放 stdio 子进程）", async () => {
+    const closed: string[] = [];
+    const makeClient = (tag: string): McpClientLike => ({
+      async connect() {},
+      async listTools() {
+        return { tools: [{ name: "t" }] };
+      },
+      async callTool() {
+        return null;
+      },
+      async close() {
+        closed.push(tag);
+      },
+    });
+    const factory: McpClientFactory = (name) => makeClient(name);
+    await loadMcpTools({
+      config: {
+        mcpServers: {
+          a: { type: "http", url: "x", disabled: false },
+          b: { type: "http", url: "y", disabled: false },
+        },
+      },
+      clientFactory: factory,
+      env: {},
+    });
+    await closeAllMcpClients();
+    expect(closed.sort()).toEqual(["a", "b"]);
+    // 幂等：再调一次不重复 close
+    await closeAllMcpClients();
+    expect(closed.sort()).toEqual(["a", "b"]);
   });
 
   it("execute 把 input 透传给 client.callTool", async () => {

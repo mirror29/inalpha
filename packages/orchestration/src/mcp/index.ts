@@ -19,7 +19,7 @@ export {
 } from "./config.js";
 export type { McpConfig, McpServerConfig } from "./config.js";
 export { jsonSchemaToZod } from "./schema.js";
-export { loadMcpTools } from "./manager.js";
+export { loadMcpTools, closeAllMcpClients } from "./manager.js";
 export type {
   McpClientLike,
   McpClientFactory,

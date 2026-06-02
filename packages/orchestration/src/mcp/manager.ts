@@ -139,6 +139,56 @@ function buildDefaultClient(
   };
 }
 
+// ────────────────────────────────────────────────────────────────────
+// 子进程清理（ADR-0009）：stdio transport fork 子进程，需在退出时 close 释放，
+// 否则 Mastra 重启会孤儿化累积。
+// ────────────────────────────────────────────────────────────────────
+
+/** 已连接的 MCP client 注册表，供退出清理。 */
+const _liveClients = new Set<McpClientLike>();
+let _beforeExitHooked = false;
+let _signalHooked = false;
+
+/**
+ * 关闭所有已建立的 MCP client（释放 stdio 子进程）。
+ *
+ * 显式 API：Mastra 关闭回调 / 测试 / 热重载可主动调；进程退出钩子也会调。
+ * 幂等：close 失败被吞（best-effort）。
+ *
+ * @returns 全部 close 完成（或失败被吞）后 resolve
+ */
+export async function closeAllMcpClients(): Promise<void> {
+  const clients = [..._liveClients];
+  _liveClients.clear();
+  await Promise.allSettled(clients.map((c) => c.close()));
+}
+
+/**
+ * 首次连接时挂一次进程退出清理。
+ *
+ * - ``beforeExit``（async 安全，正常事件循环排空时）：所有 transport 都挂，最尽力优雅关闭。
+ * - ``SIGINT`` / ``SIGTERM``：**仅在出现 stdio client 时**才挂——避免无谓干扰 host 的信号
+ *   处理；HTTP-only（默认 CoinGecko）不碰信号。信号到达时关闭子进程后再按默认码退出。
+ *
+ * @param hasStdio - 本次连接的 server 是否为 stdio transport
+ */
+function hookProcessCleanupOnce(hasStdio: boolean): void {
+  if (!_beforeExitHooked) {
+    _beforeExitHooked = true;
+    process.once("beforeExit", () => {
+      void closeAllMcpClients();
+    });
+  }
+  if (hasStdio && !_signalHooked) {
+    _signalHooked = true;
+    for (const sig of ["SIGINT", "SIGTERM"] as const) {
+      process.once(sig, () => {
+        void closeAllMcpClients().finally(() => process.exit(0));
+      });
+    }
+  }
+}
+
 /**
  * 加载所有可用 MCP server 的 tool，包成 Mastra raw tool 数组。
  *
@@ -174,6 +224,11 @@ export async function loadMcpTools(
     try {
       const client = factory(name, server);
       const { tools: mcpTools } = await client.listTools();
+      // 追踪已连接 client + 挂进程退出清理：stdio transport 会 fork 子进程，
+      // Mastra 重启时不显式 close 会孤儿化累积（ADR-0009 §约定）。HTTP 无子进程，
+      // 追踪它只为统一 closeAllMcpClients 语义；仅 stdio 才挂信号清理（见下）。
+      _liveClients.add(client);
+      hookProcessCleanupOnce(server.type === "stdio");
       for (const t of mcpTools) {
         tools.push(wrapMcpTool(name, t, client));
       }
