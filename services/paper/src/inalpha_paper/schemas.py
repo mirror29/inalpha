@@ -542,3 +542,46 @@ class ExecutePlanResponse(BaseModel):
     plan_id: str
     plan_status: str
     order: SubmitOrderResponse
+
+
+# ────────────────────────────────────────────────────────────────────
+# D-11 · live runner（issue #1）
+# ────────────────────────────────────────────────────────────────────
+
+
+class StartStrategyRunRequest(BaseModel):
+    """``POST /strategy_runs`` 请求体：给一个 promoted candidate 起 live 跑。
+
+    candidate 表不含 venue/symbol/timeframe/params，这些在此处传（同回测请求）。
+    """
+
+    candidate_id: UUID = Field(..., description="promoted candidate 的 id")
+    venue: str = Field(
+        default="binance",
+        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→akshare",
+        examples=["binance", "yfinance", "akshare"],
+    )
+    symbol: str = Field(..., examples=["BTC/USDT", "AAPL", "sh.600519"])
+    timeframe: str = Field(default="1h", examples=["1m", "5m", "1h", "1d"])
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="策略参数（candidate 源码 __init__ 接受的 kwargs）；缺省用策略默认值",
+    )
+
+
+class StrategyRunRecord(BaseModel):
+    """``GET /strategy_runs`` / ``POST /strategy_runs`` 响应里的一行。"""
+
+    id: UUID
+    candidate_id: UUID
+    account_id: UUID
+    status: Literal["running", "stopped", "errored"]
+    venue: str
+    symbol: str
+    timeframe: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    last_bar_ts: datetime | None = None
+    cumulative_pnl: float = 0.0
+    error_log: list[dict[str, Any]] = Field(default_factory=list)
+    started_at: datetime
+    stopped_at: datetime | None = None

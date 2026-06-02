@@ -71,7 +71,15 @@ const INSTRUCTIONS = `
   返 requiresApproval=true——需要你在 chat 里向用户清楚说明候选信息 +
   等用户明确回复"允许 / 同意 / yes" 后**重调本 tool**；用户**明确拒绝**告诉用户已取消 +
   不重试；用户**含糊 / 犹豫 / 跳话题**也不要重调，主动追问明确再决定，**沉默不是同意**）；
-  promote 后**仅状态切换**，live trading runner 仍在 E2 / D-7
+  **promote 只是状态切换，候选不会自己跑**——要让它按行情自动跑必须再调 paper.start_strategy
+
+**模拟盘 live runner（D-11 · issue #1）**：
+- paper.start_strategy —— 把**已 promoted** 的候选放到模拟盘按行情自动跑（后台 runner
+  拉 bar 喂 on_bar → 走护栏内 plan/exec 下单 → 持仓 / 权益自动更新）。需指定 symbol /
+  timeframe（candidate 表不含）。**关键**：promote 成功后主动告诉用户"还需 start_strategy
+  才会真跑"，**不要 promote 完默认自动起**——start 是独立的人工动作。同 candidate 同时只一个 running。
+- paper.stop_strategy —— 按 runId 停一个 live runner
+- paper.list_strategy_runs —— 列 live runner 状态 / 累计 pnl / 错误日志
 
 **下单流（Plan/Exec 三件套）**：
 - trade.create_plan —— 把"想下单"翻成 plan（pending_approval 状态）；可带 researchId / backtestRunId 把血缘写进 rationale

@@ -303,6 +303,31 @@ export type AccountSnapshot = {
   updated_at: string;
 };
 
+/** D-11 · live runner（issue #1）。 */
+export type StrategyRunRecord = {
+  id: string;
+  candidate_id: string;
+  account_id: string;
+  status: "running" | "stopped" | "errored";
+  venue: string;
+  symbol: string;
+  timeframe: string;
+  params: Record<string, unknown>;
+  last_bar_ts: string | null;
+  cumulative_pnl: number;
+  error_log: Array<Record<string, unknown>>;
+  started_at: string;
+  stopped_at: string | null;
+};
+
+export type StartStrategyParams = {
+  candidateId: string;
+  venue?: string;
+  symbol: string;
+  timeframe?: string;
+  params?: Record<string, unknown>;
+};
+
 export class PaperClient {
   private readonly http: HttpClient;
 
@@ -501,5 +526,29 @@ export class PaperClient {
 
   async getAccount(): Promise<AccountSnapshot> {
     return await this.http.get<AccountSnapshot>("/accounts/me");
+  }
+
+  // ────────────────────────────────────────────────────────────────────
+  // D-11 · live runner（issue #1）
+  // ────────────────────────────────────────────────────────────────────
+
+  async startStrategy(params: StartStrategyParams): Promise<StrategyRunRecord> {
+    return await this.http.post<StrategyRunRecord>("/strategy_runs", {
+      candidate_id: params.candidateId,
+      venue: params.venue ?? "binance",
+      symbol: params.symbol,
+      timeframe: params.timeframe ?? "1h",
+      params: params.params ?? {},
+    });
+  }
+
+  async stopStrategy(runId: string): Promise<StrategyRunRecord> {
+    return await this.http.post<StrategyRunRecord>(`/strategy_runs/${runId}/stop`, {});
+  }
+
+  async listStrategyRuns(filter?: { status?: string }): Promise<StrategyRunRecord[]> {
+    return await this.http.get<StrategyRunRecord[]>("/strategy_runs", {
+      status: filter?.status,
+    });
   }
 }

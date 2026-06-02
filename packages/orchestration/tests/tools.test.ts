@@ -11,7 +11,10 @@ import {
   dataBackfillBarsTool,
   dataGetBarsTool,
   paperListStrategiesTool,
+  paperListStrategyRunsTool,
   paperRunBacktestTool,
+  paperStartStrategyTool,
+  paperStopStrategyTool,
   researchDeepDiveTool,
 } from "../src/tools/index.js";
 
@@ -411,5 +414,81 @@ describe("research.deep_dive", () => {
       asOf: "not a datetime",
     });
     expect(r.success).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// D-11 · live runner tools
+// ────────────────────────────────────────────────────────────────────
+
+describe("paper.start_strategy / stop / list", () => {
+  it("start_strategy POSTs to /strategy_runs with candidate_id + market", async () => {
+    let capturedUrl = "";
+    let capturedBody = "";
+    mockFetch(async (url, init) => {
+      capturedUrl = url;
+      capturedBody = (init?.body as string) ?? "";
+      return new Response(
+        JSON.stringify({
+          id: "run-1", candidate_id: "cand-1", account_id: "acc-1", status: "running",
+          venue: "binance", symbol: "BTC/USDT", timeframe: "1h", params: {},
+          last_bar_ts: null, cumulative_pnl: 0, error_log: [],
+          started_at: "2026-06-02T00:00:00Z", stopped_at: null,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const result = await paperStartStrategyTool.execute!(
+      {
+        candidateId: "550e8400-e29b-41d4-a716-446655440000",
+        venue: "binance", symbol: "BTC/USDT", timeframe: "1h",
+      } as never,
+      ctx(),
+    );
+
+    expect(capturedUrl).toContain("/strategy_runs");
+    expect(JSON.parse(capturedBody)).toMatchObject({
+      candidate_id: "550e8400-e29b-41d4-a716-446655440000",
+      venue: "binance",
+      symbol: "BTC/USDT",
+      timeframe: "1h",
+    });
+    expect((result as { status: string }).status).toBe("running");
+  });
+
+  it("stop_strategy POSTs to /strategy_runs/{id}/stop", async () => {
+    let capturedUrl = "";
+    mockFetch(async (url) => {
+      capturedUrl = url;
+      return new Response(
+        JSON.stringify({
+          id: "run-1", candidate_id: "c", account_id: "a", status: "stopped",
+          venue: "binance", symbol: "BTC/USDT", timeframe: "1h", params: {},
+          last_bar_ts: null, cumulative_pnl: 0, error_log: [],
+          started_at: "2026-06-02T00:00:00Z", stopped_at: "2026-06-02T01:00:00Z",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const runId = "550e8400-e29b-41d4-a716-446655440001";
+    const result = await paperStopStrategyTool.execute!({ runId } as never, ctx());
+    expect(capturedUrl).toContain(`/strategy_runs/${runId}/stop`);
+    expect((result as { status: string }).status).toBe("stopped");
+  });
+
+  it("list_strategy_runs GETs /strategy_runs", async () => {
+    let capturedUrl = "";
+    mockFetch(async (url) => {
+      capturedUrl = url;
+      return new Response(JSON.stringify([]), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await paperListStrategyRunsTool.execute!({ status: "running" } as never, ctx());
+    expect(capturedUrl).toContain("/strategy_runs");
+    expect(capturedUrl).toContain("status=running");
   });
 });
