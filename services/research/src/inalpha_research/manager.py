@@ -249,6 +249,10 @@ def _fallback_raw(error: str) -> dict[str, Any]:
             "adjudication was performed"
         ],
         "suggested_action": "wait",
+        # 显式空 factors：阻止 _merge_factors 把 briefs 的 factor 全拉进来。否则
+        # persona/valuation 的 kind=macro factor 会让 _dominant_kind 多数投票偏向 macro
+        # → strategy 兜底成 buy_hold（综合本就失败，不该再据此推策略族）。
+        "factors": [],
     }
 
 
@@ -314,13 +318,15 @@ def _merge_factors(
     raw_factors: Any,
     briefs: list[AnalystBrief],
 ) -> list[Factor]:
-    """优先用 LLM 给的 factors；缺失或解析失败则从 briefs 收集兜底。
+    """factors 是 list（含空 []）即权威；只有 None / 缺字段才从 briefs 兜底。
 
-    兜底保证下游 compose 引擎永远拿得到至少 0 个 factor（空列表也接受），
-    不会因为 LLM 漏字段而报 KeyError。
+    关键：之前空列表也会触发 briefs 兜底——manager 失败的 _fallback_raw 走 _build_plan
+    时，会把 persona/valuation 的 kind=macro factor 全拉进来，让 _dominant_kind 多数投票
+    偏向 macro → strategy 兜底成 buy_hold（综合本就失败，不该再据此推策略族）。
+    改为：显式提供 list 就用它（即便空），不再回落 briefs。
     """
-    merged: list[Factor] = []
     if isinstance(raw_factors, list):
+        merged: list[Factor] = []
         for item in raw_factors:
             if not isinstance(item, dict):
                 continue
@@ -328,9 +334,8 @@ def _merge_factors(
                 merged.append(Factor.model_validate(item))
             except Exception:
                 continue
-    if merged:
         return merged[:6]
-    # 兜底：直接复用 analyst factor（已经在 base._parse 校验过）
+    # raw_factors 不是 list（None / 缺字段）→ 从 briefs 兜底，保证下游有 factor
     out: list[Factor] = []
     for b in briefs:
         out.extend(b.factors)

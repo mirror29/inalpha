@@ -255,52 +255,71 @@ export async function loadMcpTools(
     opts.clientFactory ?? ((name, server) => buildDefaultClient(name, server, env));
   const listToolsTimeoutMs = opts.listToolsTimeoutMs ?? DEFAULT_LIST_TOOLS_TIMEOUT_MS;
 
+  // **并行**连接各 server：多 server 时不再串行累加 N×timeout 延迟（首次请求阻塞）。
+  // allSettled 保序——返回的 tool 数组仍按 config 顺序，与完成先后无关。
+  const entries = Object.entries(config.mcpServers);
+  const settled = await Promise.allSettled(
+    entries.map(([name, server]) =>
+      loadOneServer(name, server, factory, env, listToolsTimeoutMs),
+    ),
+  );
+
   const tools: RawMcpTool[] = [];
+  for (const r of settled) {
+    if (r.status === "fulfilled") tools.push(...r.value);
+    // loadOneServer 内部已吞错返 []，rejected 几乎不可能；真有也只是少这个 server
+  }
+  return tools;
+}
 
-  for (const [name, server] of Object.entries(config.mcpServers)) {
-    if (server.disabled) {
-      console.info(`[mcp] server '${name}' disabled，跳过`);
-      continue;
-    }
-    const missing = (server.requiredEnv ?? []).filter((k) => !env[k]?.trim());
-    if (missing.length > 0) {
-      console.warn(
-        `[mcp] server '${name}' 缺少 env [${missing.join(", ")}]，跳过` +
-          `（配齐后即可启用，主链路不受影响）`,
-      );
-      continue;
-    }
-
-    let client: McpClientLike | undefined;
-    try {
-      client = factory(name, server);
-      // **先登记再 listTools**：stdio transport 在 factory→listTools 之间即可能 fork
-      // 子进程，若 listTools 抛错而此前未登记，子进程就孤儿化（ADR-0009 §约定）。
-      // HTTP 无子进程，登记只为统一 closeAllMcpClients 语义；仅 stdio 才挂信号清理。
-      _liveClients.add(client);
-      hookProcessCleanupOnce(server.type === "stdio");
-      // 超时保护：端点不可达时快速 fail（默认 10s），不挂到 OS TCP 超时阻塞 orchestrator
-      const { tools: mcpTools } = await withTimeout(
-        client.listTools(),
-        listToolsTimeoutMs,
-        `mcp '${name}' listTools`,
-      );
-      for (const t of mcpTools) {
-        tools.push(wrapMcpTool(name, t, client));
-      }
-      console.info(`[mcp] server '${name}' 加载 ${mcpTools.length} 个 tool`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // 失败的 server：立刻关掉可能已 fork 的子进程并移出注册表，别留孤儿
-      if (client) {
-        await client.close().catch(() => {});
-        _liveClients.delete(client);
-      }
-      console.warn(`[mcp] server '${name}' 连接 / listTools 失败：${msg}；跳过该 server`);
-    }
+/** 连接单个 server 并返回其 wrapped tool；disabled / 缺 env / 失败都返 ``[]``（永不抛）。 */
+async function loadOneServer(
+  name: string,
+  server: McpServerConfig,
+  factory: McpClientFactory,
+  env: Record<string, string | undefined>,
+  listToolsTimeoutMs: number,
+): Promise<RawMcpTool[]> {
+  if (server.disabled) {
+    console.info(`[mcp] server '${name}' disabled，跳过`);
+    return [];
+  }
+  const missing = (server.requiredEnv ?? []).filter((k) => !env[k]?.trim());
+  if (missing.length > 0) {
+    console.warn(
+      `[mcp] server '${name}' 缺少 env [${missing.join(", ")}]，跳过` +
+        `（配齐后即可启用，主链路不受影响）`,
+    );
+    return [];
   }
 
-  return tools;
+  let client: McpClientLike | undefined;
+  try {
+    const c = factory(name, server);
+    client = c;
+    // **先登记再 listTools**：stdio transport 在 factory→listTools 之间即可能 fork
+    // 子进程，若 listTools 抛错而此前未登记，子进程就孤儿化（ADR-0009 §约定）。
+    // HTTP 无子进程，登记只为统一 closeAllMcpClients 语义；仅 stdio 才挂信号清理。
+    _liveClients.add(c);
+    hookProcessCleanupOnce(server.type === "stdio");
+    // 超时保护：端点不可达时快速 fail（默认 10s），不挂到 OS TCP 超时阻塞 orchestrator
+    const { tools: mcpTools } = await withTimeout(
+      c.listTools(),
+      listToolsTimeoutMs,
+      `mcp '${name}' listTools`,
+    );
+    console.info(`[mcp] server '${name}' 加载 ${mcpTools.length} 个 tool`);
+    return mcpTools.map((t) => wrapMcpTool(name, t, c));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // 失败的 server：立刻关掉可能已 fork 的子进程并移出注册表，别留孤儿
+    if (client) {
+      await client.close().catch(() => {});
+      _liveClients.delete(client);
+    }
+    console.warn(`[mcp] server '${name}' 连接 / listTools 失败：${msg}；跳过该 server`);
+    return [];
+  }
 }
 
 /** 把单个 MCP tool 描述包成 Mastra createTool（id 加 ``mcp__<server>__`` 前缀）。 */
@@ -324,9 +343,41 @@ function wrapMcpTool(
         inputData && typeof inputData === "object"
           ? (inputData as Record<string, unknown>)
           : {};
-      return client.callTool({ name: descriptor.name, arguments: args });
+      const result = await client.callTool({ name: descriptor.name, arguments: args });
+      return unwrapToolResult(result, id);
     },
   });
 
   return tool as unknown as RawMcpTool;
+}
+
+/** 从 MCP ``CallToolResult.content`` 抽 text 部分拼成纯文本（忽略 image/resource 等）。 */
+function extractTextContent(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const c of content) {
+    if (c && typeof c === "object") {
+      const obj = c as Record<string, unknown>;
+      if (obj.type === "text" && typeof obj.text === "string") parts.push(obj.text);
+    }
+  }
+  return parts.join("\n");
+}
+
+/**
+ * 把 MCP ``CallToolResult`` 解成喂给 LLM 的纯文本。
+ *
+ * - ``isError: true`` → **throw**：否则 Mastra 把它当成功，LLM 拿错误内容当事实推理。
+ * - 否则抽 ``content[].text`` 返纯文本；无文本（image/resource 等）回退整个 content 的 JSON。
+ */
+function unwrapToolResult(result: unknown, toolId: string): string {
+  if (!result || typeof result !== "object") {
+    return typeof result === "string" ? result : JSON.stringify(result ?? null);
+  }
+  const r = result as { content?: unknown; isError?: unknown };
+  const text = extractTextContent(r.content);
+  if (r.isError) {
+    throw new Error(`MCP tool ${toolId} 返回错误：${text || JSON.stringify(r.content ?? result)}`);
+  }
+  return text || JSON.stringify(r.content ?? result);
 }

@@ -279,12 +279,12 @@ describe("loadMcpTools", () => {
     expect(process.listenerCount("SIGINT")).toBe(sigint0);
   });
 
-  it("execute 把 input 透传给 client.callTool", async () => {
+  it("execute 透传 input + 解包 CallToolResult 的 text", async () => {
     const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const factory: McpClientFactory = () =>
       fakeClient([{ name: "get_price" }], (name, args) => {
         calls.push({ name, args });
-        return { price: 42 };
+        return { content: [{ type: "text", text: "BTC = 42" }] };
       });
     const tools = await loadMcpTools({
       config: { mcpServers: { coingecko: { type: "http", url: "x", disabled: false } } },
@@ -293,6 +293,21 @@ describe("loadMcpTools", () => {
     });
     const result = await tools[0].execute?.({ id: "bitcoin" });
     expect(calls).toEqual([{ name: "get_price", args: { id: "bitcoin" } }]);
-    expect(result).toEqual({ price: 42 });
+    // 解包成纯文本（不是嵌套 content 数组）
+    expect(result).toBe("BTC = 42");
+  });
+
+  it("execute 在 isError:true 时 throw（不让 Mastra 当成功）", async () => {
+    const factory: McpClientFactory = () =>
+      fakeClient([{ name: "boom" }], () => ({
+        isError: true,
+        content: [{ type: "text", text: "rate limit exceeded" }],
+      }));
+    const tools = await loadMcpTools({
+      config: { mcpServers: { coingecko: { type: "http", url: "x", disabled: false } } },
+      clientFactory: factory,
+      env: {},
+    });
+    await expect(tools[0].execute?.({})).rejects.toThrow("rate limit exceeded");
   });
 });
