@@ -87,6 +87,9 @@ class LiveRunnerManager:
             return
         task = asyncio.create_task(self._run_loop(run), name=f"live-run-{run_id}")
         self._tasks[run_id] = task
+        # task 退出（return / errored / cancel）后从 dict 移除，避免长跑实例里
+        # errored / 已停的 task 对象无限堆积（CR）。stop() 已 pop 时这里是 no-op。
+        task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
 
     async def stop(self, run_id: UUID) -> None:
         """停一个 run：cancel task + 置 stopped。"""
@@ -117,7 +120,7 @@ class LiveRunnerManager:
     async def _run_loop(self, run: dict[str, Any]) -> None:
         run_id: UUID = run["id"]
         try:
-            session = await self._build_session(run)
+            session, warmup_ts = await self._build_session(run)
         except Exception as e:
             _logger.exception("live run %s: session build failed", run_id)
             async with get_conn() as conn:
@@ -125,7 +128,8 @@ class LiveRunnerManager:
                 await runs_store.set_status(conn, run_id, "errored")
             return
 
-        last_bar_ts: datetime | None = run.get("last_bar_ts")
+        # 预热已喂到 warmup_ts；从这之后的新 bar 才真处理，避免重复喂预热段。
+        last_bar_ts: datetime | None = run.get("last_bar_ts") or warmup_ts
         poll_s = _timeframe_seconds(run["timeframe"])
         if self._settings.live_poll_interval_s > 0:
             poll_s = self._settings.live_poll_interval_s
@@ -156,8 +160,14 @@ class LiveRunnerManager:
                     return
                 await asyncio.sleep(min(2 ** err_streak, 60))  # 指数退避，cap 60s
 
-    async def _build_session(self, run: dict[str, Any]) -> LiveEngineSession:
-        """读 candidate code → 二次审计 + 沙盒加载 → 建 session。"""
+    async def _build_session(
+        self, run: dict[str, Any]
+    ) -> tuple[LiveEngineSession, datetime | None]:
+        """读 candidate code → 二次审计 + 沙盒加载 → 建 session → 历史 bar 预热。
+
+        返回 ``(session, warmup_last_bar_ts)``。预热让需要 lookback 的策略（SMA 等）
+        start 后就有指标状态，不必空跑几十根实时 bar 才出第一个信号。
+        """
         async with get_conn() as conn:
             candidate = await candidates_store.get_candidate(conn, run["candidate_id"])
         if candidate is None:
@@ -171,7 +181,7 @@ class LiveRunnerManager:
         strategy_cls = load_strategy_class(code)
         verify_strategy_contract(strategy_cls)
         instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
-        return LiveEngineSession(
+        session = LiveEngineSession(
             strategy_cls=strategy_cls,
             instrument_id=instrument_id,
             timeframe=run["timeframe"],
@@ -179,6 +189,43 @@ class LiveRunnerManager:
             initial_cash=_LIVE_INITIAL_CASH,
             fee_rate=_FEE_RATE,
         )
+        warmup_ts = await self._warmup_session(session, run)
+        return session, warmup_ts
+
+    async def _warmup_session(
+        self, session: LiveEngineSession, run: dict[str, Any]
+    ) -> datetime | None:
+        """拉最近 N 根历史 bar 喂策略**预热指标**（丢弃产生的下单意图，预热期不真下单）。
+
+        返回最后一根预热 bar 的 ts；策略持仓视图保持空仓（不 confirm_fill），符合
+        "全新 live run 从无持仓开始"语义。``live_warmup_bars=0`` 时跳过。
+        """
+        n = self._settings.live_warmup_bars
+        if n <= 0:
+            return None
+        token = self._mint_service_token(run["account_id"])
+        now = datetime.now(UTC)
+        tf_s = _timeframe_seconds(run["timeframe"])
+        from_ts = now - timedelta(seconds=tf_s * (n + 1))
+        async with DataClient(self._settings.data_service_url, token) as dc:
+            raw = await dc.get_bars(
+                venue=run["venue"],
+                symbol=run["symbol"],
+                timeframe=run["timeframe"],
+                from_ts=from_ts,
+                to_ts=now,
+                limit=n,
+                fresh=True,
+            )
+        if not raw:
+            return None
+        instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
+        last_ts: datetime | None = None
+        for b in raw:
+            bar = _bar_from_dict(b, instrument_id, run["timeframe"])
+            session.feed_bar(bar)  # 丢弃 orders —— 预热只为建立指标状态
+            last_ts = _ns_to_dt(bar.ts_event)
+        return last_ts
 
     async def _fetch_latest_bar(self, run: dict[str, Any]) -> Bar | None:
         """拉最新一根 fresh bar；无数据返 None。"""

@@ -98,6 +98,14 @@ class PaperSettings(BaseSettings):
         le=3600,
         description="live runner 自签 service JWT 的有效期（秒），调 data /bars 用。",
     )
+    live_warmup_bars: int = Field(
+        default=200,
+        alias="INALPHA_LIVE_WARMUP_BARS",
+        ge=0,
+        le=2000,
+        description="live runner 启动时拉多少根历史 bar 预热策略指标（0 = 不预热）。"
+        "让需要 lookback 的策略 start 后即有指标状态，不必空跑几十根实时 bar。",
+    )
 
 
 @lru_cache(maxsize=1)

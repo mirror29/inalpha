@@ -17,6 +17,7 @@ from inalpha_paper.live_runner import LiveRunnerManager
 from inalpha_paper.storage import orders as orders_store
 from inalpha_paper.storage import positions as positions_store
 from inalpha_paper.storage import strategy_runs as runs_store
+from inalpha_paper.strategy.base import Strategy
 
 from .test_live_session import _INSTRUMENT, _bar, _BuyOnceStrategy
 
@@ -79,6 +80,55 @@ async def test_process_bar_routes_through_plan_exec(app_with_lifespan: Any) -> N
     # run 进度更新
     assert run_fresh is not None
     assert run_fresh["last_bar_ts"] is not None
+
+
+class _CountingStrategy(Strategy):
+    """记录每根 bar 的 close，用于验证预热喂了历史 bar。"""
+
+    def __init__(self, name, clock, msgbus, instrument_id, timeframe, **_kw) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(name, clock, msgbus)
+        self._instrument_id = instrument_id
+        self._timeframe = timeframe
+        self.closes_seen: list[float] = []
+
+    def on_start(self) -> None:
+        self.subscribe_bars(self._instrument_id, self._timeframe)
+
+    def on_bar(self, bar) -> None:  # type: ignore[no-untyped-def]
+        self.closes_seen.append(bar.close)
+
+
+async def test_warmup_feeds_history_without_trading(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """_warmup_session 拉 N 根历史 bar 喂策略建立指标，丢弃 order、持仓保持空仓。"""
+    # mock data /bars：返 5 根递增 close 的 bar dict（不打网络）
+    async def fake_get_bars(self, **kwargs):  # type: ignore[no-untyped-def]
+        return [
+            {
+                "ts": f"2026-06-01T0{i}:00:00Z", "open": 100.0 + i, "high": 100.0 + i,
+                "low": 100.0 + i, "close": 100.0 + i, "volume": 1.0,
+                "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h",
+            }
+            for i in range(5)
+        ]
+
+    monkeypatch.setattr("inalpha_paper.data_client.DataClient.get_bars", fake_get_bars)
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = LiveEngineSession(
+        strategy_cls=_CountingStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+    run = {"account_id": uuid4(), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"}
+
+    last_ts = await manager._warmup_session(session, run)
+
+    # 策略看到了 5 根历史 bar（指标已预热）
+    assert session._strategy.closes_seen == [100.0, 101.0, 102.0, 103.0, 104.0]  # type: ignore[attr-defined]
+    # 预热不真下单 → 持仓保持空仓
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat
+    # 返回最后一根预热 bar 的 ts（供 _run_loop 去重）
+    assert last_ts is not None
 
 
 async def test_process_bar_no_signal_no_order(app_with_lifespan: Any) -> None:
