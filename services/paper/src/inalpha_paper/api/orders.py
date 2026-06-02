@@ -178,7 +178,9 @@ async def get_my_account(
     acct = await accounts_store.get_or_create(db, account_id)
     base_currency = acct["base_currency"]
 
-    pos_rows = await positions_store.list_by_account(db, account_id, include_flat=False)
+    # include_flat=True：已平仓行（quantity=0）对 positions_value 贡献 0，但仍携带累计
+    # realized_pnl——纳入才能让账户总已实现盈亏完整（CR：避免漏计已平仓持仓的 PnL）。
+    pos_rows = await positions_store.list_by_account(db, account_id, include_flat=True)
 
     # 原始按币种桶
     cash_balances: dict[str, Decimal] = {
@@ -199,7 +201,9 @@ async def get_my_account(
         )
 
     # 只在存在非本地可解析币种时才开 DataClient（单币种 / crypto-USD 账户零网络）
-    all_ccys = set(cash_balances) | set(pos_value_by_ccy)
+    all_ccys = set(cash_balances) | set(pos_value_by_ccy) | set(realized_pnl_by_ccy)
+    # token 实际上必非空：get_current_user 依赖已保证 Bearer header 合法，否则先行 401；
+    # 这里 token=None 分支是防御性的（理论不可达），保留以防未来调用方绕过 auth。
     token = (
         authorization.removeprefix("Bearer ").strip()
         if authorization and authorization.startswith("Bearer ")
@@ -210,6 +214,8 @@ async def get_my_account(
         if token and fx_needs_network(all_ccys, base_currency)
         else None
     )
+    # try 前初始化，确保即便 convert() 抛非预期异常也不会在 return 处 NameError（CR）
+    fx_warnings: list[str] = []
     try:
         converter = BaseCurrencyConverter(base_currency, data_client)
         cash_base = Decimal(0)

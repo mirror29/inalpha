@@ -18,7 +18,8 @@ from decimal import Decimal
 
 from .data_client import DataClient, DataServiceError
 
-# USD 等价稳定币：互转视为 1.0（与 data 服务 fx.py 一致）
+# USD 等价稳定币：互转视为 1.0（与 data 服务 fx.py 的 _STABLE_USD 保持一致）。
+# BUSD：Binance/Paxos 已于 2024 年初下架，保留仅作向后兼容（模拟盘忽略脱锚 / 流通性风险）。
 _STABLE_USD: frozenset[str] = frozenset({"USD", "USDT", "USDC", "BUSD", "DAI"})
 
 

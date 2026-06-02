@@ -72,6 +72,27 @@ def test_realized_pnl_converted_to_base(client: TestClient) -> None:
     assert body["fx_warnings"] == []
 
 
+def test_realized_pnl_includes_fully_closed_positions(client: TestClient) -> None:
+    """完全平仓（quantity=0）的持仓 realized_pnl 仍计入快照（include_flat=True 修复）。"""
+    _, token = fresh_account_token("mc")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # BUY 0.01 @ 50000，再 SELL 0.01 @ 55000 → 全平，realized = 5000*0.01 = 50 USDT
+    client.post("/orders/submit", headers=headers, json={
+        "symbol": "BTC/USDT", "side": "BUY", "type": "MARKET",
+        "quantity": 0.01, "ref_price": 50_000.0,
+    })
+    client.post("/orders/submit", headers=headers, json={
+        "symbol": "BTC/USDT", "side": "SELL", "type": "MARKET",
+        "quantity": 0.01, "ref_price": 55_000.0,
+    })
+
+    body = client.get("/accounts/me", headers=headers).json()
+    # 持仓已全平 → positions_value 0；但 realized_pnl 仍应反映已平仓盈亏（折算后 50）
+    assert body["positions_value"] == pytest.approx(0.0)
+    assert body["realized_pnl"] == pytest.approx(50.0)
+
+
 def test_positions_carry_currency(client: TestClient) -> None:
     """/positions 行带 currency（crypto → USDT）。"""
     _, token = fresh_account_token("mc")

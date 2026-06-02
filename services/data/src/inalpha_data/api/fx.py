@@ -36,7 +36,9 @@ router = APIRouter(tags=["fx"])
 # FX 日内波动小且非交易时段不更新，新鲜阈值放宽到 1 小时
 STALE_THRESHOLD_SECONDS = 3600
 
-# USD 等价稳定币：互相折算视为 1.0（模拟盘忽略脱锚风险）
+# USD 等价稳定币：互相折算视为 1.0（模拟盘忽略脱锚风险）。
+# BUSD：Binance/Paxos 已于 2024 年初下架，保留仅作向后兼容（真实持有以 1:1 处理可能
+# 掩盖无法流通的风险，但模拟盘可接受此简化）。与 paper/fx.py 的 _STABLE_USD 保持一致。
 _STABLE_USD: frozenset[str] = frozenset({"USD", "USDT", "USDC", "BUSD", "DAI"})
 
 
