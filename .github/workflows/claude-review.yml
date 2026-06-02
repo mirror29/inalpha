@@ -1,13 +1,14 @@
 name: Claude PR Review
 
-# PR 打开 / 新 commit / reopen 时自动 review diff。
+# PR 打开 / reopen 时自动 review diff（**不**在每次 push 时跑——避免每 push 一轮评论 +
+# 邮件洪水；要对新 commit 重审，去 Actions 页手动跑 workflow_dispatch）。
 # 非阻塞设计：即使 Claude 出错（API 超时、token 过期等），
 # 本 workflow 不会阻止 PR 合并。review 评论是锦上添花，不是门禁。
 # Auth: Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -89,18 +90,18 @@ jobs:
             ## review 行为
 
             - PR 分支已 checkout 在当前工作目录
-            - **severity 阈值**：只贴 ≥ medium 的 inline 评论；nit / 风格 → 跳过
+            - **severity 阈值**：只提 ≥ medium 的问题；nit / 风格 → 跳过
             - **不重复 lint**：ruff / tsc / mypy 已能抓的不要再提
             - **误报闸**：设计 / 架构类意见必须能说出"在什么输入 / 时序下会真的出问题"的具体失败场景，
               说不出就降级或不提——宁可漏报一条主观的，不要用噪音淹没真问题
-            - 找到问题 → 用 `mcp__github_inline_comment__create_inline_comment` 贴到具体 line
-            - **inline 格式**：`[critical|major|medium] 一句描述 — 依据(CLAUDE.md §X 或 通用原则:<维度>)`
-            - 顶层总结用 `gh pr comment` 发，分两段：1) 必修（critical / major）2) 可选优化（medium）
-            - 没问题 → 一段中文 LGTM，不要硬挑刺
-            - 只贴 GitHub 评论，不要把审查文字当聊天消息发
+            - **只发一条总结评论**（`gh pr comment`），**不**逐行贴 inline 评论——避免一轮 review
+              触发 N 封邮件。把所有 finding 汇总进这一条，每条用
+              `[critical|major|medium] file:line — 一句描述 — 依据(CLAUDE.md §X 或 通用原则:<维度>)` 写清位置。
+            - 评论结构：1) 必修（critical / major）2) 可选优化（medium）；没问题 → 一段中文 LGTM，不硬挑刺
+            - 只发这一条 GitHub 评论，不要把审查文字当聊天消息发
 
           claude_args: |
-            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
 
       # 即使 Claude 挂了，也记录一下方便排查
       - name: Log review status
