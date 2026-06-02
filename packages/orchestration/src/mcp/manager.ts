@@ -224,11 +224,16 @@ export async function loadMcpTools(
     try {
       const client = factory(name, server);
       const { tools: mcpTools } = await client.listTools();
-      // 追踪已连接 client + 挂进程退出清理：stdio transport 会 fork 子进程，
-      // Mastra 重启时不显式 close 会孤儿化累积（ADR-0009 §约定）。HTTP 无子进程，
-      // 追踪它只为统一 closeAllMcpClients 语义；仅 stdio 才挂信号清理（见下）。
       _liveClients.add(client);
       hookProcessCleanupOnce(server.type === "stdio");
+      for (const t of mcpTools) {
+        tools.push(wrapMcpTool(name, t, client));
+      }
+      console.info(`[mcp] server '${name}' 加载 ${mcpTools.length} 个 tool`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[mcp] server '${name}' 连接 / listTools 失败：${msg}；跳过该 server`);
+    }
       for (const t of mcpTools) {
         tools.push(wrapMcpTool(name, t, client));
       }
