@@ -1,6 +1,7 @@
 """辩论协调器单测 —— 不打外部网络，用 FakeLLMClient 跑 Bull/Bear 轮换。"""
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 from inalpha_research.debate import run_debate
@@ -118,6 +119,123 @@ async def test_run_debate_multi_round_grows_history() -> None:
     assert "bull analyst" in bull_round2["system"].lower()
     assert "Bear says down" in bull_round2["user"]
     assert "Round 1 BEAR" in bull_round2["user"]
+
+
+async def test_run_debate_round1_parallel_openings_when_multi_round() -> None:
+    """#1：``max_rounds>=2`` 时第 1 轮 Bull/Bear 独立并行开场——
+
+    round-1 Bear 不应看到 round-1 Bull（history 为空，无 opponent_last_turn）；
+    而 round-2 Bear 是 rebuttal，应看到对手上一轮。落 log 顺序仍固定 Bull 在前。
+    """
+    llm = _bull_bear_llm()
+    bull = BullResearcher(llm=llm)
+    bear = BearResearcher(llm=llm)
+
+    log = await run_debate(
+        bull=bull,
+        bear=bear,
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=2,
+    )
+
+    # 落 log 顺序固定（即使第 1 轮并行）
+    assert [(t.role, t.round) for t in log] == [
+        ("bull", 1),
+        ("bear", 1),
+        ("bull", 2),
+        ("bear", 2),
+    ]
+
+    bear_calls = [c for c in llm.calls if "bear analyst" in c["system"].lower()]
+    assert len(bear_calls) == 2
+    # 有一次 Bear 没看到对手（round-1 并行开场）——这是 #1 的关键证据
+    assert any("opponent_last_turn" not in c["user"] for c in bear_calls)
+    # 也有一次 Bear 看到了对手（round-2 rebuttal）
+    assert any("opponent_last_turn" in c["user"] for c in bear_calls)
+
+
+async def test_run_debate_one_round_stays_serial_preserves_rebuttal() -> None:
+    """#1 边界：``max_rounds==1`` 仍串行——保住那唯一一次 Bear 反驳 Bull 的价值。"""
+    llm = _bull_bear_llm()
+    bull = BullResearcher(llm=llm)
+    bear = BearResearcher(llm=llm)
+
+    await run_debate(
+        bull=bull,
+        bear=bear,
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=1,
+    )
+
+    bear_call = next(c for c in llm.calls if "bear analyst" in c["system"].lower())
+    # 1 轮时 Bear 必须看到 Bull 的开场（串行 rebuttal 未被并行优化抹掉）
+    assert "opponent_last_turn" in bear_call["user"]
+    assert "Bull says up" in bear_call["user"]
+
+
+async def test_run_debate_passes_max_tokens_to_llm() -> None:
+    """#2：``max_tokens`` 透传到每次发言的 complete_json。"""
+    llm = _bull_bear_llm()
+    bull = BullResearcher(llm=llm)
+    bear = BearResearcher(llm=llm)
+
+    await run_debate(
+        bull=bull,
+        bear=bear,
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=1,
+        max_tokens=600,
+    )
+
+    assert llm.calls, "应有 LLM 调用"
+    assert all(c["max_tokens"] == 600 for c in llm.calls)
+
+
+async def test_run_debate_timeout_returns_partial_log_without_raising() -> None:
+    """#4：辩论超时返回已完成的部分 log，不抛错。
+
+    on_call 故意 sleep 远超 timeout → bull 那次发言被取消、未落 log → 返空 log。
+    """
+
+    async def _slow(*, system: str, user: str) -> None:
+        await asyncio.sleep(0.5)
+
+    llm = FakeLLMClient(
+        {
+            "you are a bull analyst": {"argument": "Bull says up"},
+            "you are a bear analyst": {"argument": "Bear says down"},
+        },
+        on_call=_slow,
+    )
+    bull = BullResearcher(llm=llm)
+    bear = BearResearcher(llm=llm)
+
+    log = await run_debate(
+        bull=bull,
+        bear=bear,
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=1,
+        timeout_seconds=0.05,
+    )
+
+    # 不抛；in-flight 的 bull 发言被取消，没有任何 turn 落 log
+    assert log == []
 
 
 async def test_run_debate_swallows_researcher_failure() -> None:

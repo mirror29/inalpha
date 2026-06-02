@@ -91,6 +91,9 @@ async def run_deep_dive(
             as_of=req.as_of,
             briefs=briefs,
             max_rounds=settings.max_debate_rounds,
+            # #2 限输出长度 + #4 总时限（debate.run_debate 内部超时返部分 log）
+            max_tokens=settings.debate_max_tokens,
+            timeout_seconds=settings.debate_timeout_seconds,
         )
 
     # ─── 3) Manager 综合 ────────────────────────────────────────────
