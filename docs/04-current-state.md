@@ -259,9 +259,12 @@ D-9 把决策护栏（Plan/Exec + 风控 + 沙盒）做扎实后，D-10 在**数
   orchestration：`paper.start_strategy` / `stop_strategy` / `list_strategy_runs` /
   `list_strategy_run_decisions`。lifespan 启动 reconcile 残留 running → errored。
 - **信任边界**：机器审批靠"人先 promote + 人显式 start"两道人工闸门（ADR-0020 精神）。
+- **CR 加固（PR #34 收口）**：① 只在**已收盘 bar** 上决策（`_closed_bars` 丢弃未收盘那根，
+  避免半根 K 线幻影信号）；② 自动化路径**风控 fail-closed**（factory=None 默认拒跑置 errored，
+  `INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false` 可显式放行）；③ 后台 task 经
+  `BackgroundTasks` 在事务提交后才起（防孤儿 run）；④ 决策时间线排序加 tiebreaker。
 - follow-up（非阻塞，已开 issue #36/#37/#38）：跨用户 candidate 归属校验 / per-account
-  run 上限 / 风控 fail-closed / 未收盘 bar 守门 / 多实例 reconcile / 沙盒子进程隔离 /
-  service token audience。
+  run 上限 / 多实例 reconcile / 沙盒子进程隔离 / service token audience。
 
 ---
 

@@ -221,7 +221,7 @@ async def list_decisions(
                    tag, outcome, fill_price, fee, plan_id, order_id, reason, created_at
             FROM strategy_run_decisions
             WHERE run_id = %s
-            ORDER BY created_at
+            ORDER BY created_at, id
             LIMIT %s
             """,
             (str(run_id), limit),

@@ -91,6 +91,15 @@ class LiveRunnerManager:
         # errored / 已停的 task 对象无限堆积（CR）。stop() 已 pop 时这里是 no-op。
         task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
 
+    async def start_async(self, run: dict[str, Any]) -> None:
+        """``start`` 的 async 包装：供 FastAPI ``BackgroundTasks`` 在**响应/事务提交后**起 task。
+
+        必须是 async——Starlette 对 async background task 在主事件循环上 await，
+        ``start`` 内部的 ``asyncio.create_task`` 才有 running loop（同步 task 会被丢进
+        线程池，那里没有 loop，create_task 会 RuntimeError）。
+        """
+        self.start(run)
+
     async def stop(self, run_id: UUID) -> None:
         """停一个 run：cancel task + 置 stopped。
 
@@ -125,6 +134,28 @@ class LiveRunnerManager:
 
     async def _run_loop(self, run: dict[str, Any]) -> None:
         run_id: UUID = run["id"]
+        # 自动化路径 fail-closed（HIGH-2）：无人值守的下单循环不应在零风控下跑。
+        # factory=None = risk_engine_enabled=false 或 TOML 加载失败 → enforce() pass-through。
+        # 手动 HTTP 下单 fail-open 时人还在回路里，这里没有，必须默认拒跑。
+        if self._factory is None:
+            if self._settings.live_runner_require_risk_guard:
+                _logger.error("live run %s: 风控不可用（factory=None），fail-closed 拒绝起跑", run_id)
+                async with get_conn() as conn:
+                    await runs_store.append_error_log(
+                        conn, run_id,
+                        "风控不可用（risk_engine_enabled=false 或 risk_rules 加载失败），"
+                        "live runner 默认 fail-closed 拒绝起跑；如确需无风控运行，"
+                        "设 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false",
+                    )
+                    await runs_store.set_status(conn, run_id, "errored")
+                return
+            # 显式放行：留一条醒目告警，让用户知道这个 run 在零风控下跑
+            _logger.warning("live run %s: 风控不可用但已显式放行，零风控运行", run_id)
+            async with get_conn() as conn:
+                await runs_store.append_error_log(
+                    conn, run_id,
+                    "⚠ 风控不可用且 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false，本 run 在零风控下运行",
+                )
         try:
             session, warmup_ts = await self._build_session(run)
         except Exception as e:
@@ -236,15 +267,17 @@ class LiveRunnerManager:
         if not raw:
             return None
         instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
+        # 预热也只喂已收盘 bar：否则预热末尾若是未收盘那根，last_bar_ts 会把它的 ts
+        # 记下，等它真收盘时（ts 不变）被主循环去重跳过 → 策略漏掉这根（HIGH-1）。
+        closed = _closed_bars(raw, instrument_id, run["timeframe"], now)
         last_ts: datetime | None = None
-        for b in raw:
-            bar = _bar_from_dict(b, instrument_id, run["timeframe"])
+        for bar in closed:
             session.feed_bar(bar)  # 丢弃 orders —— 预热只为建立指标状态
             last_ts = _ns_to_dt(bar.ts_event)
         return last_ts
 
     async def _fetch_latest_bar(self, run: dict[str, Any]) -> Bar | None:
-        """拉最新一根 fresh bar；无数据返 None。"""
+        """拉最新一根**已收盘** fresh bar；无（已收盘的）数据返 None。"""
         token = self._mint_service_token(run["account_id"])
         now = datetime.now(UTC)
         # 回看窗口 = 几个 timeframe，避免 fresh backfill 拉太多
@@ -256,14 +289,17 @@ class LiveRunnerManager:
                 symbol=run["symbol"],
                 timeframe=run["timeframe"],
                 from_ts=from_ts,
+                # limit=3：最新一根可能未收盘要丢，多取一根保证仍有已收盘 bar
                 to_ts=now,
-                limit=2,
+                limit=3,
                 fresh=True,
             )
         if not raw:
             return None
         instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
-        return _bar_from_dict(raw[-1], instrument_id, run["timeframe"])
+        # 只取已收盘的最新一根，绝不在未收盘 bar 上决策（HIGH-1）
+        closed = _closed_bars(raw, instrument_id, run["timeframe"], now)
+        return closed[-1] if closed else None
 
     async def _process_bar(self, session: LiveEngineSession, run: dict[str, Any], bar: Bar) -> None:
         """喂一根 bar → 路由本根 bar 的下单意图 → 更新进度。（可单测，不依赖轮询）。"""
@@ -450,3 +486,26 @@ class LiveRunnerManager:
 
 def _ns_to_dt(ts_ns: int) -> datetime:
     return datetime.fromtimestamp(ts_ns / 1_000_000_000, tz=UTC)
+
+
+def _closed_bars(
+    raw: list[dict[str, Any]],
+    instrument_id: InstrumentId,
+    timeframe: str,
+    now: datetime,
+) -> list[Bar]:
+    """从 data /bars 原始返回里只挑**已收盘**的 bar（HIGH-1）。
+
+    OHLCV 的 ts 是 K 线**开盘时刻**；最新一根常是当前**未收盘**那根（ccxt 多数交易所
+    默认会带）。在未收盘 bar 上决策 = 拿临时 close 下单，且 ts 不变会被去重永不复评 →
+    幻影信号。判据：``open_ts + timeframe <= now`` 才算收盘。时钟略有偏差时宁可保守跳过
+    （下一轮再处理），也不在半根 bar 上交易。
+    """
+    tf_s = _timeframe_seconds(timeframe)
+    cutoff = now - timedelta(seconds=tf_s)  # open_ts <= cutoff ⟺ open_ts + tf <= now
+    out: list[Bar] = []
+    for b in raw:
+        bar = _bar_from_dict(b, instrument_id, timeframe)
+        if _ns_to_dt(bar.ts_event) <= cutoff:
+            out.append(bar)
+    return out

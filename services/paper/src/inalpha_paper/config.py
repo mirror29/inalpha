@@ -106,6 +106,14 @@ class PaperSettings(BaseSettings):
         description="live runner 启动时拉多少根历史 bar 预热策略指标（0 = 不预热）。"
         "让需要 lookback 的策略 start 后即有指标状态，不必空跑几十根实时 bar。",
     )
+    live_runner_require_risk_guard: bool = Field(
+        default=True,
+        alias="INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD",
+        description="live runner 是否要求风控可用才起跑（**自动化路径 fail-closed**）。"
+        "默认 true：风控不可用（risk_engine_enabled=false / TOML 加载失败 → factory=None）时"
+        "拒绝起跑并置 errored——无人值守的自动下单循环不应在零风控下运行。"
+        "显式置 false 可放行（如本地无风控调试），此时 run 的 error_log 会留一条醒目告警。",
+    )
 
 
 @lru_cache(maxsize=1)

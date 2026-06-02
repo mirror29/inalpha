@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Request
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 from inalpha_shared.errors import InalphaError, NotFoundError
@@ -40,6 +40,7 @@ async def start_strategy_run(
     req: StartStrategyRunRequest,
     request: Request,
     db: DBConn,
+    background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user)],
 ) -> StrategyRunRecord:
     """给一个 promoted candidate 起 live run（后台按 timeframe 自动跑）。"""
@@ -69,8 +70,11 @@ async def start_strategy_run(
         params=req.params,
     )
 
+    # 后台 task 在**响应发出 + DBConn 事务提交后**才起（M-4）：避免在 insert 尚未
+    # 提交时就拉起 loop——否则若 handler 在 start 后抛错回滚 run 行，task 会变成写无主
+    # run_id 的孤儿（decisions 无 FK、update_progress 静默 0 行、reconcile 也看不到）。
     manager = request.app.state.live_runner_manager
-    manager.start(run)
+    background_tasks.add_task(manager.start_async, run)
     return _row_to_record(run)
 
 

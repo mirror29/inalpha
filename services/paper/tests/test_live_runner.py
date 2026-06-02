@@ -13,7 +13,7 @@ from inalpha_shared.db import get_conn
 
 from inalpha_paper.config import get_paper_settings
 from inalpha_paper.engine.live_session import LiveEngineSession
-from inalpha_paper.live_runner import LiveRunnerManager
+from inalpha_paper.live_runner import LiveRunnerManager, _closed_bars
 from inalpha_paper.storage import orders as orders_store
 from inalpha_paper.storage import positions as positions_store
 from inalpha_paper.storage import strategy_runs as runs_store
@@ -185,6 +185,44 @@ async def test_warmup_feeds_history_without_trading(monkeypatch) -> None:  # typ
     assert pos is None or pos.is_flat
     # 返回最后一根预热 bar 的 ts（供 _run_loop 去重）
     assert last_ts is not None
+
+
+def test_closed_bars_skips_forming_bar() -> None:
+    """HIGH-1：最新一根未收盘的 bar 必须被丢弃，只返回已收盘的。"""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+
+    def _raw(open_dt: datetime, close: float) -> dict:  # type: ignore[type-arg]
+        return {
+            "ts": open_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "open": close, "high": close, "low": close, "close": close, "volume": 1.0,
+            "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h",
+        }
+
+    closed_open = now - timedelta(hours=2)   # open+1h <= now → 已收盘
+    forming_open = now - timedelta(minutes=20)  # open+1h > now → 未收盘
+    raw = [_raw(closed_open, 100.0), _raw(forming_open, 999.0)]
+
+    out = _closed_bars(raw, _INSTRUMENT, "1h", now)
+    # 只剩已收盘那根，未收盘（close=999）被丢
+    assert len(out) == 1
+    assert out[0].close == 100.0
+
+
+async def test_run_loop_fail_closed_without_risk_guard(app_with_lifespan: Any) -> None:
+    """HIGH-2：风控不可用（factory=None）且默认 require=True → _run_loop 拒跑置 errored。"""
+    settings = get_paper_settings()
+    assert settings.live_runner_require_risk_guard is True  # 默认 fail-closed
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4(), uuid4())
+
+    await manager._run_loop(run)  # 应在 _build_session 前就 fail-closed 返回
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    assert any("风控不可用" in e.get("error", "") for e in (fresh["error_log"] or []))
 
 
 async def test_process_bar_no_signal_no_order(app_with_lifespan: Any) -> None:
