@@ -16,6 +16,7 @@ from inalpha_paper.engine.live_session import LiveEngineSession
 from inalpha_paper.live_runner import LiveRunnerManager, _closed_bars
 from inalpha_paper.storage import orders as orders_store
 from inalpha_paper.storage import positions as positions_store
+from inalpha_paper.storage import strategy_candidates as candidates_store
 from inalpha_paper.storage import strategy_runs as runs_store
 from inalpha_paper.strategy.base import Strategy
 
@@ -35,8 +36,13 @@ def _make_session() -> LiveEngineSession:
     )
 
 
-async def _insert_run(account_id, candidate_id):  # type: ignore[no-untyped-def]
+async def _insert_run(account_id, candidate_id=None):  # type: ignore[no-untyped-def]
+    """插一行 run；candidate_id=None 时先建一个真候选（strategy_runs.candidate_id 有 FK）。"""
     async with get_conn() as conn:
+        if candidate_id is None:
+            candidate_id, _ = await candidates_store.insert_candidate(
+                conn, code=f"# live-runner test candidate {uuid4().hex}\n"
+            )
         return await runs_store.insert(
             conn, candidate_id=candidate_id, account_id=account_id,
             venue="binance", symbol="BTC/USDT", timeframe="1h", params={},
@@ -49,8 +55,7 @@ async def test_process_bar_routes_through_plan_exec(app_with_lifespan: Any) -> N
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     session = _make_session()
     account_id = uuid4()
-    candidate_id = uuid4()
-    run = await _insert_run(account_id, candidate_id)
+    run = await _insert_run(account_id)
 
     await manager._process_bar(session, run, _bar(1_700_000_000_000_000_000, close=50_000.0))
 
@@ -109,7 +114,7 @@ async def test_process_bar_risk_rejected_records_decision(
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     session = _make_session()
     account_id = uuid4()
-    run = await _insert_run(account_id, uuid4())
+    run = await _insert_run(account_id)
 
     await manager._process_bar(session, run, _bar(1_700_000_000_000_000_000, close=50_000.0))
 
@@ -130,7 +135,7 @@ async def test_process_bar_risk_rejected_records_decision(
 async def test_stop_does_not_overwrite_errored(app_with_lifespan: Any) -> None:
     """stop 一个已 errored 的 run 不应把状态擦成 stopped（CR：保留崩溃痕迹）。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
-    run = await _insert_run(uuid4(), uuid4())
+    run = await _insert_run(uuid4())
     async with get_conn() as conn:
         await runs_store.set_status(conn, run["id"], "errored")
     # run 不在 manager._tasks 里（没 start），stop 只会走 DB 分支
@@ -217,7 +222,7 @@ async def test_run_loop_fail_closed_without_risk_guard(app_with_lifespan: Any) -
     settings = get_paper_settings()
     assert settings.live_runner_require_risk_guard is True  # 默认 fail-closed
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
-    run = await _insert_run(uuid4(), uuid4())
+    run = await _insert_run(uuid4())
 
     await manager._run_loop(run)  # 应在 _build_session 前就 fail-closed 返回
 
@@ -232,7 +237,7 @@ async def test_process_bar_no_signal_no_order(app_with_lifespan: Any) -> None:
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     session = _make_session()
     account_id = uuid4()
-    run = await _insert_run(account_id, uuid4())
+    run = await _insert_run(account_id)
 
     # _BuyOnceStrategy 第一根就买；这里先喂一根买掉，再喂第二根（不再下单）
     await manager._process_bar(session, run, _bar(1_700_000_000_000_000_000, close=50_000.0))

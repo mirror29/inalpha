@@ -8,9 +8,19 @@ from uuid import uuid4
 import pytest
 from inalpha_shared.db import get_conn
 
+from inalpha_paper.storage import strategy_candidates as candidates_store
 from inalpha_paper.storage import strategy_runs as runs_store
 
 pytestmark = pytest.mark.integration
+
+
+async def _make_candidate():  # type: ignore[no-untyped-def]
+    """建一个真候选并返回其 id（strategy_runs.candidate_id 有 FK → strategy_candidates）。"""
+    async with get_conn() as conn:
+        cid, _ = await candidates_store.insert_candidate(
+            conn, code=f"# runs-store test candidate {uuid4().hex}\n"
+        )
+    return cid
 
 
 async def _insert(candidate_id, account_id):  # type: ignore[no-untyped-def]
@@ -22,14 +32,14 @@ async def _insert(candidate_id, account_id):  # type: ignore[no-untyped-def]
 
 
 async def test_insert_returns_running_row(app_with_lifespan: Any) -> None:
-    run = await _insert(uuid4(), uuid4())
+    run = await _insert(await _make_candidate(), uuid4())
     assert run["status"] == "running"
     assert run["venue"] == "binance"
     assert run["params"] == {"x": 1}
 
 
 async def test_unique_running_per_candidate(app_with_lifespan: Any) -> None:
-    candidate_id = uuid4()
+    candidate_id = await _make_candidate()
     await _insert(candidate_id, uuid4())
     # 同 candidate 第二个 running → 撞部分唯一索引 → StrategyRunConflict
     with pytest.raises(runs_store.StrategyRunConflict):
@@ -38,7 +48,7 @@ async def test_unique_running_per_candidate(app_with_lifespan: Any) -> None:
 
 async def test_stopped_frees_the_candidate(app_with_lifespan: Any) -> None:
     """stop 后同 candidate 可重新 start（部分唯一索引只约束 running）。"""
-    candidate_id = uuid4()
+    candidate_id = await _make_candidate()
     run = await _insert(candidate_id, uuid4())
     async with get_conn() as conn:
         await runs_store.set_status(conn, run["id"], "stopped")
@@ -48,7 +58,7 @@ async def test_stopped_frees_the_candidate(app_with_lifespan: Any) -> None:
 
 
 async def test_update_progress_and_error_log(app_with_lifespan: Any) -> None:
-    run = await _insert(uuid4(), uuid4())
+    run = await _insert(await _make_candidate(), uuid4())
     from datetime import UTC, datetime
     async with get_conn() as conn:
         await runs_store.update_progress(
@@ -64,7 +74,7 @@ async def test_update_progress_and_error_log(app_with_lifespan: Any) -> None:
 
 
 async def test_mark_running_as_errored_reconcile(app_with_lifespan: Any) -> None:
-    run = await _insert(uuid4(), uuid4())
+    run = await _insert(await _make_candidate(), uuid4())
     async with get_conn() as conn:
         n = await runs_store.mark_running_as_errored(conn, reason="service restarted")
         fresh = await runs_store.get(conn, run["id"])

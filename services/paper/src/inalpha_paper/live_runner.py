@@ -120,7 +120,8 @@ class LiveRunnerManager:
 
     async def stop_all(self) -> None:
         """服务停机：cancel 所有 task（不改 DB 状态，重启由 reconcile 处理）。"""
-        for task in self._tasks.values():
+        # 用 list() 快照：cancel 触发的 done_callback 会 _tasks.pop，遍历中改 dict 有隐患
+        for task in list(self._tasks.values()):
             if not task.done():
                 task.cancel()
         for task in list(self._tasks.values()):

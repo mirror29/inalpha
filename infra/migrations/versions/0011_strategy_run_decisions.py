@@ -28,7 +28,8 @@ def upgrade() -> None:
         """
         CREATE TABLE strategy_run_decisions (
             id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            run_id       UUID NOT NULL,
+            run_id       UUID NOT NULL
+                REFERENCES strategy_runs(id) ON DELETE CASCADE,
             bar_ts       TIMESTAMPTZ NOT NULL,
             bar_close    NUMERIC NOT NULL,
             side         TEXT NOT NULL,
