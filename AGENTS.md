@@ -72,7 +72,7 @@ pnpm scheduler:trigger daily_btc_deep_dive     # 手动触发一次
 # D-9 LLM 自创策略 E1 MVP（orchestrator 内置策略不够用时自动走）
 # 链路：research.deep_dive → compose_strategy（拒绝时） → paper.author_strategy(code=...)
 #       → paper.run_backtest(candidateId=...) → fitness 排序 → paper.promote_candidate
-#         （permission ask · 用户在对话里二次确认）→ 后续 live tick 待 E2/D-7
+#         （permission ask · 用户在对话里二次确认）→ paper.start_strategy 按行情自动跑（D-11）
 # 入口：services/paper/src/inalpha_paper/strategy_authoring/（三道沙盒 + fitness）
 #       packages/orchestration/src/tools/strategy.ts（4 个 tool：author / list / get / promote）
 ```

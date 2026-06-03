@@ -7,8 +7,8 @@
  * - ``paper.list_candidates``：列候选（按 fitness 排序），用于"对比 / 找当前最优"
  * - ``paper.get_candidate``：取完整候选（含源码 / metrics / fitness），用于"看这个候选具体是啥"
  * - ``paper.promote_candidate``：把候选从 ``candidate`` 切到 ``promoted``；D-9.1b 起
- *   permission ``ask``（前端气泡确认）；promote 后仅状态切换，live trading runner
- *   在 E2 / D-7 接入
+ *   permission ``ask``（前端气泡确认）。promote 仅状态切换；要按行情自动跑模拟盘需
+ *   再调 ``paper.start_strategy``（D-11 live runner 已实现）
  *
  * 跑回测复用 ``paper.run_backtest``，传 ``candidateId`` 走候选分支——本模块不开
  * 单独的"跑回测" tool，避免 LLM 误用。
@@ -324,10 +324,9 @@ export const paperPromoteCandidateTool = createTool({
     - 候选已经 promoted / rejected——后端返 409 \`CANDIDATE_NOT_PROMOTABLE\`
 
     **重要事实，必须明确告诉用户**：
-    - promote 仅是状态切换；live trading runner（按行情 tick 调 on_bar、下真单进 paper account）
-      还没实现（E2 / D-7 范围）。**不要让用户以为 promote 完就在跑模拟盘**
-    - promoted 后该候选可进 \`trade.create_plan\` 链路（用户手动下单时 strategy_id='candidate:<uuid>'
-      不再被拦）；但自动按行情下单还要等 live runner
+    - promote 仅是状态切换，**不会自动开始交易**。**不要让用户以为 promote 完就在跑模拟盘**
+    - promoted 后有两条路：(1) 走 \`trade.create_plan\` 手动下单；(2) 调 \`paper.start_strategy\`
+      把它放到模拟盘**按行情自动跑 on_bar**（D-11 live runner **已实现**，不是 E2 待办）
 
     入参 \`reason\` 是审计字段，建议写明：
     - 回测区间 / 标的 / timeframe（"2026-Q2 BTC 1h"）
@@ -345,7 +344,8 @@ export const paperPromoteCandidateTool = createTool({
     - permission 被 ask 拦截：用户气泡里点拒绝 → 回报"已取消"，不要重试
 
     坑：
-    - 不要 promote 完就回答"已上线开始跑模拟盘"——live tick 还没接，这是 E2 工作
+    - 不要 promote 完就替用户自动 start——start_strategy 是独立人工动作，promote 后
+      要主动告诉用户"还需 start_strategy 才会真跑"
     - 不要 batch promote 多个候选——每次都会弹气泡，体验差；让用户挑一个最强的
   `.trim(),
   inputSchema: z.object({

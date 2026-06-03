@@ -1,0 +1,538 @@
+"""``LiveRunnerManager`` —— promoted candidate 按行情 bar 自动跑（D-11 issue #1）。
+
+每个 running 的 strategy_run 一个长驻 asyncio task：按 timeframe 周期拉 fresh bar →
+喂 :class:`LiveEngineSession` 的 ``on_bar`` → 拦截到的下单意图走护栏内 plan/exec 链路
+落账（DB-backed RiskGuard + 一次性 token + 审计）→ 把成交回灌 session 保持持仓视图一致。
+
+**信任边界（安全相关）**：每笔单走 plan/exec 但 ``approved_by='system:live_runner'``
+（机器自动审批）。正当性靠上游两道人工闸门：(1) candidate 必先被人 promote；
+(2) start_strategy 必由人显式调。即"人批准了这个策略上模拟盘"，之后按行情自动下单是
+预期行为（ADR-0020 精神）。绝不能从这里给 LLM / 自动化开"无人 promote 也能自动下单"的路径。
+
+**后台服务身份**：loop 调 data ``/bars`` 需 JWT，但后台无用户请求转发 token——用共享
+``JWT_SECRET`` 自签一个短期 service token（sub = 账户 UUID）。market data 不挑用户身份。
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+import jwt
+from inalpha_shared.db import get_conn
+from inalpha_shared.errors import ConflictError
+
+from .config import PaperSettings
+from .data_client import DataClient
+from .engine.live_session import LiveEngineSession
+from .execution import risk_guard as risk_guard_mod
+from .execution.order_executor import OrderExecutor
+from .execution.risk_guard_factory import RiskGuardFactory
+from .fills import apply_fill_to_positions_and_cash
+from .kernel.identifiers import InstrumentId, StrategyId
+from .model.data import Bar
+from .model.orders import Order
+from .runner import _bar_from_dict
+from .storage import accounts as accounts_store
+from .storage import orders as orders_store
+from .storage import strategy_candidates as candidates_store
+from .storage import strategy_runs as runs_store
+from .storage import trade_plans as plans_store
+from .strategy_authoring.ast_audit import audit_strategy_code
+from .strategy_authoring.contract_check import verify_strategy_contract
+from .strategy_authoring.dynamic_loader import load_strategy_class
+
+_logger = logging.getLogger(__name__)
+
+_FEE_RATE = 0.001
+_LIVE_INITIAL_CASH = 10_000.0  # session 内部持仓视图用；真实现金在 DB 账户
+_LIVE_RUNNER_APPROVER = "system:live_runner"
+_PLAN_EXPIRE_S = 300
+
+# timeframe → 秒（轮询周期 + backfill 回看窗口推导）
+_TIMEFRAME_SECONDS: dict[str, int] = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
+    "1d": 86400,
+}
+
+
+def _timeframe_seconds(timeframe: str) -> int:
+    return _TIMEFRAME_SECONDS.get(timeframe, 3600)
+
+
+class LiveRunnerManager:
+    """进程内单例：管理所有 live run 的后台 task。lifespan 起、shutdown 停。"""
+
+    def __init__(
+        self,
+        *,
+        risk_guard_factory: RiskGuardFactory | None,
+        settings: PaperSettings,
+    ) -> None:
+        self._factory = risk_guard_factory
+        self._settings = settings
+        self._tasks: dict[UUID, asyncio.Task[None]] = {}
+
+    # ─── 生命周期 ───
+
+    def start(self, run: dict[str, Any]) -> None:
+        """给一个 running 的 strategy_run 起后台 task。"""
+        run_id: UUID = run["id"]
+        if run_id in self._tasks and not self._tasks[run_id].done():
+            return
+        task = asyncio.create_task(self._run_loop(run), name=f"live-run-{run_id}")
+        self._tasks[run_id] = task
+        # task 退出（return / errored / cancel）后从 dict 移除，避免长跑实例里
+        # errored / 已停的 task 对象无限堆积（CR）。stop() 已 pop 时这里是 no-op。
+        task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
+
+    async def start_async(self, run: dict[str, Any]) -> None:
+        """``start`` 的 async 包装：供 FastAPI ``BackgroundTasks`` 在**响应/事务提交后**起 task。
+
+        必须是 async——Starlette 对 async background task 在主事件循环上 await，
+        ``start`` 内部的 ``asyncio.create_task`` 才有 running loop（同步 task 会被丢进
+        线程池，那里没有 loop，create_task 会 RuntimeError）。
+        """
+        self.start(run)
+
+    async def stop(self, run_id: UUID) -> None:
+        """停一个 run：cancel task + 置 stopped。
+
+        只在当前仍是 'running' 时才写 'stopped'——避免把已 'errored'（策略崩过、
+        error_log 有记录）的终态静默覆盖成 'stopped'，否则用户看不到策略曾崩（CR）。
+        """
+        task = self._tasks.pop(run_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        async with get_conn() as conn:
+            current = await runs_store.get(conn, run_id)
+            if current is not None and current["status"] == "running":
+                await runs_store.set_status(conn, run_id, "stopped")
+
+    async def stop_all(self) -> None:
+        """服务停机：cancel 所有 task（不改 DB 状态，重启由 reconcile 处理）。"""
+        # 用 list() 快照：cancel 触发的 done_callback 会 _tasks.pop，遍历中改 dict 有隐患
+        for task in list(self._tasks.values()):
+            if not task.done():
+                task.cancel()
+        for task in list(self._tasks.values()):
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._tasks.clear()
+
+    # ─── 主循环 ───
+
+    async def _run_loop(self, run: dict[str, Any]) -> None:
+        run_id: UUID = run["id"]
+        # 自动化路径 fail-closed（HIGH-2）：无人值守的下单循环不应在零风控下跑。
+        # factory=None = risk_engine_enabled=false 或 TOML 加载失败 → enforce() pass-through。
+        # 手动 HTTP 下单 fail-open 时人还在回路里，这里没有，必须默认拒跑。
+        if self._factory is None:
+            if self._settings.live_runner_require_risk_guard:
+                _logger.error("live run %s: 风控不可用（factory=None），fail-closed 拒绝起跑", run_id)
+                async with get_conn() as conn:
+                    await runs_store.append_error_log(
+                        conn, run_id,
+                        "风控不可用（risk_engine_enabled=false 或 risk_rules 加载失败），"
+                        "live runner 默认 fail-closed 拒绝起跑；如确需无风控运行，"
+                        "设 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false",
+                    )
+                    await runs_store.set_status(conn, run_id, "errored")
+                return
+            # 显式放行：留一条醒目告警，让用户知道这个 run 在零风控下跑
+            _logger.warning("live run %s: 风控不可用但已显式放行，零风控运行", run_id)
+            async with get_conn() as conn:
+                await runs_store.append_error_log(
+                    conn, run_id,
+                    "⚠ 风控不可用且 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false，本 run 在零风控下运行",
+                )
+        try:
+            session, warmup_ts = await self._build_session(run)
+        except Exception as e:
+            _logger.exception("live run %s: session build failed", run_id)
+            async with get_conn() as conn:
+                await runs_store.append_error_log(conn, run_id, f"build failed: {e}")
+                await runs_store.set_status(conn, run_id, "errored")
+            return
+
+        # 预热已喂到 warmup_ts；从这之后的新 bar 才真处理，避免重复喂预热段。
+        last_bar_ts: datetime | None = run.get("last_bar_ts") or warmup_ts
+        poll_s = _timeframe_seconds(run["timeframe"])
+        if self._settings.live_poll_interval_s > 0:
+            poll_s = self._settings.live_poll_interval_s
+        poll_s = min(poll_s, 3600)
+        err_streak = 0
+
+        while True:
+            try:
+                bar = await self._fetch_latest_bar(run)
+                bar_dt = _ns_to_dt(bar.ts_event) if bar is not None else None
+                if bar is None or (last_bar_ts is not None and bar_dt <= last_bar_ts):
+                    await asyncio.sleep(poll_s)
+                    continue
+                await self._process_bar(session, run, bar)
+                last_bar_ts = bar_dt
+                err_streak = 0
+                await asyncio.sleep(poll_s)
+            except asyncio.CancelledError:
+                raise  # stop() 触发，干净退出（事务边界外，不留半个 plan）
+            except Exception as e:
+                err_streak += 1
+                _logger.warning("live run %s error (streak=%d): %s", run_id, err_streak, e)
+                # handler 内的 DB 调用也要兜——否则 DB 短暂不可达时异常逃出 while
+                # loop，task 静默死亡、run 永久卡在 'running'（CR）。
+                try:
+                    async with get_conn() as conn:
+                        await runs_store.append_error_log(
+                            conn, run_id, f"{type(e).__name__}: {e}"
+                        )
+                except Exception:
+                    _logger.exception("live run %s: 写 error_log 失败", run_id)
+                if err_streak >= self._settings.live_max_error_streak:
+                    try:
+                        async with get_conn() as conn:
+                            await runs_store.set_status(conn, run_id, "errored")
+                    except Exception:
+                        _logger.exception("live run %s: 置 errored 失败", run_id)
+                    return
+                await asyncio.sleep(min(2 ** err_streak, 60))  # 指数退避，cap 60s
+
+    async def _build_session(
+        self, run: dict[str, Any]
+    ) -> tuple[LiveEngineSession, datetime | None]:
+        """读 candidate code → 二次审计 + 沙盒加载 → 建 session → 历史 bar 预热。
+
+        返回 ``(session, warmup_last_bar_ts)``。预热让需要 lookback 的策略（SMA 等）
+        start 后就有指标状态，不必空跑几十根实时 bar 才出第一个信号。
+        """
+        async with get_conn() as conn:
+            candidate = await candidates_store.get_candidate(conn, run["candidate_id"])
+        if candidate is None:
+            raise RuntimeError(f"candidate {run['candidate_id']} not found")
+        if candidate["status"] != "promoted":
+            raise RuntimeError(f"candidate {run['candidate_id']} not promoted")
+        code = candidate["code"]
+        audit = audit_strategy_code(code)  # defense in depth（promote 时已审）
+        if not audit.ok:
+            raise RuntimeError(f"candidate code failed AST audit: {audit.findings}")
+        strategy_cls = load_strategy_class(code)
+        verify_strategy_contract(strategy_cls)
+        instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
+        session = LiveEngineSession(
+            strategy_cls=strategy_cls,
+            instrument_id=instrument_id,
+            timeframe=run["timeframe"],
+            params=run.get("params") or {},
+            initial_cash=_LIVE_INITIAL_CASH,
+            fee_rate=_FEE_RATE,
+        )
+        warmup_ts = await self._warmup_session(session, run)
+        return session, warmup_ts
+
+    async def _warmup_session(
+        self, session: LiveEngineSession, run: dict[str, Any]
+    ) -> datetime | None:
+        """拉最近 N 根历史 bar 喂策略**预热指标**（丢弃产生的下单意图，预热期不真下单）。
+
+        返回最后一根预热 bar 的 ts；策略持仓视图保持空仓（不 confirm_fill），符合
+        "全新 live run 从无持仓开始"语义。``live_warmup_bars=0`` 时跳过。
+        """
+        n = self._settings.live_warmup_bars
+        if n <= 0:
+            return None
+        token = self._mint_service_token(run["account_id"])
+        now = datetime.now(UTC)
+        tf_s = _timeframe_seconds(run["timeframe"])
+        from_ts = now - timedelta(seconds=tf_s * (n + 1))
+        async with DataClient(self._settings.data_service_url, token) as dc:
+            raw = await dc.get_bars(
+                venue=run["venue"],
+                symbol=run["symbol"],
+                timeframe=run["timeframe"],
+                from_ts=from_ts,
+                to_ts=now,
+                limit=n,
+                fresh=True,
+            )
+        if not raw:
+            return None
+        instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
+        # 预热也只喂已收盘 bar：否则预热末尾若是未收盘那根，last_bar_ts 会把它的 ts
+        # 记下，等它真收盘时（ts 不变）被主循环去重跳过 → 策略漏掉这根（HIGH-1）。
+        closed = _closed_bars(raw, instrument_id, run["timeframe"], now)
+        last_ts: datetime | None = None
+        for bar in closed:
+            session.feed_bar(bar)  # 丢弃 orders —— 预热只为建立指标状态
+            last_ts = _ns_to_dt(bar.ts_event)
+        return last_ts
+
+    async def _fetch_latest_bar(self, run: dict[str, Any]) -> Bar | None:
+        """拉最新一根**已收盘** fresh bar；无（已收盘的）数据返 None。"""
+        token = self._mint_service_token(run["account_id"])
+        now = datetime.now(UTC)
+        # 回看窗口 = 几个 timeframe，避免 fresh backfill 拉太多
+        lookback_s = max(_timeframe_seconds(run["timeframe"]) * 5, 7200)
+        from_ts = now - timedelta(seconds=lookback_s)
+        async with DataClient(self._settings.data_service_url, token) as dc:
+            raw = await dc.get_bars(
+                venue=run["venue"],
+                symbol=run["symbol"],
+                timeframe=run["timeframe"],
+                from_ts=from_ts,
+                # limit=5：最新一根可能未收盘要丢；时间边界极端情况下可能有多根 forming，
+                # 多取几根保证仍有已收盘 bar，边际数据成本可忽略（CR medium）。
+                to_ts=now,
+                limit=5,
+                fresh=True,
+            )
+        if not raw:
+            return None
+        instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
+        # 只取已收盘的最新一根，绝不在未收盘 bar 上决策（HIGH-1）
+        closed = _closed_bars(raw, instrument_id, run["timeframe"], now)
+        return closed[-1] if closed else None
+
+    async def _process_bar(self, session: LiveEngineSession, run: dict[str, Any], bar: Bar) -> None:
+        """喂一根 bar → 路由本根 bar 的下单意图 → 更新进度。（可单测，不依赖轮询）。"""
+        orders = session.feed_bar(bar)
+        for order, strategy_id in orders:
+            try:
+                await self._route_through_plan_exec(session, order, strategy_id, run, bar)
+            except Exception:
+                # 部分失败清理（CR medium）：order 已被 CaptureGateway 推到 ExecutionEngine
+                # 的 ACCEPTED 态，但护栏链路（DB 事务等）中途抛错时 confirm_fill/reject_order
+                # 都没调到 → EE 内存留孤儿单、策略以为有挂单而 portfolio 空仓，状态分叉。
+                # 先 reject 清掉 EE 内存状态，再把异常抛给 _run_loop 计 err_streak。
+                session.reject_order(
+                    order=order, strategy_id=strategy_id,
+                    reason="route_through_plan_exec failed; cleaning up EE state",
+                    ts_event=bar.ts_event,
+                )
+                raise
+        # 进度写做 best-effort（CR medium）：本根 bar 的下单意图已落账 + confirm_fill 已回灌，
+        # 这些副作用**不幂等**。若 update_progress 因 DB 瞬时错误抛出，绝不能让它逃出本函数——
+        # 否则 _run_loop 的内存 last_bar_ts 不前进 → 下轮重喂同一根 bar → 重复下单 / 指标污染。
+        # 进度行只用于观测 / reconcile，落后一根可接受；内存 last_bar_ts 才是去重权威。
+        try:
+            async with get_conn() as conn:
+                await runs_store.update_progress(
+                    conn,
+                    run["id"],
+                    last_bar_ts=_ns_to_dt(bar.ts_event),
+                    cumulative_pnl=Decimal(str(session.cumulative_pnl())),
+                )
+        except Exception:
+            _logger.exception("live run %s: update_progress 失败（best-effort，不重喂 bar）", run["id"])
+
+    async def _route_through_plan_exec(
+        self,
+        session: LiveEngineSession,
+        order: Order,
+        strategy_id: StrategyId,
+        run: dict[str, Any],
+        bar: Bar,
+    ) -> None:
+        """一笔下单意图走护栏内 plan/exec：风控 → 撮合 → plan create/approve/consume → 落账 → 回灌。"""
+        account_id: UUID = run["account_id"]
+        venue: str = run["venue"]
+        symbol: str = run["symbol"]
+        run_id: UUID = run["id"]
+        side = order.side.value  # "BUY" / "SELL"
+
+        # intent 按"下单前持仓方向 + side"判，别把所有 SELL 当平多（CLAUDE.md §4 多空踩坑）：
+        # SELL 平多=close / SELL 开空=open_short；BUY 平空=close / BUY 开多=open_long。
+        # 在风控之前算好 → risk_rejected 决策行也带上 intent（复盘做空语义不丢）。
+        pos = session.portfolio.position(order.instrument_id)
+        cur_qty = pos.quantity if pos is not None else 0.0
+        if side == "BUY":
+            intent = "close" if cur_qty < 0 else "open_long"
+        else:  # SELL
+            intent = "close" if cur_qty > 0 else "open_short"
+
+        # 1. 风控（DB-backed RiskGuard）；命中 → 拒单 + 记 error_log，不杀 run
+        try:
+            await risk_guard_mod.enforce(
+                self._factory, account_id=account_id, venue=venue, symbol=symbol, side=side
+            )
+        except ConflictError as e:
+            session.reject_order(
+                order=order, strategy_id=strategy_id,
+                reason=f"RISK_REJECTED: {e.message}", ts_event=bar.ts_event,
+            )
+            async with get_conn() as conn:
+                await runs_store.append_error_log(
+                    conn, run_id, f"order rejected by risk: {e.message}"
+                )
+                await self._record_decision(
+                    conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                    reason=e.message,
+                )
+            return
+
+        # 2. 撮合（纯函数，ref_price = bar.close）
+        result = OrderExecutor.execute(
+            venue=venue,
+            symbol=symbol,
+            side=side,  # type: ignore[arg-type]
+            order_type=order.type.value,  # type: ignore[arg-type]
+            quantity=order.quantity,
+            price=order.price,
+            ref_price=float(bar.close),
+            fee_rate=_FEE_RATE,
+        )
+
+        # 3. 走 plan/exec 链路落账（机器自动审批）
+        order_params = {
+            "side": side, "type": order.type.value,
+            "quantity": order.quantity, "price": order.price,
+        }
+        rationale = (
+            f"[live_runner run:{run_id}] candidate:{run['candidate_id']} on_bar {side} signal"
+        )
+        async with get_conn() as conn, conn.transaction():
+            await accounts_store.get_or_create(conn, account_id)  # 首单 lazy create 账户
+            plan = await plans_store.create(
+                conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
+                order_params=order_params, rationale=rationale,
+                expire_in_seconds=_PLAN_EXPIRE_S,
+            )
+            plan_id = plan["plan_id"]
+            approved = await plans_store.approve(
+                conn, account_id=account_id, plan_id=plan_id, approver=_LIVE_RUNNER_APPROVER
+            )
+            await plans_store.consume_approval(
+                conn, account_id=account_id, plan_id=plan_id,
+                approval_token=approved["approval_token"],
+            )
+            await orders_store.insert(
+                conn, account_id=account_id, client_order_id=result["client_order_id"],
+                venue=venue, symbol=symbol, side=side, order_type=order.type.value,
+                quantity=order.quantity, price=order.price, status=result["status"],
+                filled_quantity=result["filled_quantity"],
+                avg_fill_price=result["avg_fill_price"], fee=result["fee"],
+                notional=result["notional"], ts_event=result["ts_event"],
+                trade_plan_id=plan_id,
+            )
+            if result["status"] == "FILLED":
+                await apply_fill_to_positions_and_cash(
+                    conn, account_id=account_id, venue=venue, symbol=symbol, side=side,
+                    quantity=Decimal(str(result["filled_quantity"])),
+                    fill_price=Decimal(str(result["avg_fill_price"])),
+                    fee=Decimal(str(result["fee"])),
+                    ts_event=result["ts_event"], order_id=result["client_order_id"],
+                )
+            await plans_store.record_execution(
+                conn, plan_id=plan_id, resulting_order_id=result["client_order_id"]
+            )
+            # 决策复盘日志（与订单同事务，原子）
+            filled = result["status"] == "FILLED"
+            await self._record_decision(
+                conn, run, order, bar,
+                outcome="filled" if filled else "rejected",
+                intent=intent,
+                plan_id=plan_id,
+                order_id=str(result["client_order_id"]),
+                fill_price=Decimal(str(result["avg_fill_price"])) if filled else None,
+                fee=Decimal(str(result["fee"])) if filled else None,
+                reason=None if filled else str(result.get("rejection_reason") or "not filled"),
+            )
+
+        # 4. 回灌 session：成交更新 portfolio + 策略持仓视图；未成交清理 ExecutionEngine 状态
+        if result["status"] == "FILLED":
+            session.confirm_fill(
+                order=order, strategy_id=strategy_id,
+                fill_qty=float(result["filled_quantity"]),
+                fill_price=float(result["avg_fill_price"]),
+                ts_event=bar.ts_event,
+            )
+        else:
+            session.reject_order(
+                order=order, strategy_id=strategy_id,
+                reason=str(result.get("rejection_reason") or "not filled"),
+                ts_event=bar.ts_event,
+            )
+
+    async def _record_decision(
+        self,
+        conn: Any,
+        run: dict[str, Any],
+        order: Order,
+        bar: Bar,
+        *,
+        outcome: str,
+        intent: str | None = None,
+        plan_id: UUID | None = None,
+        order_id: str | None = None,
+        fill_price: Decimal | None = None,
+        fee: Decimal | None = None,
+        reason: str | None = None,
+    ) -> None:
+        """记一行决策复盘日志（策略在某根 bar 的下单意图 + 撮合结果）。"""
+        await runs_store.insert_decision(
+            conn,
+            run_id=run["id"],
+            bar_ts=_ns_to_dt(bar.ts_event),
+            bar_close=Decimal(str(bar.close)),
+            side=order.side.value,
+            quantity=Decimal(str(order.quantity)),
+            order_type=order.type.value,
+            limit_price=Decimal(str(order.price)) if order.price is not None else None,
+            tag=order.tag,  # 策略可经 Order.tag 透传语义意图（stop_loss / take_profit / ...）
+            intent=intent,  # open_long / open_short / close（补 side 缺失的多空语义）
+            outcome=outcome,
+            fill_price=fill_price,
+            fee=fee,
+            plan_id=plan_id,
+            order_id=order_id,
+            reason=reason,
+        )
+
+    # ─── 工具 ───
+
+    def _mint_service_token(self, account_id: UUID) -> str:
+        """自签短期 service JWT（sub = 账户 UUID）调 data /bars。共享密钥，与 verify_jwt 对称。"""
+        payload = {
+            "sub": str(account_id),
+            "exp": int(time.time()) + self._settings.live_runner_token_ttl_s,
+        }
+        return jwt.encode(
+            payload, self._settings.jwt_secret, algorithm=self._settings.jwt_algorithm
+        )
+
+
+def _ns_to_dt(ts_ns: int) -> datetime:
+    return datetime.fromtimestamp(ts_ns / 1_000_000_000, tz=UTC)
+
+
+def _closed_bars(
+    raw: list[dict[str, Any]],
+    instrument_id: InstrumentId,
+    timeframe: str,
+    now: datetime,
+) -> list[Bar]:
+    """从 data /bars 原始返回里只挑**已收盘**的 bar（HIGH-1）。
+
+    OHLCV 的 ts 是 K 线**开盘时刻**；最新一根常是当前**未收盘**那根（ccxt 多数交易所
+    默认会带）。在未收盘 bar 上决策 = 拿临时 close 下单，且 ts 不变会被去重永不复评 →
+    幻影信号。判据：``open_ts + timeframe <= now`` 才算收盘。时钟略有偏差时宁可保守跳过
+    （下一轮再处理），也不在半根 bar 上交易。
+    """
+    tf_s = _timeframe_seconds(timeframe)
+    cutoff = now - timedelta(seconds=tf_s)  # open_ts <= cutoff ⟺ open_ts + tf <= now
+    out: list[Bar] = []
+    for b in raw:
+        bar = _bar_from_dict(b, instrument_id, timeframe)
+        if _ns_to_dt(bar.ts_event) <= cutoff:
+            out.append(bar)
+    return out

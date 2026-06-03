@@ -73,7 +73,7 @@ export const paperRunBacktestTool = createTool({
     - **D-9：跑 LLM 自创策略候选** —— 传 candidateId（来自 paper.author_strategy）而非 strategyId
 
     何时不用：
-    - 实时跑模拟盘 → 用 paper.start_strategy（D-7 还没做）
+    - 实时跑模拟盘（promoted 候选按行情自动跑）→ 用 paper.start_strategy
     - **跨多标的 / 多候选 批量** → 用 swarm.run_backtest_grid（D-9 已支持全市场）
     - 单纯查 K 线走势 → data.get_bars
 
@@ -401,6 +401,121 @@ export const paperGetAccountTool = createTool({
   },
 });
 
+// ────────────────────────────────────────────────────────────────────
+// D-11 · live runner（issue #1）
+// ────────────────────────────────────────────────────────────────────
+
+export const paperStartStrategyTool = createTool({
+  id: "paper.start_strategy",
+  description: `
+    把一个 **已 promoted** 的策略候选放到模拟盘按行情自动跑（live runner）。
+    起一个后台 runner：按 timeframe 拉最新 K 线喂策略 on_bar，下单意图走护栏内
+    plan/exec 链路落账（过风控 + 审计），positions / 总权益随行情自动更新。
+
+    何时用：
+    - 用户明确说"把这个策略放到模拟盘 / 让它自动跑 / 实时跟行情"
+    - **前提**：候选必须先 promote（paper.promote_candidate）；本工具只接受 promoted
+
+    何时不用：
+    - 只想跑一次历史回测 → paper.run_backtest
+    - 候选还没 promote → 先让用户确认 promote
+
+    坑：
+    - **promote ≠ 自动跑**：promote 只是状态切换，必须再调本工具才真正按行情跑
+    - 同一个 candidate 同时只能有一个 running（再起会 409）；先 stop 再换 symbol
+    - candidate 表不含 venue/symbol/timeframe，必须在这里指定
+    - 机器自动审批下单（approved_by=system:live_runner），正当性靠"人先 promote + 人显式 start"
+  `.trim(),
+  inputSchema: z.object({
+    candidateId: z.string().uuid().describe("已 promoted 的候选 id"),
+    venue: z
+      .string()
+      .describe(
+        "数据源 venue，**必填**：按 symbol 的市场分类推导，不要留空 / 默认 binance。" +
+        "crypto→binance；美股 / 全球指数→yfinance(或 alpaca)；A股 sh./sz. + 港股 hk.→akshare。" +
+        "venue 与 symbol 市场不符会喂错行情、策略空跑或报错。",
+      ),
+    symbol: SymbolSchema,
+    timeframe: TimeframeSchema.default("1h"),
+    params: z.record(z.string(), z.unknown()).optional().describe("策略参数（缺省用策略默认值）"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.startStrategy({
+      candidateId: inputData.candidateId,
+      venue: inputData.venue,
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe,
+      params: inputData.params,
+    });
+  },
+});
+
+export const paperStopStrategyTool = createTool({
+  id: "paper.stop_strategy",
+  description: `
+    停掉一个正在模拟盘跑的 live runner（按 run id）。停后该 candidate 可重新 start。
+
+    何时用：用户说"停掉那个策略 / 别让它跑了"
+    何时不用：想看跑得怎么样 → paper.list_strategy_runs
+  `.trim(),
+  inputSchema: z.object({
+    runId: z.string().uuid().describe("strategy_run id（来自 start_strategy / list_strategy_runs）"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.stopStrategy(inputData.runId);
+  },
+});
+
+export const paperListStrategyRunsTool = createTool({
+  id: "paper.list_strategy_runs",
+  description: `
+    列出当前账户的 live runner：状态（running/stopped/errored）/ 累计 pnl /
+    已处理到的最新 bar / 错误日志。
+
+    何时用：用户问"我有哪些策略在跑 / 跑得怎么样 / 那个策略赚了多少"
+    坑：cumulative_pnl 是 mark-to-market 估算；errored 状态看 error_log 找原因
+  `.trim(),
+  inputSchema: z.object({
+    status: z.enum(["running", "stopped", "errored"]).optional().describe("按状态过滤"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listStrategyRuns({ status: inputData.status });
+  },
+});
+
+export const paperListStrategyRunDecisionsTool = createTool({
+  id: "paper.list_strategy_run_decisions",
+  description: `
+    一个 live run 的**决策复盘时间线**：每根 bar 策略产生的下单意图 + 撮合结果。
+
+    何时用：
+    - 用户问"那个策略都做了哪些决定 / 为什么买在这里 / 复盘一下它的操作"
+
+    返回每行：bar 时点 / 价、side / quantity / 类型 / tag(策略语义意图)、
+    outcome（filled / rejected / risk_rejected）、成交价、plan_id / order_id（可交叉
+    查 trade_plans 的 rationale 与 closed_trades 的盈亏）、reason。
+
+    坑：
+    - 只记**产生了下单意图**的 bar（决策事件流，非逐 bar 全量快照）
+    - 确定性策略"代码即理由"，细粒度信号上下文看 tag / 结合 candidate 源码
+  `.trim(),
+  inputSchema: z.object({
+    runId: z.string().uuid().describe("strategy_run id"),
+    limit: z.number().int().min(1).max(500).default(200),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listStrategyRunDecisions(inputData.runId, inputData.limit);
+  },
+});
+
 export const paperTools = [
   paperListStrategiesTool,
   paperRunBacktestTool,
@@ -410,4 +525,8 @@ export const paperTools = [
   paperGetAccountTool,
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
+  paperStartStrategyTool,
+  paperStopStrategyTool,
+  paperListStrategyRunsTool,
+  paperListStrategyRunDecisionsTool,
 ] as const;

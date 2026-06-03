@@ -17,6 +17,7 @@ from inalpha_shared import (
     install_error_handler,
     install_request_logging,
 )
+from inalpha_shared.db import get_conn
 
 from . import __version__
 from .api import (
@@ -26,6 +27,7 @@ from .api import (
     risk,
     strategies,
     strategy_candidates,
+    strategy_runs,
     trade_plans,
 )
 from .config import get_paper_settings
@@ -34,6 +36,8 @@ from .engine.pool import shutdown_pool as shutdown_backtest_pool
 from .execution.risk_guard_factory import RiskGuardFactory
 from .execution.risk_rules import load_risk_rules_config
 from .execution.risk_rules.market_calendar import RoutingCalendar
+from .live_runner import LiveRunnerManager
+from .storage import strategy_runs as runs_store
 
 _settings = get_paper_settings()
 configure_logging(level=_settings.log_level, service_name=_settings.service_name)
@@ -112,9 +116,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     pool = await init_pool(_settings.database_url)
     init_backtest_pool(_settings)
     app.state.risk_guard_factory = await _build_risk_guard_factory(pool)
+
+    # D-11 live runner：内存 task 随重启丢失，把残留 running 行 reconcile 成 errored
+    # （避免 UNIQUE running 永久挡住该 candidate 重新 start）。
+    async with get_conn() as conn:
+        n = await runs_store.mark_running_as_errored(conn, reason="service restarted")
+    if n:
+        _logger.warning("live runner reconcile: %d 个残留 running run 标记为 errored", n)
+    app.state.live_runner_manager = LiveRunnerManager(
+        risk_guard_factory=app.state.risk_guard_factory,
+        settings=_settings,
+    )
     try:
         yield
     finally:
+        await app.state.live_runner_manager.stop_all()
         shutdown_backtest_pool()
         await close_pool()
 
@@ -134,4 +150,5 @@ app.include_router(orders.router)
 app.include_router(risk.router)
 app.include_router(strategies.router)
 app.include_router(strategy_candidates.router)
+app.include_router(strategy_runs.router)
 app.include_router(trade_plans.router)

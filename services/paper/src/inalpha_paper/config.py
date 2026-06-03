@@ -74,6 +74,47 @@ class PaperSettings(BaseSettings):
         "文件缺失 / 解析失败 → lifespan log error 后 fail-open（不阻塞服务起步）。",
     )
 
+    # ─── D-11 · live runner（issue #1）─────────────────────────────────
+
+    live_poll_interval_s: int = Field(
+        default=0,
+        alias="INALPHA_LIVE_POLL_INTERVAL_S",
+        ge=0,
+        le=3600,
+        description="live runner 轮询周期（秒）。0 = 按 timeframe 自动推导（默认）；"
+        ">0 时覆盖（测试 / 调试可调快）。",
+    )
+    live_max_error_streak: int = Field(
+        default=5,
+        alias="INALPHA_LIVE_MAX_ERROR_STREAK",
+        ge=1,
+        le=100,
+        description="live runner 连续出错多少次后置 errored 停跑。",
+    )
+    live_runner_token_ttl_s: int = Field(
+        default=300,
+        alias="INALPHA_LIVE_RUNNER_TOKEN_TTL_S",
+        ge=30,
+        le=3600,
+        description="live runner 自签 service JWT 的有效期（秒），调 data /bars 用。",
+    )
+    live_warmup_bars: int = Field(
+        default=200,
+        alias="INALPHA_LIVE_WARMUP_BARS",
+        ge=0,
+        le=2000,
+        description="live runner 启动时拉多少根历史 bar 预热策略指标（0 = 不预热）。"
+        "让需要 lookback 的策略 start 后即有指标状态，不必空跑几十根实时 bar。",
+    )
+    live_runner_require_risk_guard: bool = Field(
+        default=True,
+        alias="INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD",
+        description="live runner 是否要求风控可用才起跑（**自动化路径 fail-closed**）。"
+        "默认 true：风控不可用（risk_engine_enabled=false / TOML 加载失败 → factory=None）时"
+        "拒绝起跑并置 errored——无人值守的自动下单循环不应在零风控下运行。"
+        "显式置 false 可放行（如本地无风控调试），此时 run 的 error_log 会留一条醒目告警。",
+    )
+
 
 @lru_cache(maxsize=1)
 def get_paper_settings() -> PaperSettings:

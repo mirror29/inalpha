@@ -542,3 +542,76 @@ class ExecutePlanResponse(BaseModel):
     plan_id: str
     plan_status: str
     order: SubmitOrderResponse
+
+
+# ────────────────────────────────────────────────────────────────────
+# D-11 · live runner（issue #1）
+# ────────────────────────────────────────────────────────────────────
+
+
+class StartStrategyRunRequest(BaseModel):
+    """``POST /strategy_runs`` 请求体：给一个 promoted candidate 起 live 跑。
+
+    candidate 表不含 venue/symbol/timeframe/params，这些在此处传（同回测请求）。
+    """
+
+    candidate_id: UUID = Field(..., description="promoted candidate 的 id")
+    venue: str = Field(
+        ...,
+        description="数据源（**必填**，不预设市场/品种，见 CLAUDE.md §3）；按市场分类："
+        "crypto→binance / 美股→yfinance|alpaca / A 股→akshare。**不要留空默认 binance**。",
+        examples=["binance", "yfinance", "akshare"],
+    )
+    symbol: str = Field(..., examples=["BTC/USDT", "AAPL", "sh.600519"])
+    timeframe: str = Field(default="1h", examples=["1m", "5m", "1h", "1d"])
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="策略参数（candidate 源码 __init__ 接受的 kwargs）；缺省用策略默认值",
+    )
+
+
+class StrategyRunRecord(BaseModel):
+    """``GET /strategy_runs`` / ``POST /strategy_runs`` 响应里的一行。"""
+
+    id: UUID
+    candidate_id: UUID
+    account_id: UUID
+    status: Literal["running", "stopped", "errored"]
+    venue: str
+    symbol: str
+    timeframe: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    last_bar_ts: datetime | None = None
+    cumulative_pnl: float = 0.0
+    error_log: list[dict[str, Any]] = Field(default_factory=list)
+    started_at: datetime
+    stopped_at: datetime | None = None
+
+
+class StrategyRunDecisionRecord(BaseModel):
+    """``GET /strategy_runs/{id}/decisions`` 响应里的一行：复盘决策时间线。
+
+    每次策略在某根 bar 产生下单意图时记一行（市场上下文 + 订单意图 + 撮合结果）。
+    交叉引用：``plan_id`` → trade_plans(rationale)，``order_id`` → orders / closed_trades。
+    """
+
+    id: UUID
+    run_id: UUID
+    bar_ts: datetime
+    bar_close: float
+    side: Literal["BUY", "SELL"]
+    quantity: float
+    order_type: str
+    limit_price: float | None = None
+    tag: str | None = Field(default=None, description="策略经 Order.tag 透传的语义意图")
+    intent: Literal["open_long", "open_short", "close"] | None = Field(
+        default=None,
+        description="按下单前持仓方向 + side 判的开/平意图，补 side（仅 BUY/SELL）缺失的多空语义",
+    )
+    outcome: Literal["filled", "rejected", "risk_rejected"]
+    fill_price: float | None = None
+    fee: float | None = None
+    plan_id: UUID | None = None
+    order_id: str | None = None
+    reason: str | None = None
+    created_at: datetime

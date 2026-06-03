@@ -303,6 +303,54 @@ export type AccountSnapshot = {
   updated_at: string;
 };
 
+/** D-11 · live runner（issue #1）。 */
+export type StrategyRunRecord = {
+  id: string;
+  candidate_id: string;
+  account_id: string;
+  status: "running" | "stopped" | "errored";
+  venue: string;
+  symbol: string;
+  timeframe: string;
+  params: Record<string, unknown>;
+  last_bar_ts: string | null;
+  cumulative_pnl: number;
+  error_log: Array<Record<string, unknown>>;
+  started_at: string;
+  stopped_at: string | null;
+};
+
+export type StartStrategyParams = {
+  candidateId: string;
+  /** 必填：按 symbol 的市场分类显式选 venue，不预设 binance（CLAUDE.md §3 全球市场）。 */
+  venue: string;
+  symbol: string;
+  timeframe?: string;
+  params?: Record<string, unknown>;
+};
+
+/** D-11 · live runner 决策复盘日志一行。 */
+export type StrategyRunDecisionRecord = {
+  id: string;
+  run_id: string;
+  bar_ts: string;
+  bar_close: number;
+  side: "BUY" | "SELL";
+  quantity: number;
+  order_type: string;
+  limit_price: number | null;
+  tag: string | null;
+  /** 开/平意图（按下单前持仓方向 + side 判），补 side 缺失的做多/做空语义。 */
+  intent: "open_long" | "open_short" | "close" | null;
+  outcome: "filled" | "rejected" | "risk_rejected";
+  fill_price: number | null;
+  fee: number | null;
+  plan_id: string | null;
+  order_id: string | null;
+  reason: string | null;
+  created_at: string;
+};
+
 export class PaperClient {
   private readonly http: HttpClient;
 
@@ -501,5 +549,39 @@ export class PaperClient {
 
   async getAccount(): Promise<AccountSnapshot> {
     return await this.http.get<AccountSnapshot>("/accounts/me");
+  }
+
+  // ────────────────────────────────────────────────────────────────────
+  // D-11 · live runner（issue #1）
+  // ────────────────────────────────────────────────────────────────────
+
+  async startStrategy(params: StartStrategyParams): Promise<StrategyRunRecord> {
+    return await this.http.post<StrategyRunRecord>("/strategy_runs", {
+      candidate_id: params.candidateId,
+      venue: params.venue,
+      symbol: params.symbol,
+      timeframe: params.timeframe ?? "1h",
+      params: params.params ?? {},
+    });
+  }
+
+  async stopStrategy(runId: string): Promise<StrategyRunRecord> {
+    return await this.http.post<StrategyRunRecord>(`/strategy_runs/${runId}/stop`, {});
+  }
+
+  async listStrategyRuns(filter?: { status?: string }): Promise<StrategyRunRecord[]> {
+    return await this.http.get<StrategyRunRecord[]>("/strategy_runs", {
+      status: filter?.status,
+    });
+  }
+
+  async listStrategyRunDecisions(
+    runId: string,
+    limit?: number,
+  ): Promise<StrategyRunDecisionRecord[]> {
+    return await this.http.get<StrategyRunDecisionRecord[]>(
+      `/strategy_runs/${runId}/decisions`,
+      { limit },
+    );
   }
 }

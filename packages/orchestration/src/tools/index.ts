@@ -22,7 +22,11 @@ import {
   paperListOrdersTool,
   paperListPositionsTool,
   paperListStrategiesTool,
+  paperListStrategyRunDecisionsTool,
+  paperListStrategyRunsTool,
   paperRunBacktestTool,
+  paperStartStrategyTool,
+  paperStopStrategyTool,
   paperTools,
 } from "./paper.js";
 import { researchDeepDiveTool, researchTools } from "./research.js";
@@ -79,8 +83,12 @@ export {
   paperListOrdersTool,
   paperListPositionsTool,
   paperListStrategiesTool,
+  paperListStrategyRunDecisionsTool,
+  paperListStrategyRunsTool,
   paperPromoteCandidateTool,
   paperRunBacktestTool,
+  paperStartStrategyTool,
+  paperStopStrategyTool,
   rejectTradePlanTool,
   researchDeepDiveTool,
   riskDescribeRulesTool,
@@ -173,6 +181,11 @@ export const orchestratorToolList = [
   paperGetCandidateTool,
   // D-9 · 候选 → 正式（permission 默认 ask，弹气泡二次确认）
   paperPromoteCandidateTool,
+  // D-11 · live runner（issue #1）：promoted 候选按行情自动跑 + 决策复盘
+  paperStartStrategyTool,
+  paperStopStrategyTool,
+  paperListStrategyRunsTool,
+  paperListStrategyRunDecisionsTool,
   // ADR-0025 Swarm S1：并行批量回测
   swarmRunBacktestGridTool,
   // Plan/Exec 五件套（D-8a' 直接挂到 orchestrator）
