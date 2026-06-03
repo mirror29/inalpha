@@ -117,6 +117,13 @@ async def test_start_happy_path_and_duplicate(
     assert r2.json()["code"] == "STRATEGY_RUN_ALREADY_RUNNING"
 
 
+async def test_list_invalid_status_rejected(client: TestClient, app_with_lifespan: Any) -> None:
+    """status 传非法值 → 请求校验失败（不静默返空列表）。"""
+    _stub_manager(app_with_lifespan)
+    r = client.get("/strategy_runs?status=INVALID", headers=_headers(client))
+    assert r.status_code in (400, 422)  # Literal 校验，非 200+[]
+
+
 async def test_stop_and_list(client: TestClient, app_with_lifespan: Any) -> None:
     _stub_manager(app_with_lifespan)
     # stop 用 manager.stop —— 也 stub 掉（只改 DB 状态）

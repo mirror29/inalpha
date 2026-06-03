@@ -132,6 +132,38 @@ async def test_process_bar_risk_rejected_records_decision(
     assert pos is None or pos.is_flat
 
 
+async def test_route_failure_cleans_up_ee_orphan(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """护栏链路中途抛错 → reject_order 清 EE 孤儿单 + 异常上抛（CR medium）。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _make_session()
+    run = await _insert_run(uuid4())
+
+    # 撮合阶段抛意外错（模拟 DB / 执行瞬时故障，发生在 confirm_fill / reject 之前）
+    def boom(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise RuntimeError("boom in route")
+
+    monkeypatch.setattr("inalpha_paper.live_runner.OrderExecutor.execute", boom)
+
+    # 监视 reject_order 是否被调来清 EE 内存状态
+    rejected: list = []
+    orig_reject = session.reject_order
+
+    def spy_reject(**kw):  # type: ignore[no-untyped-def]
+        rejected.append(kw["order"])
+        return orig_reject(**kw)
+
+    monkeypatch.setattr(session, "reject_order", spy_reject)
+
+    with pytest.raises(RuntimeError, match="boom in route"):
+        await manager._process_bar(session, run, _bar(1_700_000_000_000_000_000, close=50_000.0))
+
+    assert len(rejected) == 1  # 异常路径调了 reject_order 清 EE 孤儿
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat  # 没有幽灵持仓
+
+
 async def test_stop_does_not_overwrite_errored(app_with_lifespan: Any) -> None:
     """stop 一个已 errored 的 run 不应把状态擦成 stopped（CR：保留崩溃痕迹）。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())

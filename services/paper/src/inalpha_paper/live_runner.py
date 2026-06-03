@@ -307,7 +307,19 @@ class LiveRunnerManager:
         """喂一根 bar → 路由本根 bar 的下单意图 → 更新进度。（可单测，不依赖轮询）。"""
         orders = session.feed_bar(bar)
         for order, strategy_id in orders:
-            await self._route_through_plan_exec(session, order, strategy_id, run, bar)
+            try:
+                await self._route_through_plan_exec(session, order, strategy_id, run, bar)
+            except Exception:
+                # 部分失败清理（CR medium）：order 已被 CaptureGateway 推到 ExecutionEngine
+                # 的 ACCEPTED 态，但护栏链路（DB 事务等）中途抛错时 confirm_fill/reject_order
+                # 都没调到 → EE 内存留孤儿单、策略以为有挂单而 portfolio 空仓，状态分叉。
+                # 先 reject 清掉 EE 内存状态，再把异常抛给 _run_loop 计 err_streak。
+                session.reject_order(
+                    order=order, strategy_id=strategy_id,
+                    reason="route_through_plan_exec failed; cleaning up EE state",
+                    ts_event=bar.ts_event,
+                )
+                raise
         # 进度写做 best-effort（CR medium）：本根 bar 的下单意图已落账 + confirm_fill 已回灌，
         # 这些副作用**不幂等**。若 update_progress 因 DB 瞬时错误抛出，绝不能让它逃出本函数——
         # 否则 _run_loop 的内存 last_bar_ts 不前进 → 下轮重喂同一根 bar → 重复下单 / 指标污染。
