@@ -91,6 +91,15 @@ class PaperSettings(BaseSettings):
         le=100,
         description="live runner 连续出错多少次后置 errored 停跑。",
     )
+    live_max_running_runs_per_account: int = Field(
+        default=10,
+        alias="INALPHA_LIVE_MAX_RUNNING_RUNS_PER_ACCOUNT",
+        ge=1,
+        le=1000,
+        description="单账户同时 running 的 live run 上限（资源软护栏 issue #36.2）。"
+        "每个 run 一个长驻 asyncio task + 周期打 data /bars；超上限 start 返 429，"
+        "防单用户起任意多 run 打爆事件循环 / 放大对 data 的请求。",
+    )
     live_runner_token_ttl_s: int = Field(
         default=300,
         alias="INALPHA_LIVE_RUNNER_TOKEN_TTL_S",

@@ -32,6 +32,7 @@ async def insert_candidate(
     description: str = "",
     author: str = "llm",
     author_id: UUID | None = None,
+    owner_account_id: UUID | None = None,
     audit: dict[str, Any] | None = None,
 ) -> tuple[UUID, bool]:
     """落一行候选。
@@ -61,8 +62,9 @@ async def insert_candidate(
         await cur.execute(
             """
             INSERT INTO strategy_candidates (
-                id, code, code_hash, description, author, author_id, audit
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                id, code, code_hash, description, author, author_id,
+                owner_account_id, audit
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 str(candidate_id),
@@ -71,6 +73,7 @@ async def insert_candidate(
                 description,
                 author,
                 str(author_id) if author_id else None,
+                str(owner_account_id) if owner_account_id else None,
                 audit_json,
             ),
         )
@@ -86,7 +89,7 @@ async def get_candidate(
         await cur.execute(
             """
             SELECT id, code, code_hash, description, author, author_id,
-                   status, metrics, fitness, last_backtest_run_id,
+                   owner_account_id, status, metrics, fitness, last_backtest_run_id,
                    audit, created_at, updated_at
             FROM strategy_candidates
             WHERE id = %s
@@ -112,7 +115,7 @@ async def list_candidates(
     """
     sql = (
         "SELECT id, code, code_hash, description, author, author_id, "
-        "status, metrics, fitness, last_backtest_run_id, "
+        "owner_account_id, status, metrics, fitness, last_backtest_run_id, "
         "audit, created_at, updated_at "
         "FROM strategy_candidates WHERE 1=1"
     )
@@ -228,6 +231,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "description": row["description"],
         "author": row["author"],
         "author_id": row["author_id"],
+        "owner_account_id": row["owner_account_id"],
         "status": row["status"],
         "metrics": row["metrics"],
         "fitness": row["fitness"],

@@ -99,6 +99,18 @@ async def list_by_account(
     return list(rows)  # type: ignore[arg-type]
 
 
+async def count_running_by_account(conn: AsyncConnection, account_id: UUID) -> int:
+    """当前账户 status='running' 的 run 数量（per-account 上限校验 issue #36.2）。"""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT COUNT(*) AS n FROM strategy_runs "
+            "WHERE account_id = %s AND status = %s",
+            (str(account_id), _RUNNING),
+        )
+        row = await cur.fetchone()
+    return int(row["n"]) if row else 0
+
+
 async def set_status(
     conn: AsyncConnection,
     run_id: UUID,

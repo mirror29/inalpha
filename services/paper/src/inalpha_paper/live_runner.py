@@ -24,7 +24,7 @@ from uuid import UUID
 
 import jwt
 from inalpha_shared.db import get_conn
-from inalpha_shared.errors import ConflictError
+from inalpha_shared.errors import ConflictError, InalphaError
 
 from .config import PaperSettings
 from .data_client import DataClient
@@ -47,6 +47,21 @@ from .strategy_authoring.contract_check import verify_strategy_contract
 from .strategy_authoring.dynamic_loader import load_strategy_class
 
 _logger = logging.getLogger(__name__)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """区分可重试（瞬时）与不可重试（确定性）错误，决定 ``_run_loop`` 退避还是立即 errored。
+
+    - ``InalphaError`` 且 4xx（客户端 / 约束类：校验失败 / 状态冲突 / symbol 非法等）→
+      **不可重试**：重试也是同样结果，立即 errored 省退避 + 噪音（issue #37.3）
+    - 其余（网络 / 超时 / DB 瞬时错 / 未知异常）→ 可重试（保守默认，避免误杀偶发错）
+
+    注意：风控拒单（``ConflictError 409``）在 ``_route_through_plan_exec`` 内已被消化为
+    risk_rejected 决策行、**不冒泡到 loop**，故不会因 409 误把整个 run 杀掉。
+    """
+    if isinstance(exc, InalphaError):
+        return not (400 <= exc.status_code < 500)
+    return True
 
 _FEE_RATE = 0.001
 _LIVE_INITIAL_CASH = 10_000.0  # session 内部持仓视图用；真实现金在 DB 账户
@@ -188,8 +203,13 @@ class LiveRunnerManager:
             except asyncio.CancelledError:
                 raise  # stop() 触发，干净退出（事务边界外，不留半个 plan）
             except Exception as e:
-                err_streak += 1
-                _logger.warning("live run %s error (streak=%d): %s", run_id, err_streak, e)
+                retryable = _is_retryable(e)
+                # 不可重试错误不计入 streak（它是确定性的，重试无意义）。
+                err_streak = err_streak + 1 if retryable else err_streak
+                _logger.warning(
+                    "live run %s error (retryable=%s, streak=%d): %s",
+                    run_id, retryable, err_streak, e,
+                )
                 # handler 内的 DB 调用也要兜——否则 DB 短暂不可达时异常逃出 while
                 # loop，task 静默死亡、run 永久卡在 'running'（CR）。
                 try:
@@ -199,7 +219,9 @@ class LiveRunnerManager:
                         )
                 except Exception:
                     _logger.exception("live run %s: 写 error_log 失败", run_id)
-                if err_streak >= self._settings.live_max_error_streak:
+                # 不可重试（确定性）错误 → 立即 errored，跳过退避（issue #37.3）；
+                # 可重试错误 → 连续 live_max_error_streak 次才 errored，否则指数退避重试。
+                if not retryable or err_streak >= self._settings.live_max_error_streak:
                     try:
                         async with get_conn() as conn:
                             await runs_store.set_status(conn, run_id, "errored")

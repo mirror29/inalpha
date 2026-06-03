@@ -5,11 +5,13 @@
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from uuid import uuid4
 
 import pytest
 from inalpha_shared.db import get_conn
+from inalpha_shared.errors import InalphaError
 
 from inalpha_paper.config import get_paper_settings
 from inalpha_paper.engine.live_session import LiveEngineSession
@@ -279,3 +281,197 @@ async def test_process_bar_no_signal_no_order(app_with_lifespan: Any) -> None:
         orders = await orders_store.list_by_account(conn, account_id)
     # 只有第一根那笔单，第二根没新增
     assert len(orders) == 1
+
+
+# ─── 错误分类 / _run_loop 健壮性（issue #37.3 / #37.4）───
+
+
+def test_is_retryable_classification() -> None:
+    """4xx InalphaError 不可重试；网络 / 超时 / 未知错误可重试（issue #37.3）。"""
+    from inalpha_shared.errors import ConflictError, NotFoundError, ValidationError
+
+    from inalpha_paper.live_runner import _is_retryable
+
+    assert _is_retryable(ValidationError("bad")) is False  # 400
+    assert _is_retryable(NotFoundError("gone")) is False  # 404
+    assert _is_retryable(ConflictError("dup")) is False  # 409
+    assert _is_retryable(InalphaError("boom", status_code=500)) is True
+    assert _is_retryable(TimeoutError("net")) is True
+    assert _is_retryable(RuntimeError("x")) is True
+
+
+async def test_run_loop_non_retryable_error_immediate_errored(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """不可重试错误（4xx InalphaError）→ 立即 errored，不等 streak（issue #37.3）。"""
+    from inalpha_shared.errors import ValidationError
+
+    # require=False 让 factory=None 也能过 fail-closed 门进主循环；streak 用默认（≥2）
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    assert settings.live_max_error_streak >= 2  # 证明"立即"而非"攒够 streak"
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        raise ValidationError("symbol delisted", code="SYMBOL_DELISTED")
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    assert any("ValidationError" in e.get("error", "") for e in (fresh["error_log"] or []))
+
+
+async def test_run_loop_retryable_error_accumulates_to_errored(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """可重试错误（网络 / 超时）：单次不杀 run，连续达 streak 才 errored。"""
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False, "live_max_error_streak": 2}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        raise TimeoutError("network blip")  # 非 InalphaError → 可重试
+
+    async def no_sleep(_s):  # type: ignore[no-untyped-def]
+        return None  # 退避置空：loop 第 2 次错时 errored 退出，不真等
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+    monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", no_sleep)
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    # 攒到 streak=2 才挂：≥2 条网络错（证明第 1 次没杀 run）
+    blips = [e for e in (fresh["error_log"] or []) if "network blip" in e.get("error", "")]
+    assert len(blips) >= 2
+
+
+async def test_run_loop_cancelled_clean_exit(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """CancelledError（stop 触发）→ 干净退出、run 不置 errored。"""
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+
+    with pytest.raises(asyncio.CancelledError):
+        await manager._run_loop(run)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "running"  # 干净退出，不标 errored
+
+
+async def test_run_loop_build_session_failure_errored(app_with_lifespan: Any) -> None:
+    """_build_session 失败（candidate 非法 / 未 promoted）→ run 置 errored。"""
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    # _insert_run 造的 candidate code 只是注释、status='candidate' → _build_session 抛错
+    run = await _insert_run(uuid4())
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    assert any("build failed" in e.get("error", "") for e in (fresh["error_log"] or []))
+
+
+async def test_process_bar_not_filled_rejects(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """OrderExecutor 返非 FILLED（如 LIMIT 未成交）→ 落 rejected 决策 + reject_order，不建仓。"""
+    from inalpha_paper.storage import positions as positions_store
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _make_session()
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    from datetime import UTC, datetime
+
+    ts = 1_700_000_000_000_000_000
+
+    def fake_execute(**_kw):  # type: ignore[no-untyped-def]
+        return {
+            "client_order_id": "limit-unfilled-1", "status": "REJECTED",
+            "filled_quantity": 0.0, "avg_fill_price": 0.0, "fee": 0.0,
+            "notional": 0.0, "ts_event": datetime.now(UTC),
+            "rejection_reason": "limit not crossed",
+        }
+
+    monkeypatch.setattr("inalpha_paper.live_runner.OrderExecutor.execute", fake_execute)
+
+    # 监视 confirm_fill 不应被调（未成交不能回灌成交）
+    confirmed: list = []
+    orig_confirm = session.confirm_fill
+
+    def spy_confirm(**kw):  # type: ignore[no-untyped-def]
+        confirmed.append(kw)
+        return orig_confirm(**kw)
+
+    monkeypatch.setattr(session, "confirm_fill", spy_confirm)
+
+    await manager._process_bar(session, run, _bar(ts, close=50_000.0))
+
+    async with get_conn() as conn:
+        orders = await orders_store.list_by_account(conn, account_id)
+        positions = await positions_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+    assert len(orders) == 1 and orders[0]["status"] == "REJECTED"
+    assert positions == []  # 未成交不建仓
+    assert confirmed == []  # 没调 confirm_fill
+    assert len(decisions) == 1 and decisions[0]["outcome"] == "rejected"
+    assert decisions[0]["reason"] == "limit not crossed"
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat
+
+
+async def test_mark_running_as_errored_reconcile(app_with_lifespan: Any) -> None:
+    """服务重启 reconcile：把残留 running 标 errored，非 running 不动（issue #37.4）。"""
+    running_run = await _insert_run(uuid4())
+    stopped_run = await _insert_run(uuid4())
+    async with get_conn() as conn:
+        await runs_store.set_status(conn, stopped_run["id"], "stopped")
+
+    async with get_conn() as conn:
+        n = await runs_store.mark_running_as_errored(conn, reason="service restart reconcile")
+    assert n >= 1
+
+    async with get_conn() as conn:
+        f_running = await runs_store.get(conn, running_run["id"])
+        f_stopped = await runs_store.get(conn, stopped_run["id"])
+    assert f_running["status"] == "errored"
+    assert f_stopped["status"] == "stopped"  # 非 running 不受影响
+    assert any("reconcile" in e.get("error", "") for e in (f_running["error_log"] or []))
