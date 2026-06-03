@@ -71,3 +71,10 @@ _refs/
 
 # 个人思考/设计文档 —— 不开源
 docs/miro/
+.gstack/
+
+# Agent 工具 notepad —— 不入库
+.sisyphus/
+
+# Substack 发布工具的编译产物（二进制）—— 只入源码不入产物
+/scripts/substack-copy
