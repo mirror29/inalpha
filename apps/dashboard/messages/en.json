@@ -13,6 +13,11 @@
     "risk": "Risk",
     "soon": "soon"
   },
+  "theme": {
+    "label": "Theme",
+    "dark": "Intraday · Terminal Dark",
+    "light": "Review · Broadsheet Light"
+  },
   "status": {
     "live": "LIVE",
     "account": "ACCOUNT",
@@ -73,6 +78,14 @@
     "subtitle": "Promoted strategies trading the live feed — status, PnL, and every bar-by-bar decision.",
     "empty": "No strategy runs yet. Promote a candidate and start it to see live runners here.",
     "running": "running",
+    "stats": {
+      "cumulativePnl": "Cumulative PnL",
+      "decisions": "Decisions",
+      "filledOf": "{filled} filled",
+      "blocked": "Risk Blocked",
+      "lastBar": "Last Bar",
+      "neverRan": "no bars yet"
+    },
     "card": {
       "cumulativePnl": "Cumulative PnL",
       "lastBar": "Last bar",
@@ -86,6 +99,9 @@
     "detail": {
       "back": "Live Runners",
       "notFound": "Run not found.",
+      "chart": "Price",
+      "chartEmpty": "No candles available for this instrument.",
+      "chartError": "Could not load candles.",
       "decisions": "Decision Timeline",
       "decisionsEmpty": "No decisions recorded yet — the runner hasn't placed an order.",
       "errorLog": "Error Log",
@@ -183,14 +199,17 @@
   "factors": {
     "title": "Factor Library",
     "index": "05",
-    "subtitle": "The factor catalog, and which factors are actually predictive right now (Rank IC timing).",
+    "subtitle": "The full system factor catalog (pandas-ta / Alpha101 / qlib …), plus timing effectiveness (Rank IC) for a selected instrument.",
     "catalogCount": "Catalog",
+    "totalFactors": "{n} factors",
     "serviceDown": "Factor service unavailable — catalog and effectiveness can't be loaded.",
-    "effectiveness": "Effective Factors (timing)",
+    "effectiveness": "Timing Effectiveness (per instrument)",
+    "effectivenessHint": "Below is factor timing effectiveness (Rank IC) computed for the selected instrument — switch targets to compare markets. Complements the system-wide catalog above.",
     "apply": "Apply",
     "noEffectiveness": "No effectiveness data for this instrument.",
     "barsUsed": "{n} bars",
-    "catalog": "Factor Catalog",
+    "catalog": "System Factor Catalog",
+    "catalogHint": "Every factor currently available in the system, grouped by source (instrument- and market-agnostic).",
     "filter": { "all": "All" }
   },
   "risk": {

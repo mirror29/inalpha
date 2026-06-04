@@ -31,8 +31,8 @@ export default async function LocaleLayout({
     <NextIntlClientProvider messages={messages}>
       <div className="grain flex min-h-dvh">
         <ConsoleSidebar />
-        <main className="hairline-grid relative flex-1 overflow-x-hidden">
-          <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-10">
+        <main className="vignette relative flex-1 overflow-x-hidden">
+          <div className="relative z-10 mx-auto max-w-[1400px] px-6 py-8 lg:px-10">
             {children}
           </div>
         </main>

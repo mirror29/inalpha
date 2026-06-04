@@ -18,6 +18,8 @@ export function PageHeader({
     <header className="flex flex-col gap-4 border-b border-border-subtle pb-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <div className="flex items-baseline gap-3">
+          {/* 朱红印章刻度 + 编辑体序号 —— 终端页眉的品牌签名。 */}
+          <span className="h-6 w-1 shrink-0 self-center rounded-full bg-seal" />
           <span className="font-display text-lg italic text-fg-muted/70">
             {index}
           </span>

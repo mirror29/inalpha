@@ -1,6 +1,7 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
+import { motion, useReducedMotion } from "motion/react";
 
 import type { OverviewPayload } from "@/lib/types";
 import { cn } from "@/lib/cn";
@@ -18,26 +19,26 @@ export function KpiBar({ data }: { data: OverviewPayload }) {
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <KpiCard label={t("totalEquity")} accent="cyan">
+      <KpiCard label={t("totalEquity")} accent="cyan" i={0}>
         <Figure>{fmtMoney(account.total_equity, ccy, locale)}</Figure>
         <Sub>
           {t("positionsValue")} {fmtMoney(account.positions_value, ccy, locale)}
         </Sub>
       </KpiCard>
 
-      <KpiCard label={t("cash")}>
+      <KpiCard label={t("cash")} i={1}>
         <Figure>{fmtMoney(account.cash, ccy, locale)}</Figure>
         <CashBuckets balances={account.cash_balances} base={ccy} />
       </KpiCard>
 
-      <KpiCard label={t("realizedPnl")}>
+      <KpiCard label={t("realizedPnl")} i={2}>
         <Figure className={pnlColor(account.realized_pnl)}>
           {fmtSigned(account.realized_pnl, ccy, locale)}
         </Figure>
         <Sub>{t("convertedTo", { ccy })}</Sub>
       </KpiCard>
 
-      <KpiCard label={t("activeRunners")} accent="bull">
+      <KpiCard label={t("activeRunners")} accent="bull" i={3}>
         <Figure className={activeRunnerCount > 0 ? "text-bull" : undefined}>
           {activeRunnerCount}
         </Figure>
@@ -49,28 +50,41 @@ export function KpiBar({ data }: { data: OverviewPayload }) {
 
 function KpiCard({
   label,
-  accent,
+  accent = "seal",
+  i = 0,
   children,
 }: {
   label: string;
-  accent?: "cyan" | "bull";
+  accent?: "cyan" | "bull" | "seal";
+  /** 错落入场用的序号。 */
+  i?: number;
   children: React.ReactNode;
 }) {
+  const reduce = useReducedMotion();
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-bg-elev/30 px-4 py-3.5 backdrop-blur-sm">
-      {accent && (
-        <span
-          className={cn(
-            "absolute inset-x-0 top-0 h-px",
-            accent === "cyan" ? "bg-cyan/50" : "bg-bull/50",
-          )}
-        />
-      )}
-      <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-fg-muted">
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: i * 0.07, duration: 0.45, ease: [0.22, 0.7, 0.22, 1] }}
+      whileHover={reduce ? undefined : { y: -3 }}
+      className="group relative overflow-hidden rounded-xl border border-border-subtle bg-bg-elev/40 px-4 py-3.5 backdrop-blur-sm transition-[border-color,box-shadow] hover:border-cyan/40 hover:shadow-[0_10px_30px_-14px_rgba(0,0,0,0.55)]"
+    >
+      {/* 顶部 1px 标尺,按指标语义着色 —— 终端「通道灯」语感。 */}
+      <span
+        className={cn(
+          "absolute inset-x-0 top-0 h-px",
+          accent === "cyan"
+            ? "bg-cyan/60"
+            : accent === "bull"
+              ? "bg-bull/60"
+              : "bg-seal/50",
+        )}
+      />
+      <div className="tick-accent whitespace-nowrap pl-2.5 font-mono text-[10px] uppercase tracking-[0.16em] text-fg-muted">
         {label}
       </div>
-      <div className="mt-2">{children}</div>
-    </div>
+      <div className="mt-2.5 pl-2.5">{children}</div>
+    </motion.div>
   );
 }
 
@@ -84,7 +98,7 @@ function Figure({
   return (
     <div
       className={cn(
-        "tnum font-mono text-2xl leading-none tracking-tight text-fg lg:text-[1.75rem]",
+        "tnum font-mono text-[1.65rem] leading-none tracking-tight text-fg lg:text-3xl",
         className,
       )}
     >

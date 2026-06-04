@@ -63,7 +63,7 @@ export function Meta({
   const toneText =
     tone === "bull" ? "text-bull" : tone === "fox" ? "text-fox-red" : "text-fg";
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 whitespace-nowrap">
       <span className="uppercase tracking-[0.16em] text-fg-muted/60">
         {label}
       </span>

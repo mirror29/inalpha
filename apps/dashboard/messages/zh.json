@@ -13,6 +13,11 @@
     "risk": "风控",
     "soon": "即将"
   },
+  "theme": {
+    "label": "主题",
+    "dark": "盘中 · 深色终端",
+    "light": "复盘 · 浅色报纸"
+  },
   "status": {
     "live": "实时",
     "account": "账户",
@@ -73,6 +78,14 @@
     "subtitle": "promoted 策略按行情自动跑 —— 状态、累计盈亏,以及每根 bar 的决策。",
     "empty": "暂无策略运行。promote 一个候选并启动后,运行中的 Live Runner 会出现在这里。",
     "running": "运行中",
+    "stats": {
+      "cumulativePnl": "累计盈亏",
+      "decisions": "决策数",
+      "filledOf": "{filled} 成交",
+      "blocked": "风控拦截",
+      "lastBar": "最后 bar",
+      "neverRan": "尚无 bar"
+    },
     "card": {
       "cumulativePnl": "累计盈亏",
       "lastBar": "最后 bar",
@@ -86,6 +99,9 @@
     "detail": {
       "back": "Live Runner",
       "notFound": "未找到该 run。",
+      "chart": "K 线",
+      "chartEmpty": "该标的暂无 K 线数据。",
+      "chartError": "K 线加载失败。",
       "decisions": "决策时间线",
       "decisionsEmpty": "尚无决策记录 —— runner 还没下过单。",
       "errorLog": "错误日志",
@@ -183,14 +199,17 @@
   "factors": {
     "title": "因子库",
     "index": "05",
-    "subtitle": "因子目录,以及当前哪些因子真的有预测力(Rank IC 择时)。",
+    "subtitle": "系统全部因子目录(pandas-ta / Alpha101 / qlib 等),以及针对所选标的的择时有效性(Rank IC)。",
     "catalogCount": "目录",
+    "totalFactors": "共 {n} 个因子",
     "serviceDown": "因子服务不可用 —— 目录和有效性都拉不到。",
-    "effectiveness": "有效因子(择时)",
+    "effectiveness": "择时有效性(针对标的)",
+    "effectivenessHint": "下方是针对所选标的算出的因子择时有效性(Rank IC)—— 换个标的看不同市场的表现,与上方系统全量目录互补。",
     "apply": "应用",
     "noEffectiveness": "该标的暂无有效性数据。",
     "barsUsed": "{n} 根 bar",
-    "catalog": "因子目录",
+    "catalog": "系统因子目录",
+    "catalogHint": "系统当前可用的全部因子,按来源分组(不限标的 / 市场)。",
     "filter": { "all": "全部" }
   },
   "risk": {

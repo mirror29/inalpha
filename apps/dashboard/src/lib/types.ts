@@ -141,6 +141,25 @@ export interface RunDetailPayload {
   asOf: string;
 }
 
+/** 一根 K 线(data /bars 的 BarResponse 子集)。 */
+export interface BarPoint {
+  ts: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+/** GET /api/bars —— K 线负载(给 Live Runner 详情叠图)。 */
+export interface BarsPayload {
+  venue: string;
+  symbol: string;
+  timeframe: string;
+  bars: BarPoint[];
+  asOf: string;
+}
+
 // ── ④ 策略实验室 + 回测史 ──
 
 /** GET /strategy_candidates 列表元素(不含 code)。metrics 由最近一次回测写入。 */

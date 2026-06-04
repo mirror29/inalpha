@@ -87,13 +87,14 @@ export function FactorsClient() {
         <SourceDownBanner text={t("serviceDown")} />
       )}
 
+      {/* 系统全部因子目录在前(模块主体),针对标的的择时探针在后。 */}
+      <CatalogPanel catalog={data.catalog} sources={data.sources} />
+
       <EffectivenessPanel
         eff={data.effectiveness}
         target={target}
         onApply={setTarget}
       />
-
-      <CatalogPanel catalog={data.catalog} sources={data.sources} />
     </div>
   );
 }
@@ -123,7 +124,7 @@ function EffectivenessPanel({
 
   return (
     <Panel
-      index="5.1"
+      index="5.2"
       title={t("effectiveness")}
       aside={
         <form
@@ -160,6 +161,9 @@ function EffectivenessPanel({
         </form>
       }
     >
+      <p className="border-b border-border-subtle/60 px-4 py-2 text-[11px] text-fg-muted/70">
+        {t("effectivenessHint")}
+      </p>
       {!eff || !eff.available ? (
         <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
           <TriangleAlert className="size-6 text-gold/70" strokeWidth={1.5} />
@@ -280,10 +284,13 @@ function CatalogPanel({
 
   return (
     <Panel
-      index="5.2"
+      index="5.1"
       title={t("catalog")}
       aside={
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="mr-1.5 whitespace-nowrap font-mono text-[10px] uppercase tracking-wider text-fg-muted/70">
+            {t("totalFactors", { n: catalog.length })}
+          </span>
           <Chip label={t("filter.all")} active={kind === "all"} onClick={() => setKind("all")} />
           {kinds.map((k) => (
             <Chip key={k} label={k} active={kind === k} onClick={() => setKind(k)} />
@@ -291,6 +298,9 @@ function CatalogPanel({
         </div>
       }
     >
+      <p className="border-b border-border-subtle/60 px-4 py-2 text-[11px] text-fg-muted/70">
+        {t("catalogHint")}
+      </p>
       <div className="flex flex-col gap-4 p-4">
         {bySource.map(([source, factors]) => (
           <div key={source}>

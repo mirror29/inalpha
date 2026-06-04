@@ -43,7 +43,7 @@ Four capability lines sit on top of that harness:
 
 The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha** (the quant term for excess return).
 
-> **Status:** Inalpha is in **alpha** (Phase D-10 — LLM-authored strategies + risk-engine rules + multi-market data: web search + financial fundamentals + global instrument coverage). Read the code, weigh in on design — **do not run this against real money yet**.
+> **Status:** Inalpha is in **alpha** (Phase D-11 — multi-market paper trading: cross-currency cash + a live runner that auto-runs promoted strategies on live bars, on top of D-10 multi-market data and D-9 LLM-authored strategies + risk engine). Read the code, weigh in on design — **do not run this against real money yet**.
 
 ---
 
@@ -145,7 +145,7 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 | ✅ Shipped | Risk engine — all 5 rules live in HTTP path | D-9 closed | `closed_trades` writes from HTTP order flow; `RoutingCalendar` for US equity + crypto; all trade-based rules trigger on real data |
 | ⏭️ In Flight | `askUserChoice` front-end | D-10 (issue #2) | brings the `ask` permission state back from workaround |
 | ⏭️ In Flight | `permissions.yaml` configuration | D-8b (issue #4) | replaces the hard-coded `defaults.ts` |
-| ⏭️ In Flight | Multi-market paper trading — Live runner + multi-currency cash | D-11 (issue #1) | tick-driven `on_bar` writing `paper_positions` / `paper_trades` · per-currency cash buckets + FX-converted equity |
+| ✅ Shipped | Multi-market paper trading — live runner + multi-currency cash | D-11 | closed-bar `on_bar` → guarded plan/exec · per-currency cash buckets + FX-converted equity · D-11.1 trust-boundary hardening (candidate ownership check · per-account run cap · retryable-error split) |
 | 🗓️ Planned | Strategy evolution — E2 | D-12 | multi-generation loop + MAP-Elites + Island Model + `unified-diff` mutations |
 | 🗓️ Planned | Research-hub nested supervisor | D-10+ | 4 analysts + bull/bear/risk debate as a single closed loop |
 | 🗓️ Planned | Factor discovery — L0 → L1 | D-11+ | walk-forward IC + multiple-testing correction + `factor_candidates` table |
@@ -237,9 +237,34 @@ bash scripts/dev.sh logs        # follow service logs
 bash scripts/dev.sh stop        # stop everything
 ```
 
-### 4 · Talk to the orchestrator
+### 4 · Open the Operator Console — your home base
 
-Open the `mastra dev` playground at **<http://127.0.0.1:4111>** — that's where you chat with the orchestrator agent and watch every tool call, hook event, and approval token in the live trace UI. `services/paper` does not call any LLM directly; only the orchestrator (Mastra) and `services/research` consume your key.
+The **Operator Console** is the recommended way to use Inalpha. It's a read-only runtime
+dashboard that surfaces everything you'd otherwise have to ask the agent for, at a glance:
+portfolio & positions, live runners with bar-by-bar decisions, the cross-module agent
+activity timeline, the strategy lab, the system factor library, and the risk panel.
+
+```bash
+cd apps/dashboard
+pnpm i           # first time only
+pnpm dev         # → http://localhost:3001
+```
+
+No extra config — the console reads the repo-root `.env` directly (backend URLs + `JWT_SECRET`
+are inherited), so as long as the services from step 3 are up, it just connects. It ships with
+**dark / light themes** (a terminal "Vermilion" aesthetic — see [`apps/dashboard/design.md`](apps/dashboard/design.md))
+and an `en / 中` switcher in the sidebar.
+
+> The console is becoming the single front door: the **agent chat experience is moving into
+> the console** too, so over time you'll drive data, research, backtests, live runners, and
+> the conversation with the orchestrator all from one place.
+
+### 5 · Talk to the orchestrator
+
+Until the chat lands in the console, open the `mastra dev` playground at
+**<http://127.0.0.1:4111>** — that's where you chat with the orchestrator agent and watch every
+tool call, hook event, and approval token in the live trace UI. `services/paper` does not call
+any LLM directly; only the orchestrator (Mastra) and `services/research` consume your key.
 
 Prefer the manual three-terminal flow? See [`AGENTS.md §4`](AGENTS.md).
 
