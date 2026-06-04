@@ -25,7 +25,7 @@ export type Signal = {
 
 /** StrategyHint —— 给 compose 引擎的机器消费提示 */
 export type StrategyHint = {
-  family: "trend" | "mean_reversion" | "buy_hold" | "none";
+  family: "trend" | "mean_reversion" | "buy_hold" | "breakout" | "volatility" | "none";
   params: Record<string, unknown>;
   reasoning: string;
 };

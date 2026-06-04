@@ -28,8 +28,6 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "paper.list_*",
     "paper.get_*",
     "paper.run_backtest",
-    "paper.run_backtest_with_reflection",
-    "paper.reflect_backtest",
     "paper.compose_strategy",
     "paper.author_strategy",
     "paper.health",

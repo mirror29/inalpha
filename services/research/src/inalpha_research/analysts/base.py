@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from ..data_client import DataClient
+from ..factor_client import FactorClient
 from ..llm.client import LLMClient
 from ..schemas import AnalystBrief
 
@@ -26,11 +27,20 @@ class Analyst(ABC):
     #: analyst 类型字符串（落在 ``AnalystBrief.analyst``）。子类必须 override。
     type_id: str = ""
 
-    def __init__(self, *, llm: LLMClient, data: DataClient) -> None:
+    def __init__(
+        self,
+        *,
+        llm: LLMClient,
+        data: DataClient,
+        factor: FactorClient | None = None,
+    ) -> None:
         if not self.type_id:
             raise NotImplementedError(f"{type(self).__name__}: type_id must be set")
         self._llm = llm
         self._data = data
+        # 接现成因子库（docs/miro/11）：technical analyst 用它取有效因子快照；
+        # None 或服务不可用时降级回各 analyst 自带的指标计算。
+        self._factor = factor
 
     # ─── 公共入口 ───
 

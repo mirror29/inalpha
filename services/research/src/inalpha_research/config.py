@@ -21,6 +21,13 @@ class ResearchSettings(BaseSettings):
         description="data-service 的 base URL，analyst 拉行情用。",
     )
 
+    factor_service_url: str = Field(
+        default="http://localhost:8004",
+        alias="FACTOR_SERVICE_URL",
+        description="factor-service base URL，technical analyst 取有效因子快照用。"
+        "不可达时 analyst 降级回旧的指标快照，不阻断 deep_dive。",
+    )
+
     research_service_port: int = Field(default=8003, alias="RESEARCH_SERVICE_PORT")
 
     # ─── LLM ─────────────────────────────────────────────────────────

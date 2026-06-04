@@ -24,6 +24,7 @@ from .schemas import AnalystBrief, DebateTurn, DeepDiveRequest, ResearchPlan
 
 if TYPE_CHECKING:
     from .data_client import DataClient
+    from .factor_client import FactorClient
     from .llm.client import LLMClient
 
 
@@ -32,6 +33,7 @@ async def run_deep_dive(
     *,
     llm: LLMClient,
     data: DataClient,
+    factor: FactorClient | None = None,
 ) -> ResearchPlan:
     """执行一次完整 deep dive：analysts 并行 → 辩论 → manager 综合。
 
@@ -58,7 +60,7 @@ async def run_deep_dive(
         persona_cls = PERSONA_ANALYSTS.get(key)
         if persona_cls is not None:
             analyst_classes.append(persona_cls)
-    analysts = [cls(llm=llm, data=data) for cls in analyst_classes]
+    analysts = [cls(llm=llm, data=data, factor=factor) for cls in analyst_classes]
 
     coros = [
         a.run(

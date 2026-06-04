@@ -1,0 +1,72 @@
+[project]
+name = "inalpha-factor"
+version = "0.1.0"
+description = "Inalpha factor service：接现成因子库（pandas-ta / WorldQuant Alpha101 / qlib Alpha158）+ 有效性打分（前瞻收益 / Rank IC）"
+license = "AGPL-3.0-only"
+requires-python = ">=3.12"
+dependencies = [
+    "inalpha-shared",
+    "fastapi>=0.136.0",
+    "uvicorn[standard]>=0.47.0",
+    "httpx>=0.28.0",
+    # 因子计算基础：pandas / numpy 是三套适配器共同底座
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    # pandas-ta：纯 pip 技术指标库（RSI/MACD/ATR/BBANDS/ADX/OBV/STOCH...），保底基线
+    "pandas-ta>=0.3.14b0",
+]
+
+[project.optional-dependencies]
+# qlib Alpha158/360：体量大、Apple Silicon 偶有装机坑 —— 放 optional extra，
+# 经 FACTOR_QLIB_ENABLED 开关 + adapter import 守卫降级。装：uv sync --extra qlib
+qlib = ["pyqlib>=0.9.6"]
+# TA-Lib：需 brew install ta-lib 的 C 库 —— 仅 optional，默认走 pandas-ta
+talib = ["TA-Lib>=0.4.28"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.0",  # mock httpx（与 paper 一致）
+    "mypy>=2.1.0",
+    "ruff>=0.15.0",
+]
+
+[tool.uv.sources]
+inalpha-shared = { path = "../_shared", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/inalpha_factor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: 需要真实网络 / qlib 的集成测试（默认跑；CI 可 -m 'not integration' 跳过）",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pandas_ta", "pandas_ta.*",
+    "qlib", "qlib.*",
+    "talib", "talib.*",
+]
+ignore_missing_imports = true

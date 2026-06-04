@@ -24,7 +24,9 @@ from pydantic import BaseModel, Field
 
 FactorKind = Literal["momentum", "mean_reversion", "volatility", "macro", "sentiment"]
 
-StrategyFamily = Literal["trend", "mean_reversion", "buy_hold", "none"]
+StrategyFamily = Literal[
+    "trend", "mean_reversion", "buy_hold", "breakout", "volatility", "none"
+]
 
 Horizon = Literal["intraday", "swing", "position"]
 
@@ -91,9 +93,11 @@ def compose_strategy(
     """路由 + 正规化参数。返回 ``ComposeResult``。
 
     路由表：
-    - ``trend``           → ``sma_cross``       (fast_period / slow_period / trade_size)
-    - ``mean_reversion``  → ``mean_reversion``  (period / std_mult / trade_size)
-    - ``buy_hold``        → ``buy_and_hold``    (trade_size)
+    - ``trend``           → ``sma_cross``         (fast_period / slow_period / trade_size)
+    - ``mean_reversion``  → ``mean_reversion``    (period / std_mult / trade_size)
+    - ``buy_hold``        → ``buy_and_hold``      (trade_size)
+    - ``breakout``        → ``donchian_breakout`` (channel_period / exit_period / trade_size)
+    - ``volatility``      → ``atr_channel``       (period / atr_mult / trade_size)
     - ``none``            → reject
 
     参数正规化原则：
@@ -113,6 +117,10 @@ def compose_strategy(
         return _compose_mean_reversion(hint, factors, timeframe=timeframe)
     if hint.family == "buy_hold":
         return _compose_buy_hold(hint, factors)
+    if hint.family == "breakout":
+        return _compose_breakout(hint, factors, timeframe=timeframe)
+    if hint.family == "volatility":
+        return _compose_volatility(hint, factors, timeframe=timeframe)
 
     return ComposeResult(
         strategy_id=None,
@@ -242,6 +250,81 @@ def _compose_buy_hold(
         reasoning=_compose_reasoning(
             "buy_and_hold", hint, factors,
             extras=f"size={trade_size:.3f}",
+        ),
+    )
+
+
+def _compose_breakout(
+    hint: StrategyHint,
+    factors: list[Factor],
+    *,
+    timeframe: str,
+) -> ComposeResult:
+    """breakout → donchian_breakout。
+
+    - channel_period: 10-55（入场通道回看），默认 20
+    - exit_period: 5-30（离场通道回看），默认 max(10, channel//2)，强制 < channel
+    - trade_size / position_pct: 同 trend
+    """
+    channel = _coerce_int(hint.params.get("channel_period"), 10, 55, default=20)
+    exit_default = max(10, channel // 2)
+    exit_p = _coerce_int(hint.params.get("exit_period"), 5, 30, default=exit_default)
+    if exit_p >= channel:
+        exit_p = max(5, channel // 2)
+
+    trade_size = _coerce_float(
+        hint.params.get("trade_size"), 0.01, 0.05,
+        default=_recommend_trade_size(factors, base=0.02),
+    )
+    position_pct = _coerce_float(hint.params.get("position_pct"), 0.0, 1.0, default=1.0)
+
+    return ComposeResult(
+        strategy_id="donchian_breakout",
+        params={
+            "channel_period": channel,
+            "exit_period": exit_p,
+            "trade_size": trade_size,
+            "position_pct": position_pct,
+        },
+        reasoning=_compose_reasoning(
+            "donchian_breakout", hint, factors,
+            extras=f"channel={channel} exit={exit_p} size={trade_size:.3f} pos_pct={position_pct:.2f}",
+        ),
+    )
+
+
+def _compose_volatility(
+    hint: StrategyHint,
+    factors: list[Factor],
+    *,
+    timeframe: str,
+) -> ComposeResult:
+    """volatility → atr_channel。
+
+    - period: 10-40（中轨 / ATR 回看），默认 20
+    - atr_mult: 1.0-4.0（通道宽度 = ATR 倍数），默认 2.0
+    - trade_size / position_pct: 同 trend
+    """
+    period = _coerce_int(hint.params.get("period"), 10, 40, default=20)
+    atr_mult = _coerce_float(hint.params.get("atr_mult"), 1.0, 4.0, default=2.0)
+
+    trade_size = _coerce_float(
+        hint.params.get("trade_size"), 0.01, 0.05,
+        default=_recommend_trade_size(factors, base=0.02),
+    )
+    position_pct = _coerce_float(hint.params.get("position_pct"), 0.0, 1.0, default=1.0)
+
+    return ComposeResult(
+        strategy_id="atr_channel",
+        params={
+            "period": period,
+            "atr_mult": atr_mult,
+            "trade_size": trade_size,
+            "position_pct": position_pct,
+        },
+        reasoning=_compose_reasoning(
+            "atr_channel", hint, factors,
+            extras=f"period={period} atr_mult={atr_mult:.2f} size={trade_size:.3f} pos_pct={position_pct:.2f}",
         ),
     )
 

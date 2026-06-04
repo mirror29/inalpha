@@ -19,6 +19,49 @@ from inalpha_paper.strategies.compose import (
 # ────────────────────────────────────────────────────────────────────
 
 
+def test_breakout_routes_to_donchian() -> None:
+    hint = StrategyHint(
+        family="breakout",
+        params={"channel_period": 30, "exit_period": 12, "trade_size": 0.03},
+        reasoning="range break",
+    )
+    out = compose_strategy(hint, [])
+    assert out.strategy_id == "donchian_breakout"
+    assert out.params["channel_period"] == 30
+    assert out.params["exit_period"] == 12
+    assert out.params["exit_period"] < out.params["channel_period"]
+    assert out.rejected_reason is None
+
+
+def test_breakout_clips_and_forces_exit_below_channel() -> None:
+    hint = StrategyHint(
+        family="breakout",
+        params={"channel_period": 12, "exit_period": 99},  # exit > channel + 越界
+    )
+    out = compose_strategy(hint, [])
+    assert out.strategy_id == "donchian_breakout"
+    assert out.params["exit_period"] < out.params["channel_period"]
+
+
+def test_volatility_routes_to_atr_channel() -> None:
+    hint = StrategyHint(
+        family="volatility",
+        params={"period": 25, "atr_mult": 3.0},
+        reasoning="vol expanding",
+    )
+    out = compose_strategy(hint, [])
+    assert out.strategy_id == "atr_channel"
+    assert out.params["period"] == 25
+    assert out.params["atr_mult"] == 3.0
+
+
+def test_volatility_clips_atr_mult() -> None:
+    hint = StrategyHint(family="volatility", params={"atr_mult": 99.0, "period": 1})
+    out = compose_strategy(hint, [])
+    assert out.params["atr_mult"] == 4.0  # clip 上界
+    assert out.params["period"] == 10  # clip 下界
+
+
 def test_trend_routes_to_sma_cross_with_clean_params() -> None:
     hint = StrategyHint(
         family="trend",
