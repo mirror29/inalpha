@@ -34,12 +34,12 @@ class _Repo:
 
 class _Calendar:
     def is_trading_hours(
-        self, market: str, now: datetime, *, include_pre: bool = False,
+        self, venue: str, symbol: str, now: datetime, *, include_pre: bool = False,
         include_after: bool = False,
     ) -> bool:
         return True
 
-    def next_session_open(self, market: str, now: datetime) -> datetime:
+    def next_session_open(self, venue: str, symbol: str, now: datetime) -> datetime:
         return now
 
 

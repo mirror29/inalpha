@@ -114,12 +114,12 @@ class _Calendar:
         self._next_open = next_open
 
     def is_trading_hours(
-        self, market: str, now: datetime, *, include_pre: bool = False,
+        self, venue: str, symbol: str, now: datetime, *, include_pre: bool = False,
         include_after: bool = False,
     ) -> bool:
-        return market in self._open
+        return venue in self._open
 
-    def next_session_open(self, market: str, now: datetime) -> datetime:
+    def next_session_open(self, venue: str, symbol: str, now: datetime) -> datetime:
         return self._next_open or now + timedelta(hours=1)
 
 
