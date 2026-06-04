@@ -22,17 +22,22 @@ python service(8001/8002/8003)**没配 CORS**,浏览器不能直连;且后端要
 # 1. 先把后端 + mastra 拉起(在仓库根)
 bash scripts/dev.sh up        # data:8001 paper:8002 research:8003 mastra:4111
 
-# 2. 配置控制台环境
+# 2. 装依赖 + 起控制台
 cd apps/dashboard
-cp .env.local.example .env.local
-#   填 JWT_SECRET —— 必须和根 .env 里后端用的 JWT_SECRET 一致
-
-# 3. 装依赖 + 起控制台
 pnpm install
 pnpm dev                       # http://localhost:3001
 ```
 
 打开 `http://localhost:3001/zh`(或 `/en`)。
+
+### 环境变量
+
+控制台**默认直接读仓库根的 `.env`**(后端 service URL + `JWT_SECRET` 都在那),
+不用单独维护一份(逻辑在 `next.config.ts` 的 `loadRootEnv`)。
+
+只在需要**局部覆盖**时,才在 `apps/dashboard/` 建 `.env.local`(见
+`.env.local.example`)——比如切换控制台身份 `CONSOLE_SUBJECT`、或指向远端后端。
+`.env.local` 优先级高于根 `.env`。
 
 ## 结构
 
