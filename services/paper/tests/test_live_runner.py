@@ -708,6 +708,31 @@ async def test_compute_run_pnl_deducts_fees(app_with_lifespan: Any) -> None:
     assert float(quote_total) == pytest.approx(65.0)
 
 
+async def test_ttl_exceeded_stops_run(app_with_lifespan: Any) -> None:
+    """运行超过 max_runtime_s → auto-stop 置 stopped + error_log 记 TTL（issue #44 TTL 兜底）。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+    # started_at 远在过去，max_runtime_s=60 → 超时熔断
+    exceeded = await manager._ttl_exceeded(run["id"], datetime(2020, 1, 1, tzinfo=UTC), 60)
+    assert exceeded is True
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "stopped"
+    assert any("TTL" in e.get("error", "") for e in (fresh["error_log"] or []))
+
+
+async def test_ttl_disabled_when_zero_or_no_start(app_with_lifespan: Any) -> None:
+    """max_runtime_s=0（默认）或 started_at 缺失 → 永不超时（返 False，不动 run）。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    run = await _insert_run(uuid4())
+    assert await manager._ttl_exceeded(run["id"], datetime(2020, 1, 1, tzinfo=UTC), 0) is False
+    assert await manager._ttl_exceeded(run["id"], None, 3600) is False
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "running"  # 未被改动
+
+
 async def test_restore_position_from_db_brings_session_to_position(
     app_with_lifespan: Any,
 ) -> None:

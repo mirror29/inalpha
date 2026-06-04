@@ -139,6 +139,14 @@ class PaperSettings(BaseSettings):
         "停机置 stopped + error_log 记因，让人复核后再决定是否重启；否则 run 会在锁期内"
         "（数小时）持续空轮询 + 每根 bar 被拒，沦为僵尸 run。置 false 维持旧行为（继续跑）。",
     )
+    live_runner_max_runtime_s: int = Field(
+        default=0,
+        alias="INALPHA_LIVE_RUNNER_MAX_RUNTIME_S",
+        description="单个 live run 最大运行时长（秒），超时 auto-stop（issue #44 TTL）。"
+        "默认 0 = 不限（保持原行为）。> 0 时：run 自 started_at 起累计运行超过该值 → 置"
+        " stopped + error_log 记 'TTL exceeded'，与回撤熔断同口径（正常终态非 bug）。"
+        "无人值守长驻兜底：策略卡死 / 无限空跑也能自动收场。",
+    )
 
 
 @lru_cache(maxsize=1)

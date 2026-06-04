@@ -192,9 +192,14 @@ class LiveRunnerManager:
             poll_s = self._settings.live_poll_interval_s
         poll_s = min(poll_s, 3600)
         err_streak = 0
+        # TTL 兜底（issue #44）：max_runtime_s>0 时，run 自 started_at 起超时 auto-stop。
+        max_runtime_s = self._settings.live_runner_max_runtime_s
+        started_at: datetime | None = run.get("started_at")
 
         while True:
             try:
+                if await self._ttl_exceeded(run_id, started_at, max_runtime_s):
+                    return
                 bar = await self._fetch_latest_bar(run)
                 bar_dt = _ns_to_dt(bar.ts_event) if bar is not None else None
                 if bar is None or (last_bar_ts is not None and bar_dt <= last_bar_ts):
@@ -247,6 +252,31 @@ class LiveRunnerManager:
                         _logger.exception("live run %s: 置 errored 失败", run_id)
                     return
                 await asyncio.sleep(min(2 ** err_streak, 60))  # 指数退避，cap 60s
+
+    async def _ttl_exceeded(
+        self, run_id: UUID, started_at: datetime | None, max_runtime_s: int
+    ) -> bool:
+        """run 运行超过 TTL → 置 stopped + error_log，返 True 让 _run_loop 终止（issue #44）。
+
+        ``max_runtime_s <= 0``（默认）或 ``started_at`` 缺失 → 永不超时（返 False）。与回撤
+        熔断同口径置 ``stopped``（策略超时是正常终态非 bug），防策略卡死 / 无限空跑的长尾僵尸 run。
+        """
+        if max_runtime_s <= 0 or started_at is None:
+            return False
+        elapsed = (datetime.now(UTC) - started_at).total_seconds()
+        if elapsed <= max_runtime_s:
+            return False
+        _logger.warning(
+            "live run %s: 运行 %.0fs 超过 TTL %ds，auto-stop", run_id, elapsed, max_runtime_s
+        )
+        async with get_conn() as conn:
+            await runs_store.append_error_log(
+                conn, run_id,
+                f"运行时长 {elapsed:.0f}s 超过 TTL（INALPHA_LIVE_RUNNER_MAX_RUNTIME_S="
+                f"{max_runtime_s}s）→ auto-stop（防长尾僵尸 run）；复核后可重新 start。",
+            )
+            await runs_store.set_status(conn, run_id, "stopped")
+        return True
 
     async def _build_session(
         self, run: dict[str, Any]
