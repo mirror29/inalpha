@@ -111,6 +111,39 @@ async def test_factor_service_down_degrades_gracefully() -> None:
 
 
 @respx.mock
+async def test_snapshot_missing_rank_ic_does_not_crash() -> None:
+    """CR major fix：snapshot 因子缺 rank_ic / strength（跨版本灰度）不应崩 deep_dive。"""
+    respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=_bars()))
+    respx.post("http://factor-mock.test/snapshot").mock(
+        return_value=Response(
+            200,
+            json={
+                "available": True,
+                "top_factors": [
+                    # 故意缺 rank_ic / strength（旧版 schema），且 value 为 null
+                    {"name": "legacy_factor", "kind": "momentum", "value": None, "direction": 1}
+                ],
+            },
+        )
+    )
+
+    llm = FakeLLMClient({"you are a technical analyst": _brief()})
+    async with (
+        DataClient("http://data-mock.test", "t") as data,
+        FactorClient("http://factor-mock.test", "t") as factor,
+    ):
+        analyst = TechnicalAnalyst(llm=llm, data=data, factor=factor)
+        brief = await analyst.run(
+            venue="binance", symbol="BTC/USDT", timeframe="1h", as_of=_as_of(), lookback_days=2
+        )
+
+    assert brief.stance == "neutral"  # 不抛
+    user_prompt = llm.calls[0]["user"]
+    assert "legacy_factor" in user_prompt
+    assert "rank_ic=0.000" in user_prompt  # 缺字段兜底成 0.0
+
+
+@respx.mock
 async def test_no_factor_client_uses_indicator_snapshot() -> None:
     respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=_bars()))
 

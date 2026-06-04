@@ -104,7 +104,11 @@ async def insert_candidate(
         if row is not None:
             return row["id"], False
 
-    # 不存在 → 写
+    # 不存在 → 写。用 ON CONFLICT (code_hash) DO NOTHING RETURNING id 兜并发竞态：
+    # check-then-insert 之间另一并发事务（live runner 回跑 + 前端手动提交同代码）可能抢先
+    # INSERT，裸 INSERT 会撞 code_hash UNIQUE 抛 UniqueViolation → 上层 500 → agent 误判失败重试。
+    # 改为 DO NOTHING：插入成功返新 id（created=True）；被抢则 RETURNING 空 → 查回已有行（幂等）。
+    # 注：structure_hash 是软去重（无 UNIQUE 约束），其竞态最坏只多落一行同款，可接受。
     candidate_id = uuid4()
     async with conn.cursor() as cur:
         await cur.execute(
@@ -113,6 +117,8 @@ async def insert_candidate(
                 id, code, code_hash, description, author, author_id,
                 owner_account_id, audit
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (code_hash) DO NOTHING
+            RETURNING id
             """,
             (
                 str(candidate_id),
@@ -125,6 +131,18 @@ async def insert_candidate(
                 audit_json,
             ),
         )
+        inserted = await cur.fetchone()
+        if inserted is not None:
+            return inserted["id"], True
+        # 并发竞态：同 code_hash 已被另一事务插入 → 查回已有行，当作"获取"语义返回
+        await cur.execute(
+            "SELECT id FROM strategy_candidates WHERE code_hash = %s",
+            (code_hash,),
+        )
+        row = await cur.fetchone()
+        if row is not None:
+            return row["id"], False
+    # 理论不可达（DO NOTHING 未插却又查不到）；兜底返本地 id 防 None
     return candidate_id, True
 
 

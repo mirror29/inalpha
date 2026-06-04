@@ -216,6 +216,14 @@ def _format_user_prompt(
     )
 
 
+def _as_float(v: Any) -> float:
+    """容错转 float：None / 非数值 / NaN-ish 一律兜底 0.0，避免格式化时 TypeError。"""
+    try:
+        return float(v) if v is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _format_effective_factors(factors: list[dict[str, Any]] | None) -> str:
     """渲染有效因子块（factor-service 给的真因子值 + 有效性）。空则提示用 snapshot 兜底。"""
     if not factors:
@@ -224,10 +232,14 @@ def _format_effective_factors(factors: list[dict[str, Any]] | None) -> str:
         )
     lines = []
     for f in factors:
+        # 防御：缺字段 / null（factor-service 跨版本灰度时 snapshot 可能缺 rank_ic 等）
+        # 直接 `f.get('rank_ic'):.3f` 在 None 上会 TypeError 崩掉整条 deep_dive。
+        rank_ic = _as_float(f.get("rank_ic"))
+        strength = _as_float(f.get("strength"))
         lines.append(
             f"  - {f.get('name')} [{f.get('kind')}] "
-            f"value={f.get('value')} rank_ic={f.get('rank_ic'):.3f} "
-            f"dir={f.get('direction')} strength={f.get('strength'):.2f}"
+            f"value={f.get('value')} rank_ic={rank_ic:.3f} "
+            f"dir={f.get('direction')} strength={strength:.2f}"
         )
     body = "\n".join(lines)
     return (
