@@ -458,7 +458,11 @@ class LiveRunnerManager:
         """读 DB 算 run 累计盈亏（**计价货币**，未折算）+ 解析币种 / base（issue #45 / M-1）。
 
         = 已实现（``closed_trades`` 自 started_at，按 symbol scope）+ 未实现（当前持仓
-        ``(mark - avg) * qty``）。**只读 DB、不发外部请求**（FX 折算见
+        ``(mark - avg) * qty``）- 手续费（``orders`` 自 started_at，同 symbol scope）。
+        手续费已在 ``fills`` 阶段从 cash 扣，但 ``close_profit_abs`` / 未实现都是**毛
+        口径**不含费，不补回这个展示盈亏会让高频策略 cumulative_pnl 虚高、看起来比真实
+        净值更赚（issue #45 follow-up，用户实测发现）。
+        **只读 DB、不发外部请求**（FX 折算见
         :meth:`_convert_run_pnl_to_base`，在连接池连接之外做）。
 
         返回 ``(total_quote, currency, base_currency)``。
@@ -469,6 +473,9 @@ class LiveRunnerManager:
         started_at: datetime = run["started_at"]
 
         realized = await closed_trades_store.sum_realized(
+            conn, account_id=account_id, venue=venue, symbol=symbol, since=started_at
+        )
+        fees = await orders_store.sum_fees(
             conn, account_id=account_id, venue=venue, symbol=symbol, since=started_at
         )
         pos = await positions_store.get(
@@ -482,7 +489,8 @@ class LiveRunnerManager:
             unrealized = (Decimal(str(mark_price)) - avg) * qty
             currency = pos.get("currency")
 
-        total_quote = realized + unrealized
+        # 净盈亏 = 毛已实现 + 毛未实现 - 手续费（手续费已在 cash 扣，这里补回展示口径）
+        total_quote = realized + unrealized - fees
 
         account = await accounts_store.get(conn, account_id)
         base = account["base_currency"] if account else accounts_store.DEFAULT_BASE_CURRENCY

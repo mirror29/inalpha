@@ -86,7 +86,7 @@
       "errored": "Errored"
     },
     "stats": {
-      "cumulativePnl": "Cumulative PnL",
+      "cumulativePnl": "Cumulative PnL (net)",
       "decisions": "Decisions",
       "filledOf": "{filled} filled",
       "blocked": "Risk Blocked",
@@ -94,7 +94,7 @@
       "neverRan": "no bars yet"
     },
     "card": {
-      "cumulativePnl": "Cumulative PnL",
+      "cumulativePnl": "Cumulative PnL (net)",
       "lastBar": "Last bar",
       "candidate": "Candidate",
       "started": "Started",
@@ -120,6 +120,7 @@
         "side": "Side",
         "qty": "Qty",
         "fill": "Fill",
+        "fee": "Fee",
         "outcome": "Outcome",
         "reason": "Reason"
       }

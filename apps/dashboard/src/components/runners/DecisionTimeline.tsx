@@ -47,6 +47,7 @@ export function DecisionTimeline({
                 <Th>{t("col.side")}</Th>
                 <Th right>{t("col.qty")}</Th>
                 <Th right>{t("col.fill")}</Th>
+                <Th right>{t("col.fee")}</Th>
                 <Th>{t("col.outcome")}</Th>
                 <Th>{t("col.reason")}</Th>
               </TableHeadRow>
@@ -93,6 +94,13 @@ export function DecisionTimeline({
                         <span className="text-fg-muted/50">—</span>
                       ) : (
                         fmtNum(d.fill_price, locale, 4)
+                      )}
+                    </Td>
+                    <Td right mono muted>
+                      {d.fee === null || d.fee === 0 ? (
+                        <span className="text-fg-muted/50">—</span>
+                      ) : (
+                        fmtNum(d.fee, locale, 4)
                       )}
                     </Td>
                     <Td>

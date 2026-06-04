@@ -86,7 +86,7 @@
       "errored": "错误"
     },
     "stats": {
-      "cumulativePnl": "累计盈亏",
+      "cumulativePnl": "累计盈亏（净）",
       "decisions": "决策数",
       "filledOf": "{filled} 成交",
       "blocked": "风控拦截",
@@ -94,7 +94,7 @@
       "neverRan": "尚无 bar"
     },
     "card": {
-      "cumulativePnl": "累计盈亏",
+      "cumulativePnl": "累计盈亏（净）",
       "lastBar": "最后 bar",
       "candidate": "候选",
       "started": "启动于",
@@ -120,6 +120,7 @@
         "side": "方向",
         "qty": "数量",
         "fill": "成交",
+        "fee": "手续费",
         "outcome": "结果",
         "reason": "原因"
       }

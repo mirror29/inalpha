@@ -657,6 +657,57 @@ async def test_compute_run_pnl_from_db_realized_plus_unrealized(
     assert float(pnl) == pytest.approx(70.0)  # USDT→USD 本地 1.0
 
 
+async def test_compute_run_pnl_deducts_fees(app_with_lifespan: Any) -> None:
+    """净盈亏口径：cumulative_pnl = 毛已实现 + 毛未实现 - run 期间手续费（issue #45 follow-up）。
+
+    手续费在成交时已从 cash 扣，但 close_profit_abs / 未实现是毛口径不含费；不补回展示
+    盈亏会让高频策略 cumulative_pnl 虚高（用户实测发现）。同时验证 REJECTED 单 fee 不计入。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)  # started_at = NOW()
+
+    async with get_conn() as conn:
+        await accounts_store.get_or_create(conn, account_id)  # base USD
+        # 持仓 BUY 1 @ 100 → mark=120 未实现 20；一笔平仓已实现 50 → 毛 = 70
+        await positions_store.apply_fill(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="BUY", fill_qty=Decimal("1"), fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC), order_id="fee-open", currency="USDT",
+        )
+        await closed_trades_store.insert_close(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", side="long",
+            open_ts=datetime.now(UTC), close_ts=datetime.now(UTC),
+            open_price=Decimal("100"), close_price=Decimal("150"), quantity=Decimal("1"),
+            close_profit_pct=0.5, close_profit_abs=50.0, exit_reason="signal",
+            open_order_id="x", close_order_id="y",
+        )
+        # 两笔 FILLED 单手续费合计 5 → 净 = 70 - 5 = 65
+        for oid, fee in (("fee-1", Decimal("2")), ("fee-2", Decimal("3"))):
+            await orders_store.insert(
+                conn, account_id=account_id, client_order_id=f"{oid}-{account_id}",
+                venue="binance", symbol="BTC/USDT", side="BUY", order_type="MARKET",
+                quantity=Decimal("1"), price=None, status="FILLED",
+                filled_quantity=Decimal("1"), avg_fill_price=Decimal("100"),
+                fee=fee, notional=Decimal("100"), ts_event=datetime.now(UTC),
+            )
+        # REJECTED 单 fee=9 不应计入（sum_fees 只统计 status='FILLED'）
+        await orders_store.insert(
+            conn, account_id=account_id, client_order_id=f"rej-1-{account_id}",
+            venue="binance", symbol="BTC/USDT", side="BUY", order_type="LIMIT",
+            quantity=Decimal("1"), price=Decimal("1"), status="REJECTED",
+            filled_quantity=Decimal("0"), avg_fill_price=None,
+            fee=Decimal("9"), notional=Decimal("0"), ts_event=datetime.now(UTC),
+        )
+        await conn.commit()
+        run = await runs_store.get(conn, run["id"])
+
+        quote_total, _currency, _base = await manager._read_run_pnl_quote(conn, run, 120.0)
+
+    # 毛 70 - FILLED 手续费 5 = 净 65；REJECTED 的 9 被过滤掉
+    assert float(quote_total) == pytest.approx(65.0)
+
+
 async def test_restore_position_from_db_brings_session_to_position(
     app_with_lifespan: Any,
 ) -> None:

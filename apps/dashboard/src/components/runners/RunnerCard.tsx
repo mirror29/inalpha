@@ -11,7 +11,8 @@ import { RunStatusBadge } from "@/components/ui/StatusBadge";
 
 /**
  * 单个 Live Runner 卡片 —— 整卡可点进决策详情。
- * cumulative_pnl 是 mark-to-market 估算;last_bar_ts 超时(running 但很久没新 bar)标黄。
+ * cumulative_pnl 是**净盈亏**(已实现+未实现-手续费)的 mark-to-market 估算;
+ * last_bar_ts 超时(running 但很久没新 bar)标黄。
  */
 export function RunnerCard({ run }: { run: StrategyRunRecord }) {
   const t = useTranslations("runners.card");
