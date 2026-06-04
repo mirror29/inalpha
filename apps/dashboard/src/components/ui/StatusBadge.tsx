@@ -80,6 +80,19 @@ export function RunStatusBadge({ status }: { status: string }) {
   );
 }
 
+/** 候选状态 → 语义色(promoted 绿 / candidate 青 / rejected 红)。 */
+export function CandidateStatusBadge({
+  status,
+  label,
+}: {
+  status: string;
+  label: string;
+}) {
+  const tone: Tone =
+    status === "promoted" ? "bull" : status === "rejected" ? "fox" : "cyan";
+  return <StatusBadge label={label} tone={tone} />;
+}
+
 /** 决策撮合结果 → 语义色(成交绿 / 风控拒红 / 其他拒灰红)。 */
 export function DecisionOutcomeBadge({
   outcome,

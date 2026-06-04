@@ -143,6 +143,42 @@
       "orders": "订单"
     }
   },
+  "lab": {
+    "title": "策略实验室",
+    "index": "04",
+    "subtitle": "LLM 自创的策略候选,按多目标 fitness 排序 —— 附最近一次回测指标。",
+    "candidates": "候选",
+    "promoted": "已晋级",
+    "empty": "暂无候选。",
+    "status": {
+      "promoted": "已晋级",
+      "candidate": "候选",
+      "rejected": "已拒"
+    },
+    "filter": {
+      "all": "全部",
+      "promoted": "已晋级",
+      "candidate": "候选",
+      "rejected": "已拒"
+    },
+    "col": {
+      "strategy": "策略",
+      "status": "状态",
+      "fitness": "适应度",
+      "return": "收益",
+      "sharpe": "夏普",
+      "maxdd": "最大回撤",
+      "trades": "交易数"
+    },
+    "detail": {
+      "back": "策略实验室",
+      "notFound": "未找到该候选。",
+      "metrics": "回测指标",
+      "audit": "沙盒审计",
+      "promotion": "晋级",
+      "code": "源码"
+    }
+  },
   "common": {
     "retry": "重试",
     "loading": "加载中…",

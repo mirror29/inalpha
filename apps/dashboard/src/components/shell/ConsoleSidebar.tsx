@@ -27,7 +27,7 @@ const NAV: NavItem[] = [
   { key: "overview", index: "01", href: "/", icon: LayoutDashboard },
   { key: "runners", index: "02", href: "/runners", icon: Radio },
   { key: "activity", index: "03", href: "/activity", icon: Activity },
-  { key: "lab", index: "04", href: "/lab", icon: FlaskConical, soon: true },
+  { key: "lab", index: "04", href: "/lab", icon: FlaskConical },
   { key: "risk", index: "05", href: "/risk", icon: ShieldAlert, soon: true },
 ];
 

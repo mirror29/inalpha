@@ -84,6 +84,20 @@ export function fmtTime(iso: string, locale = "en"): string {
   }).format(d);
 }
 
+/** 时间 → 年月日时分(详情页用)。 */
+export function fmtDateTime(iso: string, locale = "en"): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
 /**
  * 相对时间 "3m ago" / "刚刚"。
  * @param nowMs 传入"现在"的毫秒(由调用方给,便于一致 & 可测)。

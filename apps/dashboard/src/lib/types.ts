@@ -141,6 +141,47 @@ export interface RunDetailPayload {
   asOf: string;
 }
 
+// ── ④ 策略实验室 + 回测史 ──
+
+/** GET /strategy_candidates 列表元素(不含 code)。metrics 由最近一次回测写入。 */
+export interface StrategyCandidateSummary {
+  id: string;
+  code_hash: string;
+  description: string;
+  author: "llm" | "user" | "system";
+  status: "candidate" | "rejected" | "promoted";
+  /** 最近回测的指标(键随策略路径变化:sharpe/sortino/calmar/win_rate/
+   *  num_trades/max_drawdown_pct/total_return_pct…);未回测为 null。 */
+  metrics: Record<string, number> | null;
+  /** 多目标适应度(ADR-0020);裸 Sharpe 排序不可用。null = 未回测。 */
+  fitness: number | null;
+  last_backtest_run_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /strategy_candidates/{id} 完整记录(含源码 + 审计)。 */
+export interface StrategyCandidateRecord extends StrategyCandidateSummary {
+  code: string;
+  author_id: string | null;
+  owner_account_id: string | null;
+  audit: Record<string, unknown> | null;
+}
+
+/** GET /api/lab —— 候选列表页负载。 */
+export interface LabPayload {
+  /** 后端已按 fitness DESC 排序。 */
+  candidates: StrategyCandidateSummary[];
+  counts: { all: number; promoted: number; candidate: number; rejected: number };
+  asOf: string;
+}
+
+/** GET /api/lab/[id] —— 候选详情。 */
+export interface CandidateDetailPayload {
+  candidate: StrategyCandidateRecord | null;
+  asOf: string;
+}
+
 // ── ③ Agent 运行日志 / 可观测性 ──
 
 /** 统一活动流的事件类型(跨模块归一)。 */

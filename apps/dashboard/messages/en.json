@@ -143,6 +143,42 @@
       "orders": "Orders"
     }
   },
+  "lab": {
+    "title": "Strategy Lab",
+    "index": "04",
+    "subtitle": "LLM-authored strategy candidates, ranked by multi-objective fitness — with their latest backtest metrics.",
+    "candidates": "Candidates",
+    "promoted": "Promoted",
+    "empty": "No candidates yet.",
+    "status": {
+      "promoted": "PROMOTED",
+      "candidate": "CANDIDATE",
+      "rejected": "REJECTED"
+    },
+    "filter": {
+      "all": "All",
+      "promoted": "Promoted",
+      "candidate": "Candidate",
+      "rejected": "Rejected"
+    },
+    "col": {
+      "strategy": "Strategy",
+      "status": "Status",
+      "fitness": "Fitness",
+      "return": "Return",
+      "sharpe": "Sharpe",
+      "maxdd": "Max DD",
+      "trades": "Trades"
+    },
+    "detail": {
+      "back": "Strategy Lab",
+      "notFound": "Candidate not found.",
+      "metrics": "Backtest Metrics",
+      "audit": "Sandbox Audit",
+      "promotion": "Promotion",
+      "code": "Source"
+    }
+  },
   "common": {
     "retry": "Retry",
     "loading": "Loading…",
