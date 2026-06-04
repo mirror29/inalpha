@@ -112,6 +112,37 @@
       "risk_rejected": "RISK BLOCKED"
     }
   },
+  "activity": {
+    "title": "Agent Activity",
+    "index": "03",
+    "subtitle": "One timeline for everything the agents did across modules — scheduled runs, approvals, decisions, risk blocks, orders.",
+    "kpi": {
+      "scheduler": "Scheduler",
+      "schedulerOn": "running",
+      "schedulerOff": "stopped",
+      "pending": "Pending Approvals",
+      "locks": "Active Risk Locks",
+      "events": "Events"
+    },
+    "filter": {
+      "all": "All",
+      "scheduler": "Scheduler",
+      "permission": "Approvals",
+      "decision": "Decisions",
+      "risk": "Risk",
+      "order": "Orders"
+    },
+    "empty": "No activity yet.",
+    "emptyFiltered": "No {kind} events.",
+    "sourceDown": "{sources} unavailable — those events are missing from the feed.",
+    "source": {
+      "scheduler": "Scheduler",
+      "permissions": "Approvals",
+      "risk": "Risk",
+      "runs": "Runners",
+      "orders": "Orders"
+    }
+  },
   "common": {
     "retry": "Retry",
     "loading": "Loading…",

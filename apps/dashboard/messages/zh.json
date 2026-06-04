@@ -112,6 +112,37 @@
       "risk_rejected": "风控拦截"
     }
   },
+  "activity": {
+    "title": "Agent 活动",
+    "index": "03",
+    "subtitle": "一条时间线看清 agent 跨模块都做了什么 —— 定时任务、审批、决策、风控拦截、订单。",
+    "kpi": {
+      "scheduler": "调度器",
+      "schedulerOn": "运行中",
+      "schedulerOff": "已停止",
+      "pending": "待审批",
+      "locks": "活跃风控锁",
+      "events": "事件"
+    },
+    "filter": {
+      "all": "全部",
+      "scheduler": "定时任务",
+      "permission": "审批",
+      "decision": "决策",
+      "risk": "风控",
+      "order": "订单"
+    },
+    "empty": "暂无活动。",
+    "emptyFiltered": "没有「{kind}」类事件。",
+    "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
+    "source": {
+      "scheduler": "定时任务",
+      "permissions": "审批",
+      "risk": "风控",
+      "runs": "Runner",
+      "orders": "订单"
+    }
+  },
   "common": {
     "retry": "重试",
     "loading": "加载中…",

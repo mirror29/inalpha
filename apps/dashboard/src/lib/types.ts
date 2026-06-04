@@ -140,3 +140,51 @@ export interface RunDetailPayload {
   decisions: StrategyRunDecisionRecord[];
   asOf: string;
 }
+
+// ── ③ Agent 运行日志 / 可观测性 ──
+
+/** 统一活动流的事件类型(跨模块归一)。 */
+export type ActivityKind =
+  | "scheduler"
+  | "permission"
+  | "decision"
+  | "risk"
+  | "order";
+
+export type ActivityTone = "bull" | "fox" | "gold" | "cyan" | "muted";
+
+/** 一条归一化的 agent 活动事件。 */
+export interface ActivityEvent {
+  id: string;
+  kind: ActivityKind;
+  /** ISO 时间,用于排序与显示。 */
+  ts: string;
+  /** 一句话标题(标的 / job / tool / 规则名)。 */
+  title: string;
+  /** 补充明细(状态 / 原因 / 触发方式)。 */
+  detail: string | null;
+  /** 结果标签(success/failed/filled/risk_rejected/pending…);无则 null。 */
+  outcome: string | null;
+  tone: ActivityTone;
+  /** 可点进的目标(如 runner 详情);无则 null。 */
+  href: string | null;
+}
+
+/** GET /api/activity —— Agent 活动流聚合负载。 */
+export interface ActivityPayload {
+  events: ActivityEvent[];
+  /** 各模块事件计数(过滤器角标用)。 */
+  counts: Record<ActivityKind, number>;
+  schedulerRunning: boolean;
+  pendingCount: number;
+  activeLockCount: number;
+  /** 每个数据源是否取到(取不到 → UI 标"该源不可用",不静默当作空)。 */
+  sources: {
+    scheduler: boolean;
+    permissions: boolean;
+    risk: boolean;
+    runs: boolean;
+    orders: boolean;
+  };
+  asOf: string;
+}
