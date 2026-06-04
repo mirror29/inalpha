@@ -1,0 +1,250 @@
+{
+  "meta": {
+    "title": "Inalpha · Operator Console",
+    "description": "Read-only runtime dashboard for Inalpha paper trading."
+  },
+  "nav": {
+    "console": "Operator Console",
+    "overview": "Overview",
+    "runners": "Live Runners",
+    "activity": "Agent Activity",
+    "lab": "Strategy Lab",
+    "factors": "Factors",
+    "risk": "Risk",
+    "soon": "soon"
+  },
+  "theme": {
+    "label": "Theme",
+    "dark": "Intraday · Terminal Dark",
+    "light": "Review · Broadsheet Light"
+  },
+  "status": {
+    "live": "LIVE",
+    "account": "ACCOUNT",
+    "asOf": "AS OF",
+    "base": "BASE",
+    "refreshed": "refreshed",
+    "stale": "STALE",
+    "offline": "BACKEND OFFLINE",
+    "lastFrame": "showing last frame"
+  },
+  "overview": {
+    "title": "Portfolio Overview",
+    "index": "01",
+    "subtitle": "What you'd otherwise have to ask the agent — at a glance.",
+    "kpi": {
+      "totalEquity": "Total Equity",
+      "cash": "Cash",
+      "realizedPnl": "Realized PnL",
+      "activeRunners": "Active Runners",
+      "positionsValue": "Positions Value",
+      "convertedTo": "converted to {ccy}",
+      "running": "running",
+      "ofRuns": "of {total} runs"
+    },
+    "fxWarning": {
+      "title": "FX conversion incomplete",
+      "body": "Some currencies could not be converted — equity may be understated. The data layer never guesses a rate."
+    },
+    "positions": {
+      "title": "Positions",
+      "empty": "No open positions.",
+      "col": {
+        "instrument": "Instrument",
+        "qty": "Qty",
+        "avgPrice": "Avg Open",
+        "mark": "Mark",
+        "unrealized": "Unrealized",
+        "realized": "Realized PnL"
+      }
+    },
+    "orders": {
+      "title": "Recent Orders",
+      "empty": "No orders yet.",
+      "col": {
+        "time": "Time",
+        "instrument": "Instrument",
+        "side": "Side",
+        "type": "Type",
+        "qty": "Qty",
+        "fill": "Avg Fill",
+        "status": "Status"
+      }
+    }
+  },
+  "runners": {
+    "title": "Live Runners",
+    "index": "02",
+    "subtitle": "Promoted strategies trading the live feed — status, PnL, and every bar-by-bar decision.",
+    "empty": "No strategy runs yet. Promote a candidate and start it to see live runners here.",
+    "emptyFiltered": "No {status} runs.",
+    "running": "running",
+    "filter": {
+      "all": "All",
+      "running": "Running",
+      "stopped": "Stopped",
+      "errored": "Errored"
+    },
+    "stats": {
+      "cumulativePnl": "Cumulative PnL (net)",
+      "decisions": "Decisions",
+      "filledOf": "{filled} filled",
+      "blocked": "Risk Blocked",
+      "lastBar": "Last Bar",
+      "neverRan": "no bars yet"
+    },
+    "card": {
+      "cumulativePnl": "Cumulative PnL (net)",
+      "lastBar": "Last bar",
+      "candidate": "Candidate",
+      "started": "Started",
+      "stopped": "Stopped",
+      "errors": "{count} error(s)",
+      "viewDecisions": "View decisions",
+      "neverRan": "no bars processed yet"
+    },
+    "detail": {
+      "back": "Live Runners",
+      "notFound": "Run not found.",
+      "chart": "Price",
+      "chartEmpty": "No candles available for this instrument.",
+      "chartError": "Could not load candles.",
+      "decisions": "Decision Timeline",
+      "decisionsEmpty": "No decisions recorded yet — the runner hasn't placed an order.",
+      "errorLog": "Error Log",
+      "config": "Config",
+      "col": {
+        "barTs": "Bar Time",
+        "barClose": "Bar Close",
+        "intent": "Intent",
+        "side": "Side",
+        "qty": "Qty",
+        "fill": "Fill",
+        "fee": "Fee",
+        "outcome": "Outcome",
+        "reason": "Reason"
+      }
+    },
+    "intent": {
+      "open_long": "OPEN LONG",
+      "open_short": "OPEN SHORT",
+      "close": "CLOSE",
+      "unknown": "—"
+    },
+    "outcome": {
+      "filled": "FILLED",
+      "rejected": "REJECTED",
+      "risk_rejected": "RISK BLOCKED"
+    }
+  },
+  "activity": {
+    "title": "Agent Activity",
+    "index": "03",
+    "subtitle": "One timeline for everything the agents did across modules — scheduled runs, approvals, decisions, risk blocks, orders.",
+    "kpi": {
+      "scheduler": "Scheduler",
+      "schedulerOn": "running",
+      "schedulerOff": "stopped",
+      "pending": "Pending Approvals",
+      "locks": "Active Risk Locks",
+      "events": "Events"
+    },
+    "filter": {
+      "all": "All",
+      "scheduler": "Scheduler",
+      "permission": "Approvals",
+      "decision": "Decisions",
+      "risk": "Risk",
+      "order": "Orders"
+    },
+    "empty": "No activity yet.",
+    "emptyFiltered": "No {kind} events.",
+    "sourceDown": "{sources} unavailable — those events are missing from the feed.",
+    "source": {
+      "scheduler": "Scheduler",
+      "permissions": "Approvals",
+      "risk": "Risk",
+      "runs": "Runners",
+      "orders": "Orders"
+    }
+  },
+  "lab": {
+    "title": "Strategy Lab",
+    "index": "04",
+    "subtitle": "LLM-authored strategy candidates, ranked by multi-objective fitness — with their latest backtest metrics.",
+    "candidates": "Candidates",
+    "promoted": "Promoted",
+    "empty": "No candidates yet.",
+    "status": {
+      "promoted": "PROMOTED",
+      "candidate": "CANDIDATE",
+      "rejected": "REJECTED"
+    },
+    "filter": {
+      "all": "All",
+      "promoted": "Promoted",
+      "candidate": "Candidate",
+      "rejected": "Rejected"
+    },
+    "col": {
+      "strategy": "Strategy",
+      "status": "Status",
+      "fitness": "Fitness",
+      "return": "Return",
+      "sharpe": "Sharpe",
+      "maxdd": "Max DD",
+      "trades": "Trades"
+    },
+    "detail": {
+      "back": "Strategy Lab",
+      "notFound": "Candidate not found.",
+      "metrics": "Backtest Metrics",
+      "audit": "Sandbox Audit",
+      "promotion": "Promotion",
+      "code": "Source"
+    }
+  },
+  "factors": {
+    "title": "Factor Library",
+    "index": "05",
+    "subtitle": "The full system factor catalog (pandas-ta / Alpha101 / qlib …), plus timing effectiveness (Rank IC) for a selected instrument.",
+    "catalogCount": "Catalog",
+    "totalFactors": "{n} factors",
+    "serviceDown": "Factor service unavailable — catalog and effectiveness can't be loaded.",
+    "effectiveness": "Timing Effectiveness (per instrument)",
+    "effectivenessHint": "Below is factor timing effectiveness (Rank IC) computed for the selected instrument — switch targets to compare markets. Complements the system-wide catalog above.",
+    "apply": "Apply",
+    "noEffectiveness": "No effectiveness data for this instrument.",
+    "barsUsed": "{n} bars",
+    "catalog": "System Factor Catalog",
+    "catalogHint": "Every factor currently available in the system, grouped by source (instrument- and market-agnostic).",
+    "filter": { "all": "All" }
+  },
+  "risk": {
+    "title": "Risk",
+    "index": "06",
+    "subtitle": "Risk rules in force, and any locks currently blocking trades.",
+    "engine": "Engine",
+    "on": "on",
+    "off": "off",
+    "activeLocks": "Active Locks",
+    "locks": "Active Locks",
+    "locksEmpty": "No active locks — nothing is being blocked.",
+    "rules": "Rules",
+    "rulesEmpty": "No rules configured.",
+    "disabled": "Risk engine is disabled.",
+    "col": {
+      "rule": "Rule",
+      "scope": "Scope",
+      "side": "Side",
+      "reason": "Reason",
+      "until": "Until"
+    }
+  },
+  "common": {
+    "retry": "Retry",
+    "loading": "Loading…",
+    "error": "Could not reach the backend.",
+    "none": "—"
+  }
+}
