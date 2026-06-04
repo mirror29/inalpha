@@ -1,0 +1,75 @@
+{
+  "meta": {
+    "title": "Inalpha · 操作者控制台",
+    "description": "Inalpha 模拟盘只读运行时看板。"
+  },
+  "nav": {
+    "console": "操作者控制台",
+    "overview": "组合总览",
+    "runners": "Live Runner",
+    "activity": "Agent 活动",
+    "lab": "策略实验室",
+    "risk": "风控",
+    "soon": "即将"
+  },
+  "status": {
+    "live": "实时",
+    "account": "账户",
+    "asOf": "数据时间",
+    "base": "计价",
+    "refreshed": "已刷新",
+    "stale": "过时",
+    "offline": "后端离线",
+    "lastFrame": "显示上一帧"
+  },
+  "overview": {
+    "title": "组合总览",
+    "index": "01",
+    "subtitle": "原本要问 agent 才知道的状态 —— 一眼看清。",
+    "kpi": {
+      "totalEquity": "总权益",
+      "cash": "现金",
+      "realizedPnl": "已实现盈亏",
+      "activeRunners": "运行中策略",
+      "positionsValue": "持仓估值",
+      "convertedTo": "已折算到 {ccy}",
+      "running": "运行中",
+      "ofRuns": "共 {total} 个 run"
+    },
+    "fxWarning": {
+      "title": "汇率折算不完整",
+      "body": "部分币种无法折算 —— 权益可能被低估。数据层不会乱猜汇率。"
+    },
+    "positions": {
+      "title": "持仓",
+      "empty": "暂无持仓。",
+      "col": {
+        "instrument": "标的",
+        "qty": "数量",
+        "avgPrice": "开仓均价",
+        "mark": "最新价",
+        "unrealized": "浮动盈亏",
+        "realized": "已实现盈亏"
+      }
+    },
+    "orders": {
+      "title": "最近订单",
+      "empty": "暂无订单。",
+      "col": {
+        "time": "时间",
+        "instrument": "标的",
+        "side": "方向",
+        "type": "类型",
+        "qty": "数量",
+        "fill": "成交均价",
+        "status": "状态"
+      }
+    }
+  },
+  "common": {
+    "retry": "重试",
+    "loading": "加载中…",
+    "error": "无法连接后端。",
+    "none": "—"
+  }
+}

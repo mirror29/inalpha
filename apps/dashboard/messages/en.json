@@ -1,0 +1,75 @@
+{
+  "meta": {
+    "title": "Inalpha · Operator Console",
+    "description": "Read-only runtime dashboard for Inalpha paper trading."
+  },
+  "nav": {
+    "console": "Operator Console",
+    "overview": "Overview",
+    "runners": "Live Runners",
+    "activity": "Agent Activity",
+    "lab": "Strategy Lab",
+    "risk": "Risk",
+    "soon": "soon"
+  },
+  "status": {
+    "live": "LIVE",
+    "account": "ACCOUNT",
+    "asOf": "AS OF",
+    "base": "BASE",
+    "refreshed": "refreshed",
+    "stale": "STALE",
+    "offline": "BACKEND OFFLINE",
+    "lastFrame": "showing last frame"
+  },
+  "overview": {
+    "title": "Portfolio Overview",
+    "index": "01",
+    "subtitle": "What you'd otherwise have to ask the agent — at a glance.",
+    "kpi": {
+      "totalEquity": "Total Equity",
+      "cash": "Cash",
+      "realizedPnl": "Realized PnL",
+      "activeRunners": "Active Runners",
+      "positionsValue": "Positions Value",
+      "convertedTo": "converted to {ccy}",
+      "running": "running",
+      "ofRuns": "of {total} runs"
+    },
+    "fxWarning": {
+      "title": "FX conversion incomplete",
+      "body": "Some currencies could not be converted — equity may be understated. The data layer never guesses a rate."
+    },
+    "positions": {
+      "title": "Positions",
+      "empty": "No open positions.",
+      "col": {
+        "instrument": "Instrument",
+        "qty": "Qty",
+        "avgPrice": "Avg Open",
+        "mark": "Mark",
+        "unrealized": "Unrealized",
+        "realized": "Realized PnL"
+      }
+    },
+    "orders": {
+      "title": "Recent Orders",
+      "empty": "No orders yet.",
+      "col": {
+        "time": "Time",
+        "instrument": "Instrument",
+        "side": "Side",
+        "type": "Type",
+        "qty": "Qty",
+        "fill": "Avg Fill",
+        "status": "Status"
+      }
+    }
+  },
+  "common": {
+    "retry": "Retry",
+    "loading": "Loading…",
+    "error": "Could not reach the backend.",
+    "none": "—"
+  }
+}
