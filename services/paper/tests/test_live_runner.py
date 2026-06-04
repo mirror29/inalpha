@@ -26,7 +26,13 @@ from inalpha_paper.storage import strategy_candidates as candidates_store
 from inalpha_paper.storage import strategy_runs as runs_store
 from inalpha_paper.strategy.base import Strategy
 
-from .test_live_session import _INSTRUMENT, _bar, _BuyOnceStrategy, _StopOrderStrategy
+from .test_live_session import (
+    _INSTRUMENT,
+    _bar,
+    _BuyOnceStrategy,
+    _PosTrackStrategy,
+    _StopOrderStrategy,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -528,7 +534,8 @@ async def test_run_loop_build_session_failure_errored(app_with_lifespan: Any) ->
         update={"live_runner_require_risk_guard": False}
     )
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
-    # _insert_run 造的 candidate code 只是注释、status='candidate' → _build_session 抛错
+    # _insert_run 造的 candidate code 非合法 Strategy（裸 STRING 字面量）、status='candidate'
+    # → _build_session 加载/审计/契约校验抛错
     run = await _insert_run(uuid4())
 
     await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
@@ -637,12 +644,17 @@ async def test_compute_run_pnl_from_db_realized_plus_unrealized(
             open_order_id="x", close_order_id="y",
         )
         await conn.commit()
+        run = await runs_store.get(conn, run["id"])
 
-        # mark=120 → 未实现 (120-100)*1 = 20；总 = 50 + 20 = 70（USDT→USD 本地 1.0）
-        pnl = await manager._compute_run_pnl(conn, await runs_store.get(conn, run["id"]), 120.0)
+        # mark=120 → 未实现 (120-100)*1 = 20；总 = 50 + 20 = 70（计价货币 USDT）
+        # M-1：DB 读（_read_run_pnl_quote）与 FX 折算（_convert_run_pnl_to_base）分两段，
+        # 折算在连接上下文外做；这里同 _process_bar 的调用顺序。
+        quote_total, currency, base = await manager._read_run_pnl_quote(conn, run, 120.0)
 
+    assert float(quote_total) == pytest.approx(70.0)
+    pnl = await manager._convert_run_pnl_to_base(run, quote_total, currency, base)
     assert pnl is not None
-    assert float(pnl) == pytest.approx(70.0)
+    assert float(pnl) == pytest.approx(70.0)  # USDT→USD 本地 1.0
 
 
 async def test_restore_position_from_db_brings_session_to_position(
@@ -669,6 +681,50 @@ async def test_restore_position_from_db_brings_session_to_position(
     pos = session.portfolio.position(_INSTRUMENT)
     assert pos is not None and not pos.is_flat
     assert pos.quantity == 2.0
+
+
+async def test_convert_run_pnl_zero_short_circuits_no_network() -> None:
+    """total_quote=0 → 直接返 Decimal(0)，不打 /fx（非 USD 币种也不需网络）。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    run = {"id": uuid4(), "account_id": uuid4()}
+    # EUR→USD 本需网络；若没短路会构造 DataClient 打 HTTP。0 应直接短路返 0。
+    pnl = await manager._convert_run_pnl_to_base(run, Decimal(0), "EUR", "USD")
+    assert pnl == Decimal(0)
+
+
+async def test_restore_position_from_db_short_position(app_with_lifespan: Any) -> None:
+    """resume 桥接空头路径（M-2）：DB 负 qty 持仓 → restore 后 portfolio 与策略视图都是 short。
+
+    空头续跑被误恢复成多头后果重（下一根 bar 意图反向 → 可能反向单），故无人值守路径
+    必须有测试守住"负 qty → SELL 方向合成成交 → portfolio.quantity 仍为负"。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    async with get_conn() as conn:
+        # SELL 2 @ 100 从空仓开空 → 有符号 qty = -2（storage 层纯有符号累积，不挡裸 short）
+        row, _close = await positions_store.apply_fill(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="SELL", fill_qty=Decimal("2"), fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC), order_id="restore-short-open", currency="USDT",
+        )
+        await conn.commit()
+    assert float(row["quantity"]) == -2.0  # DB 确实是空头
+
+    # 用持仓追踪策略，验证策略视图也被 prime 成 short（on_position_opened 收到负 qty）
+    session = LiveEngineSession(
+        strategy_cls=_PosTrackStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+    run = {
+        "id": uuid4(), "account_id": account_id, "venue": "binance",
+        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
+    }
+    await manager._restore_position(session, run)
+
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is not None and not pos.is_flat
+    assert pos.quantity == -2.0  # 恢复为 short，未被误判成 long
+    assert session._strategy.opened_qty == -2.0  # type: ignore[attr-defined]
 
 
 async def test_restore_position_skips_when_flat(app_with_lifespan: Any) -> None:

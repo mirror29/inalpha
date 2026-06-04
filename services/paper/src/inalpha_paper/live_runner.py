@@ -425,12 +425,22 @@ class LiveRunnerManager:
         # 这些副作用**不幂等**。若 update_progress 因 DB 瞬时错误抛出，绝不能让它逃出本函数——
         # 否则 _run_loop 的内存 last_bar_ts 不前进 → 下轮重喂同一根 bar → 重复下单 / 指标污染。
         # 进度行只用于观测 / reconcile，落后一根可接受；内存 last_bar_ts 才是去重权威。
+        # cumulative_pnl 从 DB 真实持仓/平仓派生（issue #45）：已实现（closed_trades）
+        # + 未实现（持仓 MtM at bar.close），按 FX 折算到账户 base_currency。不再用
+        # session 的固定 1 万相对值——后者重启即归零、跨币种无意义。
+        #
+        # M-1：DB 读 与 外部 FX HTTP **严格分两段**——绝不在持有连接池连接时发外部请求。
+        # 否则非 USD 品种（EUR 股 / JPY FX）在 data 慢/超时时，并发 run 会把连接池占满
+        # （持连接等 HTTP），殃及 /strategy_runs start 等所有路径。crypto/USD 本地可解析
+        # 路径零网络，第二段 convert 不开 DataClient。整段 best-effort（不重喂 bar）。
         try:
             async with get_conn() as conn:
-                # cumulative_pnl 从 DB 真实持仓/平仓派生（issue #45）：已实现（closed_trades）
-                # + 未实现（持仓 MtM at bar.close），按 FX 折算到账户 base_currency。不再用
-                # session 的固定 1 万相对值——后者重启即归零、跨币种无意义。
-                pnl = await self._compute_run_pnl(conn, run, float(bar.close))
+                quote_total, currency, base = await self._read_run_pnl_quote(
+                    conn, run, float(bar.close)
+                )
+            # ↑ 连接已归还连接池；↓ FX 折算（可能 HTTP）在连接上下文**之外**
+            pnl = await self._convert_run_pnl_to_base(run, quote_total, currency, base)
+            async with get_conn() as conn:
                 await runs_store.update_progress(
                     conn,
                     run["id"],
@@ -442,16 +452,16 @@ class LiveRunnerManager:
 
         return circuit_break
 
-    async def _compute_run_pnl(
+    async def _read_run_pnl_quote(
         self, conn: Any, run: dict[str, Any], mark_price: float
-    ) -> Decimal | None:
-        """从 DB 派生 run 累计盈亏（base_currency），替换 session 相对值（issue #45）。
+    ) -> tuple[Decimal, str, str]:
+        """读 DB 算 run 累计盈亏（**计价货币**，未折算）+ 解析币种 / base（issue #45 / M-1）。
 
         = 已实现（``closed_trades`` 自 started_at，按 symbol scope）+ 未实现（当前持仓
-        ``(mark - avg) * qty``）→ 两者皆**计价货币**，按 FX 折算到账户 base_currency。
+        ``(mark - avg) * qty``）。**只读 DB、不发外部请求**（FX 折算见
+        :meth:`_convert_run_pnl_to_base`，在连接池连接之外做）。
 
-        返回 ``None`` 表示 FX 不可用（非 USD symbol 折算失败）→ 调用方保留旧 pnl 不覆盖。
-        crypto-USD 等本地可解析的全程零网络，恒成功。
+        返回 ``(total_quote, currency, base_currency)``。
         """
         account_id: UUID = run["account_id"]
         venue: str = run["venue"]
@@ -477,14 +487,28 @@ class LiveRunnerManager:
         account = await accounts_store.get(conn, account_id)
         base = account["base_currency"] if account else accounts_store.DEFAULT_BASE_CURRENCY
         currency = currency or resolve_currency(venue, symbol, default=base)
+        return total_quote, currency, base
 
+    async def _convert_run_pnl_to_base(
+        self, run: dict[str, Any], total_quote: Decimal, currency: str, base: str
+    ) -> Decimal | None:
+        """把计价货币盈亏折算到 base_currency（issue #45 / M-1）。
+
+        **不持有任何 DB 连接**——可能发 data ``/fx`` HTTP。crypto-USD 等本地可解析路径
+        零网络、恒成功。拿不到汇率（非 USD 折算失败）返 ``None`` → 调用方保留旧 pnl 不覆盖。
+        """
+        # 0 盈亏（flat 且无平仓 / 已实现与未实现相抵）→ 折算后仍是 0，直接短路：
+        # 否则非 USD flat run 每根 bar 白打一次 /fx HTTP，且 FX 不可用时会返 None 把真实
+        # 的 0 PnL 错留成旧值。
+        if total_quote == 0:
+            return Decimal(0)
         # 计价货币 == base 或本地可解析（crypto USDT→USD）→ 零网络
         if not needs_network([currency], base):
             conv = BaseCurrencyConverter(base, None)
             return await conv.convert(total_quote, currency)
 
         # 否则调 data /fx；拿不到 → 返 None（保留旧值，不乱猜）
-        token = self._mint_service_token(account_id)
+        token = self._mint_service_token(run["account_id"])
         async with DataClient(self._settings.data_service_url, token) as dc:
             conv = BaseCurrencyConverter(base, dc)
             result = await conv.convert(total_quote, currency)
