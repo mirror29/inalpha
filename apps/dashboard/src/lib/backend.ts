@@ -21,6 +21,7 @@ export const BACKENDS = {
   data: process.env.DATA_SERVICE_URL ?? "http://127.0.0.1:8001",
   research: process.env.RESEARCH_SERVICE_URL ?? "http://127.0.0.1:8003",
   mastra: process.env.MASTRA_URL ?? "http://127.0.0.1:4111",
+  factor: process.env.FACTOR_SERVICE_URL ?? "http://127.0.0.1:8004",
 } as const;
 
 export type BackendName = keyof typeof BACKENDS;
@@ -83,6 +84,10 @@ interface FetchOptions {
   timeoutMs?: number;
   /** 是否要鉴权,默认 true。 */
   auth?: boolean;
+  /** HTTP 方法,默认 GET。 */
+  method?: "GET" | "POST";
+  /** POST body(对象会 JSON 序列化)。 */
+  body?: unknown;
 }
 
 /**
@@ -94,7 +99,7 @@ export async function backendFetch<T>(
   path: string,
   opts: FetchOptions = {},
 ): Promise<T> {
-  const { query, timeoutMs = 10_000, auth = true } = opts;
+  const { query, timeoutMs = 10_000, auth = true, method = "GET", body } = opts;
   const url = new URL(path, BACKENDS[backend]);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -104,13 +109,16 @@ export async function backendFetch<T>(
 
   const headers: Record<string, string> = { Accept: "application/json" };
   if (auth) headers.Authorization = `Bearer ${await getServiceToken()}`;
+  if (body !== undefined) headers["Content-Type"] = "application/json";
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(url, {
+      method,
       headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
       cache: "no-store",
     });

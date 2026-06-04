@@ -9,6 +9,7 @@
     "runners": "Live Runner",
     "activity": "Agent 活动",
     "lab": "策略实验室",
+    "factors": "因子库",
     "risk": "风控",
     "soon": "即将"
   },
@@ -177,6 +178,40 @@
       "audit": "沙盒审计",
       "promotion": "晋级",
       "code": "源码"
+    }
+  },
+  "factors": {
+    "title": "因子库",
+    "index": "05",
+    "subtitle": "因子目录,以及当前哪些因子真的有预测力(Rank IC 择时)。",
+    "catalogCount": "目录",
+    "serviceDown": "因子服务不可用 —— 目录和有效性都拉不到。",
+    "effectiveness": "有效因子(择时)",
+    "apply": "应用",
+    "noEffectiveness": "该标的暂无有效性数据。",
+    "barsUsed": "{n} 根 bar",
+    "catalog": "因子目录",
+    "filter": { "all": "全部" }
+  },
+  "risk": {
+    "title": "风控",
+    "index": "06",
+    "subtitle": "当前生效的风控规则,以及正在拦截交易的锁。",
+    "engine": "引擎",
+    "on": "启用",
+    "off": "停用",
+    "activeLocks": "活跃锁",
+    "locks": "活跃锁",
+    "locksEmpty": "无活跃锁 —— 当前没有交易被拦截。",
+    "rules": "规则",
+    "rulesEmpty": "未配置规则。",
+    "disabled": "风控引擎已停用。",
+    "col": {
+      "rule": "规则",
+      "scope": "范围",
+      "side": "方向",
+      "reason": "原因",
+      "until": "解锁于"
     }
   },
   "common": {

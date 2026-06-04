@@ -9,6 +9,7 @@
     "runners": "Live Runners",
     "activity": "Agent Activity",
     "lab": "Strategy Lab",
+    "factors": "Factors",
     "risk": "Risk",
     "soon": "soon"
   },
@@ -177,6 +178,40 @@
       "audit": "Sandbox Audit",
       "promotion": "Promotion",
       "code": "Source"
+    }
+  },
+  "factors": {
+    "title": "Factor Library",
+    "index": "05",
+    "subtitle": "The factor catalog, and which factors are actually predictive right now (Rank IC timing).",
+    "catalogCount": "Catalog",
+    "serviceDown": "Factor service unavailable — catalog and effectiveness can't be loaded.",
+    "effectiveness": "Effective Factors (timing)",
+    "apply": "Apply",
+    "noEffectiveness": "No effectiveness data for this instrument.",
+    "barsUsed": "{n} bars",
+    "catalog": "Factor Catalog",
+    "filter": { "all": "All" }
+  },
+  "risk": {
+    "title": "Risk",
+    "index": "06",
+    "subtitle": "Risk rules in force, and any locks currently blocking trades.",
+    "engine": "Engine",
+    "on": "on",
+    "off": "off",
+    "activeLocks": "Active Locks",
+    "locks": "Active Locks",
+    "locksEmpty": "No active locks — nothing is being blocked.",
+    "rules": "Rules",
+    "rulesEmpty": "No rules configured.",
+    "disabled": "Risk engine is disabled.",
+    "col": {
+      "rule": "Rule",
+      "scope": "Scope",
+      "side": "Side",
+      "reason": "Reason",
+      "until": "Until"
     }
   },
   "common": {

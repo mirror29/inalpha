@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Radio,
   ShieldAlert,
+  Sigma,
   type LucideIcon,
 } from "lucide-react";
 
@@ -28,7 +29,8 @@ const NAV: NavItem[] = [
   { key: "runners", index: "02", href: "/runners", icon: Radio },
   { key: "activity", index: "03", href: "/activity", icon: Activity },
   { key: "lab", index: "04", href: "/lab", icon: FlaskConical },
-  { key: "risk", index: "05", href: "/risk", icon: ShieldAlert, soon: true },
+  { key: "factors", index: "05", href: "/factors", icon: Sigma },
+  { key: "risk", index: "06", href: "/risk", icon: ShieldAlert },
 ];
 
 export function ConsoleSidebar() {

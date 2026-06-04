@@ -182,6 +182,92 @@ export interface CandidateDetailPayload {
   asOf: string;
 }
 
+// ── ⑤ 风控面板 ──
+
+/** GET /risk/rules 的一条规则。 */
+export interface RiskRule {
+  name: string;
+  short_desc: string;
+}
+
+/** GET /risk/locks 的一把活跃锁。 */
+export interface RiskLock {
+  id: number;
+  scope: string;
+  market: string | null;
+  symbol: string | null;
+  side: string;
+  rule_name: string;
+  reason: string;
+  locked_at: string;
+  locked_until: string;
+}
+
+/** GET /api/risk —— 风控面板负载(规则 + 活跃锁)。 */
+export interface RiskPayload {
+  /** 风控是否启用(rules 配置)。 */
+  enabled: boolean;
+  starting_balance: number;
+  rules: RiskRule[];
+  locks: RiskLock[];
+  sources: { rules: boolean; locks: boolean };
+  asOf: string;
+}
+
+// ── ⑥ 因子库 ──
+
+/** GET /factor/catalog 的一个因子定义(静态目录)。 */
+export interface FactorSpec {
+  factor_id: string;
+  source: string;
+  name: string;
+  kind: string;
+  needs_universe: boolean;
+  direction_hint: number;
+  available: boolean;
+}
+
+/** POST /factor/snapshot 的一条有效性记录(运行时计算)。 */
+export interface FactorEffectiveness {
+  factor_id: string;
+  name: string;
+  kind: string;
+  value: number | null;
+  /** 时序 Rank IC(spearman(rank(factor), rank(fwd_return)))。 */
+  rank_ic: number;
+  /** IC 信息比(分段 IC 均值/标准差),稳定性。 */
+  icir: number;
+  /** 择时方向 +1/-1/0(sign(rank_ic),过阈才非 0)。 */
+  direction: number;
+  /** |rank_ic| 归一到 0-1。 */
+  strength: number;
+  sample_size: number;
+  long_short_return: number;
+  /** 样本不足标记。 */
+  low_confidence: boolean;
+}
+
+/** GET /api/factors —— 因子库面板:目录 + 当前标的有效性快照。 */
+export interface FactorsPayload {
+  catalog: FactorSpec[];
+  /** 各源是否可用(qlib 默认关)。 */
+  sources: Record<string, boolean>;
+  /** 当前标的的有效因子排行(snapshot);取不到为 null。 */
+  effectiveness: {
+    venue: string;
+    symbol: string;
+    timeframe: string;
+    available: boolean;
+    reason: string | null;
+    bars_used: number;
+    as_of: string | null;
+    top_factors: FactorEffectiveness[];
+  } | null;
+  /** catalog 是否取到(factor 服务可能没起)。 */
+  catalogOk: boolean;
+  asOf: string;
+}
+
 // ── ③ Agent 运行日志 / 可观测性 ──
 
 /** 统一活动流的事件类型(跨模块归一)。 */
