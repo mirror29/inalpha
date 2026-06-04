@@ -13,8 +13,12 @@ import pytest
 from fastapi.testclient import TestClient
 from inalpha_shared.db import get_conn
 
+from inalpha_paper.account_id import account_id_from_sub
+from inalpha_paper.config import get_paper_settings
 from inalpha_paper.storage import strategy_candidates as candidates_store
 from inalpha_paper.storage import strategy_runs as runs_store
+
+from .conftest import fresh_account_token
 
 pytestmark = pytest.mark.integration
 
@@ -35,14 +39,24 @@ class NoopStrategy(Strategy):
 
 
 def _unique_code() -> str:
-    """每个候选用唯一 code（加 salt 注释），避免 code_hash 去重导致测试间串扰。"""
-    return _MINIMAL_CODE + f"\n# salt: {uuid4().hex}\n"
+    """每个候选用**结构可区分**的 code，避免去重导致测试间串扰。
+
+    salt 作唯一 STRING 字面量（不能用注释）：insert_candidate 的结构指纹去重
+    （compute_structure_hash）剥注释后再 hash，注释 salt 会让所有候选结构相同 →
+    dedup 成同一个 → 第二次起跑撞 UNIQUE(candidate_id) running。STRING 字面量被
+    结构指纹保留，故每个候选结构唯一。"""
+    return _MINIMAL_CODE + f'\n"structural salt {uuid4().hex}"\n'
 
 
-async def _make_promoted_candidate() -> UUID:
-    """直接落库 + set_status('promoted')，绕过 backtest/promote 端点守门。"""
+async def _make_promoted_candidate(owner_account_id: UUID | None = None) -> UUID:
+    """直接落库 + set_status('promoted')，绕过 backtest/promote 端点守门。
+
+    owner_account_id=None → owner 列 NULL（模拟 pre-migration 老数据 / 归属校验放行）。
+    """
     async with get_conn() as conn:
-        cid, _created = await candidates_store.insert_candidate(conn, code=_unique_code())
+        cid, _created = await candidates_store.insert_candidate(
+            conn, code=_unique_code(), owner_account_id=owner_account_id
+        )
         await candidates_store.set_status(conn, cid, "promoted")
     return cid
 
@@ -192,3 +206,76 @@ async def test_stop_other_account_run_404(client: TestClient, app_with_lifespan:
     # 另一个用户来 stop
     r = client.post(f"/strategy_runs/{run['id']}/stop", headers=_headers(client))
     assert r.status_code == 404
+
+
+async def test_start_other_account_candidate_forbidden(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """不能挂别人 promote 的 candidate 在自己账户跑 → 403 CANDIDATE_NOT_OWNED（issue #36.1）。"""
+    _stub_manager(app_with_lifespan)
+    owner_sub, _ = fresh_account_token("owner")
+    cid = await _make_promoted_candidate(owner_account_id=account_id_from_sub(owner_sub))
+    # 另一个账户（_headers 每次新 token）来 start
+    r = client.post(
+        "/strategy_runs", headers=_headers(client),
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+    )
+    assert r.status_code == 403
+    assert r.json()["code"] == "CANDIDATE_NOT_OWNED"
+
+
+async def test_start_own_candidate_ok(client: TestClient, app_with_lifespan: Any) -> None:
+    """自己 promote 的 candidate（owner 一致）可以 start。"""
+    started = _stub_manager(app_with_lifespan)
+    sub, token = fresh_account_token("owner")
+    cid = await _make_promoted_candidate(owner_account_id=account_id_from_sub(sub))
+    r = client.post(
+        "/strategy_runs", headers={"Authorization": f"Bearer {token}"},
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+    )
+    assert r.status_code == 200, r.json()
+    assert len(started) == 1
+
+
+async def test_start_legacy_null_owner_allowed(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """pre-migration 老数据 owner_account_id=NULL → 放行（有界 fail-open，issue #36.1）。"""
+    _stub_manager(app_with_lifespan)
+    cid = await _make_promoted_candidate()  # 不传 owner → NULL
+    r = client.post(
+        "/strategy_runs", headers=_headers(client),
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+    )
+    assert r.status_code == 200, r.json()
+
+
+async def test_per_account_run_cap(client: TestClient, app_with_lifespan: Any) -> None:
+    """单账户 running run 超上限 → 429 TOO_MANY_RUNNING_RUNS（issue #36.2）。"""
+    _stub_manager(app_with_lifespan)
+    sub, token = fresh_account_token("capacct")
+    acct = account_id_from_sub(sub)
+    headers = {"Authorization": f"Bearer {token}"}
+    # 把上限压到 2（dependency override，函数级 fixture 不泄漏）
+    small = get_paper_settings().model_copy(
+        update={"live_max_running_runs_per_account": 2}
+    )
+    app_with_lifespan.dependency_overrides[get_paper_settings] = lambda: small
+
+    # 起满 2 个（不同 candidate，各归本账户）
+    for _ in range(2):
+        cid = await _make_promoted_candidate(owner_account_id=acct)
+        r = client.post(
+            "/strategy_runs", headers=headers,
+            json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        )
+        assert r.status_code == 200, r.json()
+
+    # 第 3 个 → 429
+    cid3 = await _make_promoted_candidate(owner_account_id=acct)
+    r = client.post(
+        "/strategy_runs", headers=headers,
+        json={"candidate_id": str(cid3), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+    )
+    assert r.status_code == 429
+    assert r.json()["code"] == "TOO_MANY_RUNNING_RUNS"

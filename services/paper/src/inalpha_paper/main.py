@@ -117,16 +117,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_backtest_pool(_settings)
     app.state.risk_guard_factory = await _build_risk_guard_factory(pool)
 
-    # D-11 live runner：内存 task 随重启丢失，把残留 running 行 reconcile 成 errored
-    # （避免 UNIQUE running 永久挡住该 candidate 重新 start）。
-    async with get_conn() as conn:
-        n = await runs_store.mark_running_as_errored(conn, reason="service restarted")
-    if n:
-        _logger.warning("live runner reconcile: %d 个残留 running run 标记为 errored", n)
     app.state.live_runner_manager = LiveRunnerManager(
         risk_guard_factory=app.state.risk_guard_factory,
         settings=_settings,
     )
+    # D-11 live runner reconcile：内存 task 随重启丢失。
+    if _settings.live_runner_resume_on_startup:
+        # issue #46：自动 resume——重建 session（DB 持仓 + 预热指标）续跑，而非判死。
+        # 不可恢复的（candidate unpromoted / 审计失败）由 _build_session 抛错 →
+        # _run_loop 置 errored，逐 run 优雅降级，不阻塞其它 run。
+        async with get_conn() as conn:
+            running = await runs_store.list_all_running(conn)
+        for run in running:
+            app.state.live_runner_manager.start(run)
+        if running:
+            _logger.warning("live runner resume: %d 个残留 running run 续跑", len(running))
+    else:
+        # 关 resume（测试 / 显式 opt-out）：残留全标 errored，释放 UNIQUE running 不挡重 start。
+        async with get_conn() as conn:
+            n = await runs_store.mark_running_as_errored(conn, reason="service restarted")
+        if n:
+            _logger.warning("live runner reconcile: %d 个残留 running run 标记为 errored", n)
     try:
         yield
     finally:

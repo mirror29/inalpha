@@ -24,6 +24,7 @@ from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 from inalpha_shared.errors import ConflictError, NotFoundError, ValidationError
 
+from ..account_id import account_id_from_user
 from ..schemas import (
     AuthorStrategyRequest,
     AuthorStrategyResponse,
@@ -93,8 +94,11 @@ async def post_strategy_candidate(
             code="STRATEGY_CONTRACT_FAILED",
         ) from exc
 
-    # 4. 落表 —— author_id 仅当 user.user_id 是合法 UUID 时记录（兼容字符串 sub）
+    # 4. 落表 —— author_id 仅当 user.user_id 是合法 UUID 时记录（兼容字符串 sub）；
+    #    owner_account_id 走 account_id_from_user（与 strategy_runs 的 account_id 同源），
+    #    供 live runner 起跑时做归属校验（issue #36.1）——非 UUID sub 也有稳定 owner。
     author_id = _try_uuid(user.user_id)
+    owner_account_id = account_id_from_user(user)
     audit_dict = {
         "ok": True,
         "findings": [],
@@ -106,6 +110,7 @@ async def post_strategy_candidate(
         description=req.description,
         author="llm",  # MVP 一律标 llm；user 手写策略以后另开端点
         author_id=author_id,
+        owner_account_id=owner_account_id,
         audit=audit_dict,
     )
 

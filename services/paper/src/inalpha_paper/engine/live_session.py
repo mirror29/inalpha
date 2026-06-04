@@ -26,11 +26,11 @@ from ..execution.exchange import EXECUTION_ENGINE_ENDPOINT
 from ..execution.execution_engine import ExecutionEngine
 from ..execution.gateway import Gateway
 from ..kernel.clock import TestClock
-from ..kernel.identifiers import InstrumentId, StrategyId, VenueOrderId
+from ..kernel.identifiers import ClientOrderId, InstrumentId, StrategyId, VenueOrderId
 from ..kernel.msgbus import MessageBus
 from ..model.commands import SubmitOrderCommand
 from ..model.data import Bar
-from ..model.orders import Order, OrderType
+from ..model.orders import Order, OrderSide, OrderType
 from ..strategy.base import RISK_ENGINE_ENDPOINT, Strategy
 from .portfolio import Portfolio
 
@@ -47,6 +47,7 @@ class _CaptureGateway(Gateway):
         self._clock = clock
         self._next_id = 1
         self._collected: list[tuple[Order, StrategyId]] = []
+        self._unsupported: list[tuple[Order, StrategyId, str]] = []
 
     def send_order(self, order: Order, strategy_id: StrategyId) -> None:
         # 与 SimulatedExchange.send_order 对等守门：只支持 MARKET / LIMIT。
@@ -54,15 +55,21 @@ class _CaptureGateway(Gateway):
         # 抛 AssertionError，被 runner 最外层 except 吞成 err_streak，连错几次误杀 run。
         # 拒掉走 reject_order 路径 → 记入决策日志，语义清晰。
         if order.type not in (OrderType.MARKET, OrderType.LIMIT):
+            reason = f"OrderType {order.type.value} not supported by live runner"
             self._msgbus.publish(
                 "internal.venue.rejected",
                 {
                     "client_order_id": order.client_order_id,
                     "strategy_id": strategy_id,
-                    "reason": f"OrderType {order.type.value} not supported by live runner",
+                    "reason": reason,
                     "ts": self._clock.now_ns(),
                 },
             )
+            # 也收集到 _unsupported（issue #43）：否则这类拒单对运维彻底隐形——
+            # 策略 on_order_rejected 被通知了，但 live runner 既不记决策行也不写
+            # error_log，运维看不到"策略想挂止损单但 live 不支持"。收集后由
+            # _process_bar 记一行 rejected 决策（不下单），让用户看见。
+            self._unsupported.append((order, strategy_id, reason))
             return
         venue_id = VenueOrderId(f"live-{self._next_id}")
         self._next_id += 1
@@ -81,9 +88,15 @@ class _CaptureGateway(Gateway):
         pass
 
     def take_collected(self) -> list[tuple[Order, StrategyId]]:
-        """取走本轮收集到的订单并清空。"""
+        """取走本轮收集到的（可撮合的 MARKET/LIMIT）订单并清空。"""
         out = self._collected[:]
         self._collected.clear()
+        return out
+
+    def take_unsupported(self) -> list[tuple[Order, StrategyId, str]]:
+        """取走本轮被守门拒掉的不支持单型（含拒因）并清空（issue #43）。"""
+        out = self._unsupported[:]
+        self._unsupported.clear()
         return out
 
 
@@ -160,6 +173,13 @@ class LiveEngineSession:
         self.msgbus.publish(topic, bar)
         return self._gateway.take_collected()
 
+    def take_unsupported_orders(self) -> list[tuple[Order, StrategyId, str]]:
+        """取走本根 bar 被守门拒掉的不支持单型（含拒因），供 runner 记决策行（issue #43）。
+
+        必须每根 bar 在 ``feed_bar`` 后排空（即便丢弃），否则会跨 bar 泄漏到下一根。
+        """
+        return self._gateway.take_unsupported()
+
     def confirm_fill(
         self,
         *,
@@ -202,6 +222,55 @@ class LiveEngineSession:
                 "ts": ts_event,
             },
         )
+
+    def restore_position(
+        self,
+        *,
+        quantity_signed: float,
+        avg_price: float,
+        ts_event: int,
+    ) -> None:
+        """resume 时把 DB 当前持仓灌回 session（issue #37.2 / #46）。
+
+        合成一笔成交穿过完整 EE 周期（submit → accept → fill），让 **Portfolio** 与
+        **策略持仓视图**都更新到目标持仓：``confirm_fill`` 触发 ``OrderFilled`` →
+        ``events.fills.<instrument>`` → Portfolio 更新 + 发 ``events.position.<strategy>``
+        → 策略 ``on_position_opened``（内置 sma_cross 等惯用此 hook 跟踪 long/flat）。
+        ``avg_price`` 灌成持仓 avg，未实现盈亏从 0 起，首根真 bar 的 mark 再更新。
+
+        局限：策略若用非标准内部 flag（不订阅 position/fill 事件）跟踪持仓，无法还原其
+        私有状态——但 Inalpha 契约 / 模板引导走 position/fill hook，主流策略可正确续跑。
+        ``quantity_signed == 0`` 时 no-op。
+        """
+        if quantity_signed == 0:
+            return
+        side = OrderSide.BUY if quantity_signed > 0 else OrderSide.SELL
+        qty = abs(quantity_signed)
+        order = Order(
+            client_order_id=ClientOrderId(f"restore-{self.instrument_id.symbol}-{ts_event}"),
+            instrument_id=self.instrument_id,
+            side=side,
+            type=OrderType.MARKET,
+            quantity=qty,
+        )
+        sid = self._strategy.strategy_id
+        if ts_event > self.clock.now_ns():
+            self.clock.set_time(ts_event)
+        # 直发 EXECUTION_ENGINE_ENDPOINT（绕过风控，这是重建非新意图）：EE._submit 把单
+        # 落入 _orders + 经 CaptureGateway publish accepted。是 _handle_filled 的前置态。
+        self.msgbus.send(
+            EXECUTION_ENGINE_ENDPOINT,
+            SubmitOrderCommand(order=order, strategy_id=sid, ts_init=ts_event),
+        )
+        # 排空 gateway 收集到的这笔重建单，绝不让它被 runner 当新意图路由去下单
+        self._gateway.take_collected()
+        self._gateway.take_unsupported()
+        # 确认成交 at avg_price → OrderFilled → Portfolio + 策略持仓视图同步更新
+        self.confirm_fill(
+            order=order, strategy_id=sid,
+            fill_qty=qty, fill_price=avg_price, ts_event=ts_event,
+        )
+        self.portfolio.update_mark(self.instrument_id, avg_price)
 
     def cumulative_pnl(self) -> float:
         """会话累计盈亏（mark-to-market 总权益 − 初始现金）。"""

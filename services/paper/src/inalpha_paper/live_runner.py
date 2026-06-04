@@ -24,21 +24,25 @@ from uuid import UUID
 
 import jwt
 from inalpha_shared.db import get_conn
-from inalpha_shared.errors import ConflictError
+from inalpha_shared.errors import ConflictError, InalphaError
 
 from .config import PaperSettings
 from .data_client import DataClient
 from .engine.live_session import LiveEngineSession
 from .execution import risk_guard as risk_guard_mod
+from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
 from .execution.risk_guard_factory import RiskGuardFactory
 from .fills import apply_fill_to_positions_and_cash
+from .fx import BaseCurrencyConverter, needs_network
 from .kernel.identifiers import InstrumentId, StrategyId
 from .model.data import Bar
 from .model.orders import Order
 from .runner import _bar_from_dict
 from .storage import accounts as accounts_store
+from .storage import closed_trades as closed_trades_store
 from .storage import orders as orders_store
+from .storage import positions as positions_store
 from .storage import strategy_candidates as candidates_store
 from .storage import strategy_runs as runs_store
 from .storage import trade_plans as plans_store
@@ -47,6 +51,21 @@ from .strategy_authoring.contract_check import verify_strategy_contract
 from .strategy_authoring.dynamic_loader import load_strategy_class
 
 _logger = logging.getLogger(__name__)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """区分可重试（瞬时）与不可重试（确定性）错误，决定 ``_run_loop`` 退避还是立即 errored。
+
+    - ``InalphaError`` 且 4xx（客户端 / 约束类：校验失败 / 状态冲突 / symbol 非法等）→
+      **不可重试**：重试也是同样结果，立即 errored 省退避 + 噪音（issue #37.3）
+    - 其余（网络 / 超时 / DB 瞬时错 / 未知异常）→ 可重试（保守默认，避免误杀偶发错）
+
+    注意：风控拒单（``ConflictError 409``）在 ``_route_through_plan_exec`` 内已被消化为
+    risk_rejected 决策行、**不冒泡到 loop**，故不会因 409 误把整个 run 杀掉。
+    """
+    if isinstance(exc, InalphaError):
+        return not (400 <= exc.status_code < 500)
+    return True
 
 _FEE_RATE = 0.001
 _LIVE_INITIAL_CASH = 10_000.0  # session 内部持仓视图用；真实现金在 DB 账户
@@ -181,15 +200,34 @@ class LiveRunnerManager:
                 if bar is None or (last_bar_ts is not None and bar_dt <= last_bar_ts):
                     await asyncio.sleep(poll_s)
                     continue
-                await self._process_bar(session, run, bar)
+                circuit_break = await self._process_bar(session, run, bar)
                 last_bar_ts = bar_dt
                 err_streak = 0
+                # 账户级风控熔断（回撤 / 连续止损 global 锁）→ auto-stop，防僵尸 run
+                # （issue #44）。置 stopped（非 errored：是策略触风控上限的正常终态，
+                # 不是 bug）+ error_log 记因，让人复核后再决定是否重启。
+                if circuit_break and self._settings.live_runner_auto_stop_on_circuit_break:
+                    _logger.warning("live run %s: 账户级风控熔断，auto-stop", run_id)
+                    async with get_conn() as conn:
+                        await runs_store.append_error_log(
+                            conn, run_id,
+                            "账户级风控熔断（global scope 锁：回撤 / 连续止损上限）→ auto-stop；"
+                            "复核账户状态后可重新 start。设 "
+                            "INALPHA_LIVE_RUNNER_AUTO_STOP_ON_CIRCUIT_BREAK=false 维持旧行为（继续跑）",
+                        )
+                        await runs_store.set_status(conn, run_id, "stopped")
+                    return
                 await asyncio.sleep(poll_s)
             except asyncio.CancelledError:
                 raise  # stop() 触发，干净退出（事务边界外，不留半个 plan）
             except Exception as e:
-                err_streak += 1
-                _logger.warning("live run %s error (streak=%d): %s", run_id, err_streak, e)
+                retryable = _is_retryable(e)
+                # 不可重试错误不计入 streak（它是确定性的，重试无意义）。
+                err_streak = err_streak + 1 if retryable else err_streak
+                _logger.warning(
+                    "live run %s error (retryable=%s, streak=%d): %s",
+                    run_id, retryable, err_streak, e,
+                )
                 # handler 内的 DB 调用也要兜——否则 DB 短暂不可达时异常逃出 while
                 # loop，task 静默死亡、run 永久卡在 'running'（CR）。
                 try:
@@ -199,7 +237,9 @@ class LiveRunnerManager:
                         )
                 except Exception:
                     _logger.exception("live run %s: 写 error_log 失败", run_id)
-                if err_streak >= self._settings.live_max_error_streak:
+                # 不可重试（确定性）错误 → 立即 errored，跳过退避（issue #37.3）；
+                # 可重试错误 → 连续 live_max_error_streak 次才 errored，否则指数退避重试。
+                if not retryable or err_streak >= self._settings.live_max_error_streak:
                     try:
                         async with get_conn() as conn:
                             await runs_store.set_status(conn, run_id, "errored")
@@ -238,7 +278,35 @@ class LiveRunnerManager:
             fee_rate=_FEE_RATE,
         )
         warmup_ts = await self._warmup_session(session, run)
+        # resume（last_bar_ts 非空 = 本 run 之前跑过）：把 DB 当前持仓灌回 session，让续跑
+        # 策略知道自己有仓（issue #37.2 / #46）。全新 run（last_bar_ts=None）保持空仓起，
+        # 符合"全新 live run 从无持仓开始"语义。
+        if run.get("last_bar_ts") is not None:
+            await self._restore_position(session, run)
         return session, warmup_ts
+
+    async def _restore_position(
+        self, session: LiveEngineSession, run: dict[str, Any]
+    ) -> None:
+        """从 DB 读 run 的 (account, venue, symbol) 当前持仓，灌回 session（resume 续跑）。"""
+        async with get_conn() as conn:
+            pos = await positions_store.get(
+                conn, account_id=run["account_id"], venue=run["venue"], symbol=run["symbol"]
+            )
+        if pos is None:
+            return
+        qty = float(pos["quantity"])
+        if qty == 0:
+            return
+        avg = float(pos["avg_open_price"])
+        # ts 用 last_bar_ts（重建发生在续喂前），ns 化喂给 session 时钟
+        last_bar_ts: datetime = run["last_bar_ts"]
+        ts_ns = int(last_bar_ts.timestamp() * 1_000_000_000)
+        session.restore_position(quantity_signed=qty, avg_price=avg, ts_event=ts_ns)
+        _logger.info(
+            "live run %s: resume 重建持仓 %s %s qty=%s avg=%s",
+            run["id"], run["venue"], run["symbol"], qty, avg,
+        )
 
     async def _warmup_session(
         self, session: LiveEngineSession, run: dict[str, Any]
@@ -274,6 +342,7 @@ class LiveRunnerManager:
         last_ts: datetime | None = None
         for bar in closed:
             session.feed_bar(bar)  # 丢弃 orders —— 预热只为建立指标状态
+            session.take_unsupported_orders()  # 同样排空，避免泄漏到 start 后第一根 bar
             last_ts = _ns_to_dt(bar.ts_event)
         return last_ts
 
@@ -303,12 +372,44 @@ class LiveRunnerManager:
         closed = _closed_bars(raw, instrument_id, run["timeframe"], now)
         return closed[-1] if closed else None
 
-    async def _process_bar(self, session: LiveEngineSession, run: dict[str, Any], bar: Bar) -> None:
-        """喂一根 bar → 路由本根 bar 的下单意图 → 更新进度。（可单测，不依赖轮询）。"""
+    @staticmethod
+    def _intent_for(session: LiveEngineSession, order: Order) -> str:
+        """按"下单前持仓方向 + side"判多空意图（CLAUDE.md §4 多空踩坑）。
+
+        SELL 平多=close / SELL 开空=open_short；BUY 平空=close / BUY 开多=open_long。
+        """
+        pos = session.portfolio.position(order.instrument_id)
+        cur_qty = pos.quantity if pos is not None else 0.0
+        if order.side.value == "BUY":
+            return "close" if cur_qty < 0 else "open_long"
+        return "close" if cur_qty > 0 else "open_short"
+
+    async def _process_bar(self, session: LiveEngineSession, run: dict[str, Any], bar: Bar) -> bool:
+        """喂一根 bar → 路由本根 bar 的下单意图 → 更新进度。（可单测，不依赖轮询）。
+
+        返回 ``True`` 表示本根 bar 触发了账户级风控熔断（global scope 锁，issue #44），
+        ``_run_loop`` 据此 auto-stop 该 run。
+        """
         orders = session.feed_bar(bar)
+        # 不支持单型（STOP_* 等）被 gateway 守门拒掉：记一行 rejected 决策让运维可见
+        # （issue #43），不下单、不计 err_streak。必须每根 bar 排空避免跨 bar 泄漏。
+        unsupported = session.take_unsupported_orders()
+        for order, _sid, reason in unsupported:
+            _logger.warning("live run %s: 策略下单被拒（不支持单型）：%s", run["id"], reason)
+            try:
+                async with get_conn() as conn:
+                    await self._record_decision(
+                        conn, run, order, bar, outcome="rejected",
+                        intent=self._intent_for(session, order), reason=reason,
+                    )
+            except Exception:
+                _logger.exception("live run %s: 记不支持单型决策行失败", run["id"])
+        circuit_break = False
         for order, strategy_id in orders:
             try:
-                await self._route_through_plan_exec(session, order, strategy_id, run, bar)
+                outcome = await self._route_through_plan_exec(session, order, strategy_id, run, bar)
+                if outcome == "circuit_break":
+                    circuit_break = True
             except Exception:
                 # 部分失败清理（CR medium）：order 已被 CaptureGateway 推到 ExecutionEngine
                 # 的 ACCEPTED 态，但护栏链路（DB 事务等）中途抛错时 confirm_fill/reject_order
@@ -324,16 +425,99 @@ class LiveRunnerManager:
         # 这些副作用**不幂等**。若 update_progress 因 DB 瞬时错误抛出，绝不能让它逃出本函数——
         # 否则 _run_loop 的内存 last_bar_ts 不前进 → 下轮重喂同一根 bar → 重复下单 / 指标污染。
         # 进度行只用于观测 / reconcile，落后一根可接受；内存 last_bar_ts 才是去重权威。
+        # cumulative_pnl 从 DB 真实持仓/平仓派生（issue #45）：已实现（closed_trades）
+        # + 未实现（持仓 MtM at bar.close），按 FX 折算到账户 base_currency。不再用
+        # session 的固定 1 万相对值——后者重启即归零、跨币种无意义。
+        #
+        # M-1：DB 读 与 外部 FX HTTP **严格分两段**——绝不在持有连接池连接时发外部请求。
+        # 否则非 USD 品种（EUR 股 / JPY FX）在 data 慢/超时时，并发 run 会把连接池占满
+        # （持连接等 HTTP），殃及 /strategy_runs start 等所有路径。crypto/USD 本地可解析
+        # 路径零网络，第二段 convert 不开 DataClient。整段 best-effort（不重喂 bar）。
         try:
+            async with get_conn() as conn:
+                quote_total, currency, base = await self._read_run_pnl_quote(
+                    conn, run, float(bar.close)
+                )
+            # ↑ 连接已归还连接池；↓ FX 折算（可能 HTTP）在连接上下文**之外**
+            pnl = await self._convert_run_pnl_to_base(run, quote_total, currency, base)
             async with get_conn() as conn:
                 await runs_store.update_progress(
                     conn,
                     run["id"],
                     last_bar_ts=_ns_to_dt(bar.ts_event),
-                    cumulative_pnl=Decimal(str(session.cumulative_pnl())),
+                    cumulative_pnl=pnl,  # None（FX 不可用）→ 只推进 last_bar_ts、留旧 pnl
                 )
         except Exception:
             _logger.exception("live run %s: update_progress 失败（best-effort，不重喂 bar）", run["id"])
+
+        return circuit_break
+
+    async def _read_run_pnl_quote(
+        self, conn: Any, run: dict[str, Any], mark_price: float
+    ) -> tuple[Decimal, str, str]:
+        """读 DB 算 run 累计盈亏（**计价货币**，未折算）+ 解析币种 / base（issue #45 / M-1）。
+
+        = 已实现（``closed_trades`` 自 started_at，按 symbol scope）+ 未实现（当前持仓
+        ``(mark - avg) * qty``）。**只读 DB、不发外部请求**（FX 折算见
+        :meth:`_convert_run_pnl_to_base`，在连接池连接之外做）。
+
+        返回 ``(total_quote, currency, base_currency)``。
+        """
+        account_id: UUID = run["account_id"]
+        venue: str = run["venue"]
+        symbol: str = run["symbol"]
+        started_at: datetime = run["started_at"]
+
+        realized = await closed_trades_store.sum_realized(
+            conn, account_id=account_id, venue=venue, symbol=symbol, since=started_at
+        )
+        pos = await positions_store.get(
+            conn, account_id=account_id, venue=venue, symbol=symbol
+        )
+        unrealized = Decimal(0)
+        currency: str | None = None
+        if pos is not None and Decimal(str(pos["quantity"])) != 0:
+            qty = Decimal(str(pos["quantity"]))
+            avg = Decimal(str(pos["avg_open_price"]))
+            unrealized = (Decimal(str(mark_price)) - avg) * qty
+            currency = pos.get("currency")
+
+        total_quote = realized + unrealized
+
+        account = await accounts_store.get(conn, account_id)
+        base = account["base_currency"] if account else accounts_store.DEFAULT_BASE_CURRENCY
+        currency = currency or resolve_currency(venue, symbol, default=base)
+        return total_quote, currency, base
+
+    async def _convert_run_pnl_to_base(
+        self, run: dict[str, Any], total_quote: Decimal, currency: str, base: str
+    ) -> Decimal | None:
+        """把计价货币盈亏折算到 base_currency（issue #45 / M-1）。
+
+        **不持有任何 DB 连接**——可能发 data ``/fx`` HTTP。crypto-USD 等本地可解析路径
+        零网络、恒成功。拿不到汇率（非 USD 折算失败）返 ``None`` → 调用方保留旧 pnl 不覆盖。
+        """
+        # 0 盈亏（flat 且无平仓 / 已实现与未实现相抵）→ 折算后仍是 0，直接短路：
+        # 否则非 USD flat run 每根 bar 白打一次 /fx HTTP，且 FX 不可用时会返 None 把真实
+        # 的 0 PnL 错留成旧值。
+        if total_quote == 0:
+            return Decimal(0)
+        # 计价货币 == base 或本地可解析（crypto USDT→USD）→ 零网络
+        if not needs_network([currency], base):
+            conv = BaseCurrencyConverter(base, None)
+            return await conv.convert(total_quote, currency)
+
+        # 否则调 data /fx；拿不到 → 返 None（保留旧值，不乱猜）
+        token = self._mint_service_token(run["account_id"])
+        async with DataClient(self._settings.data_service_url, token) as dc:
+            conv = BaseCurrencyConverter(base, dc)
+            result = await conv.convert(total_quote, currency)
+        if result is None and conv.warnings:
+            _logger.warning(
+                "live run %s: PnL FX 折算不可用，保留旧 cumulative_pnl：%s",
+                run["id"], "; ".join(conv.warnings),
+            )
+        return result
 
     async def _route_through_plan_exec(
         self,
@@ -342,26 +526,30 @@ class LiveRunnerManager:
         strategy_id: StrategyId,
         run: dict[str, Any],
         bar: Bar,
-    ) -> None:
-        """一笔下单意图走护栏内 plan/exec：风控 → 撮合 → plan create/approve/consume → 落账 → 回灌。"""
+    ) -> str:
+        """一笔下单意图走护栏内 plan/exec：风控 → 撮合 → plan create/approve/consume → 落账 → 回灌。
+
+        返回本笔 outcome：``"filled"`` / ``"rejected"`` / ``"risk_rejected"`` /
+        ``"circuit_break"``（账户级 global 风控锁，issue #44）。
+        """
         account_id: UUID = run["account_id"]
         venue: str = run["venue"]
         symbol: str = run["symbol"]
         run_id: UUID = run["id"]
         side = order.side.value  # "BUY" / "SELL"
 
-        # intent 按"下单前持仓方向 + side"判，别把所有 SELL 当平多（CLAUDE.md §4 多空踩坑）：
-        # SELL 平多=close / SELL 开空=open_short；BUY 平空=close / BUY 开多=open_long。
-        # 在风控之前算好 → risk_rejected 决策行也带上 intent（复盘做空语义不丢）。
-        pos = session.portfolio.position(order.instrument_id)
-        cur_qty = pos.quantity if pos is not None else 0.0
-        if side == "BUY":
-            intent = "close" if cur_qty < 0 else "open_long"
-        else:  # SELL
-            intent = "close" if cur_qty > 0 else "open_short"
+        # intent 按"下单前持仓方向 + side"判（CLAUDE.md §4 多空踩坑）。在风控之前算好
+        # → risk_rejected 决策行也带上 intent（复盘做空语义不丢）。
+        intent = self._intent_for(session, order)
 
-        # 1. 风控（DB-backed RiskGuard）；命中 → 拒单 + 记 error_log，不杀 run
+        # 1. 风控；命中 → 拒单 + 记 error_log，不杀 run。两道闸门同 except 处理：
+        #    (a) 单笔 notional 硬上限（无状态，挡策略算错 quantity 的超大单，issue #42）；
+        #    (b) DB-backed RiskGuard 行为型锁规则（drawdown / cooldown / ...）。
         try:
+            risk_guard_mod.check_order_notional(
+                self._factory, quantity=order.quantity, ref_price=float(bar.close),
+                venue=venue, symbol=symbol,
+            )
             await risk_guard_mod.enforce(
                 self._factory, account_id=account_id, venue=venue, symbol=symbol, side=side
             )
@@ -378,7 +566,11 @@ class LiveRunnerManager:
                     conn, run, order, bar, outcome="risk_rejected", intent=intent,
                     reason=e.message,
                 )
-            return
+            # 账户级（global scope）锁 = 回撤 / 连续止损熔断：返回信号让 _run_loop 终止 run
+            # （issue #44）。symbol/market scope（cooldown 等）是局部、会过的，不熔断。
+            # notional 上限（MaxOrderNotional）无 lock_scope，故 .get 返 None，不误判。
+            scope = e.details.get("lock_scope") if e.details else None
+            return "circuit_break" if scope == "global" else "risk_rejected"
 
         # 2. 撮合（纯函数，ref_price = bar.close）
         result = OrderExecutor.execute(
@@ -456,12 +648,13 @@ class LiveRunnerManager:
                 fill_price=float(result["avg_fill_price"]),
                 ts_event=bar.ts_event,
             )
-        else:
-            session.reject_order(
-                order=order, strategy_id=strategy_id,
-                reason=str(result.get("rejection_reason") or "not filled"),
-                ts_event=bar.ts_event,
-            )
+            return "filled"
+        session.reject_order(
+            order=order, strategy_id=strategy_id,
+            reason=str(result.get("rejection_reason") or "not filled"),
+            ts_event=bar.ts_event,
+        )
+        return "rejected"
 
     async def _record_decision(
         self,

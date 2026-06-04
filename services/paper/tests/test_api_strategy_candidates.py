@@ -41,10 +41,12 @@ class PromoteMeStrategy(Strategy):
 
 @pytest_asyncio.fixture
 async def candidate_id(client: TestClient, auth_headers: dict[str, str]) -> str:
-    """落一个 fresh candidate（每次随机改 docstring 让 code_hash 唯一），返回 ID。"""
-    # 在源码尾部追加随机注释保证 code_hash 唯一（避免幂等命中老候选）
+    """落一个 fresh candidate（每次结构可区分 salt 让候选唯一），返回 ID。"""
+    # salt 作 STRING 字面量（非注释）：结构指纹去重剥注释后再 hash，注释 salt 会让所有
+    # candidate_id fixture 结构相同 → dedup 成同一个 → 跨 test 串扰（如 promote_twice 误命中已 promoted）。
+    # 裸 STRING 表达式 AST 审计安全（同 docstring），且被结构指纹保留 → 每个候选唯一。
     salt = uuid.uuid4().hex[:8]
-    code = _MIN_STRATEGY + f"\n# salt-{salt}\n"
+    code = _MIN_STRATEGY + f'\n"structural salt {salt}"\n'
     r = client.post(
         "/strategy_candidates",
         headers=auth_headers,

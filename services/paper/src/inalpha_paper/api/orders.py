@@ -79,6 +79,12 @@ async def post_submit_order(
 
     ref_price = await _resolve_ref_price(req, settings, authorization)
 
+    # 单笔 notional 硬上限（无状态前置校验，issue #42）；超限 → 409 RISK_REJECTED
+    risk_guard_mod.check_order_notional(
+        factory, quantity=req.quantity, ref_price=ref_price,
+        venue=req.venue, symbol=req.symbol,
+    )
+
     # 算成交（纯函数，不依赖 DB）
     result = OrderExecutor.execute(
         venue=req.venue,

@@ -5,22 +5,34 @@
 """
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
 import pytest
 from inalpha_shared.db import get_conn
+from inalpha_shared.errors import InalphaError
 
 from inalpha_paper.config import get_paper_settings
 from inalpha_paper.engine.live_session import LiveEngineSession
 from inalpha_paper.live_runner import LiveRunnerManager, _closed_bars
+from inalpha_paper.storage import accounts as accounts_store
+from inalpha_paper.storage import closed_trades as closed_trades_store
 from inalpha_paper.storage import orders as orders_store
 from inalpha_paper.storage import positions as positions_store
 from inalpha_paper.storage import strategy_candidates as candidates_store
 from inalpha_paper.storage import strategy_runs as runs_store
 from inalpha_paper.strategy.base import Strategy
 
-from .test_live_session import _INSTRUMENT, _bar, _BuyOnceStrategy
+from .test_live_session import (
+    _INSTRUMENT,
+    _bar,
+    _BuyOnceStrategy,
+    _PosTrackStrategy,
+    _StopOrderStrategy,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -40,8 +52,10 @@ async def _insert_run(account_id, candidate_id=None):  # type: ignore[no-untyped
     """插一行 run；candidate_id=None 时先建一个真候选（strategy_runs.candidate_id 有 FK）。"""
     async with get_conn() as conn:
         if candidate_id is None:
+            # 结构可区分 salt 作 STRING 字面量（非注释）：结构指纹去重剥注释后会让
+            # 注释-only / 注释-salt 候选全撞成同一个 → 同 candidate 第二次起跑 409。
             candidate_id, _ = await candidates_store.insert_candidate(
-                conn, code=f"# live-runner test candidate {uuid4().hex}\n"
+                conn, code=f'"live-runner test candidate {uuid4().hex}"\n'
             )
         return await runs_store.insert(
             conn, candidate_id=candidate_id, account_id=account_id,
@@ -98,6 +112,131 @@ async def test_process_bar_routes_through_plan_exec(app_with_lifespan: Any) -> N
     assert d["plan_id"] is not None
     assert d["order_id"] is not None
     assert d["fill_price"] is not None
+
+
+async def test_process_bar_unsupported_order_records_rejected_decision(
+    app_with_lifespan: Any,
+) -> None:
+    """不支持单型（STOP_MARKET）：不落单、记一行 rejected 决策让运维可见（issue #43）、run 不挂。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = LiveEngineSession(
+        strategy_cls=_StopOrderStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    await manager._process_bar(session, run, _bar(1_700_000_000_000_000_000, close=50_000.0))
+
+    async with get_conn() as conn:
+        orders = await orders_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+        run_fresh = await runs_store.get(conn, run["id"])
+    assert orders == []  # 不支持单型不落单
+    assert len(decisions) == 1
+    d = decisions[0]
+    assert d["outcome"] == "rejected"
+    assert d["intent"] == "open_short"  # 空仓 SELL STOP → 开空意图仍记录
+    assert "STOP_MARKET" in d["reason"] and "not supported" in d["reason"]
+    assert d["order_id"] is None  # 没真下单 → 无 order/plan 交叉引用
+    assert d["plan_id"] is None
+    assert run_fresh["status"] == "running"  # 不杀 run
+
+
+async def test_process_bar_circuit_break_on_global_lock(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """账户级（global scope）风控锁 → _process_bar 返 True（熔断信号）+ 记 risk_rejected（issue #44）。"""
+    from inalpha_shared.errors import ConflictError
+
+    async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise ConflictError(
+            "account drawdown 15% exceeded", code="RISK_REJECTED",
+            details={"lock_scope": "global", "rule_name": "MaxDrawdownRule"},
+        )
+
+    monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _make_session()
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    circuit_break = await manager._process_bar(
+        session, run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+
+    assert circuit_break is True  # global 锁 → 熔断
+    async with get_conn() as conn:
+        orders = await orders_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+    assert orders == []
+    assert decisions[0]["outcome"] == "risk_rejected"
+
+
+async def test_process_bar_symbol_lock_does_not_circuit_break(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """symbol scope 锁（cooldown 等局部、会过）→ 不熔断（_process_bar 返 False）。"""
+    from inalpha_shared.errors import ConflictError
+
+    async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise ConflictError(
+            "cooldown active", code="RISK_REJECTED",
+            details={"lock_scope": "symbol", "rule_name": "CooldownRule"},
+        )
+
+    monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    run = await _insert_run(uuid4())
+    circuit_break = await manager._process_bar(
+        _make_session(), run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+    assert circuit_break is False  # 局部锁不熔断
+
+
+async def test_run_loop_circuit_break_auto_stops(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """账户级熔断 → _run_loop auto-stop 置 stopped（非 errored），防僵尸 run（issue #44）。"""
+    from inalpha_shared.errors import ConflictError
+
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    calls = {"n": 0}
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _bar(1_700_000_000_000_000_000, close=50_000.0)
+        raise asyncio.CancelledError  # 守护：若没 auto-stop，第 2 次拉 bar 时干净退出
+
+    async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise ConflictError(
+            "account drawdown breached", code="RISK_REJECTED",
+            details={"lock_scope": "global"},
+        )
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+    monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
+    monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", lambda _s: asyncio.sleep(0))
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "stopped"  # 熔断是正常终态，非 errored
+    assert calls["n"] == 1  # 处理完第一根就 auto-stop，没再拉第 2 根
+    assert any("熔断" in e.get("error", "") for e in (fresh["error_log"] or []))
 
 
 async def test_process_bar_risk_rejected_records_decision(
@@ -279,3 +418,337 @@ async def test_process_bar_no_signal_no_order(app_with_lifespan: Any) -> None:
         orders = await orders_store.list_by_account(conn, account_id)
     # 只有第一根那笔单，第二根没新增
     assert len(orders) == 1
+
+
+# ─── 错误分类 / _run_loop 健壮性（issue #37.3 / #37.4）───
+
+
+def test_is_retryable_classification() -> None:
+    """4xx InalphaError 不可重试；网络 / 超时 / 未知错误可重试（issue #37.3）。"""
+    from inalpha_shared.errors import ConflictError, NotFoundError, ValidationError
+
+    from inalpha_paper.live_runner import _is_retryable
+
+    assert _is_retryable(ValidationError("bad")) is False  # 400
+    assert _is_retryable(NotFoundError("gone")) is False  # 404
+    assert _is_retryable(ConflictError("dup")) is False  # 409
+    assert _is_retryable(InalphaError("boom", status_code=500)) is True
+    assert _is_retryable(TimeoutError("net")) is True
+    assert _is_retryable(RuntimeError("x")) is True
+
+
+async def test_run_loop_non_retryable_error_immediate_errored(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """不可重试错误（4xx InalphaError）→ 立即 errored，不等 streak（issue #37.3）。"""
+    from inalpha_shared.errors import ValidationError
+
+    # require=False 让 factory=None 也能过 fail-closed 门进主循环；streak 用默认（≥2）
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    assert settings.live_max_error_streak >= 2  # 证明"立即"而非"攒够 streak"
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        raise ValidationError("symbol delisted", code="SYMBOL_DELISTED")
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    assert any("ValidationError" in e.get("error", "") for e in (fresh["error_log"] or []))
+
+
+async def test_run_loop_retryable_error_accumulates_to_errored(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """可重试错误（网络 / 超时）：单次不杀 run，连续达 streak 才 errored。"""
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False, "live_max_error_streak": 2}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        raise TimeoutError("network blip")  # 非 InalphaError → 可重试
+
+    async def no_sleep(_s):  # type: ignore[no-untyped-def]
+        return None  # 退避置空：loop 第 2 次错时 errored 退出，不真等
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+    monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", no_sleep)
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    # 攒到 streak=2 才挂：≥2 条网络错（证明第 1 次没杀 run）
+    blips = [e for e in (fresh["error_log"] or []) if "network blip" in e.get("error", "")]
+    assert len(blips) >= 2
+
+
+async def test_run_loop_cancelled_clean_exit(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """CancelledError（stop 触发）→ 干净退出、run 不置 errored。"""
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+
+    with pytest.raises(asyncio.CancelledError):
+        await manager._run_loop(run)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "running"  # 干净退出，不标 errored
+
+
+async def test_run_loop_build_session_failure_errored(app_with_lifespan: Any) -> None:
+    """_build_session 失败（candidate 非法 / 未 promoted）→ run 置 errored。"""
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    # _insert_run 造的 candidate code 非合法 Strategy（裸 STRING 字面量）、status='candidate'
+    # → _build_session 加载/审计/契约校验抛错
+    run = await _insert_run(uuid4())
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    assert any("build failed" in e.get("error", "") for e in (fresh["error_log"] or []))
+
+
+async def test_process_bar_not_filled_rejects(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """OrderExecutor 返非 FILLED（如 LIMIT 未成交）→ 落 rejected 决策 + reject_order，不建仓。"""
+    from inalpha_paper.storage import positions as positions_store
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _make_session()
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    from datetime import UTC, datetime
+
+    ts = 1_700_000_000_000_000_000
+
+    # client_order_id 用 uuid 后缀：orders 表跨 pytest 进程持久化（conftest 只 truncate
+    # risk_locks），硬编码 id 会让重复跑测试时 orders_pkey 主键冲突（测试隔离债）。
+    unfilled_coid = f"limit-unfilled-{uuid4().hex[:8]}"
+
+    def fake_execute(**_kw):  # type: ignore[no-untyped-def]
+        return {
+            "client_order_id": unfilled_coid, "status": "REJECTED",
+            "filled_quantity": 0.0, "avg_fill_price": 0.0, "fee": 0.0,
+            "notional": 0.0, "ts_event": datetime.now(UTC),
+            "rejection_reason": "limit not crossed",
+        }
+
+    monkeypatch.setattr("inalpha_paper.live_runner.OrderExecutor.execute", fake_execute)
+
+    # 监视 confirm_fill 不应被调（未成交不能回灌成交）
+    confirmed: list = []
+    orig_confirm = session.confirm_fill
+
+    def spy_confirm(**kw):  # type: ignore[no-untyped-def]
+        confirmed.append(kw)
+        return orig_confirm(**kw)
+
+    monkeypatch.setattr(session, "confirm_fill", spy_confirm)
+
+    await manager._process_bar(session, run, _bar(ts, close=50_000.0))
+
+    async with get_conn() as conn:
+        orders = await orders_store.list_by_account(conn, account_id)
+        positions = await positions_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+    assert len(orders) == 1 and orders[0]["status"] == "REJECTED"
+    assert positions == []  # 未成交不建仓
+    assert confirmed == []  # 没调 confirm_fill
+    assert len(decisions) == 1 and decisions[0]["outcome"] == "rejected"
+    assert decisions[0]["reason"] == "limit not crossed"
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat
+
+
+async def test_mark_running_as_errored_reconcile(app_with_lifespan: Any) -> None:
+    """服务重启 reconcile：把残留 running 标 errored，非 running 不动（issue #37.4）。"""
+    running_run = await _insert_run(uuid4())
+    stopped_run = await _insert_run(uuid4())
+    async with get_conn() as conn:
+        await runs_store.set_status(conn, stopped_run["id"], "stopped")
+
+    async with get_conn() as conn:
+        n = await runs_store.mark_running_as_errored(conn, reason="service restart reconcile")
+    assert n >= 1
+
+    async with get_conn() as conn:
+        f_running = await runs_store.get(conn, running_run["id"])
+        f_stopped = await runs_store.get(conn, stopped_run["id"])
+    assert f_running["status"] == "errored"
+    assert f_stopped["status"] == "stopped"  # 非 running 不受影响
+    assert any("reconcile" in e.get("error", "") for e in (f_running["error_log"] or []))
+
+
+async def test_compute_run_pnl_from_db_realized_plus_unrealized(
+    app_with_lifespan: Any,
+) -> None:
+    """DB 派生 PnL（issue #45）= 已实现（closed_trades）+ 未实现（持仓 MtM），crypto 本地 FX。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)  # started_at = NOW()
+
+    async with get_conn() as conn:
+        await accounts_store.get_or_create(conn, account_id)  # base USD
+        # 建持仓：BUY 1 @ 100（currency USDT）→ qty=1 avg=100
+        await positions_store.apply_fill(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="BUY", fill_qty=Decimal("1"), fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC), order_id="pnl-open", currency="USDT",
+        )
+        # 已实现 50（一笔平仓，close_ts 在 run.started_at 之后）
+        await closed_trades_store.insert_close(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", side="long",
+            open_ts=datetime.now(UTC), close_ts=datetime.now(UTC),
+            open_price=Decimal("100"), close_price=Decimal("150"), quantity=Decimal("1"),
+            close_profit_pct=0.5, close_profit_abs=50.0, exit_reason="signal",
+            open_order_id="x", close_order_id="y",
+        )
+        await conn.commit()
+        run = await runs_store.get(conn, run["id"])
+
+        # mark=120 → 未实现 (120-100)*1 = 20；总 = 50 + 20 = 70（计价货币 USDT）
+        # M-1：DB 读（_read_run_pnl_quote）与 FX 折算（_convert_run_pnl_to_base）分两段，
+        # 折算在连接上下文外做；这里同 _process_bar 的调用顺序。
+        quote_total, currency, base = await manager._read_run_pnl_quote(conn, run, 120.0)
+
+    assert float(quote_total) == pytest.approx(70.0)
+    pnl = await manager._convert_run_pnl_to_base(run, quote_total, currency, base)
+    assert pnl is not None
+    assert float(pnl) == pytest.approx(70.0)  # USDT→USD 本地 1.0
+
+
+async def test_restore_position_from_db_brings_session_to_position(
+    app_with_lifespan: Any,
+) -> None:
+    """resume 桥接（issue #37.2）：_restore_position 从 DB 读持仓 → 灌回 session。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    async with get_conn() as conn:
+        await positions_store.apply_fill(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="BUY", fill_qty=Decimal("2"), fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC), order_id="restore-open", currency="USDT",
+        )
+        await conn.commit()
+
+    session = _make_session()  # 起始空仓
+    run = {
+        "id": uuid4(), "account_id": account_id, "venue": "binance",
+        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
+    }
+    await manager._restore_position(session, run)
+
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is not None and not pos.is_flat
+    assert pos.quantity == 2.0
+
+
+async def test_convert_run_pnl_zero_short_circuits_no_network() -> None:
+    """total_quote=0 → 直接返 Decimal(0)，不打 /fx（非 USD 币种也不需网络）。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    run = {"id": uuid4(), "account_id": uuid4()}
+    # EUR→USD 本需网络；若没短路会构造 DataClient 打 HTTP。0 应直接短路返 0。
+    pnl = await manager._convert_run_pnl_to_base(run, Decimal(0), "EUR", "USD")
+    assert pnl == Decimal(0)
+
+
+async def test_restore_position_from_db_short_position(app_with_lifespan: Any) -> None:
+    """resume 桥接空头路径（M-2）：DB 负 qty 持仓 → restore 后 portfolio 与策略视图都是 short。
+
+    空头续跑被误恢复成多头后果重（下一根 bar 意图反向 → 可能反向单），故无人值守路径
+    必须有测试守住"负 qty → SELL 方向合成成交 → portfolio.quantity 仍为负"。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    async with get_conn() as conn:
+        # SELL 2 @ 100 从空仓开空 → 有符号 qty = -2（storage 层纯有符号累积，不挡裸 short）
+        row, _close = await positions_store.apply_fill(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="SELL", fill_qty=Decimal("2"), fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC), order_id="restore-short-open", currency="USDT",
+        )
+        await conn.commit()
+    assert float(row["quantity"]) == -2.0  # DB 确实是空头
+
+    # 用持仓追踪策略，验证策略视图也被 prime 成 short（on_position_opened 收到负 qty）
+    session = LiveEngineSession(
+        strategy_cls=_PosTrackStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+    run = {
+        "id": uuid4(), "account_id": account_id, "venue": "binance",
+        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
+    }
+    await manager._restore_position(session, run)
+
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is not None and not pos.is_flat
+    assert pos.quantity == -2.0  # 恢复为 short，未被误判成 long
+    assert session._strategy.opened_qty == -2.0  # type: ignore[attr-defined]
+
+
+async def test_restore_position_skips_when_flat(app_with_lifespan: Any) -> None:
+    """无持仓（DB 无该 symbol 行）→ _restore_position no-op，session 保持空仓。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _make_session()
+    run = {
+        "id": uuid4(), "account_id": uuid4(), "venue": "binance",
+        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
+    }
+    await manager._restore_position(session, run)
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat
+
+
+async def test_list_all_running_returns_running_only(app_with_lifespan: Any) -> None:
+    """resume 查询（issue #46）：list_all_running 只返 running，stopped/errored 不返。"""
+    r_stopped = await _insert_run(uuid4())
+    async with get_conn() as conn:
+        await runs_store.set_status(conn, r_stopped["id"], "stopped")
+    r_running = await _insert_run(uuid4())
+
+    async with get_conn() as conn:
+        running = await runs_store.list_all_running(conn)
+    ids = {r["id"] for r in running}
+    assert r_running["id"] in ids
+    assert r_stopped["id"] not in ids

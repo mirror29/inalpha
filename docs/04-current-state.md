@@ -268,6 +268,31 @@ D-9 把决策护栏（Plan/Exec + 风控 + 沙盒）做扎实后，D-10 在**数
 
 ---
 
+## D-11.1（2026-06-03）live runner 信任边界 + 健壮性收口（#36 / #37）
+
+live runner 是无人值守自动下单路径（CLAUDE.md 硬约束"信任边界"），在堆新特性前先
+收口 PR #34 review 留下的 P1 安全洞与健壮性缺口：
+
+- **跨用户 candidate 归属校验**（#36.1）：`strategy_candidates` 加 `owner_account_id`
+  （migration 0013），创建时由 `account_id_from_user` 写入（与 run 的 `account_id` 同源，
+  非 UUID sub 也可比；不能直接拿 `author_id` 比，它对非 UUID sub 为 NULL）。
+  `POST /strategy_runs` 起跑前校验 owner == 调用者账户，否则 403 `CANDIDATE_NOT_OWNED`；
+  pre-migration 老数据 owner=NULL → 有界放行 + warning。
+- **per-account run 上限**（#36.2）：`INALPHA_LIVE_MAX_RUNNING_RUNS_PER_ACCOUNT`
+  （默认 10）+ `count_running_by_account`，超限 429 `TOO_MANY_RUNNING_RUNS`，防单用户
+  起任意多长驻 task 打爆事件循环。
+- **错误可重试分类**（#37.3）：`_is_retryable` 把 4xx `InalphaError`（确定性：校验 /
+  约束 / symbol 非法）判为不可重试，`_run_loop` 立即 errored 跳过退避；网络 / 超时 /
+  未知错误仍走 streak 退避。风控拒单（409）已在 route 层消化为 risk_rejected 决策行、
+  不冒泡杀 run。
+- **健壮性测试**（#37.4）：补 `_run_loop` 错误循环（可重试攒 streak / 不可重试立即 errored /
+  CancelledError 干净退出 / build_session 失败）、LIMIT 未成交 reject、reconcile、
+  归属 403 / 上限 429 / 老数据放行。
+- 已确认 PR #34 已落地项（不重做）：风控 fail-closed（#36.3）、已收盘 bar 守门（#37.1）。
+  未做：session 持仓重建（#37.2，绑定未来 resume run 特性，#37 保留开着）；#38 Phase F。
+
+---
+
 ## 未完成 / 下一步
 
 > 重心：模拟盘（paper）先于实盘（live）。

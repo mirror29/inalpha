@@ -45,7 +45,13 @@ def _ensure_env() -> None:
     # worker + import numpy 每次 ~2s，会拖慢整套测试到 130s+。runner._run_engine
     # 自动回落同进程跑，业务路径覆盖率不变。pool 真路径由 test_pool.py 显式打开。
     os.environ.setdefault("PAPER_POOL_DISABLED", "1")
+    # issue #46：测试里关 live runner 自动 resume——否则每个 test 的 lifespan 都会对
+    # 残留 running run 起后台 task（打网络 / 污染）。关掉走旧的 mark-errored reconcile。
+    os.environ.setdefault("INALPHA_LIVE_RUNNER_RESUME_ON_STARTUP", "false")
     get_settings.cache_clear()
+    from inalpha_paper.config import get_paper_settings
+
+    get_paper_settings.cache_clear()
 
 
 def make_bar_row(ts_iso: str, close: float = 100.0) -> dict[str, Any]:

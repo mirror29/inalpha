@@ -248,6 +248,7 @@ class StrategyCandidateRecord(BaseModel):
     description: str
     author: Literal["llm", "user", "system"]
     author_id: UUID | None = None
+    owner_account_id: UUID | None = None
     status: Literal["candidate", "rejected", "promoted"]
     metrics: dict[str, Any] | None = None
     fitness: float | None = None
