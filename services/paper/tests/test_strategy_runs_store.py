@@ -17,8 +17,10 @@ pytestmark = pytest.mark.integration
 async def _make_candidate():  # type: ignore[no-untyped-def]
     """建一个真候选并返回其 id（strategy_runs.candidate_id 有 FK → strategy_candidates）。"""
     async with get_conn() as conn:
+        # 结构可区分 salt 作 STRING 字面量（非注释）：结构指纹去重剥注释 → 注释-only
+        # 候选全撞同一个，多次建候选会复用 → 同 candidate 起多 run 撞 UNIQUE running。
         cid, _ = await candidates_store.insert_candidate(
-            conn, code=f"# runs-store test candidate {uuid4().hex}\n"
+            conn, code=f'"runs-store test candidate {uuid4().hex}"\n'
         )
     return cid
 
