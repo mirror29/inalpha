@@ -22,7 +22,7 @@ from inalpha_paper.storage import strategy_candidates as candidates_store
 from inalpha_paper.storage import strategy_runs as runs_store
 from inalpha_paper.strategy.base import Strategy
 
-from .test_live_session import _INSTRUMENT, _bar, _BuyOnceStrategy
+from .test_live_session import _INSTRUMENT, _bar, _BuyOnceStrategy, _StopOrderStrategy
 
 pytestmark = pytest.mark.integration
 
@@ -100,6 +100,35 @@ async def test_process_bar_routes_through_plan_exec(app_with_lifespan: Any) -> N
     assert d["plan_id"] is not None
     assert d["order_id"] is not None
     assert d["fill_price"] is not None
+
+
+async def test_process_bar_unsupported_order_records_rejected_decision(
+    app_with_lifespan: Any,
+) -> None:
+    """不支持单型（STOP_MARKET）：不落单、记一行 rejected 决策让运维可见（issue #43）、run 不挂。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = LiveEngineSession(
+        strategy_cls=_StopOrderStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    await manager._process_bar(session, run, _bar(1_700_000_000_000_000_000, close=50_000.0))
+
+    async with get_conn() as conn:
+        orders = await orders_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+        run_fresh = await runs_store.get(conn, run["id"])
+    assert orders == []  # 不支持单型不落单
+    assert len(decisions) == 1
+    d = decisions[0]
+    assert d["outcome"] == "rejected"
+    assert d["intent"] == "open_short"  # 空仓 SELL STOP → 开空意图仍记录
+    assert "STOP_MARKET" in d["reason"] and "not supported" in d["reason"]
+    assert d["order_id"] is None  # 没真下单 → 无 order/plan 交叉引用
+    assert d["plan_id"] is None
+    assert run_fresh["status"] == "running"  # 不杀 run
 
 
 async def test_process_bar_risk_rejected_records_decision(
@@ -423,9 +452,13 @@ async def test_process_bar_not_filled_rejects(
 
     ts = 1_700_000_000_000_000_000
 
+    # client_order_id 用 uuid 后缀：orders 表跨 pytest 进程持久化（conftest 只 truncate
+    # risk_locks），硬编码 id 会让重复跑测试时 orders_pkey 主键冲突（测试隔离债）。
+    unfilled_coid = f"limit-unfilled-{uuid4().hex[:8]}"
+
     def fake_execute(**_kw):  # type: ignore[no-untyped-def]
         return {
-            "client_order_id": "limit-unfilled-1", "status": "REJECTED",
+            "client_order_id": unfilled_coid, "status": "REJECTED",
             "filled_quantity": 0.0, "avg_fill_price": 0.0, "fee": 0.0,
             "notional": 0.0, "ts_event": datetime.now(UTC),
             "rejection_reason": "limit not crossed",

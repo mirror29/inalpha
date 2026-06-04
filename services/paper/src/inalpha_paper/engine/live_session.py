@@ -47,6 +47,7 @@ class _CaptureGateway(Gateway):
         self._clock = clock
         self._next_id = 1
         self._collected: list[tuple[Order, StrategyId]] = []
+        self._unsupported: list[tuple[Order, StrategyId, str]] = []
 
     def send_order(self, order: Order, strategy_id: StrategyId) -> None:
         # 与 SimulatedExchange.send_order 对等守门：只支持 MARKET / LIMIT。
@@ -54,15 +55,21 @@ class _CaptureGateway(Gateway):
         # 抛 AssertionError，被 runner 最外层 except 吞成 err_streak，连错几次误杀 run。
         # 拒掉走 reject_order 路径 → 记入决策日志，语义清晰。
         if order.type not in (OrderType.MARKET, OrderType.LIMIT):
+            reason = f"OrderType {order.type.value} not supported by live runner"
             self._msgbus.publish(
                 "internal.venue.rejected",
                 {
                     "client_order_id": order.client_order_id,
                     "strategy_id": strategy_id,
-                    "reason": f"OrderType {order.type.value} not supported by live runner",
+                    "reason": reason,
                     "ts": self._clock.now_ns(),
                 },
             )
+            # 也收集到 _unsupported（issue #43）：否则这类拒单对运维彻底隐形——
+            # 策略 on_order_rejected 被通知了，但 live runner 既不记决策行也不写
+            # error_log，运维看不到"策略想挂止损单但 live 不支持"。收集后由
+            # _process_bar 记一行 rejected 决策（不下单），让用户看见。
+            self._unsupported.append((order, strategy_id, reason))
             return
         venue_id = VenueOrderId(f"live-{self._next_id}")
         self._next_id += 1
@@ -81,9 +88,15 @@ class _CaptureGateway(Gateway):
         pass
 
     def take_collected(self) -> list[tuple[Order, StrategyId]]:
-        """取走本轮收集到的订单并清空。"""
+        """取走本轮收集到的（可撮合的 MARKET/LIMIT）订单并清空。"""
         out = self._collected[:]
         self._collected.clear()
+        return out
+
+    def take_unsupported(self) -> list[tuple[Order, StrategyId, str]]:
+        """取走本轮被守门拒掉的不支持单型（含拒因）并清空（issue #43）。"""
+        out = self._unsupported[:]
+        self._unsupported.clear()
         return out
 
 
@@ -159,6 +172,13 @@ class LiveEngineSession:
         )
         self.msgbus.publish(topic, bar)
         return self._gateway.take_collected()
+
+    def take_unsupported_orders(self) -> list[tuple[Order, StrategyId, str]]:
+        """取走本根 bar 被守门拒掉的不支持单型（含拒因），供 runner 记决策行（issue #43）。
+
+        必须每根 bar 在 ``feed_bar`` 后排空（即便丢弃），否则会跨 bar 泄漏到下一根。
+        """
+        return self._gateway.take_unsupported()
 
     def confirm_fill(
         self,

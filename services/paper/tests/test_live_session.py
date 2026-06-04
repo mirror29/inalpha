@@ -83,6 +83,13 @@ def test_stop_order_type_rejected_not_collected() -> None:
     assert orders == []
     pos = session.portfolio.position(_INSTRUMENT)
     assert pos is None or pos.is_flat
+    # issue #43：被拒的不支持单型应被捕获供 runner 记决策行（不再对运维隐形）
+    unsupported = session.take_unsupported_orders()
+    assert len(unsupported) == 1
+    _order, _sid, reason = unsupported[0]
+    assert "STOP_MARKET" in reason and "not supported" in reason
+    # 取走即清空，不跨 bar 泄漏
+    assert session.take_unsupported_orders() == []
 
 
 def _bar(ts_ns: int, close: float = 100.0) -> Bar:

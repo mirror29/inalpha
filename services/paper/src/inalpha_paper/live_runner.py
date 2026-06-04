@@ -296,6 +296,7 @@ class LiveRunnerManager:
         last_ts: datetime | None = None
         for bar in closed:
             session.feed_bar(bar)  # 丢弃 orders —— 预热只为建立指标状态
+            session.take_unsupported_orders()  # 同样排空，避免泄漏到 start 后第一根 bar
             last_ts = _ns_to_dt(bar.ts_event)
         return last_ts
 
@@ -325,9 +326,34 @@ class LiveRunnerManager:
         closed = _closed_bars(raw, instrument_id, run["timeframe"], now)
         return closed[-1] if closed else None
 
+    @staticmethod
+    def _intent_for(session: LiveEngineSession, order: Order) -> str:
+        """按"下单前持仓方向 + side"判多空意图（CLAUDE.md §4 多空踩坑）。
+
+        SELL 平多=close / SELL 开空=open_short；BUY 平空=close / BUY 开多=open_long。
+        """
+        pos = session.portfolio.position(order.instrument_id)
+        cur_qty = pos.quantity if pos is not None else 0.0
+        if order.side.value == "BUY":
+            return "close" if cur_qty < 0 else "open_long"
+        return "close" if cur_qty > 0 else "open_short"
+
     async def _process_bar(self, session: LiveEngineSession, run: dict[str, Any], bar: Bar) -> None:
         """喂一根 bar → 路由本根 bar 的下单意图 → 更新进度。（可单测，不依赖轮询）。"""
         orders = session.feed_bar(bar)
+        # 不支持单型（STOP_* 等）被 gateway 守门拒掉：记一行 rejected 决策让运维可见
+        # （issue #43），不下单、不计 err_streak。必须每根 bar 排空避免跨 bar 泄漏。
+        unsupported = session.take_unsupported_orders()
+        for order, _sid, reason in unsupported:
+            _logger.warning("live run %s: 策略下单被拒（不支持单型）：%s", run["id"], reason)
+            try:
+                async with get_conn() as conn:
+                    await self._record_decision(
+                        conn, run, order, bar, outcome="rejected",
+                        intent=self._intent_for(session, order), reason=reason,
+                    )
+            except Exception:
+                _logger.exception("live run %s: 记不支持单型决策行失败", run["id"])
         for order, strategy_id in orders:
             try:
                 await self._route_through_plan_exec(session, order, strategy_id, run, bar)
@@ -372,15 +398,9 @@ class LiveRunnerManager:
         run_id: UUID = run["id"]
         side = order.side.value  # "BUY" / "SELL"
 
-        # intent 按"下单前持仓方向 + side"判，别把所有 SELL 当平多（CLAUDE.md §4 多空踩坑）：
-        # SELL 平多=close / SELL 开空=open_short；BUY 平空=close / BUY 开多=open_long。
-        # 在风控之前算好 → risk_rejected 决策行也带上 intent（复盘做空语义不丢）。
-        pos = session.portfolio.position(order.instrument_id)
-        cur_qty = pos.quantity if pos is not None else 0.0
-        if side == "BUY":
-            intent = "close" if cur_qty < 0 else "open_long"
-        else:  # SELL
-            intent = "close" if cur_qty > 0 else "open_short"
+        # intent 按"下单前持仓方向 + side"判（CLAUDE.md §4 多空踩坑）。在风控之前算好
+        # → risk_rejected 决策行也带上 intent（复盘做空语义不丢）。
+        intent = self._intent_for(session, order)
 
         # 1. 风控；命中 → 拒单 + 记 error_log，不杀 run。两道闸门同 except 处理：
         #    (a) 单笔 notional 硬上限（无状态，挡策略算错 quantity 的超大单，issue #42）；
