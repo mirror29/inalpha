@@ -70,6 +70,30 @@ export interface StrategyRunRecord {
   stopped_at: string | null;
 }
 
+/** GET /strategy_runs/{id}/decisions 元素 —— 决策复盘时间线一行。 */
+export interface StrategyRunDecisionRecord {
+  id: string;
+  run_id: string;
+  bar_ts: string;
+  bar_close: number;
+  side: "BUY" | "SELL";
+  quantity: number;
+  order_type: string;
+  limit_price: number | null;
+  /** 策略经 Order.tag 透传的语义意图。 */
+  tag: string | null;
+  /** 按持仓方向 + side 判的开/平意图。 */
+  intent: "open_long" | "open_short" | "close" | null;
+  outcome: "filled" | "rejected" | "risk_rejected";
+  fill_price: number | null;
+  fee: number | null;
+  plan_id: string | null;
+  order_id: string | null;
+  /** 拒单原因(风控 / 其他);outcome 非 filled 时通常有值。 */
+  reason: string | null;
+  created_at: string;
+}
+
 /** data service GET /ticker —— 最新价 + 新鲜度。 */
 export interface TickerResponse {
   venue: string;
@@ -99,5 +123,20 @@ export interface OverviewPayload {
   runs: StrategyRunRecord[];
   activeRunnerCount: number;
   /** server 侧采集这一帧的时刻(ISO);UI 显示 "数据时间"。 */
+  asOf: string;
+}
+
+/** GET /api/runners —— Live Runner 列表页负载。 */
+export interface RunnersPayload {
+  runs: StrategyRunRecord[];
+  runningCount: number;
+  asOf: string;
+}
+
+/** GET /api/runners/[id] —— 单个 run 详情 + 决策时间线。 */
+export interface RunDetailPayload {
+  /** 在 list 里按 id 找到的 run;不存在为 null。 */
+  run: StrategyRunRecord | null;
+  decisions: StrategyRunDecisionRecord[];
   asOf: string;
 }

@@ -66,6 +66,52 @@
       }
     }
   },
+  "runners": {
+    "title": "Live Runner",
+    "index": "02",
+    "subtitle": "promoted 策略按行情自动跑 —— 状态、累计盈亏,以及每根 bar 的决策。",
+    "empty": "暂无策略运行。promote 一个候选并启动后,运行中的 Live Runner 会出现在这里。",
+    "running": "运行中",
+    "card": {
+      "cumulativePnl": "累计盈亏",
+      "lastBar": "最后 bar",
+      "candidate": "候选",
+      "started": "启动于",
+      "stopped": "停止于",
+      "errors": "{count} 条错误",
+      "viewDecisions": "查看决策",
+      "neverRan": "尚未处理任何 bar"
+    },
+    "detail": {
+      "back": "Live Runner",
+      "notFound": "未找到该 run。",
+      "decisions": "决策时间线",
+      "decisionsEmpty": "尚无决策记录 —— runner 还没下过单。",
+      "errorLog": "错误日志",
+      "config": "配置",
+      "col": {
+        "barTs": "Bar 时间",
+        "barClose": "Bar 收盘",
+        "intent": "意图",
+        "side": "方向",
+        "qty": "数量",
+        "fill": "成交",
+        "outcome": "结果",
+        "reason": "原因"
+      }
+    },
+    "intent": {
+      "open_long": "开多",
+      "open_short": "开空",
+      "close": "平仓",
+      "unknown": "—"
+    },
+    "outcome": {
+      "filled": "已成交",
+      "rejected": "被拒",
+      "risk_rejected": "风控拦截"
+    }
+  },
   "common": {
     "retry": "重试",
     "loading": "加载中…",

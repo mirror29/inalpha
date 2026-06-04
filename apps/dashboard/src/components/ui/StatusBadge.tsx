@@ -79,3 +79,20 @@ export function RunStatusBadge({ status }: { status: string }) {
     />
   );
 }
+
+/** 决策撮合结果 → 语义色(成交绿 / 风控拒红 / 其他拒灰红)。 */
+export function DecisionOutcomeBadge({
+  outcome,
+  label,
+}: {
+  outcome: string;
+  label: string;
+}) {
+  const tone: Tone =
+    outcome === "filled"
+      ? "bull"
+      : outcome === "risk_rejected"
+        ? "fox"
+        : "gold";
+  return <StatusBadge label={label} tone={tone} />;
+}
