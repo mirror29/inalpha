@@ -30,15 +30,19 @@ from .config import PaperSettings
 from .data_client import DataClient
 from .engine.live_session import LiveEngineSession
 from .execution import risk_guard as risk_guard_mod
+from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
 from .execution.risk_guard_factory import RiskGuardFactory
 from .fills import apply_fill_to_positions_and_cash
+from .fx import BaseCurrencyConverter, needs_network
 from .kernel.identifiers import InstrumentId, StrategyId
 from .model.data import Bar
 from .model.orders import Order
 from .runner import _bar_from_dict
 from .storage import accounts as accounts_store
+from .storage import closed_trades as closed_trades_store
 from .storage import orders as orders_store
+from .storage import positions as positions_store
 from .storage import strategy_candidates as candidates_store
 from .storage import strategy_runs as runs_store
 from .storage import trade_plans as plans_store
@@ -274,7 +278,35 @@ class LiveRunnerManager:
             fee_rate=_FEE_RATE,
         )
         warmup_ts = await self._warmup_session(session, run)
+        # resume（last_bar_ts 非空 = 本 run 之前跑过）：把 DB 当前持仓灌回 session，让续跑
+        # 策略知道自己有仓（issue #37.2 / #46）。全新 run（last_bar_ts=None）保持空仓起，
+        # 符合"全新 live run 从无持仓开始"语义。
+        if run.get("last_bar_ts") is not None:
+            await self._restore_position(session, run)
         return session, warmup_ts
+
+    async def _restore_position(
+        self, session: LiveEngineSession, run: dict[str, Any]
+    ) -> None:
+        """从 DB 读 run 的 (account, venue, symbol) 当前持仓，灌回 session（resume 续跑）。"""
+        async with get_conn() as conn:
+            pos = await positions_store.get(
+                conn, account_id=run["account_id"], venue=run["venue"], symbol=run["symbol"]
+            )
+        if pos is None:
+            return
+        qty = float(pos["quantity"])
+        if qty == 0:
+            return
+        avg = float(pos["avg_open_price"])
+        # ts 用 last_bar_ts（重建发生在续喂前），ns 化喂给 session 时钟
+        last_bar_ts: datetime = run["last_bar_ts"]
+        ts_ns = int(last_bar_ts.timestamp() * 1_000_000_000)
+        session.restore_position(quantity_signed=qty, avg_price=avg, ts_event=ts_ns)
+        _logger.info(
+            "live run %s: resume 重建持仓 %s %s qty=%s avg=%s",
+            run["id"], run["venue"], run["symbol"], qty, avg,
+        )
 
     async def _warmup_session(
         self, session: LiveEngineSession, run: dict[str, Any]
@@ -395,16 +427,73 @@ class LiveRunnerManager:
         # 进度行只用于观测 / reconcile，落后一根可接受；内存 last_bar_ts 才是去重权威。
         try:
             async with get_conn() as conn:
+                # cumulative_pnl 从 DB 真实持仓/平仓派生（issue #45）：已实现（closed_trades）
+                # + 未实现（持仓 MtM at bar.close），按 FX 折算到账户 base_currency。不再用
+                # session 的固定 1 万相对值——后者重启即归零、跨币种无意义。
+                pnl = await self._compute_run_pnl(conn, run, float(bar.close))
                 await runs_store.update_progress(
                     conn,
                     run["id"],
                     last_bar_ts=_ns_to_dt(bar.ts_event),
-                    cumulative_pnl=Decimal(str(session.cumulative_pnl())),
+                    cumulative_pnl=pnl,  # None（FX 不可用）→ 只推进 last_bar_ts、留旧 pnl
                 )
         except Exception:
             _logger.exception("live run %s: update_progress 失败（best-effort，不重喂 bar）", run["id"])
 
         return circuit_break
+
+    async def _compute_run_pnl(
+        self, conn: Any, run: dict[str, Any], mark_price: float
+    ) -> Decimal | None:
+        """从 DB 派生 run 累计盈亏（base_currency），替换 session 相对值（issue #45）。
+
+        = 已实现（``closed_trades`` 自 started_at，按 symbol scope）+ 未实现（当前持仓
+        ``(mark - avg) * qty``）→ 两者皆**计价货币**，按 FX 折算到账户 base_currency。
+
+        返回 ``None`` 表示 FX 不可用（非 USD symbol 折算失败）→ 调用方保留旧 pnl 不覆盖。
+        crypto-USD 等本地可解析的全程零网络，恒成功。
+        """
+        account_id: UUID = run["account_id"]
+        venue: str = run["venue"]
+        symbol: str = run["symbol"]
+        started_at: datetime = run["started_at"]
+
+        realized = await closed_trades_store.sum_realized(
+            conn, account_id=account_id, venue=venue, symbol=symbol, since=started_at
+        )
+        pos = await positions_store.get(
+            conn, account_id=account_id, venue=venue, symbol=symbol
+        )
+        unrealized = Decimal(0)
+        currency: str | None = None
+        if pos is not None and Decimal(str(pos["quantity"])) != 0:
+            qty = Decimal(str(pos["quantity"]))
+            avg = Decimal(str(pos["avg_open_price"]))
+            unrealized = (Decimal(str(mark_price)) - avg) * qty
+            currency = pos.get("currency")
+
+        total_quote = realized + unrealized
+
+        account = await accounts_store.get(conn, account_id)
+        base = account["base_currency"] if account else accounts_store.DEFAULT_BASE_CURRENCY
+        currency = currency or resolve_currency(venue, symbol, default=base)
+
+        # 计价货币 == base 或本地可解析（crypto USDT→USD）→ 零网络
+        if not needs_network([currency], base):
+            conv = BaseCurrencyConverter(base, None)
+            return await conv.convert(total_quote, currency)
+
+        # 否则调 data /fx；拿不到 → 返 None（保留旧值，不乱猜）
+        token = self._mint_service_token(account_id)
+        async with DataClient(self._settings.data_service_url, token) as dc:
+            conv = BaseCurrencyConverter(base, dc)
+            result = await conv.convert(total_quote, currency)
+        if result is None and conv.warnings:
+            _logger.warning(
+                "live run %s: PnL FX 折算不可用，保留旧 cumulative_pnl：%s",
+                run["id"], "; ".join(conv.warnings),
+            )
+        return result
 
     async def _route_through_plan_exec(
         self,

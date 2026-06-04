@@ -168,3 +168,48 @@ def test_second_bar_after_fill_sees_position() -> None:
     orders2 = session.feed_bar(_bar(2_000_000_000))
     assert orders2 == []
     assert session.portfolio.position(_INSTRUMENT).quantity == 1.0  # type: ignore[union-attr]
+
+
+class _PosTrackStrategy(Strategy):
+    """跟踪 on_position_opened 的最小策略（验证 restore 能 prime 策略持仓视图）。"""
+
+    def __init__(self, name, clock, msgbus, instrument_id, timeframe, **_kw) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(name, clock, msgbus)
+        self._instrument_id = instrument_id
+        self._timeframe = timeframe
+        self.opened_qty: float | None = None
+
+    def on_start(self) -> None:
+        self.subscribe_bars(self._instrument_id, self._timeframe)
+
+    def on_bar(self, bar: Bar) -> None:  # 不主动交易
+        pass
+
+    def on_position_opened(self, event) -> None:  # type: ignore[no-untyped-def]
+        self.opened_qty = event.quantity
+
+
+def test_restore_position_primes_portfolio_and_strategy() -> None:
+    """resume 重建：restore_position 同时 prime portfolio 与策略持仓视图（issue #37.2）。"""
+    session = LiveEngineSession(
+        strategy_cls=_PosTrackStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+    session.restore_position(quantity_signed=2.0, avg_price=100.0, ts_event=1_000_000_000)
+
+    # portfolio 反映持仓
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is not None and not pos.is_flat
+    assert pos.quantity == 2.0
+    # 策略持仓视图经 events.position 链路被 prime（on_position_opened 触发）
+    assert session._strategy.opened_qty == 2.0  # type: ignore[attr-defined]
+    # restore 单已被排空，不会被当新意图收集
+    assert session.feed_bar(_bar(2_000_000_000)) == []
+
+
+def test_restore_position_zero_qty_is_noop() -> None:
+    """quantity_signed=0 → restore no-op（不抛、portfolio 空仓）。"""
+    session = _make_session()
+    session.restore_position(quantity_signed=0.0, avg_price=100.0, ts_event=1_000_000_000)
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat

@@ -253,6 +253,25 @@ def _reduce_position(
     return new_qty, new_avg, new_pnl, new_gen
 
 
+async def get(
+    conn: AsyncConnection,
+    *,
+    account_id: UUID,
+    venue: str,
+    symbol: str,
+) -> dict[str, Any] | None:
+    """读单个 (account, venue, symbol) 持仓行；不存在返 None（live PnL / resume 重建用）。"""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT venue, symbol, quantity, avg_open_price, realized_pnl, "
+            "generation, ts_opened, open_order_id, currency, updated_at "
+            "FROM positions WHERE account_id = %s AND venue = %s AND symbol = %s",
+            (str(account_id), venue, symbol),
+        )
+        row = await cur.fetchone()
+    return row  # type: ignore[return-value]
+
+
 async def list_by_account(
     conn: AsyncConnection,
     account_id: UUID,

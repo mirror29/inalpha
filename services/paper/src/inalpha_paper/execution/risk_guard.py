@@ -231,7 +231,8 @@ def check_order_notional(
     """
     if factory is None:
         return
-    cap = factory.max_order_notional
+    # getattr 防御：测试替身 / 未来 factory 变体可能没有此属性 → 视作未配上限放行
+    cap = getattr(factory, "max_order_notional", None)
     if cap is None:
         return
     notional = abs(quantity) * ref_price

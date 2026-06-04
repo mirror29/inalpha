@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -16,6 +18,8 @@ from inalpha_shared.errors import InalphaError
 from inalpha_paper.config import get_paper_settings
 from inalpha_paper.engine.live_session import LiveEngineSession
 from inalpha_paper.live_runner import LiveRunnerManager, _closed_bars
+from inalpha_paper.storage import accounts as accounts_store
+from inalpha_paper.storage import closed_trades as closed_trades_store
 from inalpha_paper.storage import orders as orders_store
 from inalpha_paper.storage import positions as positions_store
 from inalpha_paper.storage import strategy_candidates as candidates_store
@@ -604,3 +608,89 @@ async def test_mark_running_as_errored_reconcile(app_with_lifespan: Any) -> None
     assert f_running["status"] == "errored"
     assert f_stopped["status"] == "stopped"  # 非 running 不受影响
     assert any("reconcile" in e.get("error", "") for e in (f_running["error_log"] or []))
+
+
+async def test_compute_run_pnl_from_db_realized_plus_unrealized(
+    app_with_lifespan: Any,
+) -> None:
+    """DB 派生 PnL（issue #45）= 已实现（closed_trades）+ 未实现（持仓 MtM），crypto 本地 FX。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)  # started_at = NOW()
+
+    async with get_conn() as conn:
+        await accounts_store.get_or_create(conn, account_id)  # base USD
+        # 建持仓：BUY 1 @ 100（currency USDT）→ qty=1 avg=100
+        await positions_store.apply_fill(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="BUY", fill_qty=Decimal("1"), fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC), order_id="pnl-open", currency="USDT",
+        )
+        # 已实现 50（一笔平仓，close_ts 在 run.started_at 之后）
+        await closed_trades_store.insert_close(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", side="long",
+            open_ts=datetime.now(UTC), close_ts=datetime.now(UTC),
+            open_price=Decimal("100"), close_price=Decimal("150"), quantity=Decimal("1"),
+            close_profit_pct=0.5, close_profit_abs=50.0, exit_reason="signal",
+            open_order_id="x", close_order_id="y",
+        )
+        await conn.commit()
+
+        # mark=120 → 未实现 (120-100)*1 = 20；总 = 50 + 20 = 70（USDT→USD 本地 1.0）
+        pnl = await manager._compute_run_pnl(conn, await runs_store.get(conn, run["id"]), 120.0)
+
+    assert pnl is not None
+    assert float(pnl) == pytest.approx(70.0)
+
+
+async def test_restore_position_from_db_brings_session_to_position(
+    app_with_lifespan: Any,
+) -> None:
+    """resume 桥接（issue #37.2）：_restore_position 从 DB 读持仓 → 灌回 session。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    async with get_conn() as conn:
+        await positions_store.apply_fill(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="BUY", fill_qty=Decimal("2"), fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC), order_id="restore-open", currency="USDT",
+        )
+        await conn.commit()
+
+    session = _make_session()  # 起始空仓
+    run = {
+        "id": uuid4(), "account_id": account_id, "venue": "binance",
+        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
+    }
+    await manager._restore_position(session, run)
+
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is not None and not pos.is_flat
+    assert pos.quantity == 2.0
+
+
+async def test_restore_position_skips_when_flat(app_with_lifespan: Any) -> None:
+    """无持仓（DB 无该 symbol 行）→ _restore_position no-op，session 保持空仓。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _make_session()
+    run = {
+        "id": uuid4(), "account_id": uuid4(), "venue": "binance",
+        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
+    }
+    await manager._restore_position(session, run)
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat
+
+
+async def test_list_all_running_returns_running_only(app_with_lifespan: Any) -> None:
+    """resume 查询（issue #46）：list_all_running 只返 running，stopped/errored 不返。"""
+    r_stopped = await _insert_run(uuid4())
+    async with get_conn() as conn:
+        await runs_store.set_status(conn, r_stopped["id"], "stopped")
+    r_running = await _insert_run(uuid4())
+
+    async with get_conn() as conn:
+        running = await runs_store.list_all_running(conn)
+    ids = {r["id"] for r in running}
+    assert r_running["id"] in ids
+    assert r_stopped["id"] not in ids

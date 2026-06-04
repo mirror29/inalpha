@@ -138,14 +138,24 @@ async def update_progress(
     run_id: UUID,
     *,
     last_bar_ts: datetime,
-    cumulative_pnl: Decimal,
+    cumulative_pnl: Decimal | None = None,
 ) -> None:
-    """记录已处理到的最新 bar + 累计 pnl。"""
+    """记录已处理到的最新 bar + 累计 pnl。
+
+    ``cumulative_pnl=None`` 时只推进 last_bar_ts、**保留**旧 pnl 值——FX 不可用
+    （非 USD symbol 折算失败）时不拿错值覆盖正确旧值（issue #45）。
+    """
     async with conn.cursor() as cur:
-        await cur.execute(
-            "UPDATE strategy_runs SET last_bar_ts = %s, cumulative_pnl = %s WHERE id = %s",
-            (last_bar_ts, cumulative_pnl, str(run_id)),
-        )
+        if cumulative_pnl is None:
+            await cur.execute(
+                "UPDATE strategy_runs SET last_bar_ts = %s WHERE id = %s",
+                (last_bar_ts, str(run_id)),
+            )
+        else:
+            await cur.execute(
+                "UPDATE strategy_runs SET last_bar_ts = %s, cumulative_pnl = %s WHERE id = %s",
+                (last_bar_ts, cumulative_pnl, str(run_id)),
+            )
 
 
 async def append_error_log(conn: AsyncConnection, run_id: UUID, error: str) -> None:
@@ -161,6 +171,23 @@ async def append_error_log(conn: AsyncConnection, run_id: UUID, error: str) -> N
             """,
             (error, str(run_id)),
         )
+
+
+async def list_all_running(conn: AsyncConnection) -> list[dict[str, Any]]:
+    """列出全表 status='running' 的 run（lifespan resume 用，issue #46）。
+
+    单实例 MVP：进程独占，启动时全部 running 都是本进程上一生命周期的残留 → 全部 resume。
+    多实例横向扩展时需按 runner_instance_id 限定作用域（#38.1），那之前别多副本跑。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
+            "params, last_bar_ts, cumulative_pnl, error_log, started_at, stopped_at "
+            "FROM strategy_runs WHERE status = %s ORDER BY started_at",
+            (_RUNNING,),
+        )
+        rows = await cur.fetchall()
+    return list(rows)  # type: ignore[arg-type]
 
 
 async def mark_running_as_errored(conn: AsyncConnection, *, reason: str) -> int:

@@ -123,6 +123,14 @@ class PaperSettings(BaseSettings):
         "拒绝起跑并置 errored——无人值守的自动下单循环不应在零风控下运行。"
         "显式置 false 可放行（如本地无风控调试），此时 run 的 error_log 会留一条醒目告警。",
     )
+    live_runner_resume_on_startup: bool = Field(
+        default=True,
+        alias="INALPHA_LIVE_RUNNER_RESUME_ON_STARTUP",
+        description="服务启动时是否自动 resume 残留 running run（issue #46）。默认 true："
+        "重建 session（DB 持仓 + 预热指标）续跑，而非把它们判死——live runner 设计目标是"
+        "长驻，每次部署不该让所有模拟盘 run 集体阵亡。置 false 回旧行为（残留全标 errored）。"
+        "单实例 MVP 安全；多副本横向扩展前需先做 runner_instance_id 作用域（#38.1）。",
+    )
     live_runner_auto_stop_on_circuit_break: bool = Field(
         default=True,
         alias="INALPHA_LIVE_RUNNER_AUTO_STOP_ON_CIRCUIT_BREAK",

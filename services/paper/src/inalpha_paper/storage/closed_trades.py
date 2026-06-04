@@ -124,6 +124,30 @@ async def list_recent(
     return list(rows)  # type: ignore[arg-type]
 
 
+async def sum_realized(
+    conn: AsyncConnection,
+    *,
+    account_id: UUID,
+    venue: str,
+    symbol: str,
+    since: datetime,
+) -> Decimal:
+    """某 (account, venue, symbol) 自 ``since`` 起的已实现盈亏合计（live run PnL 口径，issue #45）。
+
+    返回 ``SUM(close_profit_abs)``（**计价货币 / quote currency**，毛盈亏不含手续费），
+    无平仓返 ``Decimal(0)``。run-scope 近似按 (symbol, close_ts>=run.started_at) 取——
+    同账户同 symbol 顺序跑多个 run 时归属可能重叠（已知限制，单 run 主路径准确）。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT COALESCE(SUM(close_profit_abs), 0) AS realized FROM closed_trades "
+            "WHERE account_id = %s AND venue = %s AND symbol = %s AND close_ts >= %s",
+            (str(account_id), venue, symbol, since),
+        )
+        row = await cur.fetchone()
+    return Decimal(str(row["realized"])) if row else Decimal(0)  # type: ignore[index]
+
+
 async def count_by_account(
     conn: AsyncConnection,
     *,
