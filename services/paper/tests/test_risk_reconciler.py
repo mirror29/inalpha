@@ -134,7 +134,9 @@ async def test_reconcile_inserts_pending_locks(clean_risk_locks: None) -> None:
     from inalpha_paper.storage import risk_locks as locks_store
 
     store = InMemoryLockStore()
-    now = datetime(2026, 5, 26, 12, 0, tzinfo=UTC)
+    # 锚定真实 now：reconcile_once 第 3 步 expire_past_locks 用 datetime.now() 真实时间，
+    # 硬编码过去日期（曾 = 写测试时的"现在"）会让锁随时间流逝被自动 expire（assert 0==2）。
+    now = datetime.now(UTC)
     until = now + timedelta(hours=1)
     store.add(_verdict(until, rule="R-a"), instrument_id=_btc(), now=now)
     store.add(_verdict(until, scope="global", rule="R-b"), instrument_id=None, now=now)
@@ -161,7 +163,8 @@ async def test_reconcile_unlocks_dirty_after_sync(clean_risk_locks: None) -> Non
     from inalpha_paper.storage import risk_locks as locks_store
 
     store = InMemoryLockStore()
-    now = datetime(2026, 5, 26, 12, 0, tzinfo=UTC)
+    # 锚定真实 now（见上：reconcile expire_past_locks 用真实时间，过去日期的锁会被自动 expire）
+    now = datetime.now(UTC)
     lock = store.add(_verdict(now + timedelta(hours=1)), instrument_id=_btc(), now=now)
 
     reconciler = LockStoreReconciler(store, _get_pool(), interval_seconds=1.0)

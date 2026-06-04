@@ -189,9 +189,12 @@ def test_lock_store_state_persists_across_bars() -> None:
     engine.add_strategy(strategy)
     engine.run(_make_bars(5))
 
-    # 跑完后 lock_store 应有 1 条 market 级 active lock
-    now = datetime.now(UTC)  # 真 now 之后才有意义，用 lock.locked_until 比较
-    actives = engine.risk_engine.lock_store.list_active(now - timedelta(hours=10))
+    # 跑完后 lock_store 应有 1 条 market 级 active lock。
+    # 查询时刻锚定到 bar 基准（_make_bars base = 2026-05-26 12:00），不依赖真实 wall-clock：
+    # 锁 locked_until = 首 bar_ts + 8h（_ClosedCalendar.next_session_open），固定日期的 bar
+    # 随时间流逝相对真实 now 会过期（曾用 datetime.now()-10h 比较，如今 assert 0==1）。
+    query_at = datetime(2026, 5, 26, 12, 0, tzinfo=UTC)  # = _make_bars base，< lock until
+    actives = engine.risk_engine.lock_store.list_active(query_at)
     assert len(actives) == 1
     assert actives[0].scope == "market"
     assert actives[0].market == "binance"
