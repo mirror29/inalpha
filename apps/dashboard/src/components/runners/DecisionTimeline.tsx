@@ -26,7 +26,7 @@ export function DecisionTimeline({
 
   return (
     <Panel
-      index="2.1"
+      index="2.2"
       title={t("decisions")}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">
@@ -64,13 +64,13 @@ export function DecisionTimeline({
                         : "hover:bg-bg-elev/30",
                     )}
                   >
-                    <Td mono muted>
+                    <Td mono muted className="whitespace-nowrap">
                       {fmtBarTs(d.bar_ts, locale)}
                     </Td>
                     <Td right mono muted>
                       {fmtNum(d.bar_close, locale, 4)}
                     </Td>
-                    <Td>
+                    <Td className="whitespace-nowrap">
                       <span className="font-mono text-[11px] uppercase tracking-wider text-fg">
                         {d.intent ? tIntent(d.intent) : tIntent("unknown")}
                       </span>

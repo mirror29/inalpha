@@ -77,7 +77,14 @@
     "index": "02",
     "subtitle": "promoted 策略按行情自动跑 —— 状态、累计盈亏,以及每根 bar 的决策。",
     "empty": "暂无策略运行。promote 一个候选并启动后,运行中的 Live Runner 会出现在这里。",
+    "emptyFiltered": "该状态暂无 run。",
     "running": "运行中",
+    "filter": {
+      "all": "全部",
+      "running": "运行中",
+      "stopped": "已停止",
+      "errored": "错误"
+    },
     "stats": {
       "cumulativePnl": "累计盈亏",
       "decisions": "决策数",

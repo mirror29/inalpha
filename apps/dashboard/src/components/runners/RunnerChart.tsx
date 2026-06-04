@@ -37,7 +37,7 @@ export function RunnerChart({
 
   return (
     <Panel
-      index="2.05"
+      index="2.1"
       title={t("chart")}
       aside={
         <span className="font-mono text-[11px] text-fg-muted">

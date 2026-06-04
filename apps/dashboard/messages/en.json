@@ -77,7 +77,14 @@
     "index": "02",
     "subtitle": "Promoted strategies trading the live feed — status, PnL, and every bar-by-bar decision.",
     "empty": "No strategy runs yet. Promote a candidate and start it to see live runners here.",
+    "emptyFiltered": "No {status} runs.",
     "running": "running",
+    "filter": {
+      "all": "All",
+      "running": "Running",
+      "stopped": "Stopped",
+      "errored": "Errored"
+    },
     "stats": {
       "cumulativePnl": "Cumulative PnL",
       "decisions": "Decisions",
