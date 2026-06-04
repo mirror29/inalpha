@@ -39,8 +39,13 @@ class NoopStrategy(Strategy):
 
 
 def _unique_code() -> str:
-    """每个候选用唯一 code（加 salt 注释），避免 code_hash 去重导致测试间串扰。"""
-    return _MINIMAL_CODE + f"\n# salt: {uuid4().hex}\n"
+    """每个候选用**结构可区分**的 code，避免去重导致测试间串扰。
+
+    salt 作唯一 STRING 字面量（不能用注释）：insert_candidate 的结构指纹去重
+    （compute_structure_hash）剥注释后再 hash，注释 salt 会让所有候选结构相同 →
+    dedup 成同一个 → 第二次起跑撞 UNIQUE(candidate_id) running。STRING 字面量被
+    结构指纹保留，故每个候选结构唯一。"""
+    return _MINIMAL_CODE + f'\n"structural salt {uuid4().hex}"\n'
 
 
 async def _make_promoted_candidate(owner_account_id: UUID | None = None) -> UUID:

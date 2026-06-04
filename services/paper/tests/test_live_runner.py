@@ -46,8 +46,10 @@ async def _insert_run(account_id, candidate_id=None):  # type: ignore[no-untyped
     """插一行 run；candidate_id=None 时先建一个真候选（strategy_runs.candidate_id 有 FK）。"""
     async with get_conn() as conn:
         if candidate_id is None:
+            # 结构可区分 salt 作 STRING 字面量（非注释）：结构指纹去重剥注释后会让
+            # 注释-only / 注释-salt 候选全撞成同一个 → 同 candidate 第二次起跑 409。
             candidate_id, _ = await candidates_store.insert_candidate(
-                conn, code=f"# live-runner test candidate {uuid4().hex}\n"
+                conn, code=f'"live-runner test candidate {uuid4().hex}"\n'
             )
         return await runs_store.insert(
             conn, candidate_id=candidate_id, account_id=account_id,
