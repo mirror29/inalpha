@@ -196,9 +196,23 @@ class LiveRunnerManager:
                 if bar is None or (last_bar_ts is not None and bar_dt <= last_bar_ts):
                     await asyncio.sleep(poll_s)
                     continue
-                await self._process_bar(session, run, bar)
+                circuit_break = await self._process_bar(session, run, bar)
                 last_bar_ts = bar_dt
                 err_streak = 0
+                # 账户级风控熔断（回撤 / 连续止损 global 锁）→ auto-stop，防僵尸 run
+                # （issue #44）。置 stopped（非 errored：是策略触风控上限的正常终态，
+                # 不是 bug）+ error_log 记因，让人复核后再决定是否重启。
+                if circuit_break and self._settings.live_runner_auto_stop_on_circuit_break:
+                    _logger.warning("live run %s: 账户级风控熔断，auto-stop", run_id)
+                    async with get_conn() as conn:
+                        await runs_store.append_error_log(
+                            conn, run_id,
+                            "账户级风控熔断（global scope 锁：回撤 / 连续止损上限）→ auto-stop；"
+                            "复核账户状态后可重新 start。设 "
+                            "INALPHA_LIVE_RUNNER_AUTO_STOP_ON_CIRCUIT_BREAK=false 维持旧行为（继续跑）",
+                        )
+                        await runs_store.set_status(conn, run_id, "stopped")
+                    return
                 await asyncio.sleep(poll_s)
             except asyncio.CancelledError:
                 raise  # stop() 触发，干净退出（事务边界外，不留半个 plan）
@@ -338,8 +352,12 @@ class LiveRunnerManager:
             return "close" if cur_qty < 0 else "open_long"
         return "close" if cur_qty > 0 else "open_short"
 
-    async def _process_bar(self, session: LiveEngineSession, run: dict[str, Any], bar: Bar) -> None:
-        """喂一根 bar → 路由本根 bar 的下单意图 → 更新进度。（可单测，不依赖轮询）。"""
+    async def _process_bar(self, session: LiveEngineSession, run: dict[str, Any], bar: Bar) -> bool:
+        """喂一根 bar → 路由本根 bar 的下单意图 → 更新进度。（可单测，不依赖轮询）。
+
+        返回 ``True`` 表示本根 bar 触发了账户级风控熔断（global scope 锁，issue #44），
+        ``_run_loop`` 据此 auto-stop 该 run。
+        """
         orders = session.feed_bar(bar)
         # 不支持单型（STOP_* 等）被 gateway 守门拒掉：记一行 rejected 决策让运维可见
         # （issue #43），不下单、不计 err_streak。必须每根 bar 排空避免跨 bar 泄漏。
@@ -354,9 +372,12 @@ class LiveRunnerManager:
                     )
             except Exception:
                 _logger.exception("live run %s: 记不支持单型决策行失败", run["id"])
+        circuit_break = False
         for order, strategy_id in orders:
             try:
-                await self._route_through_plan_exec(session, order, strategy_id, run, bar)
+                outcome = await self._route_through_plan_exec(session, order, strategy_id, run, bar)
+                if outcome == "circuit_break":
+                    circuit_break = True
             except Exception:
                 # 部分失败清理（CR medium）：order 已被 CaptureGateway 推到 ExecutionEngine
                 # 的 ACCEPTED 态，但护栏链路（DB 事务等）中途抛错时 confirm_fill/reject_order
@@ -383,6 +404,8 @@ class LiveRunnerManager:
         except Exception:
             _logger.exception("live run %s: update_progress 失败（best-effort，不重喂 bar）", run["id"])
 
+        return circuit_break
+
     async def _route_through_plan_exec(
         self,
         session: LiveEngineSession,
@@ -390,8 +413,12 @@ class LiveRunnerManager:
         strategy_id: StrategyId,
         run: dict[str, Any],
         bar: Bar,
-    ) -> None:
-        """一笔下单意图走护栏内 plan/exec：风控 → 撮合 → plan create/approve/consume → 落账 → 回灌。"""
+    ) -> str:
+        """一笔下单意图走护栏内 plan/exec：风控 → 撮合 → plan create/approve/consume → 落账 → 回灌。
+
+        返回本笔 outcome：``"filled"`` / ``"rejected"`` / ``"risk_rejected"`` /
+        ``"circuit_break"``（账户级 global 风控锁，issue #44）。
+        """
         account_id: UUID = run["account_id"]
         venue: str = run["venue"]
         symbol: str = run["symbol"]
@@ -426,7 +453,11 @@ class LiveRunnerManager:
                     conn, run, order, bar, outcome="risk_rejected", intent=intent,
                     reason=e.message,
                 )
-            return
+            # 账户级（global scope）锁 = 回撤 / 连续止损熔断：返回信号让 _run_loop 终止 run
+            # （issue #44）。symbol/market scope（cooldown 等）是局部、会过的，不熔断。
+            # notional 上限（MaxOrderNotional）无 lock_scope，故 .get 返 None，不误判。
+            scope = e.details.get("lock_scope") if e.details else None
+            return "circuit_break" if scope == "global" else "risk_rejected"
 
         # 2. 撮合（纯函数，ref_price = bar.close）
         result = OrderExecutor.execute(
@@ -504,12 +535,13 @@ class LiveRunnerManager:
                 fill_price=float(result["avg_fill_price"]),
                 ts_event=bar.ts_event,
             )
-        else:
-            session.reject_order(
-                order=order, strategy_id=strategy_id,
-                reason=str(result.get("rejection_reason") or "not filled"),
-                ts_event=bar.ts_event,
-            )
+            return "filled"
+        session.reject_order(
+            order=order, strategy_id=strategy_id,
+            reason=str(result.get("rejection_reason") or "not filled"),
+            ts_event=bar.ts_event,
+        )
+        return "rejected"
 
     async def _record_decision(
         self,

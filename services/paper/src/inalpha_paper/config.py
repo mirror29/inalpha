@@ -123,6 +123,14 @@ class PaperSettings(BaseSettings):
         "拒绝起跑并置 errored——无人值守的自动下单循环不应在零风控下运行。"
         "显式置 false 可放行（如本地无风控调试），此时 run 的 error_log 会留一条醒目告警。",
     )
+    live_runner_auto_stop_on_circuit_break: bool = Field(
+        default=True,
+        alias="INALPHA_LIVE_RUNNER_AUTO_STOP_ON_CIRCUIT_BREAK",
+        description="账户级风控锁（global scope：MaxDrawdown / StoplossGuard 熔断）触发时是否"
+        "auto-stop 该 run（issue #44）。默认 true：策略打穿账户回撤上限 = 终态事件，"
+        "停机置 stopped + error_log 记因，让人复核后再决定是否重启；否则 run 会在锁期内"
+        "（数小时）持续空轮询 + 每根 bar 被拒，沦为僵尸 run。置 false 维持旧行为（继续跑）。",
+    )
 
 
 @lru_cache(maxsize=1)

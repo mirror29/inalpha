@@ -131,6 +131,102 @@ async def test_process_bar_unsupported_order_records_rejected_decision(
     assert run_fresh["status"] == "running"  # 不杀 run
 
 
+async def test_process_bar_circuit_break_on_global_lock(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """账户级（global scope）风控锁 → _process_bar 返 True（熔断信号）+ 记 risk_rejected（issue #44）。"""
+    from inalpha_shared.errors import ConflictError
+
+    async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise ConflictError(
+            "account drawdown 15% exceeded", code="RISK_REJECTED",
+            details={"lock_scope": "global", "rule_name": "MaxDrawdownRule"},
+        )
+
+    monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _make_session()
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    circuit_break = await manager._process_bar(
+        session, run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+
+    assert circuit_break is True  # global 锁 → 熔断
+    async with get_conn() as conn:
+        orders = await orders_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+    assert orders == []
+    assert decisions[0]["outcome"] == "risk_rejected"
+
+
+async def test_process_bar_symbol_lock_does_not_circuit_break(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """symbol scope 锁（cooldown 等局部、会过）→ 不熔断（_process_bar 返 False）。"""
+    from inalpha_shared.errors import ConflictError
+
+    async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise ConflictError(
+            "cooldown active", code="RISK_REJECTED",
+            details={"lock_scope": "symbol", "rule_name": "CooldownRule"},
+        )
+
+    monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    run = await _insert_run(uuid4())
+    circuit_break = await manager._process_bar(
+        _make_session(), run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+    assert circuit_break is False  # 局部锁不熔断
+
+
+async def test_run_loop_circuit_break_auto_stops(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """账户级熔断 → _run_loop auto-stop 置 stopped（非 errored），防僵尸 run（issue #44）。"""
+    from inalpha_shared.errors import ConflictError
+
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    calls = {"n": 0}
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _bar(1_700_000_000_000_000_000, close=50_000.0)
+        raise asyncio.CancelledError  # 守护：若没 auto-stop，第 2 次拉 bar 时干净退出
+
+    async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise ConflictError(
+            "account drawdown breached", code="RISK_REJECTED",
+            details={"lock_scope": "global"},
+        )
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+    monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
+    monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", lambda _s: asyncio.sleep(0))
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "stopped"  # 熔断是正常终态，非 errored
+    assert calls["n"] == 1  # 处理完第一根就 auto-stop，没再拉第 2 根
+    assert any("熔断" in e.get("error", "") for e in (fresh["error_log"] or []))
+
+
 async def test_process_bar_risk_rejected_records_decision(
     app_with_lifespan: Any, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
