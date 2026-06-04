@@ -683,6 +683,15 @@ async def test_restore_position_from_db_brings_session_to_position(
     assert pos.quantity == 2.0
 
 
+async def test_convert_run_pnl_zero_short_circuits_no_network() -> None:
+    """total_quote=0 → 直接返 Decimal(0)，不打 /fx（非 USD 币种也不需网络）。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    run = {"id": uuid4(), "account_id": uuid4()}
+    # EUR→USD 本需网络；若没短路会构造 DataClient 打 HTTP。0 应直接短路返 0。
+    pnl = await manager._convert_run_pnl_to_base(run, Decimal(0), "EUR", "USD")
+    assert pnl == Decimal(0)
+
+
 async def test_restore_position_from_db_short_position(app_with_lifespan: Any) -> None:
     """resume 桥接空头路径（M-2）：DB 负 qty 持仓 → restore 后 portfolio 与策略视图都是 short。
 

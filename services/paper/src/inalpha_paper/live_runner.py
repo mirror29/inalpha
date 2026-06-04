@@ -497,6 +497,11 @@ class LiveRunnerManager:
         **不持有任何 DB 连接**——可能发 data ``/fx`` HTTP。crypto-USD 等本地可解析路径
         零网络、恒成功。拿不到汇率（非 USD 折算失败）返 ``None`` → 调用方保留旧 pnl 不覆盖。
         """
+        # 0 盈亏（flat 且无平仓 / 已实现与未实现相抵）→ 折算后仍是 0，直接短路：
+        # 否则非 USD flat run 每根 bar 白打一次 /fx HTTP，且 FX 不可用时会返 None 把真实
+        # 的 0 PnL 错留成旧值。
+        if total_quote == 0:
+            return Decimal(0)
         # 计价货币 == base 或本地可解析（crypto USDT→USD）→ 零网络
         if not needs_network([currency], base):
             conv = BaseCurrencyConverter(base, None)
