@@ -10,6 +10,11 @@
 enabled = true
 starting_balance = 10_000.0  # USD（账户起始余额，影响 MaxDrawdown 计算）
 
+# 单笔下单名义价值硬上限（issue #42）：无状态前置校验，撮合前挡掉 quantity*ref_price
+# 超限的单（防胖手指 / 防 promoted 策略算错 quantity）。以订单计价货币计；只拒这一笔、
+# 不锁 symbol。10k 账户下 100k（10x）作粗粒度安全天花板，不挡正常交易、拦得住 1e9。
+max_order_notional = 100_000.0
+
 # ─── 全局账户保护 ───
 [[rules]]
 name = "MaxDrawdownRule"

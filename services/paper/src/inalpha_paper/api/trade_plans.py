@@ -270,6 +270,13 @@ async def execute_plan(
             ) from e
     ref_price = float(ticker["price"])
 
+    # 单笔 notional 硬上限（无状态前置校验，issue #42）；超限 → 409 RISK_REJECTED
+    # 不消费 approval_token —— 同 enforce，plan 维持 approved 待用户调小后重发
+    risk_guard_mod.check_order_notional(
+        factory, quantity=quantity, ref_price=ref_price,
+        venue=venue, symbol=symbol,
+    )
+
     # 3. 撮合（pure）
     result = OrderExecutor.execute(
         venue=venue,

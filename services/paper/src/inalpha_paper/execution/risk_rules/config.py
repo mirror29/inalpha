@@ -132,6 +132,14 @@ class RiskRulesConfig(BaseModel):
 
     enabled: bool = True
     starting_balance: float = Field(default=10_000.0, gt=0)
+    max_order_notional: float | None = Field(default=None, gt=0)
+    """单笔下单名义价值（``quantity * ref_price``）硬上限，无状态前置校验（issue #42）。
+
+    与 ``rules`` 的行为型锁规则正交：这是 per-order、stateless 的"防胖手指 / 防策略
+    算错 quantity"安全上限，超限只拒**这一笔**、不锁 symbol。``None`` = 不限制。
+    以订单**计价货币**（quote currency）计——跨币种精确折算留 follow-up；作为粗粒度
+    安全上限已足够（拦得住 ``quantity=1e9`` 这类，又不挡正常交易）。
+    """
     rules: list[RuleConfig] = Field(default_factory=list)
 
 

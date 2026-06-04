@@ -91,6 +91,11 @@ class RiskGuardFactory:
         """共享配置的 rule 数（构造后不变）。"""
         return len(self._cfg.rules)
 
+    @property
+    def max_order_notional(self) -> float | None:
+        """单笔名义价值硬上限（issue #42），``None`` = 不限制。供 ``check_order_notional`` 读。"""
+        return self._cfg.max_order_notional
+
     async def get_for_check(self, account_id: UUID) -> RiskGuard:
         """获取 account 的 RiskGuard 并刷新其 trade cache。
 

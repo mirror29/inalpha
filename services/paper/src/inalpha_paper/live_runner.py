@@ -382,8 +382,14 @@ class LiveRunnerManager:
         else:  # SELL
             intent = "close" if cur_qty > 0 else "open_short"
 
-        # 1. 风控（DB-backed RiskGuard）；命中 → 拒单 + 记 error_log，不杀 run
+        # 1. 风控；命中 → 拒单 + 记 error_log，不杀 run。两道闸门同 except 处理：
+        #    (a) 单笔 notional 硬上限（无状态，挡策略算错 quantity 的超大单，issue #42）；
+        #    (b) DB-backed RiskGuard 行为型锁规则（drawdown / cooldown / ...）。
         try:
+            risk_guard_mod.check_order_notional(
+                self._factory, quantity=order.quantity, ref_price=float(bar.close),
+                venue=venue, symbol=symbol,
+            )
             await risk_guard_mod.enforce(
                 self._factory, account_id=account_id, venue=venue, symbol=symbol, side=side
             )

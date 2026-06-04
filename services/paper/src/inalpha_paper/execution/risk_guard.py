@@ -205,6 +205,56 @@ def _http_side_to_rule_side(side: str) -> Side:
     return "long" if side == "BUY" else "short"
 
 
+def check_order_notional(
+    factory: RiskGuardFactory | None,
+    *,
+    quantity: float,
+    ref_price: float,
+    venue: str,
+    symbol: str,
+) -> None:
+    """单笔名义价值硬上限——无状态前置校验（issue #42）。
+
+    与 :func:`enforce` 的行为型锁规则**正交**：notional 上限是 per-order、stateless 的
+    "防胖手指 / 防策略算错 quantity" 闸门，超限只拒**这一笔**，**不写锁**（下一笔合规
+    小单应当能过；锁会误伤）。HTTP 手动下单有人盯着兜底，但 live runner 无人值守按 bar
+    自动下单——一个算出 ``quantity=1e9`` 的 promoted 策略，MaxDrawdown 要等亏损在 ≥5 笔
+    里兑现才锁、拦不住第一笔；本闸门在撮合前直接挡掉。
+
+    ``factory=None``（风控禁用）或未配 ``max_order_notional`` → pass-through。
+    名义价值以订单**计价货币**计（``quantity * ref_price``）——跨币种精确折算留 follow-up。
+
+    Raises:
+        ConflictError: 409 ``RISK_REJECTED``，``rule_name='MaxOrderNotional'``。
+            与 enforce 抛同一异常类型，故 HTTP→409 / live runner→记 risk_rejected 决策行
+            两条路径都已天然处理，无需新分支。
+    """
+    if factory is None:
+        return
+    cap = factory.max_order_notional
+    if cap is None:
+        return
+    notional = abs(quantity) * ref_price
+    if notional <= cap:
+        return
+    reason = (
+        f"order notional {notional:.2f} exceeds max_order_notional {cap:.2f} "
+        f"({symbol}@{venue}, qty={quantity} × ref={ref_price})"
+    )
+    raise ConflictError(
+        f"order rejected by risk rule: [MaxOrderNotional] {reason}",
+        code="RISK_REJECTED",
+        details={
+            "rule_name": "MaxOrderNotional",
+            "reason": reason,
+            "notional": notional,
+            "max_order_notional": cap,
+            "venue": venue,
+            "symbol": symbol,
+        },
+    )
+
+
 async def enforce(
     factory: RiskGuardFactory | None,
     *,
