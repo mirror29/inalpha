@@ -1,0 +1,250 @@
+{
+  "meta": {
+    "title": "Inalpha · 操作者控制台",
+    "description": "Inalpha 模拟盘只读运行时看板。"
+  },
+  "nav": {
+    "console": "操作者控制台",
+    "overview": "组合总览",
+    "runners": "Live Runner",
+    "activity": "Agent 活动",
+    "lab": "策略实验室",
+    "factors": "因子库",
+    "risk": "风控",
+    "soon": "即将"
+  },
+  "theme": {
+    "label": "主题",
+    "dark": "盘中 · 深色终端",
+    "light": "复盘 · 浅色报纸"
+  },
+  "status": {
+    "live": "实时",
+    "account": "账户",
+    "asOf": "数据时间",
+    "base": "计价",
+    "refreshed": "已刷新",
+    "stale": "过时",
+    "offline": "后端离线",
+    "lastFrame": "显示上一帧"
+  },
+  "overview": {
+    "title": "组合总览",
+    "index": "01",
+    "subtitle": "原本要问 agent 才知道的状态 —— 一眼看清。",
+    "kpi": {
+      "totalEquity": "总权益",
+      "cash": "现金",
+      "realizedPnl": "已实现盈亏",
+      "activeRunners": "运行中策略",
+      "positionsValue": "持仓估值",
+      "convertedTo": "已折算到 {ccy}",
+      "running": "运行中",
+      "ofRuns": "共 {total} 个 run"
+    },
+    "fxWarning": {
+      "title": "汇率折算不完整",
+      "body": "部分币种无法折算 —— 权益可能被低估。数据层不会乱猜汇率。"
+    },
+    "positions": {
+      "title": "持仓",
+      "empty": "暂无持仓。",
+      "col": {
+        "instrument": "标的",
+        "qty": "数量",
+        "avgPrice": "开仓均价",
+        "mark": "最新价",
+        "unrealized": "浮动盈亏",
+        "realized": "已实现盈亏"
+      }
+    },
+    "orders": {
+      "title": "最近订单",
+      "empty": "暂无订单。",
+      "col": {
+        "time": "时间",
+        "instrument": "标的",
+        "side": "方向",
+        "type": "类型",
+        "qty": "数量",
+        "fill": "成交均价",
+        "status": "状态"
+      }
+    }
+  },
+  "runners": {
+    "title": "Live Runner",
+    "index": "02",
+    "subtitle": "promoted 策略按行情自动跑 —— 状态、累计盈亏,以及每根 bar 的决策。",
+    "empty": "暂无策略运行。promote 一个候选并启动后,运行中的 Live Runner 会出现在这里。",
+    "emptyFiltered": "该状态暂无 run。",
+    "running": "运行中",
+    "filter": {
+      "all": "全部",
+      "running": "运行中",
+      "stopped": "已停止",
+      "errored": "错误"
+    },
+    "stats": {
+      "cumulativePnl": "累计盈亏（净）",
+      "decisions": "决策数",
+      "filledOf": "{filled} 成交",
+      "blocked": "风控拦截",
+      "lastBar": "最后 bar",
+      "neverRan": "尚无 bar"
+    },
+    "card": {
+      "cumulativePnl": "累计盈亏（净）",
+      "lastBar": "最后 bar",
+      "candidate": "候选",
+      "started": "启动于",
+      "stopped": "停止于",
+      "errors": "{count} 条错误",
+      "viewDecisions": "查看决策",
+      "neverRan": "尚未处理任何 bar"
+    },
+    "detail": {
+      "back": "Live Runner",
+      "notFound": "未找到该 run。",
+      "chart": "K 线",
+      "chartEmpty": "该标的暂无 K 线数据。",
+      "chartError": "K 线加载失败。",
+      "decisions": "决策时间线",
+      "decisionsEmpty": "尚无决策记录 —— runner 还没下过单。",
+      "errorLog": "错误日志",
+      "config": "配置",
+      "col": {
+        "barTs": "Bar 时间",
+        "barClose": "Bar 收盘",
+        "intent": "意图",
+        "side": "方向",
+        "qty": "数量",
+        "fill": "成交",
+        "fee": "手续费",
+        "outcome": "结果",
+        "reason": "原因"
+      }
+    },
+    "intent": {
+      "open_long": "开多",
+      "open_short": "开空",
+      "close": "平仓",
+      "unknown": "—"
+    },
+    "outcome": {
+      "filled": "已成交",
+      "rejected": "被拒",
+      "risk_rejected": "风控拦截"
+    }
+  },
+  "activity": {
+    "title": "Agent 活动",
+    "index": "03",
+    "subtitle": "一条时间线看清 agent 跨模块都做了什么 —— 定时任务、审批、决策、风控拦截、订单。",
+    "kpi": {
+      "scheduler": "调度器",
+      "schedulerOn": "运行中",
+      "schedulerOff": "已停止",
+      "pending": "待审批",
+      "locks": "活跃风控锁",
+      "events": "事件"
+    },
+    "filter": {
+      "all": "全部",
+      "scheduler": "定时任务",
+      "permission": "审批",
+      "decision": "决策",
+      "risk": "风控",
+      "order": "订单"
+    },
+    "empty": "暂无活动。",
+    "emptyFiltered": "没有「{kind}」类事件。",
+    "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
+    "source": {
+      "scheduler": "定时任务",
+      "permissions": "审批",
+      "risk": "风控",
+      "runs": "Runner",
+      "orders": "订单"
+    }
+  },
+  "lab": {
+    "title": "策略实验室",
+    "index": "04",
+    "subtitle": "LLM 自创的策略候选,按多目标 fitness 排序 —— 附最近一次回测指标。",
+    "candidates": "候选",
+    "promoted": "已晋级",
+    "empty": "暂无候选。",
+    "status": {
+      "promoted": "已晋级",
+      "candidate": "候选",
+      "rejected": "已拒"
+    },
+    "filter": {
+      "all": "全部",
+      "promoted": "已晋级",
+      "candidate": "候选",
+      "rejected": "已拒"
+    },
+    "col": {
+      "strategy": "策略",
+      "status": "状态",
+      "fitness": "适应度",
+      "return": "收益",
+      "sharpe": "夏普",
+      "maxdd": "最大回撤",
+      "trades": "交易数"
+    },
+    "detail": {
+      "back": "策略实验室",
+      "notFound": "未找到该候选。",
+      "metrics": "回测指标",
+      "audit": "沙盒审计",
+      "promotion": "晋级",
+      "code": "源码"
+    }
+  },
+  "factors": {
+    "title": "因子库",
+    "index": "05",
+    "subtitle": "系统全部因子目录(pandas-ta / Alpha101 / qlib 等),以及针对所选标的的择时有效性(Rank IC)。",
+    "catalogCount": "目录",
+    "totalFactors": "共 {n} 个因子",
+    "serviceDown": "因子服务不可用 —— 目录和有效性都拉不到。",
+    "effectiveness": "择时有效性(针对标的)",
+    "effectivenessHint": "下方是针对所选标的算出的因子择时有效性(Rank IC)—— 换个标的看不同市场的表现,与上方系统全量目录互补。",
+    "apply": "应用",
+    "noEffectiveness": "该标的暂无有效性数据。",
+    "barsUsed": "{n} 根 bar",
+    "catalog": "系统因子目录",
+    "catalogHint": "系统当前可用的全部因子,按来源分组(不限标的 / 市场)。",
+    "filter": { "all": "全部" }
+  },
+  "risk": {
+    "title": "风控",
+    "index": "06",
+    "subtitle": "当前生效的风控规则,以及正在拦截交易的锁。",
+    "engine": "引擎",
+    "on": "启用",
+    "off": "停用",
+    "activeLocks": "活跃锁",
+    "locks": "活跃锁",
+    "locksEmpty": "无活跃锁 —— 当前没有交易被拦截。",
+    "rules": "规则",
+    "rulesEmpty": "未配置规则。",
+    "disabled": "风控引擎已停用。",
+    "col": {
+      "rule": "规则",
+      "scope": "范围",
+      "side": "方向",
+      "reason": "原因",
+      "until": "解锁于"
+    }
+  },
+  "common": {
+    "retry": "重试",
+    "loading": "加载中…",
+    "error": "无法连接后端。",
+    "none": "—"
+  }
+}

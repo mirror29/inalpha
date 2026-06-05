@@ -1,0 +1,285 @@
+@import "tailwindcss";
+
+/* ════════════════════════════════════════════════════════════════════
+   Inalpha Operator Console — 设计系统
+   美学方向「印章终端 / Vermilion Terminal」:一台戴着朱红印章的交易终端。
+   两种照明 = 同一台终端的两种工作场景:
+     · Terminal Dark  (盘中 / intraday) —— 墨黑底 + 电光青数据 + 朱红印章
+     · Broadsheet Light (复盘 / review)  —— 报纸暖白 + 墨黑字 + 同一枚印章
+   设计语言完整记录见 apps/dashboard/design.md。
+   ──────────────────────────────────────────────────────────────────
+   主题实现:原始色值声明在 :root / [data-theme] 上,@theme inline 把
+   Tailwind 的 --color-* 指向这些原始变量 —— 切 data-theme 即整盘换肤,
+   所有 bg-· text-· border-· 等工具类(含 opacity 透明度修饰)自动跟随。
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Terminal Dark(默认) ───────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-deep: #04060d; /* 最底:侧栏 / 凹槽 */
+  --surface: #080b14; /* 主背景 */
+  --surface-elev: #0f1320; /* 抬起的卡片 / 面板 */
+  --ink: #eef1f7; /* 主前景 */
+  --ink-muted: #8089a0; /* 次级文字 */
+  --hairline: #1b2235; /* 极细分隔线 */
+
+  --accent: #5cc6ff; /* 电光青 —— 数据 / 交互主色 */
+  --accent-dim: #2a5a7a;
+  --seal: #e2533f; /* 朱红印章 —— 品牌标记色 */
+  --down: #f0584b; /* 跌 / 拒单 / 错误 */
+  --gold: #e0b03f; /* 在途 / 警示 */
+  --up: #2fcf8e; /* 涨 / 成交 / 运行中 */
+  --up-dim: #2a7a55;
+
+  /* 背景纹理强度(颗粒 / 晕影在两主题下需不同力度) */
+  --grain-opacity: 0.035;
+  --grain-blend: overlay;
+  --vignette: color-mix(in oklab, var(--surface-deep) 70%, transparent);
+}
+
+/* ── Broadsheet Light ─────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-deep: #e7e3d6; /* 报纸暖白的凹槽 */
+  --surface: #f4f1e8; /* 报纸暖白 */
+  --surface-elev: #fcfbf5; /* 抬起的近白卡片 */
+  --ink: #15171d; /* 墨黑 */
+  --ink-muted: #5b6170;
+  --hairline: #d9d4c5; /* 暖色细线 */
+
+  --accent: #0d6db0; /* 深青 —— 在亮底上可读 */
+  --accent-dim: #9cc3df;
+  --seal: #c8463c; /* 印章原色朱红 */
+  --down: #c0392c;
+  --gold: #9a7416;
+  --up: #0f8a58;
+  --up-dim: #6fb495;
+
+  --grain-opacity: 0.045;
+  --grain-blend: multiply;
+  --vignette: color-mix(in oklab, var(--surface-deep) 55%, transparent);
+}
+
+/* ── Tailwind token 映射(inline → 工具类直接引用原始变量) ───────── */
+@theme inline {
+  --color-bg: var(--surface);
+  --color-bg-deep: var(--surface-deep);
+  --color-bg-elev: var(--surface-elev);
+  --color-fg: var(--ink);
+  --color-fg-muted: var(--ink-muted);
+  --color-border-subtle: var(--hairline);
+
+  --color-cyan: var(--accent);
+  --color-cyan-dim: var(--accent-dim);
+  --color-seal: var(--seal);
+  --color-fox-red: var(--down);
+  --color-gold: var(--gold);
+  --color-bull: var(--up);
+  --color-success-dim: var(--up-dim);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+  --font-display: var(--font-display), ui-serif, "Iowan Old Style", Georgia, serif;
+}
+
+@layer base {
+  html {
+    background-color: var(--surface);
+    color: var(--ink);
+    /* 换肤平滑过渡 —— 只过渡颜色,不动布局 */
+    transition:
+      background-color 0.4s ease,
+      color 0.4s ease;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11", "zero", "calt";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--accent) 35%, transparent);
+    color: var(--ink);
+  }
+
+  /* 可点击交互一律手型光标(button 默认是 default,这里统一纠正);
+     禁用态回到 not-allowed,与视觉的灰态对齐。 */
+  button,
+  [role="button"],
+  a[href],
+  label[for],
+  summary,
+  select {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"],
+  [disabled] {
+    cursor: not-allowed;
+  }
+
+  /* 终端化滚动条 —— 细、暗、青色 thumb。 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--ink-muted) 45%, transparent)
+      transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--ink-muted) 40%, transparent);
+    border-radius: 99px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--accent) 55%, transparent);
+    background-clip: content-box;
+  }
+
+  /* 所有数字默认等宽对齐 —— 看板里财务数据必须列对齐。 */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum", "zero";
+  }
+}
+
+@layer utilities {
+  /* 终端晕影:四角压暗,把视线收到盘面中央(盘口聚焦感)。 */
+  .vignette::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(
+      120% 120% at 50% 0%,
+      transparent 55%,
+      var(--vignette) 100%
+    );
+  }
+
+  /* 纸张颗粒,加质感不偏色;亮色用 multiply、暗色用 overlay。 */
+  .grain {
+    position: relative;
+  }
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: var(--grain-opacity);
+    mix-blend-mode: var(--grain-blend);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.7'/></svg>");
+  }
+
+  /* 编辑体 serif —— section 序号/标题用,broadsheet 调性。 */
+  .display {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 144, "SOFT" 20;
+  }
+  .display-italic {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 1;
+    font-feature-settings: "ss01", "ss02";
+    letter-spacing: -0.01em;
+  }
+
+  /* 印章光晕 —— 侧栏 logo 用,朱红微辉 + 缓慢呼吸,让品牌标记有生命感。 */
+  @keyframes seal-breathe {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 0.5px color-mix(in oklab, var(--seal) 55%, transparent))
+        drop-shadow(0 1px 7px color-mix(in oklab, var(--seal) 18%, transparent));
+    }
+    50% {
+      filter: drop-shadow(0 0 0.5px color-mix(in oklab, var(--seal) 85%, transparent))
+        drop-shadow(0 2px 13px color-mix(in oklab, var(--seal) 36%, transparent));
+    }
+  }
+  .seal-glow {
+    filter: drop-shadow(0 0 0.5px color-mix(in oklab, var(--seal) 60%, transparent))
+      drop-shadow(0 1px 8px color-mix(in oklab, var(--seal) 22%, transparent));
+    animation: seal-breathe 5s ease-in-out infinite;
+  }
+
+  /* 入场:轻微上浮淡入。配 inline animation-delay 做错落式揭示。 */
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .rise {
+    animation: rise 0.5s cubic-bezier(0.22, 0.7, 0.22, 1) both;
+  }
+
+  /* 数据列起始处的青色刻度(终端「行号 / 标尺」语感)。 */
+  .tick-accent {
+    position: relative;
+  }
+  .tick-accent::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 1.1em;
+    width: 2px;
+    transform: translateY(-50%);
+    border-radius: 99px;
+    background-color: var(--accent);
+  }
+
+  /* LIVE 指示器闪烁。 */
+  @keyframes caret {
+    0%,
+    49% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+  .caret-blink {
+    animation: caret 1.06s steps(1, end) infinite;
+  }
+
+  /* 数据刷新瞬间的轻微高亮(SWR 拿到新帧时点一下)。 */
+  @keyframes flash-cyan {
+    0% {
+      background-color: color-mix(in oklab, var(--accent) 14%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+  .flash-cyan {
+    animation: flash-cyan 0.9s ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    transition: none;
+  }
+  .caret-blink,
+  .flash-cyan,
+  .seal-glow,
+  .rise {
+    animation: none !important;
+  }
+}
