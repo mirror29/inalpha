@@ -1,134 +1,125 @@
-# 01 · 自建系统顶层架构草图
+# 01 · 架构总览
 
-> 状态：**草图**。Phase B 完成 4 份 repo 拆解后会回头修订。本文件给整体形态画饼，
-> 不是最终设计。
+> 状态：**现行架构总览**（2026-06-05，反映 D-11.2 落地实况）。
+> 本文给"整体形态 + 各层职责 + 关键不变量"的高层视图；内核事件循环 / Clock /
+> MessageBus / 撮合 / 风控的详细设计见 [`03-kernel-design.md`](./03-kernel-design.md)；
+> 逐里程碑的落地状态见 [`04-current-state.md`](./04-current-state.md)。
 
-## 总体形态
+## 三层形态
 
 ```
-  ┌────────────────────────────────────────────────────────────────────────┐
-│                       用户入口（浏览器 + 对话）                           │
-│                   Next.js (App Router) + CopilotKit                    │
-└───────────────────────────────┬────────────────────────────────────────┘
-                                │ httpOnly cookie + JWT
-                                ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                       Mastra 编排层（TypeScript / Node）                 │
-│                                                                          │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
-│   │  agents/     │  │  workflows/  │  │  tools/      │  │  memory/   │ │
-│   │  - trader    │  │  - backtest  │  │  - data_*    │  │  - 用户偏好 │ │
-│   │  - researcher│  │    → eval    │  │  - bt_*      │  │  - 历史会话 │ │
-│   │  - risk      │  │    → paper   │  │  - live_*    │  │  - 仓位状态 │ │
-│   │  - manager   │  │  - alpha     │  │  - factor_*  │  └────────────┘ │
-│   │              │  │    research  │  │  - research_*│                  │
-│   └──────────────┘  └──────────────┘  └──────────────┘                  │
-└───────────────────────────────┬────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  入口层（当前）                                                         │
+│  mastra :4111    对话 + 实时 trace（主入口：tool call / hook / token）  │
+│  apps/dashboard  运营控制台（app.inalpha.dev · :3001 · 只读看板 + BFF） │
+│  apps/web        静态官网（inalpha.dev）；CopilotKit 对话 UI 规划 Phase E+│
+└───────────────────────────────┬──────────────────────────────────────┘
+        dashboard: 同源 /api/* → BFF（dev token 转发，token 不进浏览器）
+┌───────────────────────────────▼──────────────────────────────────────┐
+│  编排层 · packages/orchestration · Mastra (TypeScript)                 │
+│                                                                        │
+│   agents/      orchestrator → trader / risk（按市场分类自动路由 venue）│
+│   tools/       data.* web.* factor.* research.* paper.* trade.* swarm.*│
+│                + mcp__<server>__<verb>（可插拔外部 MCP）               │
+│   hooks/       5 类生命周期事件 + Stop（PreToolUse / PostToolUse / …） │
+│   permissions/ allow / ask / deny 三态（deny > allow > ask > default） │
+│   plan/exec    create_plan → approve_plan → execute_plan（一次性 token）│
+│   memory/      PostgresStore · 用户偏好 / 历史会话 / plan 状态          │
+└───────────────────────────────┬──────────────────────────────────────┘
                                 │ HTTP / MCP（每个 tool 调对应服务）
-        ┌───────────────────────┼─────────────────┬─────────────────┐
-        ▼                       ▼                 ▼                 ▼
-  ┌──────────┐           ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-  │  data    │           │  backtest    │  │   live       │  │  factor      │
-  │  service │◄─时序数据─ │   engine     │  │   engine     │  │   lab        │
-  │ (Python) │           │ (Python/Rust)│  │ (Python/Rust)│  │  (Python)    │
-  └─────┬────┘           └──────────────┘  └──────┬───────┘  └──────────────┘
-        │                                          │
-        ▼                                          ▼
-  ┌──────────────┐                          ┌──────────────────┐
-  │ TimeSeries   │                          │  外部市场 / 经纪商 │
-  │ DB           │                          │  CCXT · IB · CTP  │
-  │ (QuestDB /   │                          │  · OKX · Binance  │
-  │ ClickHouse)  │                          └──────────────────┘
-  └──────────────┘
-
-  ┌──────────────────┐
-  │  research        │
-  │  service (LLM)   │  ◄── 多 agent 辩论决策（借鉴 TradingAgents）
-  │  调外部 backend  │
-  └──────────────────┘
+        ┌───────────────┬───────┴───────┬───────────────┐
+        ▼               ▼               ▼               ▼
+  ┌──────────┐   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+  │  data    │   │  paper       │ │  research    │ │  factor      │
+  │  :8001   │   │  :8002       │ │  :8003       │ │  :8004       │
+  │ 行情/财报 │   │ 内核+回测+   │ │ 多 analyst   │ │ 因子库 + IC  │
+  │ /web/fx  │   │ 模拟盘+沙盒  │ │ + bull/bear  │ │ 有效性       │
+  └─────┬────┘   └──────┬───────┘ └──────────────┘ └──────────────┘
+        │               │   （services/_shared：跨服务基础设施，改前评估）
+        ▼               ▼
+  ┌──────────────────────────────────┐
+  │  Postgres 17 + TimescaleDB        │  hypertable: bars / ticks / orders
+  │                                   │  常规表: accounts / positions / runs / plans
+  └──────────────────────────────────┘
+        ▲
+        │  外部数据源 / 经纪商
+        └── CCXT(crypto) · akshare(A股/港股) · yfinance(美股/全球) · FRED · DDGS(web)
 ```
 
-## 5 个核心服务的职责
+> 启动后端 + 编排：`pnpm i && uv sync && bash scripts/dev.sh up`
+> （data:8001 + paper:8002 + research:8003 + factor:8004 + mastra:4111，各带 `/health`）。
+> 运营控制台另起：`cd apps/dashboard && pnpm dev`（:3001，BFF 连后端）。
 
-### 1. data-service
+## 各层职责
 
-数据接入 + 时序存储 + 历史回放 + 实时订阅。
+### 入口层
 
-- 接入层：CCXT（crypto）+ akshare/tushare（A股）+ Alpaca/Polygon（美股）+
-  OANDA（FX）+ vnpy gateways（CTP/XTP）
-- 存储：QuestDB（轻量）或 ClickHouse（重型）
-- 接口：HTTP REST（历史） + WebSocket（实时）
-- **抽象决策依据**：Nautilus 的 `DataEngine` + vnpy 的 `gateway.subscribe()`
+当前用户入口两个，面向不同用途：
 
-### 2. backtest-engine
+- **`mastra dev` playground（:4111）** — 跟 orchestrator agent 对话，并在 live trace UI 里
+  看每个 tool call / hook 事件 / approval token。当前主要的"对话 + 操作"入口。
+- **`apps/dashboard`**（`:3001` · `app.inalpha.dev`）— **只读运营控制台**：把"原本要问
+  agent 才知道的运行时状态"（账户 / 持仓 / live runner / agent 活动 / 回测史）变成一眼可见
+  的盘面，让对话回归"决策 / 操作"本职。动态 Next（Node 运行时）用 Route Handler 当 **BFF**——
+  浏览器只调同源 `/api/*`，server 侧用 dev token 转发到后端（Python service 未配 CORS + 需
+  JWT，token 不进浏览器）。单用户 dev token、非多租户产品；当前已落地**组合总览 MVP**。
 
-- 事件驱动 + 时间源抽象（TestClock）
-- 策略代码与 live-engine 完全一致（这是核心不变量）
-- 撮合模拟器：从 L1 起步，逐步升级到 L2 order book replay
-- **设计依据**：Nautilus 的 backtest 模块
+`apps/web`（`inalpha.dev`）当前是静态官网（`output:"export"` → Cloudflare Pages，品牌 /
+文档）；面向终端用户的 CopilotKit 对话 UI 规划在 Phase E+，尚未接后端。
 
-### 3. live-engine
+### 编排层 · `packages/orchestration`（Mastra / TypeScript）
 
-- 同样的事件循环，时间源替换为 LiveClock
-- 通过 gateway 抽象接外部经纪商
-- 模拟盘 = live-engine + 虚拟撮合（不下单到真实交易所）
-- **设计依据**：Nautilus + vnpy gateway
+Inalpha 的"大脑 + 护栏"。三件事：
 
-### 4. factor-lab
+1. **把每个核心服务的能力封装成 tool**（`<service>.<verb>` 命名），按市场分类自动路由 venue。
+2. **把 LLM 关在交易路径外**——四层防御（详 `03` / 博客篇 1）：
+   - **tool 集分桶**：orchestrator 看不到直下单 tool
+   - **permissions deny-list**：`live.*` / 直下单恒 deny，不可被 hook 覆盖
+   - **plan/exec 两阶段**：`create_plan → approve_plan → execute_plan`，approval_token
+     一次性 + 5min TTL，LLM 永不持有 token
+   - **审计签名**：PostToolUse hook 强制写脱敏 + 签名的审计日志
+3. **可插拔 MCP**：`mcp__<server>__<verb>` 走同一套 hooks + permissions；默认只启用零密钥
+   公开端点，付费连接器以 `disabled:true` 作模板。
 
-- ML 因子 pipeline：Raw Data → Handler → Alpha → Model → Strategy
-- 跟 backtest-engine 解耦：因子计算产出信号，由策略消费
-- 实验管理：MLflow（qlib 也用这个）
-- **设计依据**：qlib pipeline
+### 服务层 · `services/*`（Python · FastAPI）
 
-### 5. research-service
+| 服务 | 端口 | 职责 |
+|---|---|---|
+| **data** | 8001 | 行情接入 + 时序存储 + 历史回放；`/bars`（默认 `fresh=True`）`/ticker` `/fundamentals` `/web/search` `/fx`。CCXT + akshare + yfinance + FRED + DDGS |
+| **paper** | 8002 | 事件驱动内核（Clock / MessageBus / 撮合 / 风控）+ 回测引擎 + **live runner**（模拟盘按行情自动跑）+ **strategy_authoring**（LLM 自创策略三道沙盒 + fitness） |
+| **research** | 8003 | LLM 多 analyst（fundamental / sentiment / technical / valuation …）+ bull/bear 辩论 → `StrategyHint`，不直接下单 |
+| **factor** | 8004 | 因子库（pandas-ta / Alpha101 / qlib）+ IC 有效性检验；`factor.timing / .score / .catalog`，只产出信号 |
+| **_shared** | — | 跨服务基础设施（DataClient / 错误类型 / auth …），改前评估 |
 
-- LLM 多 agent 研究：fundamental / sentiment / technical / risk / manager
-- 输出研究报告 + 交易信号（不直接下单，交给策略消费）
-- LLM 推理走外部 provider（OpenAI / Anthropic / DeepSeek / 自建），本服务不内嵌模型
-- **设计依据**：TradingAgents 的角色分工
+**核心不变量：回测 = 模拟盘 同代码（架构上可延伸到实盘，但真钱实盘不在当前计划）。** 同一份 `Strategy` 文件，只换 Clock
+（`TestClock` / `LiveClock`）+ Gateway（模拟撮合 / 真实经纪商）；行为差异源于物理
+（slippage / latency），不源于两套代码路径。这是审计链能成立的物理前提——只有一个
+文件，签名才有得指。
 
-## Mastra 编排层的关键
+## 跨服务依赖约束（架构决策，禁止违反）
 
-Mastra 在 Inalpha 里做的事：
+```
+paper  ✗ import research   （内核不依赖 LLM）
+factor ✗ import paper      （因子只产出信号）
+data   ✗ import 任何其他服务 （最底层）
+```
 
-1. **把每个核心服务的能力包装成 tool**，让 agent 能调用
+协作只走 HTTP / MCP：research → paper 传 `StrategyHint`；paper ← data 拉 bars/fx/
+fundamentals；paper → risk 同进程前置守门（所有 Order 撮合前过 RiskGuard）。
 
-   - `data.get_bars(symbol, start, end, timeframe)`
-   - `backtest.run(strategy_id, params, period)`
-   - `live.paper_start(strategy_id, params)`
-   - `factor.compute_alpha(name, universe, date)`
-   - `research.deep_dive(symbol)`
-2. **把多步流程编排成 workflow**：
+## 关键不变量（写代码前定下、别动）
 
-   - 用户说"帮我用 SMA 策略回测 BTC 最近一年并跑模拟盘"
-   - → workflow: `data.fetch → backtest.run → eval.report → paper.start`
-3. **把 LLM 研究 agent 嵌进对话**：
-
-   - TradingAgents 的 4 个 analyst + Researcher Team + Risk Mgmt → Mastra agents
-   - 通过 mastra/agent 编排辩论流程
-
-## 关键不变量（写代码前定下来，别动）
-
-1. **回测 = 实盘**：同一份 Strategy 代码，仅时间源和 gateway 切换
+1. **回测 = 模拟盘 同代码**：同一份 Strategy 代码，仅 Clock + Gateway 切换（架构上可延伸到实盘，真钱实盘不在当前计划）
 2. **数据中心化**：所有服务只从 data-service 取数据，不私自爬交易所
-3. **策略不直接下单**：策略产出 `Order` 对象，由 Execution Engine 决定怎么发
-4. **风控前置**：所有 Order 进 Execution 之前先过 Risk Manager
-5. **Mastra tool 是唯一对外入口**：核心服务不暴露给前端，只暴露给 Mastra 编排层
+3. **策略不直接下单**：策略产出 `Order`，由 Execution Engine + 风控决定怎么发
+4. **风控前置**：所有 Order 进 Execution 前先过 RiskGuard（HTTP 路径强制）
+5. **LLM 无直下单路径**：tool 分桶 + permissions deny + plan/exec token + 审计签名
+6. **金融时效性**：读行情/新闻默认 `fresh=True`；freshness 看 `bars[-1].ts` 距 as_of
+   的间隔，不看 bar 数量；数据不可用时显式降级 + 标低 confidence，不静默用过时数据
 
-## 用户入口
+## 延伸阅读
 
-**独立 Next.js + CopilotKit**（apps/web）：
-
-- Mastra 编排层挂在同一个 Next.js 进程下的 API Route（或独立 Node 服务）
-- CopilotKit 通过 AG-UI 协议直连 Mastra，承担对话 UI + 流式响应 + 用户中途打断
-- 认证 / 用户管理 / 历史会话归 Next.js（better-auth 或 NextAuth），httpOnly cookie + JWT
-- 不依赖任何外部平台
-
-## 后续工作钩子
-
-- 等 4 份 ref 拆解完，**回头修订本文**，特别是：
-  - 撮合模拟器具体设计（参考 Nautilus）
-  - Gateway 接口最终签名（参考 vnpy）
-  - 因子 / 模型 / 策略接口（参考 qlib）
-  - 多 agent 编排细节（参考 TradingAgents）
+- 内核事件循环 / Clock / 撮合 / 风控详设 → [`03-kernel-design.md`](./03-kernel-design.md)
+- 逐里程碑落地状态 + 一次下单端到端时序 → [`04-current-state.md`](./04-current-state.md)
+- 项目背景 / 边界 / 完成度快照 → [`00-context.md`](./00-context.md)
+- AI 协作硬约束 → [`../AGENTS.md`](../AGENTS.md) · [`../CLAUDE.md`](../CLAUDE.md)

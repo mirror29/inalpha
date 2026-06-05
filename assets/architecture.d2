@@ -1,0 +1,53 @@
+# Inalpha · System architecture (3 layers + services)
+# Source for assets/architecture.png
+# Build: d2 --theme 200 --pad 50 --scale 2 assets/architecture.d2 assets/architecture.png
+#
+# 品牌视觉：炭黑画布 + 金(主链路) + 绿(护栏) + 灰(外部/静态/未接)，与博客系列统一。
+
+direction: down
+style.fill: "#0d0b09"
+
+classes: {
+  panel: { style: { fill: "#14110d"; stroke: "#3a352c"; stroke-width: 1; font-color: "#F5F5DC"; border-radius: 14 } }
+  gold:  { shape: rectangle; style: { fill: "#1f1a12"; stroke: "#D4A744"; stroke-width: 2; font-color: "#F7ECCF"; border-radius: 10 } }
+  green: { shape: rectangle; style: { fill: "#16210f"; stroke: "#8FB339"; stroke-width: 2; font-color: "#EAF2D8"; border-radius: 10; bold: true } }
+  dim:   { shape: rectangle; style: { fill: "#161310"; stroke: "#9a8f7a"; stroke-width: 1; stroke-dash: 4; font-color: "#cfc8ba"; border-radius: 10 } }
+  store: { shape: cylinder;  style: { fill: "#16140f"; stroke: "#9a8f7a"; stroke-width: 2; font-color: "#E8E2D2" } }
+}
+
+entry: "① Entry · 入口层" {
+  class: panel
+  grid-rows: 1
+  grid-gap: 40
+  playground: "mastra playground\n:4111 · chat + live trace" { class: gold }
+  dash: "apps/dashboard\n:3001 · read-only console (BFF)" { class: gold }
+  web: "apps/web\nstatic site · CopilotKit chat planned" { class: dim }
+}
+
+orch: "② Orchestration · packages/orchestration (Mastra · TS) — only layer LLMs run in" {
+  class: panel
+  grid-rows: 1
+  grid-gap: 40
+  agents: "agents\norchestrator · trader · risk" { class: gold }
+  tools: "tools\ndata·web·factor·research·paper·trade" { class: gold }
+  guard: "hooks + permissions\nallow / ask / deny · 5 lifecycle" { class: green }
+  plan: "plan / exec\n1-shot TTL approval token" { class: green }
+}
+
+services: "③ Services · Python / FastAPI" {
+  class: panel
+  grid-rows: 1
+  grid-gap: 40
+  data: "data :8001\nbars(fresh) · fundamentals · web · fx" { class: gold }
+  paper: "paper :8002\nkernel · backtest · live runner · sandbox" { class: gold }
+  research: "research :8003\nmulti-analyst · bull/bear" { class: gold }
+  factor: "factor :8004\nAlpha101 · IC effectiveness" { class: gold }
+}
+
+db: "Postgres 17 + TimescaleDB\nbars/ticks/orders · accounts/positions/runs/plans" { class: store }
+ext: "External sources\nCCXT · akshare · yfinance · FRED · DDGS" { class: dim }
+
+entry -> orch: "AG-UI · BFF (dev token)" { style.stroke: "#D4A744"; style.font-color: "#cfcfcf" }
+orch -> services: "HTTP / MCP" { style.stroke: "#D4A744"; style.font-color: "#cfcfcf" }
+services -> db: "persist" { style.stroke: "#9a8f7a"; style.font-color: "#cfcfcf" }
+ext -> services: "ingest (data only)" { style.stroke: "#9a8f7a"; style.stroke-dash: 4; style.font-color: "#cfcfcf" }

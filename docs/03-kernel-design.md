@@ -132,9 +132,9 @@ RiskEngine 规则化（max notional / 价格偏离 / 日损上限）+ paper-serv
 |---|---|---|---|
 | `apps/web` | 3000 | UI + 认证 + Mastra 挂载点 | Next.js 16 / CopilotKit / better-auth |
 | `services/data` | 8001 | 行情接入 / 历史回放 / 实时订阅 | CCXT / akshare（后期） |
-| `services/paper` | 8002 | 内核：Clock / MessageBus / Strategy / Gateway / Engine；回测 + 模拟盘 + 实盘 | Python kernel（自研） |
+| `services/paper` | 8002 | 内核：Clock / MessageBus / Strategy / Gateway / Engine；回测 + 模拟盘（同代码可延伸实盘，不在当前计划） | Python kernel（自研） |
 | `services/research` | 8003 | LLM 多 agent 决策（TradingAgents 风格，Mastra 重写） | OpenAI/Anthropic SDK |
-| `services/factor` | 8004 | ML 因子 pipeline（Phase F+，先占位） | qlib |
+| `services/factor` | 8004 | 因子库（pandas-ta / Alpha101 / qlib）+ IC 有效性检验，只产出信号（已落地 D-11） | qlib + 自研 |
 
 ---
 
@@ -410,22 +410,22 @@ export const strategyLifecycle = createWorkflow({ id: 'strategy-lifecycle' })
   .commit()
 ```
 
-### Tools 清单（MVP 范围）
+### Tools 清单（当前实现）
 
-| Tool ID | 调用 | 用途 |
-|---|---|---|
-| `data.get_bars` | `data-service` `GET /bars` | 取 K 线 |
-| `data.subscribe_ticks` | `data-service` `WS /ticks` | 订阅实时 tick（仅 workflow 内部用） |
-| `paper.run_backtest` | `paper-service` `POST /backtest` | 跑回测，返回 jobId |
-| `paper.start_strategy` | `paper-service` `POST /strategy/start` | 上模拟盘 |
-| `paper.stop_strategy` | `paper-service` `POST /strategy/stop` | 停模拟盘 |
-| `paper.get_positions` | `paper-service` `GET /positions` | 查持仓 |
-| `trade.create_plan` | orchestration 内部 + 写 Plan Store | 创建下单计划，状态 `pending_approval`，**不下单** |
-| `trade.approve_plan` | orchestration 内部 + 改 Plan Store | Risk Agent / 用户审批，派发一次性 `approval_token` |
-| `trade.execute_plan` | `paper-service` `POST /orders/submit` | 消费 token + 真撮合下单（**唯一**有 side-effect 的下单 tool） |
-| `risk.check_order` | `paper-service` `POST /risk/check` | 风控预检 |
-| `research.deep_dive` | `research-service` `POST /deep_dive` | 单次跑 TradingAgents 风格流程 |
-| `factor.compute_alpha` | `factor-service` `POST /alpha` | 算因子（Phase F+） |
+> 本节原为 Phase C 的 MVP 设想，已更新为 **当前实际暴露的 tool 族**（2026-06-05）。
+> 权威清单以代码为准：`packages/orchestration/src/tools/` + `agents/orchestrator.ts`。
+
+| Tool 族 | 代表 tool | 服务 / 路径 | 用途 |
+|---|---|---|---|
+| **data.\*** | `data.get_bars`（默认 `fresh=True`）`.get_ticker` `.backfill_bars` `.get_fundamentals` | data:8001 | K 线 / 现价 / 补数 / 财报基本面 |
+| **web.\*** | `web.search` `web.search_news` | data:8001 `/web/*` | 零密钥网络情报（DDGS 多引擎） |
+| **factor.\*** | `factor.timing` `factor.score` `factor.catalog` | factor:8004 | 因子择时 / 打分 / 目录（IC 有效性） |
+| **research.\*** | `research.deep_dive` | research:8003 | 多 analyst + bull/bear 辩论 → `StrategyHint` |
+| **paper.\*（回测/策略）** | `paper.run_backtest` `.compose_strategy` `.author_strategy` `.list_candidates` `.get_candidate` `.promote_candidate` | paper:8002 | 回测（自动并跑 baseline）/ LLM 自创策略（沙盒）/ 候选 leaderboard / 审批门 |
+| **paper.\*（模拟盘）** | `paper.start_strategy` `.stop_strategy` `.list_strategy_runs` `.list_strategy_run_decisions` `.list_orders` `.list_positions` | paper:8002 | live runner 起停 / 运行状态 / 决策复盘 / 持仓 |
+| **trade.\***（下单护栏三件套） | `trade.create_plan` → `.approve_plan` → `.execute_plan`（+ `.reject_plan` `.get_plan`） | orchestration + paper `/orders/submit` | 两阶段批准，approval_token 一次性 + 5min TTL，`execute_plan` 是**唯一**有 side-effect 的下单 tool |
+| **swarm.\*** | `swarm.run_backtest_grid` | paper:8002 | 参数网格批量回测（grid-size-cap 守门） |
+| **mcp__\<server\>__\*** | `mcp__coingecko__*` … | 外部 MCP | 可插拔外部源，走同一套 hooks + permissions；默认只启零密钥端点 |
 
 > **执行链路**：`trade.* → Hooks (PreToolUse) → Permission Engine → Plan Store → /orders/submit`。
 > LLM 视野里**没有**直接 `submit_order` 路径——旧 `paper.submit_order_intent` /
