@@ -1,6 +1,6 @@
 {
   "name": "@inalpha/web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "Inalpha 官网首页 / inalpha.dev landing page (static Next.js)",
