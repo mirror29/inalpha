@@ -1,6 +1,6 @@
 {
   "name": "@inalpha/dashboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "Inalpha 操作者控制台 / operator console — 只读运行时看板(账户/持仓/Live Runner/Agent 活动)",

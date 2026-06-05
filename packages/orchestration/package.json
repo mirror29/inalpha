@@ -1,6 +1,6 @@
 {
   "name": "@inalpha/orchestration",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "Mastra 编排层：tool / agent / workflow / memory，把后端 service 暴露给 LLM",
