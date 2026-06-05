@@ -176,6 +176,14 @@ export function ChatThread({
       }) => {
         const raw = event?.message;
         const code = event?.code;
+        // 用户点"停止"或任何 abort 触发的报错不算错(掐断在途 fetch 必然抛
+        // "BodyStreamBuffer was aborted"/AbortError)—— 别顶错误条。
+        if (
+          stoppingRef.current ||
+          /abort|BodyStreamBuffer|signal is aborted/i.test(`${raw ?? ""} ${code ?? ""}`)
+        ) {
+          return;
+        }
         // @ag-ui/mastra 把上游错误对象塞进 Error() 会变成 "[object Object]" —— 当无效信息丢弃。
         const human = raw && raw !== "[object Object]" ? raw : null;
         setChatError(
@@ -193,6 +201,7 @@ export function ChatThread({
   /** 点"停止":掐断所有在途流式请求,并强制 run 收尾让 UI 立刻复位。 */
   const handleStop = () => {
     stoppingRef.current = true;
+    setChatError(null); // 主动停止不是错误,清掉可能残留的错误条
     stopGeneration();
     inflightAborts.current.forEach((c) => c.abort());
     inflightAborts.current.clear();
