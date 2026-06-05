@@ -1,6 +1,6 @@
 [project]
 name = "inalpha-factor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Inalpha factor service：接现成因子库（pandas-ta / WorldQuant Alpha101 / qlib Alpha158）+ 有效性打分（前瞻收益 / Rank IC）"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"

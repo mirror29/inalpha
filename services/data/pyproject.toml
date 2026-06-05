@@ -1,6 +1,6 @@
 [project]
 name = "inalpha-data"
-version = "0.1.0"
+version = "0.2.0"
 description = "Inalpha data service: 行情接入 / 历史回放 / 实时订阅"
 license = "AGPL-3.0-only"
 requires-python = ">=3.12"
