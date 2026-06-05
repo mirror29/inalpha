@@ -135,11 +135,13 @@ class FactorEngine:
         quantiles: int,
         factor_ids: list[str] | None,
     ) -> dict[str, Any]:
-        # as_of 未显式给 = "现在"做择时（factor.timing/snapshot）→ 必须 fresh（先 backfill
-        # 到现在再算），否则尾巴 stale 让"当前因子方向"是几小时前的状态（§3.1）。显式给过去
-        # as_of = 历史分析语义 → fresh=False（不补、也不该把未来补进来）。
-        is_live = as_of is None
-        as_of = as_of or datetime.now(UTC)
+        # "现在"做择时（factor.timing/snapshot，含 research analyst 传 as_of=deep_dive 的当前
+        # 时刻）→ 必须 fresh（先 backfill 到现在再算），否则尾巴 stale 让"当前因子方向"是几小时
+        # 前的状态（§3.1）。判 live 不能只看 as_of is None —— 调用方常显式传"当前时刻"；as_of 落在
+        # 最近 ~2 根 bar 内即视为 live。显式给较早 as_of（历史分析）才 fresh=False（不补未来）。
+        now = datetime.now(UTC)
+        is_live = as_of is None or as_of >= now - timedelta(seconds=_tf_seconds(timeframe) * 2)
+        as_of = as_of or now
         # 多拉 horizon + 60 根 warmup，保证有效性样本充足
         span_bars = lookback_bars + horizon_bars + 60
         from_ts = as_of - timedelta(seconds=_tf_seconds(timeframe) * span_bars)
