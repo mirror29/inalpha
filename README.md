@@ -14,7 +14,7 @@
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-C8463C.svg" alt="License" /></a>
-  <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--10-9E7B4B.svg" alt="Phase" />
+  <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--11-9E7B4B.svg" alt="Phase" />
   <img src="https://img.shields.io/badge/built%20with-Mastra%20%2B%20FastAPI-D4A744.svg" alt="Built with" />
   <img src="https://img.shields.io/badge/python-3.12+-1A1714.svg" alt="Python" />
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
@@ -43,7 +43,7 @@ Four capability lines sit on top of that harness:
 
 The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha** (the quant term for excess return).
 
-> **Status:** Inalpha is in **alpha** (Phase D-11 — multi-market paper trading: cross-currency cash + a live runner that auto-runs promoted strategies on live bars, on top of D-10 multi-market data and D-9 LLM-authored strategies + risk engine). Read the code, weigh in on design — **do not run this against real money yet**.
+> **Status:** Inalpha is in **alpha** (Phase D-11 — multi-market paper trading: cross-currency cash + a live runner that auto-runs promoted strategies on live bars, on top of D-10 multi-market data and D-9 LLM-authored strategies + risk engine). Read the code, weigh in on design — **do not run this against real money** (real-money trading is out of scope).
 
 ---
 
@@ -54,7 +54,7 @@ The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha*
 | **Discipline over vibes** | Hooks, permissions, plan-exec separation, and a one-shot approval token are declared in config — not in prompts. A failing guardrail has a single point of debug. |
 | **Agents are first-class** | Research, decision, risk, and review have dedicated agents — opposing stances, distinct toolsets, traceable decisions. Not a chat wrapper. |
 | **Transparency over precision** | Prefer an agent that says "I don't know" over one that sounds certain but cannot show its evidence. |
-| **Unified kernel** | One strategy codebase across backtest, paper, and live — swap the Clock and Gateway, not the logic. When behavior diverges, the cause is physical (slippage, latency, data precision), not "two code paths." |
+| **Unified kernel** | One strategy codebase across backtest and paper — swap the Clock and Gateway, not the logic. The kernel is same-code by design (the seam that would reach live is just a Gateway swap), but real-money live trading is out of scope. When behavior diverges, the cause is physical (slippage, latency, data precision), not "two code paths." |
 | **Long-horizon compounding** | Solid infrastructure before flashy features. Surviving long matters more than running fast. |
 
 ---
@@ -62,14 +62,14 @@ The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha*
 ## System Architecture
 
 <p align="center">
-  <img src="assets/agent-runtime.svg" alt="Inalpha system architecture" width="720" />
+  <img src="assets/architecture.png" alt="Inalpha system architecture" width="820" />
 </p>
 
 Four layers, top to bottom:
 
 - **L1 · User entry.** Today the user drives the system through the `mastra dev` playground or direct CLI tool calls. A dedicated web UI is deferred to Phase E+.
 - **L2 · `packages/orchestration` (Mastra · TypeScript).** Where agents, tools, hook/permission middleware, the in-memory plan store, conversation memory, and telemetry live side by side. This is the only layer LLMs run in.
-- **L3 · Python kernel services (FastAPI).** Each service is an independent, stateful process. Today: `services/data` (market data ingest + web search + financial fundamentals across A-shares / HK / US / global), `services/paper` (event-driven kernel running backtest, paper, and live on the same code), and `services/research` (initial multi-agent scaffolding; analysts pull fundamentals + web intel with fallback; the full bull/bear debate loop is slated for Phase E+). The asynchronous `Strategy Evolution` loop runs alongside.
+- **L3 · Python kernel services (FastAPI).** Each service is an independent, stateful process. Today: `services/data` (market data ingest + web search + financial fundamentals across A-shares / HK / US / global), `services/paper` (event-driven kernel running backtest and paper on the same code), `services/research` (initial multi-agent scaffolding; analysts pull fundamentals + web intel with fallback; the full bull/bear debate loop is slated for Phase E+), and `services/factor` (factor library — pandas-ta / Alpha101 / qlib — with IC effectiveness screening; signals only, no execution). The asynchronous `Strategy Evolution` loop runs alongside.
 - **L4 · Persistence & external.** Postgres + TimescaleDB stores all time-series and business state. External venues span crypto, US equities, A-shares, Hong Kong, major Asian and European markets, global indices, and FRED macro data — routed automatically by the orchestrator based on market classification.
 
 ### Strategy Evolution loop (Phase E+)
@@ -80,7 +80,7 @@ Four layers, top to bottom:
 
 The evolution loop runs asynchronously alongside the agent runtime, with winners promoted back into `services/paper` for backtest evaluation. Details — sandbox gates, fitness function, and the E1 → E4 ramp — live in [Core Capabilities §3](#3-strategy-evolution--strategies-that-improve-themselves-sandboxed) below.
 
-Both diagrams are rendered from D2 sources at [`assets/agent-runtime.d2`](assets/agent-runtime.d2) and [`assets/strategy-evolution.d2`](assets/strategy-evolution.d2). See [`docs/04-current-state.md`](docs/04-current-state.md) for the live module inventory and what's still in flight.
+Both diagrams are rendered from D2 sources at [`assets/architecture.d2`](assets/architecture.d2) and [`assets/strategy-evolution.d2`](assets/strategy-evolution.d2). See [`docs/04-current-state.md`](docs/04-current-state.md) for the live module inventory and what's still in flight.
 
 ---
 
@@ -143,9 +143,11 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 | ✅ Shipped | RiskGuard per-account isolation | D-9.1a | `RiskGuardFactory` removes cross-account state bleed |
 | ✅ Shipped | Multi-market data sources — web search + financial fundamentals | D-10 | zero-key DDGS web search · akshare (A-shares/HK) + yfinance (global) fundamentals · analyst integration + fallback · per-market lookbackDays |
 | ✅ Shipped | Risk engine — all 5 rules live in HTTP path | D-9 closed | `closed_trades` writes from HTTP order flow; `RoutingCalendar` for US equity + crypto; all trade-based rules trigger on real data |
-| ⏭️ In Flight | `askUserChoice` front-end | D-10 (issue #2) | brings the `ask` permission state back from workaround |
-| ⏭️ In Flight | `permissions.yaml` configuration | D-8b (issue #4) | replaces the hard-coded `defaults.ts` |
+| ✅ Shipped | `askUserChoice` — `ask` permission path | D-11 (issue #2) | pending-permission flow resolves the `ask` state (no longer a workaround) |
+| ✅ Shipped | `permissions.yaml` configuration | D-11 (issue #4) | `config/permissions.default.yaml` + `yaml_loader.ts` replace the hard-coded `defaults.ts` |
 | ✅ Shipped | Multi-market paper trading — live runner + multi-currency cash | D-11 | closed-bar `on_bar` → guarded plan/exec · per-currency cash buckets + FX-converted equity · D-11.1 trust-boundary hardening (candidate ownership check · per-account run cap · retryable-error split) |
+| ✅ Shipped | Factor library + IC effectiveness | D-11 | `services/factor` (pandas-ta / Alpha101 / qlib) · `factor.timing` / `.score` / `.catalog` · signals only, no execution |
+| ✅ Shipped | Live runner ops hardening | D-11.2 | net PnL (fees deducted) · runtime TTL auto-stop · build-phase backoff + error classification |
 | 🗓️ Planned | Strategy evolution — E2 | D-12 | multi-generation loop + MAP-Elites + Island Model + `unified-diff` mutations |
 | 🗓️ Planned | Research-hub nested supervisor | D-10+ | 4 analysts + bull/bear/risk debate as a single closed loop |
 | 🗓️ Planned | Factor discovery — L0 → L1 | D-11+ | walk-forward IC + multiple-testing correction + `factor_candidates` table |
@@ -200,7 +202,7 @@ Inalpha is not invented from scratch. It selectively inherits proven designs fro
 
 ```bash
 pnpm i      # Node packages (packages/orchestration)
-uv sync     # Python packages (services/_shared, data, paper, research)
+uv sync     # Python packages (services/_shared, data, paper, research, factor)
 ```
 
 ### 2 · Configure your LLM key (required)
@@ -232,7 +234,7 @@ Override the default model by setting `LLM_MODEL=...` in the same file. Mastra a
 ### 3 · Start everything
 
 ```bash
-bash scripts/dev.sh             # one shot — data (8001) + paper (8002) + research (8003) + mastra (4111)
+bash scripts/dev.sh             # one shot — data (8001) + paper (8002) + research (8003) + factor (8004) + mastra (4111)
 bash scripts/dev.sh logs        # follow service logs
 bash scripts/dev.sh stop        # stop everything
 ```
@@ -314,7 +316,7 @@ And to every quant researcher who refuses to accept opaque "AI signals" — this
 ---
 
 <div align="center">
-  <sub>💬 <a href="https://github.com/mirror29/inalpha/discussions"><strong>Discussions</strong></a> &nbsp;·&nbsp; 📬 <a href="https://inalpha.substack.com"><strong>Subscribe on Substack</strong></a> — engineering notes, ADRs, post-mortems</sub>
+  <sub>💬 <a href="https://github.com/mirror29/inalpha/discussions"><strong>Discussions</strong></a> &nbsp;·&nbsp; 📬 <a href="https://inalpha.substack.com"><strong>Subscribe on Substack</strong></a> &nbsp;·&nbsp; 📕 <a href="https://www.zhihu.com/column/c_2044821892738044718"><strong>知乎专栏</strong></a> — engineering notes, ADRs, post-mortems</sub>
 </div>
 
 <div align="center">
