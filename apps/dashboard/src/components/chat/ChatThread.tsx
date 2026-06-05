@@ -233,12 +233,14 @@ export function ChatThread({
     };
   }, [threadId, setMessages]);
 
-  // 打开历史下拉时拉列表。
+  // 每次点开历史下拉都重新拉列表:先清空回到 loading 态(不显示上次的旧列表),
+  // 再 no-store 强制走网络(避免浏览器缓存 GET),保证看到的是最新会话。
   useEffect(() => {
     if (!historyOpen) return;
     let cancelled = false;
     setHistoryError(false);
-    fetch("/api/chat/threads")
+    setThreads(null);
+    fetch("/api/chat/threads", { cache: "no-store" })
       .then((r) => r.json())
       .then((d: { threads?: ThreadSummary[]; sourceDown?: boolean }) => {
         if (cancelled) return;
