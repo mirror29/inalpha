@@ -733,6 +733,75 @@ async def test_ttl_disabled_when_zero_or_no_start(app_with_lifespan: Any) -> Non
     assert fresh["status"] == "running"  # 未被改动
 
 
+def test_classify_build_error_categories() -> None:
+    """build 错误分类：data 5xx→infra 重试 / 4xx→strategy 不重试 / RuntimeError→strategy / 其它→unknown。"""
+    from inalpha_paper.data_client import DataServiceError
+    from inalpha_paper.live_runner import _classify_build_error
+
+    # DataServiceError（status 502，含网络不可达）→ 退避重试
+    assert _classify_build_error(DataServiceError("unreachable")) == ("infra_unavailable", True)
+    # InalphaError 4xx（symbol 非法等确定性）→ 立即 errored
+    assert _classify_build_error(InalphaError("bad", status_code=400)) == ("strategy_error", False)
+    # RuntimeError（candidate 缺失 / AST / 契约）→ 立即 errored
+    assert _classify_build_error(RuntimeError("not promoted")) == ("strategy_error", False)
+    # 未知（DB 瞬时错等）→ 保守重试
+    assert _classify_build_error(ValueError("?")) == ("unknown", True)
+
+
+async def _noop_sleep(*_a: Any, **_kw: Any) -> None:
+    """monkeypatch asyncio.sleep：build 退避测试里跳过真等待。"""
+
+
+async def test_build_non_retryable_errors_immediately(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """build 抛不可重试错（策略代码 RuntimeError）→ 立即 errored，error_log 带 code=strategy_error（#41）。"""
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def boom(_run: Any) -> Any:
+        raise RuntimeError("candidate code failed AST audit")
+
+    monkeypatch.setattr(manager, "_build_session", boom)
+    await manager._run_loop(run)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    assert any(e.get("code") == "strategy_error" for e in (fresh["error_log"] or []))
+
+
+async def test_build_retryable_backs_off_then_errored(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """build 可重试错（data 不可达 502）→ 退避攒 streak 到上限 → errored，code=infra_unavailable（#41）。"""
+    from inalpha_paper.data_client import DataServiceError
+
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False, "live_max_error_streak": 2}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    calls = 0
+
+    async def flaky(_run: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        raise DataServiceError("data-service unreachable")
+
+    monkeypatch.setattr(manager, "_build_session", flaky)
+    monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", _noop_sleep)
+    await manager._run_loop(run)
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"
+    assert calls >= 2  # 退避重试过（不是一次就死）
+    assert any(e.get("code") == "infra_unavailable" for e in (fresh["error_log"] or []))
+
+
 async def test_restore_position_from_db_brings_session_to_position(
     app_with_lifespan: Any,
 ) -> None:

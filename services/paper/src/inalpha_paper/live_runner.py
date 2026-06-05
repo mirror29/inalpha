@@ -67,6 +67,26 @@ def _is_retryable(exc: BaseException) -> bool:
         return not (400 <= exc.status_code < 500)
     return True
 
+
+def _classify_build_error(exc: BaseException) -> tuple[str, bool]:
+    """build 阶段错误分类 → ``(reason_code, retryable)``，决定退避重试还是立即 errored（issue #41）。
+
+    - ``InalphaError`` 4xx（确定性：candidate 校验 / symbol 非法等）→ ``strategy_error`` 不重试
+    - ``InalphaError`` 5xx（含 ``DataServiceError`` status 502：data 不可达 / data 5xx）→
+      ``infra_unavailable`` 重试
+    - ``RuntimeError``（``_build_session`` 的 candidate 缺失 / 未 promote / AST / 契约错）→
+      ``strategy_error`` 不重试
+    - 其它（DB 瞬时错等未知）→ ``unknown``，保守重试
+    """
+    if isinstance(exc, InalphaError):
+        if 400 <= exc.status_code < 500:
+            return "strategy_error", False
+        return "infra_unavailable", True
+    if isinstance(exc, RuntimeError):
+        return "strategy_error", False
+    return "unknown", True
+
+
 _FEE_RATE = 0.001
 _LIVE_INITIAL_CASH = 10_000.0  # session 内部持仓视图用；真实现金在 DB 账户
 _LIVE_RUNNER_APPROVER = "system:live_runner"
@@ -176,14 +196,35 @@ class LiveRunnerManager:
                     conn, run_id,
                     "⚠ 风控不可用且 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false，本 run 在零风控下运行",
                 )
-        try:
-            session, warmup_ts = await self._build_session(run)
-        except Exception as e:
-            _logger.exception("live run %s: session build failed", run_id)
-            async with get_conn() as conn:
-                await runs_store.append_error_log(conn, run_id, f"build failed: {e}")
-                await runs_store.set_status(conn, run_id, "errored")
-            return
+        # build 退避（issue #41）：data 服务短暂不可用不该直接判死，退避重试；策略代码 /
+        # 配置确定性错（AST / 契约 / symbol 非法）则立即 errored，不浪费退避。
+        build_streak = 0
+        while True:
+            try:
+                session, warmup_ts = await self._build_session(run)
+                break
+            except asyncio.CancelledError:
+                raise  # stop() 触发，干净退出
+            except Exception as e:
+                code, retryable = _classify_build_error(e)
+                _logger.warning(
+                    "live run %s: build failed (code=%s, retryable=%s, streak=%d): %s",
+                    run_id, code, retryable, build_streak, e,
+                )
+                build_streak = build_streak + 1 if retryable else build_streak
+                # 不可重试 或 攒够 streak → errored；可重试 → 指数退避后重试。
+                if not retryable or build_streak >= self._settings.live_max_error_streak:
+                    async with get_conn() as conn:
+                        await runs_store.append_error_log(
+                            conn, run_id, f"build failed: {e}", code=code
+                        )
+                        await runs_store.set_status(conn, run_id, "errored")
+                    return
+                async with get_conn() as conn:
+                    await runs_store.append_error_log(
+                        conn, run_id, f"build retry {build_streak}: {e}", code=code
+                    )
+                await asyncio.sleep(min(2 ** build_streak, 60))
 
         # 预热已喂到 warmup_ts；从这之后的新 bar 才真处理，避免重复喂预热段。
         last_bar_ts: datetime | None = run.get("last_bar_ts") or warmup_ts
