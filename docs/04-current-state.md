@@ -293,6 +293,26 @@ live runner 是无人值守自动下单路径（CLAUDE.md 硬约束"信任边界
 
 ---
 
+## D-11.2（2026-06-05）live runner 运维收口 + PnL 净口径
+
+live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩余的几处隐患补齐：
+
+- **PnL 净口径**（#45）：`cumulative_pnl` 原是**毛盈亏**（已实现 + 未实现），手续费虽在
+  `fills` 阶段从 cash 扣，但没补回展示盈亏 → 高频策略 cumulative_pnl 虚高、看起来比真实
+  净值更赚。`_read_run_pnl_quote` 改为减去 run 期间手续费（`orders` 表 `SUM(fee) WHERE
+  status='FILLED'`，与已实现 / 未实现同计价货币一起折算）；dashboard 累计盈亏 label 标注
+  「净 / (net)」+ 决策时间线新增单笔 fee 列。
+- **运行时长 TTL auto-stop**（#44）：`INALPHA_LIVE_RUNNER_MAX_RUNTIME_S`（默认 0 = 不限），
+  run 自 `started_at` 起超时 → `_ttl_exceeded` 置 `stopped` + error_log，与回撤熔断同口径
+  （正常终态非 bug），防策略卡死 / 无限空跑的长尾僵尸 run。用现成 `started_at` 列，无迁移。
+- **build 阶段退避 + 错误分类**（#41）：build 失败原本裸 `except → errored`，分不清"data
+  服务暂时不可用"与"策略代码确定性错"。现按 `_classify_build_error` 分类：data 不可达 /
+  data 5xx（`DataServiceError` 502）→ `infra_unavailable` 退避重试；`InalphaError` 4xx /
+  策略代码 `RuntimeError`（AST / 契约 / candidate）→ `strategy_error` 立即 errored。
+  `error_log` 元素扩展为 `{ts, error, code}` 落分类（JSONB，无迁移）。
+
+---
+
 ## 未完成 / 下一步
 
 > 重心：模拟盘（paper）先于实盘（live）。
@@ -301,8 +321,13 @@ live runner 是无人值守自动下单路径（CLAUDE.md 硬约束"信任边界
 - **E2 多代演化**（issue #7 · ADR-0020）：MAP-Elites / Island Model（E1 MVP 已上）
 - **delegation hop**（issue #5 · ADR-0012 补丁）：sub-strategy 派生计划的转授权链
 
-> 已收口：RiskEngine 接入（#3）、权限 YAML 化（#4）、askUserChoice（#2）、
+> 已收口：paper live runner（#1，D-11）、PnL 净口径 / 运行时长 TTL / build 退避（#45 /
+> #44 / #41，D-11.2）、RiskEngine 接入（#3）、权限 YAML 化（#4）、askUserChoice（#2）、
 > trade_repo 默认化 + 全市场交易日历（#8）。
+
+live runner follow-up（非阻塞，待开）：轮询不感知交易时段（#48，休市空轮询浪费）、
+LIMIT 单不跨 bar 挂单（#47，当前即时 IOC 语义）；session 持仓 resume（#37.2）、
+#38 Phase F（沙盒子进程隔离 / service token audience）。
 
 多市场日历 follow-up（非阻塞）：盘前 / 盘后时段、指数映射表补全、深交所 XSHE /
 印度 XNSE 精确化（当前分别复用 XSHG / XBOM）。

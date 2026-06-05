@@ -140,7 +140,7 @@ export type ListCandidatesFilter = {
 // ────────────────────────────────────────────────────────────────────
 
 export type StrategyHint = {
-  family: "trend" | "mean_reversion" | "buy_hold" | "none";
+  family: "trend" | "mean_reversion" | "buy_hold" | "breakout" | "volatility" | "none";
   params: Record<string, unknown>;
   reasoning: string;
 };

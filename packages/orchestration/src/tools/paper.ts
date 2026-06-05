@@ -179,7 +179,14 @@ export const paperRunBacktestTool = createTool({
 // ────────────────────────────────────────────────────────────────────
 
 const StrategyHintSchema = z.object({
-  family: z.enum(["trend", "mean_reversion", "buy_hold", "none"]),
+  family: z.enum([
+    "trend",
+    "mean_reversion",
+    "buy_hold",
+    "breakout",
+    "volatility",
+    "none",
+  ]),
   params: z.record(z.string(), z.unknown()).default({}),
   reasoning: z.string().default(""),
 });

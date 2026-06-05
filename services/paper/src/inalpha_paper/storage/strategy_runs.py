@@ -82,6 +82,7 @@ async def list_by_account(
     account_id: UUID,
     *,
     status: str | None = None,
+    limit: int = 200,
 ) -> list[dict[str, Any]]:
     sql = (
         "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
@@ -92,7 +93,10 @@ async def list_by_account(
     if status is not None:
         sql += " AND status = %s"
         args.append(status)
-    sql += " ORDER BY started_at DESC"
+    # 兜底上限:run 历史会随时间无界增长，dashboard 每 6s 轮询全量会越来越重。
+    # 按 started_at DESC 取最近 limit 条（最新的 run 最相关）。
+    sql += " ORDER BY started_at DESC LIMIT %s"
+    args.append(limit)
     async with conn.cursor() as cur:
         await cur.execute(sql, tuple(args))
         rows = await cur.fetchall()
@@ -158,18 +162,24 @@ async def update_progress(
             )
 
 
-async def append_error_log(conn: AsyncConnection, run_id: UUID, error: str) -> None:
-    """往 error_log JSONB 数组追加一条 ``{ts, error}``。"""
+async def append_error_log(
+    conn: AsyncConnection, run_id: UUID, error: str, *, code: str | None = None
+) -> None:
+    """往 error_log JSONB 数组追加一条 ``{ts, error, code}``（``code`` 为错误分类，issue #41）。
+
+    ``code`` 为 ``None`` 时写 JSON ``null``（结构仍统一）；build 阶段的可重试 / 不可重试
+    分类见 ``live_runner._classify_build_error``（infra_unavailable / strategy_error / unknown）。
+    """
     async with conn.cursor() as cur:
         await cur.execute(
             """
             UPDATE strategy_runs
             SET error_log = error_log || jsonb_build_array(
-                    jsonb_build_object('ts', NOW()::text, 'error', %s::text)
+                    jsonb_build_object('ts', NOW()::text, 'error', %s::text, 'code', %s::text)
                 )
             WHERE id = %s
             """,
-            (error, str(run_id)),
+            (error, code, str(run_id)),
         )
 
 

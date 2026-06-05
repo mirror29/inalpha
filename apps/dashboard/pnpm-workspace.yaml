@@ -1,0 +1,10 @@
+# pnpm 11 用 `allowBuilds`（布尔 map）批准依赖 build script。全设 true 让
+# @parcel/watcher / @swc/core / sharp / esbuild 的 build script 正常执行；否则被判
+# ignored，`pnpm install` 在 CI（CI=true 严格模式）因 ERR_PNPM_IGNORED_BUILDS exit 1。
+# 本仓 .gitignore 默认忽略 pnpm-workspace.yaml，dashboard 用 `!` 例外提交此文件。
+allowBuilds:
+  '@parcel/watcher': true
+  '@swc/core': true
+  sharp: true
+  esbuild: true
+verifyDepsBeforeRun: false

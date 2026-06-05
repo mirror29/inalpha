@@ -29,6 +29,12 @@ import {
   paperStopStrategyTool,
   paperTools,
 } from "./paper.js";
+import {
+  factorCatalogTool,
+  factorScoreTool,
+  factorTimingTool,
+  factorTools,
+} from "./factor.js";
 import { researchDeepDiveTool, researchTools } from "./research.js";
 import {
   riskDescribeRulesTool,
@@ -72,6 +78,9 @@ export {
   dataGetFundamentalsTool,
   dataGetTickerTool,
   executeTradePlanTool,
+  factorCatalogTool,
+  factorScoreTool,
+  factorTimingTool,
   getTradePlanTool,
   paperAuthorStrategyTool,
   paperComposeStrategyTool,
@@ -114,6 +123,8 @@ export const allTools = [
   ...paperAuthoringTools,
   ...tradePlanTools,
   ...researchTools,
+  // 接现成因子库 + 有效性择时（docs/miro/11）
+  ...factorTools,
   ...swarmTools,
   ...schedulerTools,
   ...sandboxTools,
@@ -172,6 +183,10 @@ export const orchestratorToolList = [
   paperHealthTool,
   // 研究
   researchDeepDiveTool,
+  // 接现成因子库（docs/miro/11）：有效因子择时 + 目录 + 深挖打分
+  factorTimingTool,
+  factorScoreTool,
+  factorCatalogTool,
   // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
   paperComposeStrategyTool,
   paperListBacktestRunsTool,

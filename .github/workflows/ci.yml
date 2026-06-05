@@ -67,12 +67,38 @@ jobs:
       - name: Static export build
         run: pnpm build
 
+  dashboard-typecheck:
+    name: dashboard · typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      # 钉 11.1.2（= packageManager）：`version: 11` 取最新 11.x 不认 package.json 的
+      # pnpm.onlyBuiltDependencies → @swc/core/sharp/@parcel-watcher build script 被判
+      # ignored 后 install exit 1。11.1.2 认该字段（全新 store 实测 exit 0）。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: apps/dashboard/pnpm-lock.yaml
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm typecheck
+      - name: Build (Next.js dynamic app)
+        run: pnpm build
+
   python-services-lint:
     name: python services · ruff + mypy
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [data, paper, research]
+        service: [data, paper, research, factor]
     steps:
       - uses: actions/checkout@v4
       - name: Install uv

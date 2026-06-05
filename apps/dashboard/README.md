@@ -2,7 +2,6 @@
 
 Inalpha 的**只读运行时看板**——把"原本要问 agent 才知道的状态"(账户/持仓/Live Runner/Agent 活动/回测史)变成一眼可见的盘面。
 
-> 设计文档:`docs/miro/14-observability-dashboard-design.md`
 > 定位:开发/操作者控制台(单用户 · dev token),**不是**多租户产品。当前已落地:**组合总览 MVP**。
 
 ## 与官网(apps/web)的关系

@@ -20,14 +20,18 @@ alpha 的定义 = candidate.fitness 显著高于 baseline.fitness（buy_and_hold
 本注册表**不**应再积累更多策略——具体行情下的策略请走 author / signal_replay 路径。
 """
 from ..strategy.base import Strategy
+from .atr_channel import ATRChannelStrategy
 from .buy_and_hold import BuyAndHoldStrategy
+from .donchian_breakout import DonchianBreakoutStrategy
 from .mean_reversion import MeanReversionStrategy
 from .signal_replay import SignalReplayStrategy
 from .sma_cross import SMACrossStrategy
 
 __all__ = [
     "BASELINE_BUY_AND_HOLD",
+    "ATRChannelStrategy",
     "BuyAndHoldStrategy",
+    "DonchianBreakoutStrategy",
     "MeanReversionStrategy",
     "SMACrossStrategy",
     "SignalReplayStrategy",
@@ -44,6 +48,9 @@ _BASELINES: dict[str, type[Strategy]] = {
     BASELINE_BUY_AND_HOLD: BuyAndHoldStrategy,
     "sma_cross": SMACrossStrategy,
     "mean_reversion": MeanReversionStrategy,
+    # docs/miro/11 M4：给 compose 的 breakout / volatility family 可路由出口（基线 / 教学）
+    "donchian_breakout": DonchianBreakoutStrategy,
+    "atr_channel": ATRChannelStrategy,
     # D-9 sandbox spike：把 LLM 在沙盒生成的 signals 重放进 BacktestEngine（轻量 candidate 路径）
     "signal_replay": SignalReplayStrategy,
 }

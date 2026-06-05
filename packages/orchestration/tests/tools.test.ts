@@ -10,6 +10,9 @@ import { setSettings, clearSettings } from "../src/config.js";
 import {
   dataBackfillBarsTool,
   dataGetBarsTool,
+  factorCatalogTool,
+  factorScoreTool,
+  factorTimingTool,
   paperListStrategiesTool,
   paperListStrategyRunDecisionsTool,
   paperListStrategyRunsTool,
@@ -26,6 +29,7 @@ beforeEach(() => {
     dataServiceUrl: "http://data-mock.test",
     paperServiceUrl: "http://paper-mock.test",
     researchServiceUrl: "http://research-mock.test",
+    factorServiceUrl: "http://factor-mock.test",
     jwtSecret: "test-secret-32-chars-or-more-xxxxxxx",
     jwtAlgorithm: "HS256",
   });
@@ -419,6 +423,129 @@ describe("research.deep_dive", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
+// factor.* —— 接现成因子库（docs/miro/11）
+// ────────────────────────────────────────────────────────────────────
+
+describe("factor.timing / score / catalog", () => {
+  it("factor.timing POSTs to factor-service /snapshot with snake_case body", async () => {
+    let capturedUrl = "";
+    let capturedBody = "";
+    mockFetch(async (url, init) => {
+      capturedUrl = url;
+      capturedBody = (init?.body as string) ?? "";
+      return new Response(
+        JSON.stringify({
+          venue: "binance",
+          symbol: "BTC/USDT",
+          timeframe: "1h",
+          as_of: "2026-06-01T00:00:00Z",
+          horizon_bars: 5,
+          bars_used: 800,
+          available: true,
+          reason: null,
+          top_factors: [
+            {
+              factor_id: "pandas_ta.rsi_14",
+              source: "pandas_ta",
+              name: "RSI(14)",
+              kind: "mean_reversion",
+              value: 58.2,
+              rank_ic: -0.04,
+              icir: -0.8,
+              sample_size: 700,
+              quantile_returns: [],
+              long_short_return: -0.01,
+              direction: -1,
+              strength: 0.8,
+              low_confidence: false,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const result = (await factorTimingTool.execute!(
+      {
+        venue: "binance",
+        symbol: "BTC/USDT",
+        timeframe: "1h",
+        lookbackBars: 720,
+        horizonBars: 5,
+        topN: 8,
+      } as never,
+      ctx(),
+    )) as { available: boolean; top_factors: { factor_id: string; direction: number }[] };
+
+    expect(capturedUrl).toContain("/snapshot");
+    expect(capturedUrl).toContain("factor-mock.test");
+    const body = JSON.parse(capturedBody);
+    expect(body.lookback_bars).toBe(720);
+    expect(body.horizon_bars).toBe(5);
+    expect(body.top_n).toBe(8);
+    expect(result.available).toBe(true);
+    expect(result.top_factors[0].factor_id).toBe("pandas_ta.rsi_14");
+    expect(result.top_factors[0].direction).toBe(-1);
+  });
+
+  it("factor.score POSTs to /score with factorIds → factor_ids", async () => {
+    let capturedUrl = "";
+    let capturedBody = "";
+    mockFetch(async (url, init) => {
+      capturedUrl = url;
+      capturedBody = (init?.body as string) ?? "";
+      return new Response(
+        JSON.stringify({
+          venue: "binance",
+          symbol: "BTC/USDT",
+          timeframe: "1h",
+          as_of: "2026-06-01T00:00:00Z",
+          horizon_bars: 5,
+          bars_used: 800,
+          factors: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    await factorScoreTool.execute!(
+      {
+        venue: "binance",
+        symbol: "BTC/USDT",
+        timeframe: "1h",
+        factorIds: ["pandas_ta.rsi_14", "qlib.kmid"],
+      } as never,
+      ctx(),
+    );
+
+    expect(capturedUrl).toContain("/score");
+    expect(JSON.parse(capturedBody).factor_ids).toEqual(["pandas_ta.rsi_14", "qlib.kmid"]);
+  });
+
+  it("factor.catalog GETs /catalog", async () => {
+    let capturedUrl = "";
+    mockFetch(async (url) => {
+      capturedUrl = url;
+      return new Response(
+        JSON.stringify({ factors: [], sources: { pandas_ta: true, qlib_alpha158: false } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const result = (await factorCatalogTool.execute!({} as never, ctx())) as {
+      sources: Record<string, boolean>;
+    };
+    expect(capturedUrl).toContain("/catalog");
+    expect(result.sources.pandas_ta).toBe(true);
+  });
+
+  it("rejects bad symbol via schema", () => {
+    const r = factorTimingTool.inputSchema!.safeParse({ symbol: "bad symbol", timeframe: "1h" });
+    expect(r.success).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
 // D-11 · live runner tools
 // ────────────────────────────────────────────────────────────────────
 
@@ -505,5 +632,52 @@ describe("paper.start_strategy / stop / list", () => {
     await paperListStrategyRunDecisionsTool.execute!({ runId, limit: 50 } as never, ctx());
     expect(capturedUrl).toContain(`/strategy_runs/${runId}/decisions`);
     expect(capturedUrl).toContain("limit=50");
+  });
+
+  // D-11.1：起跑信任边界 / 资源护栏的错误码原样透传给 agent（issue #36.1 / #36.2）
+  it("start_strategy 透传 403 CANDIDATE_NOT_OWNED（挂别人的 candidate）", async () => {
+    mockFetch(async () =>
+      new Response(
+        JSON.stringify({
+          code: "CANDIDATE_NOT_OWNED",
+          message: "candidate is owned by another account",
+          details: { candidate_id: "550e8400-e29b-41d4-a716-446655440000" },
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(
+      paperStartStrategyTool.execute!(
+        {
+          candidateId: "550e8400-e29b-41d4-a716-446655440000",
+          venue: "binance", symbol: "BTC/USDT", timeframe: "1h",
+        } as never,
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: "CANDIDATE_NOT_OWNED", status: 403 });
+  });
+
+  it("start_strategy 透传 429 TOO_MANY_RUNNING_RUNS（超 per-account 上限）", async () => {
+    mockFetch(async () =>
+      new Response(
+        JSON.stringify({
+          code: "TOO_MANY_RUNNING_RUNS",
+          message: "account already has 10 running strategy_runs (limit 10)",
+          details: { running: 10, limit: 10 },
+        }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(
+      paperStartStrategyTool.execute!(
+        {
+          candidateId: "550e8400-e29b-41d4-a716-446655440003",
+          venue: "binance", symbol: "ETH/USDT", timeframe: "1h",
+        } as never,
+        ctx(),
+      ),
+    ).rejects.toMatchObject({ code: "TOO_MANY_RUNNING_RUNS", status: 429 });
   });
 });

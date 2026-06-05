@@ -100,3 +100,32 @@ async def list_by_account(
         await cur.execute(sql, tuple(params))
         rows = await cur.fetchall()
     return list(rows)  # type: ignore[arg-type]
+
+
+async def sum_fees(
+    conn: AsyncConnection,
+    *,
+    account_id: UUID,
+    venue: str,
+    symbol: str,
+    since: datetime,
+) -> Decimal:
+    """某 (account, venue, symbol) 自 ``since`` 起的累计手续费（**计价货币 / quote currency**）。
+
+    live run ``cumulative_pnl`` 的净盈亏口径用此减项：``realized(毛) + unrealized(毛) - fees``。
+    手续费在成交时已从 cash 桶扣（``fills.apply_fill_to_positions_and_cash``），但
+    ``close_profit_abs`` / 未实现盈亏都是**毛口径**，不减费——展示盈亏因此对高频策略虚高
+    （issue #45 follow-up）。这里把 run 期间手续费补回净盈亏。
+
+    只统计 ``status='FILLED'``（REJECTED 单 fee=0，过滤更稳）；无单返 ``Decimal(0)``。
+    与 ``closed_trades.sum_realized`` 同 run-scope 近似（同 symbol、``ts_event >= run.started_at``）。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT COALESCE(SUM(fee), 0) AS fees FROM orders "
+            "WHERE account_id = %s AND venue = %s AND symbol = %s "
+            "AND status = 'FILLED' AND ts_event >= %s",
+            (str(account_id), venue, symbol, since),
+        )
+        row = await cur.fetchone()
+    return Decimal(str(row["fees"])) if row else Decimal(0)  # type: ignore[index]

@@ -13,7 +13,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import tokenize
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -21,8 +23,39 @@ from psycopg import AsyncConnection
 
 
 def compute_code_hash(code: str) -> str:
-    """sha256(code) 前 16 hex 用于 UNIQUE 去重。"""
+    """sha256(code) 前 16 hex 用于 UNIQUE 精确去重。"""
     return hashlib.sha256(code.encode("utf-8")).hexdigest()[:16]
+
+
+def compute_structure_hash(code: str) -> str:
+    """结构指纹：剥注释 + 归一空白后再 hash（docs/miro/11 M4）。
+
+    挡"逻辑/字面量完全一样、只是改了注释 / 缩进 / 空行 / 引号风格"的伪多样性
+    candidate —— LLM 反复产出这种"看似不同实则同款"的策略是"来回就那几个"的一个来源。
+
+    **保守**：只归一注释与空白，**保留** NAME / NUMBER / STRING 字面量（变量名、参数数值、
+    字符串都参与指纹），避免把"结构相同但参数不同"的真·不同策略误并。tokenize 失败
+    （理论上 candidate 已过 AST 审计能解析）时回退到 raw code hash，不抛。
+    """
+    try:
+        toks: list[str] = []
+        readline = io.StringIO(code).readline
+        for tok in tokenize.generate_tokens(readline):
+            if tok.type in (
+                tokenize.COMMENT,
+                tokenize.NL,
+                tokenize.NEWLINE,
+                tokenize.INDENT,
+                tokenize.DEDENT,
+                tokenize.ENCODING,
+                tokenize.ENDMARKER,
+            ):
+                continue
+            toks.append(f"{tok.type}:{tok.string}")
+        canonical = "".join(toks)
+    except Exception:
+        canonical = code
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 async def insert_candidate(
@@ -42,11 +75,19 @@ async def insert_candidate(
         返回的是老 ID（幂等）。
 
     幂等理由：LLM 经常重复写相同策略；调用方应当作"获取或新建"语义用。
+
+    docs/miro/11 M4：除 ``code_hash`` 精确去重，再加**结构指纹**去重——剥注释/空白后
+    相同则视为同款（挡"只改注释/缩进"的伪多样性）。结构指纹存进 ``audit.structure_hash``
+    JSONB（复用现有列，无需 migration），不命中精确 hash 时再按它查一次。
     """
     code_hash = compute_code_hash(code)
-    audit_json = json.dumps(audit, default=str) if audit is not None else None
+    structure_hash = compute_structure_hash(code)
+    # 结构指纹并进 audit（复用现有 JSONB 列，免 migration）
+    audit_with_struct: dict[str, Any] = dict(audit) if audit else {}
+    audit_with_struct["structure_hash"] = structure_hash
+    audit_json = json.dumps(audit_with_struct, default=str)
 
-    # 先查
+    # 先查精确 hash，再查结构指纹
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id FROM strategy_candidates WHERE code_hash = %s",
@@ -55,8 +96,19 @@ async def insert_candidate(
         row = await cur.fetchone()
         if row is not None:
             return row["id"], False
+        await cur.execute(
+            "SELECT id FROM strategy_candidates WHERE audit->>'structure_hash' = %s LIMIT 1",
+            (structure_hash,),
+        )
+        row = await cur.fetchone()
+        if row is not None:
+            return row["id"], False
 
-    # 不存在 → 写
+    # 不存在 → 写。用 ON CONFLICT (code_hash) DO NOTHING RETURNING id 兜并发竞态：
+    # check-then-insert 之间另一并发事务（live runner 回跑 + 前端手动提交同代码）可能抢先
+    # INSERT，裸 INSERT 会撞 code_hash UNIQUE 抛 UniqueViolation → 上层 500 → agent 误判失败重试。
+    # 改为 DO NOTHING：插入成功返新 id（created=True）；被抢则 RETURNING 空 → 查回已有行（幂等）。
+    # 注：structure_hash 是软去重（无 UNIQUE 约束），其竞态最坏只多落一行同款，可接受。
     candidate_id = uuid4()
     async with conn.cursor() as cur:
         await cur.execute(
@@ -65,6 +117,8 @@ async def insert_candidate(
                 id, code, code_hash, description, author, author_id,
                 owner_account_id, audit
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (code_hash) DO NOTHING
+            RETURNING id
             """,
             (
                 str(candidate_id),
@@ -77,6 +131,18 @@ async def insert_candidate(
                 audit_json,
             ),
         )
+        inserted = await cur.fetchone()
+        if inserted is not None:
+            return inserted["id"], True
+        # 并发竞态：同 code_hash 已被另一事务插入 → 查回已有行，当作"获取"语义返回
+        await cur.execute(
+            "SELECT id FROM strategy_candidates WHERE code_hash = %s",
+            (code_hash,),
+        )
+        row = await cur.fetchone()
+        if row is not None:
+            return row["id"], False
+    # 理论不可达（DO NOTHING 未插却又查不到）；兜底返本地 id 防 None
     return candidate_id, True
 
 

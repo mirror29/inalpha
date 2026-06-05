@@ -83,8 +83,11 @@ FactorKind = Literal["momentum", "mean_reversion", "volatility", "macro", "senti
 
 Horizon = Literal["intraday", "swing", "position"]
 
-StrategyFamily = Literal["trend", "mean_reversion", "buy_hold", "none"]
-"""策略族。``none`` 表示因子不支持任何已注册策略族，由 compose 引擎拒绝。"""
+StrategyFamily = Literal[
+    "trend", "mean_reversion", "buy_hold", "breakout", "volatility", "none"
+]
+"""策略族。docs/miro/11 M4 起加 breakout（Donchian 通道突破）/ volatility（ATR 通道）。
+``none`` 表示因子不支持任何已注册策略族，由 compose 引擎拒绝。"""
 
 
 class Factor(BaseModel):

@@ -97,17 +97,21 @@ Return ONLY a JSON object with this exact shape:
   }
 }
 
-Rules for strategy_hint:
-- "trend"          — pick when momentum factors dominate (SMA cross, breakout, MACD)
-- "mean_reversion" — pick when oscillator extremes + low recent trend (RSI extreme, BB squeeze)
-- "buy_hold"      — pick for strong long-horizon macro thesis + no near-term technical edge
-- "none"          — pick when factors disagree too much or rating is "neutral" with low confidence
+Rules for strategy_hint (pick the family that best matches the DOMINANT factor mix —
+do NOT default to "trend"; diversify based on what the factors actually say):
+- "trend"          — momentum/MA factors dominate with a steady directional drift (SMA cross, MACD)
+- "mean_reversion" — oscillator extremes + low recent trend (RSI extreme, BB %B at edges)
+- "breakout"       — price compressing then a clear range break / new N-bar high (Donchian channel)
+- "volatility"     — volatility regime expanding (ATR rising); want channel-breakout sizing (ATR/Keltner)
+- "buy_hold"       — strong long-horizon macro thesis + no near-term technical edge
+- "none"           — factors disagree too much, or rating "neutral" with low confidence
 
-Rules for params:
+Rules for params (pick concrete numbers, not ranges; trade_size scales with confidence × signal strength):
 - trend          : { fast_period: 5-20, slow_period: 20-60, trade_size: 0.01-0.05 }
 - mean_reversion : { period: 10-30, num_std: 1.5-2.5, trade_size: 0.01-0.05 }
+- breakout       : { channel_period: 10-55, exit_period: 5-30, trade_size: 0.01-0.05 }
+- volatility     : { period: 10-40, atr_mult: 1.0-4.0, trade_size: 0.01-0.05 }
 - buy_hold       : { trade_size: 0.5-1.0 (fraction of cash) }
-- Pick concrete numbers, not ranges. trade_size should scale with confidence and signal strength.
 
 Reconciliation rules:
 - If analysts disagree strongly, prefer "neutral" + low confidence + strategy_hint.family == "none"
@@ -369,6 +373,7 @@ def _parse_strategy_hint(
     - rating == "neutral" 且 confidence < 0.6   → family = none
     - factor 主导类 = momentum                  → trend
     - factor 主导类 = mean_reversion            → mean_reversion
+    - factor 主导类 = volatility                → volatility（ATR 通道）
     - factor 主导类 = macro / sentiment         → buy_hold
     - 其它                                       → none
     """
@@ -397,6 +402,10 @@ def _parse_strategy_hint(
         family = "mean_reversion"
         params = {"period": 20, "num_std": 2.0, "trade_size": 0.02}
         reasoning = "fallback: mean_reversion-dominant factors → mean_reversion family"
+    elif dominant == "volatility":
+        family = "volatility"
+        params = {"period": 20, "atr_mult": 2.0, "trade_size": 0.02}
+        reasoning = "fallback: volatility-dominant factors → volatility (ATR channel) family"
     elif dominant in ("macro", "sentiment"):
         family = "buy_hold"
         params = {"trade_size": 0.5}

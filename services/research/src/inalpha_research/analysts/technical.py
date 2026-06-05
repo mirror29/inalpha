@@ -30,6 +30,15 @@ to the market's micro-structure conventions:
 
 Use **only price action and technicals** —— do not invoke fundamentals or news.
 
+You may also receive an ``effective_factors`` block: factors from a factor library
+(pandas-ta / Alpha101 / qlib) **ranked by their measured predictive power** on this exact
+symbol/timeframe — each has a current ``value``, ``rank_ic`` (time-series Rank IC vs forward
+return; sign = direction), ``direction`` (+1 long / -1 short / 0), and ``strength`` (0-1).
+When this block is present, **prefer it over the raw indicator_snapshot** and ground your
+factors/stance in the factors that actually have predictive power (high |rank_ic|). When it
+is absent or empty, fall back to reading the indicator_snapshot yourself. Never invent
+rank_ic numbers — only cite what is given.
+
 Return ONLY a JSON object with this exact shape:
 
 {
@@ -87,12 +96,17 @@ class TechnicalAnalyst(Analyst):
             limit=2_000,
         )
 
-        # 提炼最近 N 根 + 算几个粗指标喂给 LLM
+        # 提炼最近 N 根 + 算几个粗指标喂给 LLM（factor 服务不可用时的兜底）
         recent = bars[-60:]
         closes = [float(b["close"]) for b in recent]
         snapshot = _build_indicator_snapshot(closes)
 
         market_type = infer_asset_type(venue=venue, symbol=symbol)
+
+        # 接现成因子库（docs/miro/11）：取"经前瞻收益/IC 验证有效"的因子排序，优先喂这块
+        effective_factors, factor_status = await self._fetch_effective_factors(
+            venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
+        )
 
         return _format_user_prompt(
             venue=venue,
@@ -103,7 +117,33 @@ class TechnicalAnalyst(Analyst):
             recent=recent,
             snapshot=snapshot,
             market_type=market_type,
+            effective_factors=effective_factors,
+            factor_status=factor_status,
         )
+
+    async def _fetch_effective_factors(
+        self, *, venue: str, symbol: str, timeframe: str, as_of: datetime
+    ) -> tuple[list[dict[str, Any]], str]:
+        """返回 ``(top 有效因子, 状态)``。状态用于区分两种"空列表"，避免误导：
+
+        - ``"unavailable"``：无 factor client 或 factor-service 不可达 → 真·降级
+        - ``"insufficient"``：服务**正常**但样本不足 / 没有因子过有效性阈值
+          （``available=True`` 但 ``top_factors=[]``，典型：新标的历史 < ~120 根）
+        - ``"ok"``：有有效因子
+
+        修复点：之前两种都返空 list → prompt 一律说"factor library unavailable"，
+        让 agent/用户误以为服务挂了（实际只是数据不够）。
+        """
+        if self._factor is None:
+            return [], "unavailable"
+        snap = await self._factor.get_snapshot(
+            venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
+        )
+        if not snap.get("available"):
+            return [], "unavailable"
+        factors = snap.get("top_factors")
+        factors = factors if isinstance(factors, list) else []
+        return (factors, "ok") if factors else ([], "insufficient")
 
 
 def _build_indicator_snapshot(closes: list[float]) -> dict[str, Any]:
@@ -166,6 +206,8 @@ def _format_user_prompt(
     recent: list[dict[str, Any]],
     snapshot: dict[str, Any],
     market_type: str,
+    effective_factors: list[dict[str, Any]] | None = None,
+    factor_status: str = "unavailable",
 ) -> str:
     """简洁、tokens 友好的格式。"""
     last_lines = "\n".join(
@@ -179,7 +221,53 @@ def _format_user_prompt(
         f"timeframe: {timeframe}\n"
         f"as_of: {as_of.isoformat()}\n"
         f"bars_total: {num_bars}\n\n"
+        f"{_format_effective_factors(effective_factors, factor_status)}"
         f"indicator_snapshot:\n  {snapshot}\n\n"
         f"last_10_bars:\n{last_lines}\n\n"
         f"Output the required JSON only."
+    )
+
+
+def _as_float(v: Any) -> float:
+    """容错转 float：None / 非数值 / NaN-ish 一律兜底 0.0，避免格式化时 TypeError。"""
+    try:
+        return float(v) if v is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _format_effective_factors(
+    factors: list[dict[str, Any]] | None, status: str = "unavailable"
+) -> str:
+    """渲染有效因子块（factor-service 给的真因子值 + 有效性）。
+
+    空列表分两种、给**不同**提示，避免把"数据不足"误报成"服务挂了"（CR major fix）：
+    - status == "insufficient"：服务正常但样本不够 / 无因子过有效性阈值
+    - 其它（unavailable / 无 client / 不可达）：真·降级
+    """
+    if not factors:
+        if status == "insufficient":
+            return (
+                "effective_factors: (factor service ran but no factor passed the effectiveness "
+                "threshold — likely insufficient price history; read indicator_snapshot below)\n\n"
+            )
+        return (
+            "effective_factors: (factor library unavailable — read indicator_snapshot below)\n\n"
+        )
+    lines = []
+    for f in factors:
+        # 防御：缺字段 / null（factor-service 跨版本灰度时 snapshot 可能缺 rank_ic 等）
+        # 直接 `f.get('rank_ic'):.3f` 在 None 上会 TypeError 崩掉整条 deep_dive。
+        rank_ic = _as_float(f.get("rank_ic"))
+        strength = _as_float(f.get("strength"))
+        lines.append(
+            f"  - {f.get('name')} [{f.get('kind')}] "
+            f"value={f.get('value')} rank_ic={rank_ic:.3f} "
+            f"dir={f.get('direction')} strength={strength:.2f}"
+        )
+    body = "\n".join(lines)
+    return (
+        "effective_factors (ranked by measured predictive power on this symbol/timeframe; "
+        "prefer these over raw indicators):\n"
+        f"{body}\n\n"
     )

@@ -16,6 +16,10 @@ coverage/
 .pnpm-store/
 # pnpm auto-generates a placeholder here, but Inalpha is not a monorepo (sub-packages each manage their own pnpm-lock)
 pnpm-workspace.yaml
+# 例外：dashboard 必须提交 pnpm-workspace.yaml —— 放 onlyBuiltDependencies 批准
+# @swc/core / sharp / @parcel/watcher 的 build script。pnpm 11 只从这里读（不读 package.json
+# 的 pnpm 字段），CI（Linux）缺它会在 install 阶段因 ERR_PNPM_IGNORED_BUILDS exit 1。
+!apps/dashboard/pnpm-workspace.yaml
 
 # Python
 __pycache__/

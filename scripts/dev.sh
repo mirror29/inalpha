@@ -15,6 +15,7 @@
 #   8001  services/data       (FastAPI + uvicorn)  GET /health
 #   8002  services/paper      (FastAPI + uvicorn)  GET /health
 #   8003  services/research   (FastAPI + uvicorn)  GET /health
+#   8004  services/factor     (FastAPI + uvicorn)  GET /health
 #   4111  mastra dev          (默认端口)            TCP connect
 #
 # 前置条件:
@@ -103,7 +104,7 @@ wait_tcp_open() {
 
 precheck_ports() {
     local conflict=0
-    for entry in "data:8001" "paper:8002" "research:8003" "orchestration:4111"; do
+    for entry in "data:8001" "paper:8002" "research:8003" "factor:8004" "orchestration:4111"; do
         local name="${entry%%:*}"
         local port="${entry##*:}"
         local owner
@@ -158,7 +159,7 @@ verify_ready() {
     # 超时各自不同: data 60s (Postgres + Binance lifespan 慢), paper 30s, research 30s, mastra 90s
     local all_ok=1
     echo ""
-    echo "[wait] 验证 service 就绪 (data 60s · paper 30s · research 30s · mastra 90s)..."
+    echo "[wait] 验证 service 就绪 (data 60s · paper 30s · research 30s · factor 30s · mastra 90s)..."
 
     if wait_http_ok "http://127.0.0.1:8001/health" 60; then
         echo "  ✓ data        http://127.0.0.1:8001/health"
@@ -178,6 +179,13 @@ verify_ready() {
         echo "  ✓ research    http://127.0.0.1:8003/health"
     else
         echo "  ✗ research    未就绪 — 看 ${LOG_DIR}/research.log"
+        all_ok=0
+    fi
+
+    if wait_http_ok "http://127.0.0.1:8004/health" 30; then
+        echo "  ✓ factor      http://127.0.0.1:8004/health"
+    else
+        echo "  ✗ factor      未就绪 — 看 ${LOG_DIR}/factor.log"
         all_ok=0
     fi
 
@@ -232,7 +240,7 @@ follow_logs() {
 
 status_report() {
     echo "=== 端口占用 ==="
-    for entry in "data:8001" "paper:8002" "research:8003" "orchestration:4111"; do
+    for entry in "data:8001" "paper:8002" "research:8003" "factor:8004" "orchestration:4111"; do
         local name="${entry%%:*}"
         local port="${entry##*:}"
         local owner
@@ -262,6 +270,11 @@ status_report() {
     else
         echo "  ✗ research  not ready"
     fi
+    if curl -fsS -o /dev/null --max-time 1 "http://127.0.0.1:8004/health" 2>/dev/null; then
+        echo "  ✓ factor    http://127.0.0.1:8004/health"
+    else
+        echo "  ✗ factor    not ready"
+    fi
     if (echo > "/dev/tcp/127.0.0.1/4111") 2>/dev/null; then
         echo "  ✓ mastra    http://127.0.0.1:4111 (TCP open)"
     else
@@ -283,6 +296,9 @@ case "$CMD" in
         start_service "research" \
             "${ROOT}/services/research" \
             "uv run uvicorn inalpha_research.main:app --host 127.0.0.1 --port 8003 --reload"
+        start_service "factor" \
+            "${ROOT}/services/factor" \
+            "uv run uvicorn inalpha_factor.main:app --host 127.0.0.1 --port 8004 --reload"
         start_service "orchestration" \
             "${ROOT}/packages/orchestration" \
             "pnpm dev"
@@ -297,7 +313,7 @@ case "$CMD" in
             echo "   日志:    bash scripts/dev.sh logs"
             echo "   状态:    bash scripts/dev.sh status"
             echo "   停止:    bash scripts/dev.sh stop"
-            echo "   端点:    data=http://127.0.0.1:8001  paper=http://127.0.0.1:8002  research=http://127.0.0.1:8003  mastra=http://127.0.0.1:4111"
+            echo "   端点:    data=http://127.0.0.1:8001  paper=http://127.0.0.1:8002  research=http://127.0.0.1:8003  factor=http://127.0.0.1:8004  mastra=http://127.0.0.1:4111"
         else
             echo ""
             echo "⚠️  至少一个 service 没起来。查日志: bash scripts/dev.sh logs" >&2

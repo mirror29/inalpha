@@ -13,6 +13,7 @@ from inalpha_shared.errors import UnauthorizedError
 
 from ..config import ResearchSettings, get_research_settings
 from ..data_client import DataClient
+from ..factor_client import FactorClient
 from ..llm.client import build_llm_client
 from ..runner import run_deep_dive
 from ..schemas import DeepDiveRequest, ResearchPlan
@@ -44,7 +45,12 @@ async def post_deep_dive(
     )
 
     try:
-        async with DataClient(settings.data_service_url, user_token) as data:
-            return await run_deep_dive(req, llm=llm, data=data)
+        # factor-service 透传同一 user_token（factor 再转发给 data /bars）；
+        # 服务不可达时 analyst 内部降级，不影响主链路。
+        async with (
+            DataClient(settings.data_service_url, user_token) as data,
+            FactorClient(settings.factor_service_url, user_token) as factor,
+        ):
+            return await run_deep_dive(req, llm=llm, data=data, factor=factor)
     finally:
         await llm.aclose()

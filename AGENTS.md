@@ -60,6 +60,12 @@ cd services/paper    && uv run uvicorn inalpha_paper.main:app    --port 8002 --r
 cd services/research && uv run uvicorn inalpha_research.main:app --port 8003 --reload
 cd packages/orchestration && pnpm dev
 
+# 操作者控制台（apps/dashboard）—— 推荐的功能主入口，只读运行时看板
+# 组合 / Live Runner / Agent 活动 / 策略实验室 / 因子库 / 风控；黑白双主题 + en/中
+# 直接读根 .env（service URL + JWT_SECRET 继承），后端起着即可连
+cd apps/dashboard && pnpm i && pnpm dev    # → http://localhost:3001
+# 设计语言见 apps/dashboard/design.md；agent 对话功能后续也会并入控制台
+
 # 跨文件一致性检验（提交前跑一次）
 bash scripts/check-consistency.sh
 
@@ -89,11 +95,13 @@ pnpm scheduler:trigger daily_btc_deep_dive     # 手动触发一次
 
 ## 6. 当前 Phase 状态
 
-Phase **D-8a'**：单 orchestrator + plan/exec 三件套（create_plan / approve_plan /
-execute_plan），hooks + permissions deny + approval_token 状态机已落地。
-multi-agent 立场对抗的故事留给 `services/research`（Phase E+）。
-下一里程碑 D-8b（trade_plans / approval_tokens Postgres 持久化）/ D-9
-（RiskEngine 规则化 + paper-service 真接入）。
+Phase **D-11**（多市场模拟盘）已落地：单 orchestrator + plan/exec 三件套
+（create_plan / approve_plan / execute_plan）+ hooks + permissions deny +
+approval_token 状态机（D-8/D-9）→ LLM 自创策略沙盒 + 风控引擎 + 多市场数据
+（D-9/D-10）→ 跨币种 cash + **live runner**（promoted 候选按行情自动跑，机器审批
+走护栏内 plan/exec）。D-11.1 收口了 live runner 的信任边界与健壮性
+（candidate 归属校验 / per-account run 上限 / 错误可重试分类）。
+下一里程碑：research-hub 嵌套 supervisor（issue #6）/ E2 多代演化（issue #7）。
 详见 [`docs/04-current-state.md`](docs/04-current-state.md) / `CLAUDE.md` §3 /
 仓库根 `README.md`。
 

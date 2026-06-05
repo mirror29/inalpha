@@ -67,16 +67,38 @@ def _is_retryable(exc: BaseException) -> bool:
         return not (400 <= exc.status_code < 500)
     return True
 
+
+def _classify_build_error(exc: BaseException) -> tuple[str, bool]:
+    """build 阶段错误分类 → ``(reason_code, retryable)``，决定退避重试还是立即 errored（issue #41）。
+
+    - ``InalphaError`` 4xx（确定性：candidate 校验 / symbol 非法等）→ ``strategy_error`` 不重试
+    - ``InalphaError`` 5xx（含 ``DataServiceError`` status 502：data 不可达 / data 5xx）→
+      ``infra_unavailable`` 重试
+    - ``RuntimeError``（``_build_session`` 的 candidate 缺失 / 未 promote / AST / 契约错）→
+      ``strategy_error`` 不重试
+    - 其它（DB 瞬时错等未知）→ ``unknown``，保守重试
+    """
+    if isinstance(exc, InalphaError):
+        if 400 <= exc.status_code < 500:
+            return "strategy_error", False
+        return "infra_unavailable", True
+    if isinstance(exc, RuntimeError):
+        return "strategy_error", False
+    return "unknown", True
+
+
 _FEE_RATE = 0.001
 _LIVE_INITIAL_CASH = 10_000.0  # session 内部持仓视图用；真实现金在 DB 账户
 _LIVE_RUNNER_APPROVER = "system:live_runner"
 _PLAN_EXPIRE_S = 300
 
 # timeframe → 秒（轮询周期 + backfill 回看窗口推导）
+# 缺键会 fallback 1h（_timeframe_seconds），让 _closed_bars 把"开盘超 1h 的未收盘周线
+# bar"误判成已收盘 → 对半成品 bar 真下单。1wk/1w 必须显式列出（issue O-1）。
 _TIMEFRAME_SECONDS: dict[str, int] = {
     "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
     "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
-    "1d": 86400,
+    "1d": 86400, "1wk": 604800, "1w": 604800,
 }
 
 
@@ -176,25 +198,59 @@ class LiveRunnerManager:
                     conn, run_id,
                     "⚠ 风控不可用且 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false，本 run 在零风控下运行",
                 )
-        try:
-            session, warmup_ts = await self._build_session(run)
-        except Exception as e:
-            _logger.exception("live run %s: session build failed", run_id)
-            async with get_conn() as conn:
-                await runs_store.append_error_log(conn, run_id, f"build failed: {e}")
-                await runs_store.set_status(conn, run_id, "errored")
-            return
+        # build 退避（issue #41）：data 服务短暂不可用不该直接判死，退避重试；策略代码 /
+        # 配置确定性错（AST / 契约 / symbol 非法）则立即 errored，不浪费退避。
+        build_streak = 0
+        while True:
+            try:
+                session, warmup_ts = await self._build_session(run)
+                break
+            except asyncio.CancelledError:
+                raise  # stop() 触发，干净退出
+            except Exception as e:
+                code, retryable = _classify_build_error(e)
+                _logger.warning(
+                    "live run %s: build failed (code=%s, retryable=%s, streak=%d): %s",
+                    run_id, code, retryable, build_streak, e,
+                )
+                build_streak = build_streak + 1 if retryable else build_streak
+                # 不可重试 或 攒够 streak → errored；可重试 → 指数退避后重试。
+                if not retryable or build_streak >= self._settings.live_max_error_streak:
+                    async with get_conn() as conn:
+                        await runs_store.append_error_log(
+                            conn, run_id, f"build failed: {e}", code=code
+                        )
+                        await runs_store.set_status(conn, run_id, "errored")
+                    return
+                async with get_conn() as conn:
+                    await runs_store.append_error_log(
+                        conn, run_id, f"build retry {build_streak}: {e}", code=code
+                    )
+                await asyncio.sleep(min(2 ** build_streak, 60))
 
-        # 预热已喂到 warmup_ts；从这之后的新 bar 才真处理，避免重复喂预热段。
-        last_bar_ts: datetime | None = run.get("last_bar_ts") or warmup_ts
+        # 去重边界取 DB last_bar_ts 与 warmup_ts 的**较后者**（issue M-1）：
+        # resume 续跑时 warmup 已把历史喂到 warmup_ts（可能 > DB last_bar_ts），若只用 DB
+        # 边界，第一根 fetch 到的 warmup_ts bar 会绕过 dedup → 对已喂过的 bar 二次 on_bar →
+        # 信号重复 → spurious 订单落库。全新 run（last_bar_ts 为 None）退化为 warmup_ts，行为不变。
+        _db_bound = run.get("last_bar_ts")
+        last_bar_ts: datetime | None = (
+            max(_db_bound, warmup_ts)
+            if _db_bound and warmup_ts
+            else _db_bound or warmup_ts
+        )
         poll_s = _timeframe_seconds(run["timeframe"])
         if self._settings.live_poll_interval_s > 0:
             poll_s = self._settings.live_poll_interval_s
         poll_s = min(poll_s, 3600)
         err_streak = 0
+        # TTL 兜底（issue #44）：max_runtime_s>0 时，run 自 started_at 起超时 auto-stop。
+        max_runtime_s = self._settings.live_runner_max_runtime_s
+        started_at: datetime | None = run.get("started_at")
 
         while True:
             try:
+                if await self._ttl_exceeded(run_id, started_at, max_runtime_s):
+                    return
                 bar = await self._fetch_latest_bar(run)
                 bar_dt = _ns_to_dt(bar.ts_event) if bar is not None else None
                 if bar is None or (last_bar_ts is not None and bar_dt <= last_bar_ts):
@@ -247,6 +303,31 @@ class LiveRunnerManager:
                         _logger.exception("live run %s: 置 errored 失败", run_id)
                     return
                 await asyncio.sleep(min(2 ** err_streak, 60))  # 指数退避，cap 60s
+
+    async def _ttl_exceeded(
+        self, run_id: UUID, started_at: datetime | None, max_runtime_s: int
+    ) -> bool:
+        """run 运行超过 TTL → 置 stopped + error_log，返 True 让 _run_loop 终止（issue #44）。
+
+        ``max_runtime_s <= 0``（默认）或 ``started_at`` 缺失 → 永不超时（返 False）。与回撤
+        熔断同口径置 ``stopped``（策略超时是正常终态非 bug），防策略卡死 / 无限空跑的长尾僵尸 run。
+        """
+        if max_runtime_s <= 0 or started_at is None:
+            return False
+        elapsed = (datetime.now(UTC) - started_at).total_seconds()
+        if elapsed <= max_runtime_s:
+            return False
+        _logger.warning(
+            "live run %s: 运行 %.0fs 超过 TTL %ds，auto-stop", run_id, elapsed, max_runtime_s
+        )
+        async with get_conn() as conn:
+            await runs_store.append_error_log(
+                conn, run_id,
+                f"运行时长 {elapsed:.0f}s 超过 TTL（INALPHA_LIVE_RUNNER_MAX_RUNTIME_S="
+                f"{max_runtime_s}s）→ auto-stop（防长尾僵尸 run）；复核后可重新 start。",
+            )
+            await runs_store.set_status(conn, run_id, "stopped")
+        return True
 
     async def _build_session(
         self, run: dict[str, Any]
@@ -458,7 +539,11 @@ class LiveRunnerManager:
         """读 DB 算 run 累计盈亏（**计价货币**，未折算）+ 解析币种 / base（issue #45 / M-1）。
 
         = 已实现（``closed_trades`` 自 started_at，按 symbol scope）+ 未实现（当前持仓
-        ``(mark - avg) * qty``）。**只读 DB、不发外部请求**（FX 折算见
+        ``(mark - avg) * qty``）- 手续费（``orders`` 自 started_at，同 symbol scope）。
+        手续费已在 ``fills`` 阶段从 cash 扣，但 ``close_profit_abs`` / 未实现都是**毛
+        口径**不含费，不补回这个展示盈亏会让高频策略 cumulative_pnl 虚高、看起来比真实
+        净值更赚（issue #45 follow-up，用户实测发现）。
+        **只读 DB、不发外部请求**（FX 折算见
         :meth:`_convert_run_pnl_to_base`，在连接池连接之外做）。
 
         返回 ``(total_quote, currency, base_currency)``。
@@ -469,6 +554,9 @@ class LiveRunnerManager:
         started_at: datetime = run["started_at"]
 
         realized = await closed_trades_store.sum_realized(
+            conn, account_id=account_id, venue=venue, symbol=symbol, since=started_at
+        )
+        fees = await orders_store.sum_fees(
             conn, account_id=account_id, venue=venue, symbol=symbol, since=started_at
         )
         pos = await positions_store.get(
@@ -482,7 +570,8 @@ class LiveRunnerManager:
             unrealized = (Decimal(str(mark_price)) - avg) * qty
             currency = pos.get("currency")
 
-        total_quote = realized + unrealized
+        # 净盈亏 = 毛已实现 + 毛未实现 - 手续费（手续费已在 cash 扣，这里补回展示口径）
+        total_quote = realized + unrealized - fees
 
         account = await accounts_store.get(conn, account_id)
         base = account["base_currency"] if account else accounts_store.DEFAULT_BASE_CURRENCY
