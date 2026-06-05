@@ -49,8 +49,21 @@ class DataClient:
         from_ts: datetime,
         to_ts: datetime,
         limit: int = 10_000,
+        fresh: bool = False,
     ) -> list[dict[str, Any]]:
-        """``GET /bars`` —— 返回 data-service ``BarResponse`` dict 列表（按 ts 升序）。"""
+        """``GET /bars`` —— 返回 data-service ``BarResponse`` dict 列表（按 ts 升序）。
+
+        Args:
+            fresh: 默认 False（历史回放语义，见 /compute 与显式 as_of 的 /score）。
+                **factor.timing / factor.score 在"现在"做择时时必须 fresh=True**——否则
+                用上一次 backfill 截止的 stale 尾巴算 Rank IC，返回的"当前因子方向"可能是
+                几小时前的状态，违反 CLAUDE.md §3.1 金融时效性（无 stale 标记的 stale 输出 = bug）。
+                fresh=True 先 best-effort ``POST /backfill/bars`` 补到 to_ts 再读。
+        """
+        if fresh:
+            await self._best_effort_backfill(
+                venue=venue, symbol=symbol, timeframe=timeframe, from_ts=from_ts, to_ts=to_ts
+            )
         try:
             r = await self._client.get(
                 "/bars",
@@ -86,3 +99,32 @@ class DataClient:
                 f"unexpected response shape from data-service: {type(result).__name__}"
             )
         return result
+
+    async def _best_effort_backfill(
+        self,
+        *,
+        venue: str,
+        symbol: str,
+        timeframe: str,
+        from_ts: datetime,
+        to_ts: datetime,
+    ) -> None:
+        """先 ``POST /backfill/bars`` 补到 to_ts —— 失败静默不抛（对齐 research/paper 模式）。
+
+        backfill 是"best effort 让数据更新"而非硬依赖：交易所反爬 / 网络偶发不应让一次
+        择时查询 500。补不上时退化到 DB 已有缓存（仍受样本不足保护）。
+        """
+        try:
+            await self._client.post(
+                "/backfill/bars",
+                json={
+                    "venue": venue,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "from_ts": from_ts.isoformat(),
+                    "to_ts": to_ts.isoformat(),
+                },
+                timeout=60.0,
+            )
+        except Exception:
+            pass

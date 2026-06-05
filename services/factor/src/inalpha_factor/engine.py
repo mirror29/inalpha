@@ -74,11 +74,19 @@ class FactorEngine:
 
     # ── 取数 ─────────────────────────────────────────────────────────
     async def _fetch_df(
-        self, *, venue: str, symbol: str, timeframe: str, from_ts: datetime, to_ts: datetime
+        self,
+        *,
+        venue: str,
+        symbol: str,
+        timeframe: str,
+        from_ts: datetime,
+        to_ts: datetime,
+        fresh: bool = False,
     ) -> pd.DataFrame:
         async with DataClient(self._settings.data_service_url, self._token) as dc:
             bars = await dc.get_bars(
-                venue=venue, symbol=symbol, timeframe=timeframe, from_ts=from_ts, to_ts=to_ts
+                venue=venue, symbol=symbol, timeframe=timeframe,
+                from_ts=from_ts, to_ts=to_ts, fresh=fresh,
             )
         return bars_to_df(bars)
 
@@ -127,12 +135,17 @@ class FactorEngine:
         quantiles: int,
         factor_ids: list[str] | None,
     ) -> dict[str, Any]:
+        # as_of 未显式给 = "现在"做择时（factor.timing/snapshot）→ 必须 fresh（先 backfill
+        # 到现在再算），否则尾巴 stale 让"当前因子方向"是几小时前的状态（§3.1）。显式给过去
+        # as_of = 历史分析语义 → fresh=False（不补、也不该把未来补进来）。
+        is_live = as_of is None
         as_of = as_of or datetime.now(UTC)
         # 多拉 horizon + 60 根 warmup，保证有效性样本充足
         span_bars = lookback_bars + horizon_bars + 60
         from_ts = as_of - timedelta(seconds=_tf_seconds(timeframe) * span_bars)
         df = await self._fetch_df(
-            venue=venue, symbol=symbol, timeframe=timeframe, from_ts=from_ts, to_ts=as_of
+            venue=venue, symbol=symbol, timeframe=timeframe,
+            from_ts=from_ts, to_ts=as_of, fresh=is_live,
         )
         # 只用 <= as_of 的 bar（防未来数据）；空 df 的 index 是 RangeIndex，跳过比较
         if not df.empty and isinstance(df.index, pd.DatetimeIndex):
