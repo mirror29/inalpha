@@ -14,6 +14,7 @@ export async function GET() {
     const runs = await backendFetch<StrategyRunRecord[]>(
       "paper",
       "/strategy_runs",
+      { query: { limit: 200 } },
     );
     const payload: RunnersPayload = {
       runs,

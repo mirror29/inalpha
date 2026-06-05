@@ -67,6 +67,29 @@ jobs:
       - name: Static export build
         run: pnpm build
 
+  dashboard-typecheck:
+    name: dashboard · typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: apps/dashboard/pnpm-lock.yaml
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm typecheck
+      - name: Build (Next.js dynamic app)
+        run: pnpm build
+
   python-services-lint:
     name: python services · ruff + mypy
     runs-on: ubuntu-latest

@@ -5,6 +5,11 @@ import type { CandidateDetailPayload, StrategyCandidateRecord } from "@/lib/type
 
 export const dynamic = "force-dynamic";
 
+// candidate id 是后端 uuid4。校验格式后再内插路径,挡 `..` / 编码绕过导致
+// new URL(path, base) 归一到后端根路径、把非预期 endpoint 响应当候选详情返回。
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * GET /api/lab/[id] —— 单个候选详情(含源码 + 审计)。
  * 后端 404 → 透传 404(前端显示"未找到")。
@@ -14,6 +19,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ error: "invalid candidate id" }, { status: 400 });
+  }
   try {
     const candidate = await backendFetch<StrategyCandidateRecord>(
       "paper",

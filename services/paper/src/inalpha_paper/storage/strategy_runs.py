@@ -82,6 +82,7 @@ async def list_by_account(
     account_id: UUID,
     *,
     status: str | None = None,
+    limit: int = 200,
 ) -> list[dict[str, Any]]:
     sql = (
         "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
@@ -92,7 +93,10 @@ async def list_by_account(
     if status is not None:
         sql += " AND status = %s"
         args.append(status)
-    sql += " ORDER BY started_at DESC"
+    # 兜底上限:run 历史会随时间无界增长，dashboard 每 6s 轮询全量会越来越重。
+    # 按 started_at DESC 取最近 limit 条（最新的 run 最相关）。
+    sql += " ORDER BY started_at DESC LIMIT %s"
+    args.append(limit)
     async with conn.cursor() as cur:
         await cur.execute(sql, tuple(args))
         rows = await cur.fetchall()

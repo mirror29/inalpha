@@ -29,6 +29,11 @@ function loadRootEnv(): void {
         (val.startsWith("'") && val.endsWith("'"))
       ) {
         val = val.slice(1, -1);
+      } else {
+        // 非引号值:剥行内注释(空白 + #..)。否则 `JWT_SECRET=abc # prod` 会把
+        // " # prod" 并进密钥 → BFF 签出的 JWT 验不过 → 所有 API 静默 401。
+        // 引号值不剥(密钥本身可能含 #)。
+        val = val.replace(/\s+#.*$/, "");
       }
       process.env[key] = val;
     }

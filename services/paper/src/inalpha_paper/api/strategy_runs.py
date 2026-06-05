@@ -152,10 +152,15 @@ async def list_strategy_runs(
     db: DBConn,
     user: Annotated[User, Depends(get_current_user)],
     status: Annotated[Literal["running", "stopped", "errored"] | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
 ) -> list[StrategyRunRecord]:
-    """列出当前账户的 live run（status 传非法值 → FastAPI 自动 422，不静默返空）。"""
+    """列出当前账户的 live run（status 传非法值 → FastAPI 自动 422，不静默返空）。
+
+    ``limit`` 兜底上限（默认 200，按 started_at DESC 取最近）——防 run 历史无界增长后
+    dashboard 6s 轮询全量越来越重。
+    """
     account_id = account_id_from_user(user)
-    rows = await runs_store.list_by_account(db, account_id, status=status)
+    rows = await runs_store.list_by_account(db, account_id, status=status, limit=limit)
     return [_row_to_record(r) for r in rows]
 
 

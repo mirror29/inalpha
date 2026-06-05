@@ -9,6 +9,11 @@ import type {
 
 export const dynamic = "force-dynamic";
 
+// run id 是后端 uuid4。校验格式后再内插路径,挡 `..` / 编码绕过导致 new URL 归一到
+// 后端根路径(backendFetch 用 new URL(path, base) 会 normalize 路径段)。
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * GET /api/runners/[id] —— 单个 run 详情 + 决策时间线。
  *
@@ -20,10 +25,15 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ error: "invalid run id" }, { status: 400 });
+  }
 
   try {
     const [runs, decisionsRes] = await Promise.all([
-      backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs"),
+      backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs", {
+        query: { limit: 200 },
+      }),
       backendFetch<StrategyRunDecisionRecord[]>(
         "paper",
         `/strategy_runs/${id}/decisions`,
