@@ -10,6 +10,27 @@ import { MastraClient } from "@mastra/client-js";
 import { BACKENDS, CONSOLE_SUBJECT, getServiceToken } from "@/lib/backend";
 
 /**
+ * 静音 @ag-ui/mastra 1.0.3 的良性日志噪音:它不认 mastra(v5 streamVNext)的
+ * `text-start` / `text-end` 文本块标记,每条消息都 `console.warn` 一次
+ * "[MastraAgent] Unrecognized stream chunk type: ..."。文本内容走 `text-delta`(它认),
+ * 渲染不受影响 —— 纯噪音。模块加载时一次性包一层 console.warn 过滤掉,幂等。
+ */
+const _warn = console.warn.bind(console) as typeof console.warn;
+if (!(console.warn as { __inalphaFiltered?: boolean }).__inalphaFiltered) {
+  const filtered = ((...args: unknown[]) => {
+    if (
+      typeof args[0] === "string" &&
+      args[0].includes("[MastraAgent] Unrecognized stream chunk type")
+    ) {
+      return;
+    }
+    _warn(...(args as Parameters<typeof console.warn>));
+  }) as typeof console.warn & { __inalphaFiltered?: boolean };
+  filtered.__inalphaFiltered = true;
+  console.warn = filtered;
+}
+
+/**
  * CopilotKit ↔ Mastra 桥（AG-UI 协议）。
  *
  * 链路:dashboard `<CopilotKit runtimeUrl="/api/copilotkit">` → 本 route →

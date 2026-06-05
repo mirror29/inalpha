@@ -278,6 +278,8 @@
     "empty": "在这里和 agent 对话 —— 它能查行情、看持仓、跑回测、调因子。问任何标的都行。",
     "thinking": "思考中…",
     "toolRunning": "调用中",
-    "toolDone": "已完成"
+    "toolDone": "已完成",
+    "errorGeneric": "Agent 回复失败，请重试 —— 多半是上游 LLM 报错或连接中断。",
+    "errorDismiss": "关闭"
   }
 }

@@ -278,6 +278,8 @@
     "empty": "Chat with the agent here — it can pull quotes, read positions, run backtests, tune factors. Ask about any ticker.",
     "thinking": "Thinking…",
     "toolRunning": "running",
-    "toolDone": "done"
+    "toolDone": "done",
+    "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",
+    "errorDismiss": "Dismiss"
   }
 }

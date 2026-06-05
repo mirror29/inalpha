@@ -6,6 +6,7 @@ import {
   SendHorizontal,
   SquarePen,
   Square,
+  TriangleAlert,
   Wrench,
   X,
 } from "lucide-react";
@@ -101,6 +102,7 @@ export function ChatThread({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [threads, setThreads] = useState<ThreadSummary[] | null>(null);
   const [historyError, setHistoryError] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const loadedThreadRef = useRef<string | null>(null);
@@ -160,6 +162,33 @@ export function ChatThread({
       inflightAborts.current.clear();
     }
   }, [isLoading]);
+
+  // 订阅 agent run 错误(上游 LLM 报错 / 流中断)→ 在对话栏顶条红字提示,
+  // 而不是只剩一个空助手气泡让人误以为是 dashboard 坏了(典型:LLM 余额不足 / 限流)。
+  useEffect(() => {
+    const agent = hook.agent;
+    if (!agent) return;
+    const sub = agent.subscribe({
+      onRunErrorEvent: ({
+        event,
+      }: {
+        event?: { message?: string; code?: string };
+      }) => {
+        const raw = event?.message;
+        const code = event?.code;
+        // @ag-ui/mastra 把上游错误对象塞进 Error() 会变成 "[object Object]" —— 当无效信息丢弃。
+        const human = raw && raw !== "[object Object]" ? raw : null;
+        setChatError(
+          human
+            ? `${human}${code ? ` (${code})` : ""}`
+            : code
+              ? `${t("errorGeneric")} (${code})`
+              : t("errorGeneric"),
+        );
+      },
+    } as Parameters<typeof agent.subscribe>[0]);
+    return () => sub.unsubscribe();
+  }, [hook.agent, t]);
 
   /** 点"停止":掐断所有在途流式请求,并强制 run 收尾让 UI 立刻复位。 */
   const handleStop = () => {
@@ -252,6 +281,7 @@ export function ChatThread({
     const text = draft.trim();
     if (!text || isLoading) return;
     const isFirst = messages.length === 0; // 该会话首条 → 用它当会话标题
+    setChatError(null); // 重发即清掉上一条错误
     setDraft("");
     void sendMessage({
       id: crypto.randomUUID(),
@@ -424,6 +454,23 @@ export function ChatThread({
         )}
         <div ref={endRef} />
       </div>
+
+      {/* 错误条 —— 上游 LLM 报错 / 流中断时顶出来,不再是空气泡 */}
+      {chatError && (
+        <div className="mx-3 mb-2 flex items-start gap-2 rounded-lg border border-fox-red/40 bg-fox-red/10 px-3 py-2 text-xs text-fox-red">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+          <span className="min-w-0 flex-1 break-words">{chatError}</span>
+          <button
+            type="button"
+            onClick={() => setChatError(null)}
+            aria-label={t("errorDismiss")}
+            title={t("errorDismiss")}
+            className="shrink-0 text-fox-red/70 transition-colors hover:text-fox-red"
+          >
+            <X className="size-3.5" strokeWidth={2} />
+          </button>
+        </div>
+      )}
 
       {/* 输入区 */}
       <div className="border-t border-border-subtle p-3">
