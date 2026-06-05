@@ -312,7 +312,7 @@ Inalpha 是站在别人好点子上做出来的。我们把借鉴的东西明确
 ---
 
 <div align="center">
-  <sub>💬 <a href="https://github.com/mirror29/inalpha/discussions"><strong>Discussions</strong></a> &nbsp;·&nbsp; 📬 <a href="https://inalpha.substack.com"><strong>在 Substack 订阅</strong></a> — 工程笔记、ADR 复盘、failure post-mortem</sub>
+  <sub>💬 <a href="https://github.com/mirror29/inalpha/discussions"><strong>Discussions</strong></a> &nbsp;·&nbsp; 📬 <a href="https://inalpha.substack.com"><strong>在 Substack 订阅</strong></a> &nbsp;·&nbsp; 📕 <a href="https://www.zhihu.com/column/c_2044821892738044718"><strong>知乎专栏</strong></a> — 工程笔记、ADR 复盘、failure post-mortem</sub>
 </div>
 
 <div align="center">

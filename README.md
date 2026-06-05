@@ -316,7 +316,7 @@ And to every quant researcher who refuses to accept opaque "AI signals" — this
 ---
 
 <div align="center">
-  <sub>💬 <a href="https://github.com/mirror29/inalpha/discussions"><strong>Discussions</strong></a> &nbsp;·&nbsp; 📬 <a href="https://inalpha.substack.com"><strong>Subscribe on Substack</strong></a> — engineering notes, ADRs, post-mortems</sub>
+  <sub>💬 <a href="https://github.com/mirror29/inalpha/discussions"><strong>Discussions</strong></a> &nbsp;·&nbsp; 📬 <a href="https://inalpha.substack.com"><strong>Subscribe on Substack</strong></a> &nbsp;·&nbsp; 📕 <a href="https://www.zhihu.com/column/c_2044821892738044718"><strong>知乎专栏</strong></a> — engineering notes, ADRs, post-mortems</sub>
 </div>
 
 <div align="center">
