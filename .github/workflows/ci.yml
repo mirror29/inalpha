@@ -75,9 +75,12 @@ jobs:
         working-directory: apps/dashboard
     steps:
       - uses: actions/checkout@v4
+      # 钉 11.1.2（= packageManager）：`version: 11` 取最新 11.x 不认 package.json 的
+      # pnpm.onlyBuiltDependencies → @swc/core/sharp/@parcel-watcher build script 被判
+      # ignored 后 install exit 1。11.1.2 认该字段（全新 store 实测 exit 0）。
       - uses: pnpm/action-setup@v4
         with:
-          version: 11
+          version: 11.1.2
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
