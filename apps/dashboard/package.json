@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@ag-ui/mastra": "^1.0.3",
-    "@copilotkit/react-core": "^1.59.3",
-    "@copilotkit/runtime": "^1.59.3",
-    "@mastra/client-js": "^1.23.1",
+    "@copilotkit/react-core": "^1.59.5",
+    "@copilotkit/runtime": "^1.59.5",
+    "@mastra/client-js": "^1.23.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "geist": "^1.7.1",

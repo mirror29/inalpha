@@ -2,6 +2,7 @@ import {
   CopilotRuntime,
   ExperimentalEmptyAdapter,
   copilotRuntimeNextJSAppRouterEndpoint,
+  type AgentsConfig,
 } from "@copilotkit/runtime";
 import { getRemoteAgents } from "@ag-ui/mastra";
 import { MastraClient } from "@mastra/client-js";
@@ -24,6 +25,14 @@ import { BACKENDS, CONSOLE_SUBJECT, getServiceToken } from "@/lib/backend";
  *     `assertScopedRequest`。单租户 dev 下 resourceId 固定;接真实多租户时改为从 session 派生。
  *  4. LLM 在 mastra 侧,本层不需要 model adapter —— 用 `ExperimentalEmptyAdapter` 占位。
  *
+ * ⚠️ **已知版本约束**:`@ag-ui/mastra`(目前最新 1.0.3)的 peerDependencies 把
+ *    `@copilotkit/runtime` 硬钉到一个 pre-release(`0.0.0-mme-ag-ui-0-0-46-*`),没有任何
+ *    已发布版本对齐到稳定的 1.59.x —— 这是上游打包遗留,`pnpm install` 会有 unmet peer 告警。
+ *    我们固定用**最新稳定** `@copilotkit/{runtime,react-core}@1.59.x` + `@ag-ui/mastra@1.0.3`:
+ *    运行时只用到 `getRemoteAgents` / `AbstractAgent` 等稳定 API,实测发消息 / 切会话 / 历史回填
+ *    / 停止生成均正常(停止生成的 v1/v2 路径差异已在 ChatThread `handleStop` 兜底)。升级前
+ *    若 @ag-ui/mastra 发布了对齐 1.59.x 的版本,应优先换到官方兼容对。
+ *
  * @returns CopilotKit runtime 的 POST handler
  */
 export const POST = async (req: Request): Promise<Response> => {
@@ -39,7 +48,9 @@ export const POST = async (req: Request): Promise<Response> => {
     resourceId: CONSOLE_SUBJECT,
   });
 
-  const runtime = new CopilotRuntime({ agents });
+  // CopilotKit 1.59.5 起 `agents` 收紧为 NonEmptyRecord | Promise | factory;
+  // getRemoteAgents 返回的是普通 Record(类型上可能为空,运行期非空),按 AgentsConfig 收口。
+  const runtime = new CopilotRuntime({ agents: agents as unknown as AgentsConfig });
 
   const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
     runtime,
