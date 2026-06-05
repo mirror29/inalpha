@@ -93,10 +93,12 @@ _LIVE_RUNNER_APPROVER = "system:live_runner"
 _PLAN_EXPIRE_S = 300
 
 # timeframe → 秒（轮询周期 + backfill 回看窗口推导）
+# 缺键会 fallback 1h（_timeframe_seconds），让 _closed_bars 把"开盘超 1h 的未收盘周线
+# bar"误判成已收盘 → 对半成品 bar 真下单。1wk/1w 必须显式列出（issue O-1）。
 _TIMEFRAME_SECONDS: dict[str, int] = {
     "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
     "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
-    "1d": 86400,
+    "1d": 86400, "1wk": 604800, "1w": 604800,
 }
 
 
@@ -226,8 +228,16 @@ class LiveRunnerManager:
                     )
                 await asyncio.sleep(min(2 ** build_streak, 60))
 
-        # 预热已喂到 warmup_ts；从这之后的新 bar 才真处理，避免重复喂预热段。
-        last_bar_ts: datetime | None = run.get("last_bar_ts") or warmup_ts
+        # 去重边界取 DB last_bar_ts 与 warmup_ts 的**较后者**（issue M-1）：
+        # resume 续跑时 warmup 已把历史喂到 warmup_ts（可能 > DB last_bar_ts），若只用 DB
+        # 边界，第一根 fetch 到的 warmup_ts bar 会绕过 dedup → 对已喂过的 bar 二次 on_bar →
+        # 信号重复 → spurious 订单落库。全新 run（last_bar_ts 为 None）退化为 warmup_ts，行为不变。
+        _db_bound = run.get("last_bar_ts")
+        last_bar_ts: datetime | None = (
+            max(_db_bound, warmup_ts)
+            if _db_bound and warmup_ts
+            else _db_bound or warmup_ts
+        )
         poll_s = _timeframe_seconds(run["timeframe"])
         if self._settings.live_poll_interval_s > 0:
             poll_s = self._settings.live_poll_interval_s
