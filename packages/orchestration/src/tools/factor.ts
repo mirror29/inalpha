@@ -12,9 +12,10 @@ import { mintServiceToken } from "../auth.js";
 import { FactorClient } from "../clients/factor.js";
 import { getSettings } from "../config.js";
 
+// 只列 factor engine 真正支持的周期（_tf_seconds）。1mo/1q/1y 引擎不识别会按 1h 误算
+// 窗口，且月/季/年线 bar 太少算不出有意义的有效性，故不暴露给 agent。
 const TimeframeSchema = z.enum([
-  "1m", "5m", "15m", "30m", "1h", "4h",
-  "1d", "1wk", "1mo", "1q", "1y",
+  "1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d", "1wk",
 ]);
 
 const SymbolSchema = z

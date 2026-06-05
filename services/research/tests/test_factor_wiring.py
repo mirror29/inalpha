@@ -144,6 +144,29 @@ async def test_snapshot_missing_rank_ic_does_not_crash() -> None:
 
 
 @respx.mock
+async def test_available_but_no_effective_factors_says_insufficient() -> None:
+    """CR major fix：available=True 但 top_factors=[]（数据不足）不应误报"服务不可用"。"""
+    respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=_bars()))
+    respx.post("http://factor-mock.test/snapshot").mock(
+        return_value=Response(200, json={"available": True, "top_factors": []})
+    )
+
+    llm = FakeLLMClient({"you are a technical analyst": _brief()})
+    async with (
+        DataClient("http://data-mock.test", "t") as data,
+        FactorClient("http://factor-mock.test", "t") as factor,
+    ):
+        analyst = TechnicalAnalyst(llm=llm, data=data, factor=factor)
+        await analyst.run(
+            venue="binance", symbol="BTC/USDT", timeframe="1h", as_of=_as_of(), lookback_days=2
+        )
+
+    user_prompt = llm.calls[0]["user"]
+    assert "no factor passed the effectiveness threshold" in user_prompt
+    assert "factor library unavailable" not in user_prompt  # 不再误报服务挂了
+
+
+@respx.mock
 async def test_no_factor_client_uses_indicator_snapshot() -> None:
     respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=_bars()))
 

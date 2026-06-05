@@ -164,6 +164,26 @@ async def list_strategy_runs(
     return [_row_to_record(r) for r in rows]
 
 
+@router.get("/strategy_runs/{run_id}", response_model=StrategyRunRecord)
+async def get_strategy_run(
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+    run_id: Annotated[UUID, Path()],
+) -> StrategyRunRecord:
+    """单条 run 详情（仅限本账户）。
+
+    dashboard 详情页直接查这条，不再拉全列表 ``.find()``——否则超出 list LIMIT（200）的
+    历史 run 永远 404（CR major fix）。非本账户 / 不存在统一 404，不泄漏存在性。
+    """
+    account_id = account_id_from_user(user)
+    run = await runs_store.get(db, run_id)
+    if run is None or run["account_id"] != account_id:
+        raise NotFoundError(
+            f"strategy_run {run_id} not found", details={"run_id": str(run_id)}
+        )
+    return _row_to_record(run)
+
+
 @router.get("/strategy_runs/{run_id}/decisions", response_model=list[StrategyRunDecisionRecord])
 async def list_strategy_run_decisions(
     db: DBConn,

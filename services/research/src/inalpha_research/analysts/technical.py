@@ -104,7 +104,7 @@ class TechnicalAnalyst(Analyst):
         market_type = infer_asset_type(venue=venue, symbol=symbol)
 
         # 接现成因子库（docs/miro/11）：取"经前瞻收益/IC 验证有效"的因子排序，优先喂这块
-        effective_factors = await self._fetch_effective_factors(
+        effective_factors, factor_status = await self._fetch_effective_factors(
             venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
         )
 
@@ -118,21 +118,32 @@ class TechnicalAnalyst(Analyst):
             snapshot=snapshot,
             market_type=market_type,
             effective_factors=effective_factors,
+            factor_status=factor_status,
         )
 
     async def _fetch_effective_factors(
         self, *, venue: str, symbol: str, timeframe: str, as_of: datetime
-    ) -> list[dict[str, Any]]:
-        """从 factor-service 取 top 有效因子；无 client / 不可用时返空 list（降级）。"""
+    ) -> tuple[list[dict[str, Any]], str]:
+        """返回 ``(top 有效因子, 状态)``。状态用于区分两种"空列表"，避免误导：
+
+        - ``"unavailable"``：无 factor client 或 factor-service 不可达 → 真·降级
+        - ``"insufficient"``：服务**正常**但样本不足 / 没有因子过有效性阈值
+          （``available=True`` 但 ``top_factors=[]``，典型：新标的历史 < ~120 根）
+        - ``"ok"``：有有效因子
+
+        修复点：之前两种都返空 list → prompt 一律说"factor library unavailable"，
+        让 agent/用户误以为服务挂了（实际只是数据不够）。
+        """
         if self._factor is None:
-            return []
+            return [], "unavailable"
         snap = await self._factor.get_snapshot(
             venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
         )
         if not snap.get("available"):
-            return []
+            return [], "unavailable"
         factors = snap.get("top_factors")
-        return factors if isinstance(factors, list) else []
+        factors = factors if isinstance(factors, list) else []
+        return (factors, "ok") if factors else ([], "insufficient")
 
 
 def _build_indicator_snapshot(closes: list[float]) -> dict[str, Any]:
@@ -196,6 +207,7 @@ def _format_user_prompt(
     snapshot: dict[str, Any],
     market_type: str,
     effective_factors: list[dict[str, Any]] | None = None,
+    factor_status: str = "unavailable",
 ) -> str:
     """简洁、tokens 友好的格式。"""
     last_lines = "\n".join(
@@ -209,7 +221,7 @@ def _format_user_prompt(
         f"timeframe: {timeframe}\n"
         f"as_of: {as_of.isoformat()}\n"
         f"bars_total: {num_bars}\n\n"
-        f"{_format_effective_factors(effective_factors)}"
+        f"{_format_effective_factors(effective_factors, factor_status)}"
         f"indicator_snapshot:\n  {snapshot}\n\n"
         f"last_10_bars:\n{last_lines}\n\n"
         f"Output the required JSON only."
@@ -224,9 +236,21 @@ def _as_float(v: Any) -> float:
         return 0.0
 
 
-def _format_effective_factors(factors: list[dict[str, Any]] | None) -> str:
-    """渲染有效因子块（factor-service 给的真因子值 + 有效性）。空则提示用 snapshot 兜底。"""
+def _format_effective_factors(
+    factors: list[dict[str, Any]] | None, status: str = "unavailable"
+) -> str:
+    """渲染有效因子块（factor-service 给的真因子值 + 有效性）。
+
+    空列表分两种、给**不同**提示，避免把"数据不足"误报成"服务挂了"（CR major fix）：
+    - status == "insufficient"：服务正常但样本不够 / 无因子过有效性阈值
+    - 其它（unavailable / 无 client / 不可达）：真·降级
+    """
     if not factors:
+        if status == "insufficient":
+            return (
+                "effective_factors: (factor service ran but no factor passed the effectiveness "
+                "threshold — likely insufficient price history; read indicator_snapshot below)\n\n"
+            )
         return (
             "effective_factors: (factor library unavailable — read indicator_snapshot below)\n\n"
         )
