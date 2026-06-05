@@ -7,4 +7,5 @@ allowBuilds:
   '@swc/core': true
   sharp: true
   esbuild: true
+  '@scarf/scarf': false
 verifyDepsBeforeRun: false

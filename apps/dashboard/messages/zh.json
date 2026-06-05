@@ -155,7 +155,8 @@
       "permission": "审批",
       "decision": "决策",
       "risk": "风控",
-      "order": "订单"
+      "order": "订单",
+      "conversation": "会话"
     },
     "empty": "暂无活动。",
     "emptyFiltered": "没有「{kind}」类事件。",
@@ -165,8 +166,20 @@
       "permissions": "审批",
       "risk": "风控",
       "runs": "Runner",
-      "orders": "订单"
+      "orders": "订单",
+      "conversations": "会话"
     }
+  },
+  "footer": {
+    "title": "活动日志",
+    "expand": "展开活动日志",
+    "collapse": "收起活动日志",
+    "empty": "暂无活动。",
+    "idle": "等待 agent 活动…",
+    "viewAll": "查看全部",
+    "events": "事件",
+    "openConversation": "在右侧对话栏查看该会话",
+    "resize": "拖动调整高度"
   },
   "lab": {
     "title": "策略实验室",
@@ -246,5 +259,25 @@
     "loading": "加载中…",
     "error": "无法连接后端。",
     "none": "—"
+  },
+  "chat": {
+    "title": "Agent",
+    "online": "在线",
+    "open": "打开对话",
+    "close": "收起对话",
+    "clear": "清空对话",
+    "resize": "拖动调整宽度",
+    "send": "发送",
+    "stop": "停止生成",
+    "newSession": "新建会话",
+    "history": "历史会话",
+    "historyEmpty": "暂无历史会话。",
+    "historyError": "历史会话加载失败。",
+    "untitled": "未命名会话",
+    "placeholder": "问问 agent —— 行情、持仓、策略、回测…",
+    "empty": "在这里和 agent 对话 —— 它能查行情、看持仓、跑回测、调因子。问任何标的都行。",
+    "thinking": "思考中…",
+    "toolRunning": "调用中",
+    "toolDone": "已完成"
   }
 }

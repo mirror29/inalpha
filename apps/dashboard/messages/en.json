@@ -155,7 +155,8 @@
       "permission": "Approvals",
       "decision": "Decisions",
       "risk": "Risk",
-      "order": "Orders"
+      "order": "Orders",
+      "conversation": "Chats"
     },
     "empty": "No activity yet.",
     "emptyFiltered": "No {kind} events.",
@@ -165,8 +166,20 @@
       "permissions": "Approvals",
       "risk": "Risk",
       "runs": "Runners",
-      "orders": "Orders"
+      "orders": "Orders",
+      "conversations": "Chats"
     }
+  },
+  "footer": {
+    "title": "Activity log",
+    "expand": "Expand activity log",
+    "collapse": "Collapse activity log",
+    "empty": "No activity yet.",
+    "idle": "Waiting for agent activity…",
+    "viewAll": "View all",
+    "events": "events",
+    "openConversation": "Open this chat in the side panel",
+    "resize": "Drag to resize height"
   },
   "lab": {
     "title": "Strategy Lab",
@@ -246,5 +259,25 @@
     "loading": "Loading…",
     "error": "Could not reach the backend.",
     "none": "—"
+  },
+  "chat": {
+    "title": "Agent",
+    "online": "online",
+    "open": "Open chat",
+    "close": "Close chat",
+    "clear": "Clear chat",
+    "resize": "Drag to resize",
+    "send": "Send",
+    "stop": "Stop generating",
+    "newSession": "New chat",
+    "history": "History",
+    "historyEmpty": "No past conversations yet.",
+    "historyError": "Failed to load history.",
+    "untitled": "Untitled chat",
+    "placeholder": "Ask the agent — quotes, positions, strategies, backtests…",
+    "empty": "Chat with the agent here — it can pull quotes, read positions, run backtests, tune factors. Ask about any ticker.",
+    "thinking": "Thinking…",
+    "toolRunning": "running",
+    "toolDone": "done"
   }
 }

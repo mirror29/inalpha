@@ -295,7 +295,8 @@ export type ActivityKind =
   | "permission"
   | "decision"
   | "risk"
-  | "order";
+  | "order"
+  | "conversation";
 
 export type ActivityTone = "bull" | "fox" | "gold" | "cyan" | "muted";
 
@@ -331,6 +332,7 @@ export interface ActivityPayload {
     risk: boolean;
     runs: boolean;
     orders: boolean;
+    conversations: boolean;
   };
   asOf: string;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocale, useNow, useTranslations } from "next-intl";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, MessageSquare } from "lucide-react";
 
 import type { ActivityEvent, ActivityTone } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
@@ -24,15 +24,19 @@ const toneText: Record<ActivityTone, string> = {
 export function ActivityFeed({ events }: { events: ActivityEvent[] }) {
   const locale = useLocale();
   const now = useNow({ updateInterval: 10_000 });
+  const tf = useTranslations("footer");
 
   return (
     <ul className="divide-y divide-border-subtle/60">
       {events.map((e) => {
+        // 会话事件可点 → 打开右侧对话栏并切到该会话(与底部日志同款交互)。
+        const isConversation = e.kind === "conversation";
+        const clickable = isConversation || Boolean(e.href);
         const row = (
           <div
             className={cn(
               "flex items-start gap-3 px-4 py-3 transition-colors",
-              e.href && "group-hover:bg-bg-elev/40",
+              clickable && "group-hover:bg-bg-elev/40",
               e.tone === "fox" && "border-l-2 border-fox-red/60",
             )}
           >
@@ -65,15 +69,34 @@ export function ActivityFeed({ events }: { events: ActivityEvent[] }) {
               )}
             </div>
 
-            {e.href && (
-              <ChevronRight className="mt-0.5 size-4 shrink-0 text-fg-muted/30 group-hover:text-cyan/70" />
+            {isConversation ? (
+              <MessageSquare className="mt-0.5 size-4 shrink-0 text-fg-muted/30 group-hover:text-seal" />
+            ) : (
+              e.href && (
+                <ChevronRight className="mt-0.5 size-4 shrink-0 text-fg-muted/30 group-hover:text-cyan/70" />
+              )
             )}
           </div>
         );
 
         return (
           <li key={e.id}>
-            {e.href ? (
+            {isConversation ? (
+              <button
+                type="button"
+                title={tf("openConversation")}
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("inalpha:open-chat", {
+                      detail: { threadId: e.id.replace(/^conv:/, "") },
+                    }),
+                  )
+                }
+                className="group block w-full text-left"
+              >
+                {row}
+              </button>
+            ) : e.href ? (
               <Link href={e.href} className="group block">
                 {row}
               </Link>

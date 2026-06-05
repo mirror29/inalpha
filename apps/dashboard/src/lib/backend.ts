@@ -26,7 +26,13 @@ export const BACKENDS = {
 
 export type BackendName = keyof typeof BACKENDS;
 
-const SUBJECT = process.env.CONSOLE_SUBJECT ?? "console:dev";
+/**
+ * 控制台身份 subject。同时用作 mastra Memory 的 `resourceId`（业务级隔离 ID,
+ * 见 packages/orchestration/src/mastra/memory.ts §多用户隔离）—— 单租户 dev 下固定,
+ * 接真实多租户登录时改为从 session 派生。
+ */
+export const CONSOLE_SUBJECT = process.env.CONSOLE_SUBJECT ?? "console:dev";
+const SUBJECT = CONSOLE_SUBJECT;
 const EMAIL = process.env.CONSOLE_EMAIL ?? "console@inalpha.dev";
 const ALG = process.env.JWT_ALGORITHM ?? "HS256";
 
