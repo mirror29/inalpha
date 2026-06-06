@@ -17,7 +17,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { mintServiceToken } from "../auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../auth.js";
 import { RiskClient } from "../clients/risk.js";
 import { getSettings } from "../config.js";
 
@@ -25,7 +25,7 @@ type ToolRequestContext = { authToken?: string };
 
 async function getClient(ctx?: ToolRequestContext): Promise<RiskClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
   return new RiskClient({ baseUrl: settings.paperServiceUrl, token });
 }
 

@@ -22,7 +22,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { mintServiceToken } from "../auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../auth.js";
 import { PaperClient } from "../clients/paper.js";
 import { getSettings } from "../config.js";
 
@@ -30,7 +30,7 @@ type ToolRequestContext = { authToken?: string };
 
 async function getClient(ctx?: ToolRequestContext): Promise<PaperClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
   return new PaperClient({ baseUrl: settings.paperServiceUrl, token });
 }
 

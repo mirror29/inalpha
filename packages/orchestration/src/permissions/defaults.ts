@@ -63,6 +63,9 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     // 60s 内的运行允许（spike + 临时计算）；更长走 ask（人工审批）。
     // 第一道 AST 审计 + 第三道协议契约校验留给 Phase B 接入。
     "sandbox.run_code(timeoutMs<=60000)",
+
+    // 玄学彩蛋（六爻 / 塔罗）—— 纯娱乐、本地确定性、不碰钱不碰数据，allow
+    "divination.*",
   ],
 
   ask: [

@@ -237,6 +237,67 @@ async def test_list_active_orders_by_locked_until_desc() -> None:
     assert rows[1]["rule_name"] == "A"
 
 
+async def test_list_recent_includes_inactive_and_expired() -> None:
+    """list_recent 含已过期 / 已解锁行（不按 active 过滤），按 locked_at DESC。"""
+    async with get_conn() as conn:
+        # 1) 生效中
+        await locks_store.insert(
+            conn,
+            scope="global",
+            rule_name="ActiveRule",
+            reason="生效中",
+            locked_until=_future(3600),
+        )
+        # 2) 已过期（locked_until 在过去）
+        await locks_store.insert(
+            conn,
+            scope="symbol",
+            rule_name="CooldownRule",
+            reason="冷却过期",
+            locked_until=_past(60),
+            market="binance",
+            symbol="BTC/USDT@binance",
+        )
+        # 3) 人工解锁（软删）
+        unlocked_id = await locks_store.insert(
+            conn,
+            scope="market",
+            rule_name="MarketHoursRule",
+            reason="人工解",
+            locked_until=_future(7200),
+            market="nasdaq",
+        )
+        await locks_store.manual_unlock(
+            conn, unlocked_id, unlocked_by="admin@test", unlock_reason="false positive"
+        )
+
+        rows = await locks_store.list_recent(conn, limit=50)
+
+    # list_active 只会返 1 条（生效中）；list_recent 三条都在
+    assert len(rows) == 3
+    rule_names = {r["rule_name"] for r in rows}
+    assert rule_names == {"ActiveRule", "CooldownRule", "MarketHoursRule"}
+    # 带上状态元数据，调用方据此区分生效/过期/解锁
+    by_rule = {r["rule_name"]: r for r in rows}
+    assert by_rule["MarketHoursRule"]["active"] is False
+    assert by_rule["MarketHoursRule"]["unlocked_by"] == "admin@test"
+    assert by_rule["ActiveRule"]["active"] is True
+
+
+async def test_list_recent_respects_limit() -> None:
+    async with get_conn() as conn:
+        for i in range(5):
+            await locks_store.insert(
+                conn,
+                scope="global",
+                rule_name=f"R{i}",
+                reason="x",
+                locked_until=_future(60),
+            )
+        rows = await locks_store.list_recent(conn, limit=2)
+    assert len(rows) == 2
+
+
 async def test_manual_unlock_soft_deletes() -> None:
     async with get_conn() as conn:
         lock_id = await locks_store.insert(

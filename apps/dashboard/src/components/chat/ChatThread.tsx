@@ -22,6 +22,8 @@ import {
 } from "react";
 
 import { cn } from "@/lib/cn";
+import { DivinationCard } from "@/components/divination/DivinationCard";
+import { isDivinationTool, parseDivination } from "@/components/divination/types";
 import { ChatMarkdown } from "./ChatMarkdown";
 
 /** AG-UI 消息(@ag-ui/core)的最小形态 —— 只取渲染需要的字段。 */
@@ -551,14 +553,21 @@ function MessageRow({
   }
 
   if (message.role === "tool") {
+    const toolName = toolNames.get(message.toolCallId ?? "") ?? "tool";
+    // 玄学 tool 结果渲染成卦象 / 塔罗卡片(解析失败回退普通 chip)。
+    if (isDivinationTool(toolName)) {
+      const reading = parseDivination(text);
+      if (reading) {
+        return (
+          <div className="flex justify-start">
+            <DivinationCard reading={reading} className="max-w-[95%]" />
+          </div>
+        );
+      }
+    }
     return (
       <div className="rise flex justify-start">
-        <ToolChip
-          name={toolNames.get(message.toolCallId ?? "") ?? "tool"}
-          body={text}
-          label={toolDone}
-          done
-        />
+        <ToolChip name={toolName} body={text} label={toolDone} done />
       </div>
     );
   }

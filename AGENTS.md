@@ -7,8 +7,8 @@
 
 ## 1. 项目一句话定位
 
-Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**，重度借鉴 Claude Code
-的 hooks / permissions / plan-exec / MCP 模式。**采用 AGPL-3.0**（见 LICENSE）：随便用，但魔改后做托管服务必须公开源码。
+Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**：agent 自己挑有效因子择时、写完整策略代码、在审计下自我进化，下单必经机器审批（LLM 不直连）；研究可叫"投资大师团"辩论，外加一个硬隔离于决策的狐神签彩蛋。工程模式重度借鉴 Claude Code
+的 hooks / permissions / plan-exec / MCP。**采用 AGPL-3.0**（见 LICENSE）：随便用，但魔改后做托管服务必须公开源码。
 
 ## 2. 先读这些
 

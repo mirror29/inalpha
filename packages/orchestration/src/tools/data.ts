@@ -7,7 +7,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { mintServiceToken } from "../auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../auth.js";
 import { DataClient } from "../clients/data.js";
 import { getSettings } from "../config.js";
 
@@ -40,14 +40,14 @@ type ToolRequestContext = {
 
 async function getClient(ctx?: ToolRequestContext): Promise<DataClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
   return new DataClient({ baseUrl: settings.dataServiceUrl, token });
 }
 
 /** backfill 专用长超时 client —— CCXT rate-limited fetch_ohlcv，大跨度可能分钟级 */
 async function getBackfillClient(ctx?: ToolRequestContext): Promise<DataClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
   return new DataClient({
     baseUrl: settings.dataServiceUrl,
     token,

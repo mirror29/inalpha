@@ -1,14 +1,16 @@
 """Risk API（ADR-0006 Slice 7）—— agent / UI 自检 + 人工解锁入口。
 
-3 个端点：
+4 个端点：
 
 - `GET  /risk/rules`           —— describe 当前配置的 rules（启动时加载 TOML）
-- `GET  /risk/locks`           —— 列 PostgreSQL ``risk_locks`` 中 active 锁
+- `GET  /risk/locks`           —— 列 PostgreSQL ``risk_locks`` 中 **当前生效** 的锁
+- `GET  /risk/locks/history`   —— 列**最近**风控锁（含已过期 / 已解锁），按 locked_at DESC
 - `POST /risk/locks/{id}/unlock` —— 人工解锁（**人工操作，不让 LLM 调**）
 
-注：当前 PostgreSQL ``risk_locks`` 表是**只读视图**——RiskEngine 仍只写
-`InMemoryLockStore`。InMemory → PostgreSQL 的 reconcile worker 独立 Slice 处理。
-本 API 路由设计层面已就绪，等 reconcile 补完即真用。
+注：live runner 走 ``RiskGuard``（HTTP 异步路径）**直接把锁写进 PG ``risk_locks``**，
+所以 ``/locks`` / ``/locks/history`` 是真实数据；backtest 路径走 ``InMemoryLockStore`` +
+``LockStoreReconciler``（dump 进同一张表）。``/locks`` 只看 active，故短时效锁过期后
+看不到——``/locks/history`` 补这道「事后可查」的审计视图。
 
 [ADR-0006 §D6](../../../../docs/miro/decisions/0006-risk-rules.md) MCP tool 设计。
 Mastra TS 侧 MCP wrapping 在 ``packages/orchestration``，本服务只暴露 HTTP 路由。
@@ -118,6 +120,19 @@ class LocksListResponse(BaseModel):
     locks: list[LockResponse]
 
 
+class RecentLockResponse(LockResponse):
+    """``/risk/locks/history`` 一行——比 active 锁多带解锁/状态元数据。"""
+
+    active: bool
+    unlocked_at: datetime | None
+    unlocked_by: str | None
+    unlock_reason: str | None
+
+
+class RecentLocksListResponse(BaseModel):
+    locks: list[RecentLockResponse]
+
+
 class UnlockRequest(BaseModel):
     reason: str = Field(..., min_length=1)
 
@@ -165,6 +180,24 @@ async def list_locks(
         limit=limit,
     )
     return LocksListResponse(locks=[LockResponse.model_validate(r) for r in rows])
+
+
+@router.get("/locks/history", response_model=RecentLocksListResponse)
+async def list_locks_history(
+    _user: Annotated[User, Depends(get_current_user)],
+    conn: DBConn,
+    limit: int = 50,
+) -> RecentLocksListResponse:
+    """列**最近**风控锁（含已过期 / 已解锁），按 ``locked_at`` DESC。
+
+    风控锁多为短时效（如 CooldownRule 5min），``/locks`` 只看 active 会让「刚触发过
+    风控」过期即不可查。本端点给 UI / 审计一个事后复盘的历史视图。
+    """
+    bounded = max(1, min(limit, 200))
+    rows: list[dict[str, Any]] = await locks_store.list_recent(conn, limit=bounded)
+    return RecentLocksListResponse(
+        locks=[RecentLockResponse.model_validate(r) for r in rows]
+    )
 
 
 @router.post("/locks/{lock_id}/unlock")

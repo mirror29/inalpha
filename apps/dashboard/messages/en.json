@@ -11,6 +11,7 @@
     "lab": "Strategy Lab",
     "factors": "Factors",
     "risk": "Risk",
+    "divination": "Omikuji",
     "soon": "soon"
   },
   "theme": {
@@ -246,12 +247,23 @@
     "rules": "Rules",
     "rulesEmpty": "No rules configured.",
     "disabled": "Risk engine is disabled.",
+    "history": "Recent Risk Events",
+    "historyEmpty": "No recent risk events — no locks or rejections lately.",
+    "status": {
+      "active": "active",
+      "expired": "expired",
+      "unlocked": "unlocked",
+      "rejected": "rejected"
+    },
     "col": {
       "rule": "Rule",
       "scope": "Scope",
       "side": "Side",
       "reason": "Reason",
-      "until": "Until"
+      "until": "Until",
+      "event": "Event",
+      "status": "Status",
+      "when": "When"
     }
   },
   "common": {
@@ -281,5 +293,31 @@
     "toolDone": "done",
     "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",
     "errorDismiss": "Dismiss"
+  },
+  "divination": {
+    "pageTitle": "Inari Omikuji",
+    "pageSubtitle": "Hesitant on direction? Draw an omikuji — a shrine fortune slip — at the shrine of Inari, the fox deity of fortune; an I Ching or Tarot reading for a second vantage. Before you commit, the call still belongs to the data and risk engine.",
+    "questionPlaceholder": "Write down what you can't settle (e.g. this direction — step in or wait)…",
+    "defaultQuestion": "This direction I'm eyeing — step in, or wait?",
+    "castHexagram": "Cast a hexagram · I Ching",
+    "drawTarotSingle": "Draw one · Tarot",
+    "drawTarotThree": "Three-card spread · Tarot",
+    "divining": "Drawing your omikuji…",
+    "emptyHint": "Got something unresolved on your mind? Write it down, then cast a hexagram or draw a card. The same question yields the same sign — let the thought shift, then ask again.",
+    "emptyState": "No sign drawn yet.",
+    "promptHexagram": "Cast an I Ching hexagram for me about: {question}",
+    "promptTarotSingle": "Draw a single tarot card for me about: {question}",
+    "promptTarotThree": "Draw a past / present / future tarot spread for me about: {question}",
+    "hexagramTitle": "I Ching Hexagram",
+    "tarotTitle": "Tarot Spread",
+    "primaryHexagram": "Primary",
+    "changedHexagram": "Changed",
+    "changingLines": "Changing lines: {lines}",
+    "noChangingLines": "All lines still — no changing lines",
+    "reversed": "reversed",
+    "posPast": "Past",
+    "posPresent": "Present",
+    "posFuture": "Future",
+    "disclaimer": "The omikuji is a perspective, not a signal · not investment advice · the trade still answers to data and risk"
   }
 }

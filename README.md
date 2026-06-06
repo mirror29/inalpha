@@ -6,7 +6,9 @@
 
 <p><strong>Quant agents that evolve under audit.</strong></p>
 
-<p>Factor lab &nbsp;·&nbsp; Risk engine &nbsp;·&nbsp; Strategy evolution &nbsp;·&nbsp; Plan/Exec</p>
+<p><em>An oracle that keeps a ledger.</em></p>
+
+<p>Factor timing &nbsp;·&nbsp; Multi-perspective research &nbsp;·&nbsp; Factor lab &nbsp;·&nbsp; Risk engine &nbsp;·&nbsp; Strategy evolution &nbsp;·&nbsp; Machine-approved orders &nbsp;·&nbsp; Backtest = paper &nbsp;·&nbsp; Omikuji</p>
 
 <p>
   <strong>English</strong> &nbsp;|&nbsp; <a href="README.zh-CN.md">中文</a>
@@ -20,9 +22,9 @@
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
 </p>
 
-<p><em>Every factor proposed, every strategy mutated, every order routed — logged, versioned, reviewable. Every number the agents reason on — sourced, <code>as_of</code>-stamped, freshness-checked. The LLM writes the code; the engineering harness signs every decision.</em></p>
+<p><em>Every factor proposed, every strategy mutated, every order routed — logged, versioned, reviewable. Agents pick the currently-effective factors to time entries, write the strategies, and evolve them; the LLM writes the code, and the engineering harness signs every decision.</em></p>
 
-<p>Inalpha is a <strong>professional quant agent framework</strong> — an open-source system where LLM agents propose, research, mutate, and execute trading strategies under an <strong>audit-grade engineering harness</strong>. It combines the Claude Code hooks/permissions/plan-exec pattern, NautilusTrader's unified backtest=paper=live kernel, and multi-market routing (crypto, US equities, A-shares, global indices, macro) — built for teams that demand <strong>every decision be provable and every order path be unreachable by the LLM directly</strong>.</p>
+<p>Inalpha is a <strong>professional quant agent framework</strong> — an open-source system where LLM agents research (with a panel of investing legends), pick the factors that work <em>now</em>, write and evolve strategy code, and route every order through machine approval, all under an <strong>audit-grade engineering harness</strong>. A unified backtest=paper=live kernel (one strategy codebase — swap only the Clock and Gateway), multi-market routing (crypto, US equities, A-shares, global indices, macro), and a Claude Code-style hooks/permissions/plan-exec layer back it — built for teams that demand <strong>every decision be provable and every order path be unreachable by the LLM directly</strong>.</p>
 
 </div>
 
@@ -32,16 +34,18 @@
 
 Inalpha is a **professional quant agent framework, governed by engineering discipline**. It treats LLM agents not as black-box signal generators, but as code-writing collaborators bounded by hooks, permissions, plan-then-execute approval, and a one-shot signature on every order path.
 
-**Source-attributed by default.** Below the decision harness sits a data discipline: every bar, every quote, every macro print the agents reason on carries its source, its `as_of` timestamp, and a freshness check. Financial reasoning that quietly ages into stale data is the most common way an agent fails *without anyone noticing* — Inalpha refuses to compile that failure mode.
+**Agents pick the factors that work *now*.** Instead of a hard-coded indicator set, they rank factors by time-series Rank IC and surface the ones currently effective (`factor.timing`), then use that to back research and timing. Data itself is source-attributed by default — `as_of`-stamped and freshness-checked — so agents don't quietly reason on stale data.
 
-Four capability lines sit on top of that harness:
+Several capability lines sit on top of that harness:
 
-- **Factor lab** — agents formalize, compute, IC-test, multiple-testing-check, and register factors; every hypothesis is logged with author, timestamp, and the economic-story gate decision.
+- **Factor lab + factor timing** — agents formalize, compute, IC-test, multiple-testing-check, and register factors, and rank them by time-series Rank IC to time entries; every hypothesis is logged with author, timestamp, and the economic-story gate decision.
+- **Multi-perspective research** — a deep dive convenes technical / fundamental / sentiment analysts, plus an optional panel of investing legends (Buffett / Lynch / Wood / Burry / Druckenmiller / Marks) for opposing views that feed a synthesis.
 - **Risk engine** — declarative rules (notional caps, price deviation, drawdown veto) enforced at the HTTP boundary, not in prompts.
 - **Strategy evolution** — LLMs mutate full Python source; three sandbox gates (AST audit, subprocess isolation, `Strategy` protocol contract) precede any candidate run; multi-objective fitness (Sharpe + Calmar − turnover − drawdown) so no metric can be gamed alone.
-- **Plan/Exec audit trail** — `trade.create_plan → approve → execute_plan` with a single-use, TTL-bound `approval_token`. The LLM has no direct path to placing an order.
+- **Machine-approved orders (no direct LLM path)** — order intents go `trade.create_plan → approve → execute_plan` with a single-use, TTL-bound `approval_token`; the LLM has no direct path to placing an order, and every step is logged into the audit trail.
+- **Inari Omikuji — a shrine fortune draw (playful easter egg)** — undecided on direction? Cast a hexagram or draw a tarot card for a vantage outside the data; **hard-walled from decisions**, it can't touch risk, orders, or factors (see Core Capabilities §6).
 
-The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha** (the quant term for excess return).
+The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha** (the quant term for excess return) — a companion that reads your direction and keeps every step on the record.
 
 > **Status:** Inalpha is in **alpha** (Phase D-11 — multi-market paper trading: cross-currency cash + a live runner that auto-runs promoted strategies on live bars, on top of D-10 multi-market data and D-9 LLM-authored strategies + risk engine). Read the code, weigh in on design — **do not run this against real money** (real-money trading is out of scope).
 
@@ -67,9 +71,9 @@ The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha*
 
 Four layers, top to bottom:
 
-- **L1 · User entry.** Today the user drives the system through the `mastra dev` playground or direct CLI tool calls. A dedicated web UI is deferred to Phase E+.
+- **L1 · User entry.** The Operator Console (`apps/dashboard`, with a docked agent chat) is the home base; the `mastra dev` playground is there for live trace, and direct CLI tool calls still work.
 - **L2 · `packages/orchestration` (Mastra · TypeScript).** Where agents, tools, hook/permission middleware, the in-memory plan store, conversation memory, and telemetry live side by side. This is the only layer LLMs run in.
-- **L3 · Python kernel services (FastAPI).** Each service is an independent, stateful process. Today: `services/data` (market data ingest + web search + financial fundamentals across A-shares / HK / US / global), `services/paper` (event-driven kernel running backtest and paper on the same code), `services/research` (initial multi-agent scaffolding; analysts pull fundamentals + web intel with fallback; the full bull/bear debate loop is slated for Phase E+), and `services/factor` (factor library — pandas-ta / Alpha101 / qlib — with IC effectiveness screening; signals only, no execution). The asynchronous `Strategy Evolution` loop runs alongside.
+- **L3 · Python kernel services (FastAPI).** Each service is an independent, stateful process. Today: `services/data` (market data ingest + web search + financial fundamentals across A-shares / HK / US / global), `services/paper` (event-driven kernel running backtest and paper on the same code), `services/research` (initial multi-agent scaffolding; analysts pull fundamentals + web intel with fallback; the full bull/bear debate loop is slated for Phase E+), and `services/factor` (factor library — pandas-ta / Alpha101 / qlib — with IC effectiveness screening and current-effective factor timing; signals only, no execution). The asynchronous `Strategy Evolution` loop runs alongside.
 - **L4 · Persistence & external.** Postgres + TimescaleDB stores all time-series and business state. External venues span crypto, US equities, A-shares, Hong Kong, major Asian and European markets, global indices, and FRED macro data — routed automatically by the orchestrator based on market classification.
 
 ### Strategy Evolution loop (Phase E+)
@@ -93,6 +97,7 @@ Each capability below is built so the work it produces is auditable from day one
 An *alpha hypothesis* is a guess about what predicts returns ("stocks with low volatility outperform"; "options skew steepens before drawdowns"). Traditional factor research is bottlenecked by the manual loop — a single researcher can usually validate 5–10 such guesses a day. Inalpha lets agents do that work without taking shortcuts.
 
 - **Talk it through.** Drop a hypothesis in plain language; agents formalize it, compute the values, and run the standard statistical checks in seconds.
+- **Not just a registry — timing too.** Rather than a hard-coded indicator set, agents rank factors by time-series Rank IC to surface the ones effective *right now* (`factor.timing`), backing research and entry timing — when the market rotates, the chosen factors rotate with it.
 - **An economic story gate.** A factor without a "why" never enters the library. The gate is a required step, not a recommendation.
 - **Guardrails for the classic mistakes.** Looking ahead in time, surviving-only universes, over-parameterized search, too few samples, normalization leaks — five middleware checks intercept each one before it pollutes a result.
 - **No silent promotion.** Registering a factor to the library is permanently human-only. Rejected factors are kept on file for postmortems, not silently dropped.
@@ -125,6 +130,21 @@ Real quant research is concurrent by nature: 5 symbols × 3 factor families × 4
 Inalpha splits *scheduling* from *compute*. The agent runtime fans out the grid and aggregates results; a Python worker pool inside `services/paper` actually runs the backtests in parallel processes with resource limits. "Run momentum / mean-reversion / breakout across BTC, ETH, SOL, BNB, AVAX for 2024" becomes one workflow call that returns a Pareto frontier.
 
 > Current implementation (S1): single-host process pool, concurrency 4, grid capped at 20 backtests per call.
+
+### 5. Research — a panel of investing legends
+
+A deep dive doesn't hand you one "correct answer." Beyond the usual technical, fundamental, and sentiment analysts, you can convene a panel of master personas — Buffett (value / moats), Lynch (GARP growth), Wood (disruptive innovation), Burry (contrarian / bubbles), Druckenmiller (macro trends), Marks (cycles / risk): each argues in their own style, naturally forming opposing views that feed a synthesized judgment.
+
+- **Opt-in, cost-controlled.** A plain deep dive costs the same as before; you only pay for the masters you actually convene.
+- **Views grounded in data.** Each persona reads technicals / fundamentals / web intel with `as_of` pinned to *now* — no passing a stale forecast off as the present.
+- **The full bull/bear structured debate** lands in Phase E+; today you already get multiple perspectives side by side with opposing stances feeding the synthesis.
+
+### 6. Inari Omikuji — undecided? draw a slip for direction
+
+Real money invites real hesitation. When you're stuck, let the Inari priestess — α kit on her shoulder — draw you an *omikuji* (a shrine fortune slip): cast an I Ching hexagram or pull a tarot card for **a vantage outside the data**. A different angle, a breath, maybe a small unexpected nudge from Inari.
+
+- **A whisper, not an order.** The hexagram or card **never** touches risk, approval, order placement, or factor scoring — it can't read or sway a single real decision. Which quietly makes the point: if even Inari's omen can't reach the decision path, the machine-approval boundary is real.
+- **The trade still answers to data.** Once the slip is drawn, the call still belongs to research, factors, and backtests; the omikuji only helps unknot your brow.
 
 ---
 
@@ -160,24 +180,6 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 
 ---
 
-## Built on the shoulders of
-
-Inalpha is not invented from scratch. It selectively inherits proven designs from prior work, with explicit boundaries around **what we take and what we leave**:
-
-| Project | What we inherit | What we don't |
-|---|---|---|
-| [**Nautilus Trader**](https://github.com/nautechsystems/nautilus_trader) | The `backtest = paper = live` invariant; event-driven kernel; unified Clock / MessageBus abstractions | Rust implementation (Python first for ecosystem depth; revisit critical paths in Rust later) |
-| [**vnpy**](https://github.com/vnpy/vnpy) | Gateway abstraction and multi-market access philosophy | CTP / XTP-style domestic Chinese broker gateways (we route through CCXT and direct REST instead) |
-| [**Microsoft qlib**](https://github.com/microsoft/qlib) | Factor expression DSL, the Alpha158 paradigm, point-in-time universe design | End-to-end ML training pipeline (we use qlib as a factor lab, not a replacement) |
-| [**TradingAgents**](https://github.com/TauricResearch/TradingAgents) | Multi-agent opposing stances (bull / bear / risk) for **research** debate — slotted into `services/research` (Phase E+) | Putting the same pattern on the execution path (we route execution through a state machine + permissions instead) |
-| [**Anthropic Claude Code**](https://claude.com/claude-code) | Hooks (PreToolUse / PostToolUse / Stop), declarative permissions, Plan/Exec separation, MCP, subagent isolation, prompt-cache engineering | Coding-specific tools like Bash / file editing (tool set redesigned for trading) |
-| [**Mastra**](https://mastra.ai) | TypeScript agent orchestration scaffolding, `createTool` / `createWorkflow` primitives | — |
-| [**Anthropic Claude for Financial Services**](https://github.com/anthropics/financial-services) | The `.mcp.json` connector-catalog convention (compatible with its FactSet / Morningstar / S&P MCP servers); the `comps-analysis` relative-valuation methodology (Apache-2.0, shipped as a valuation analyst) | Sell-side document-workflow agents (pitch decks / DCF / IC memos / KYC — explicitly no trading); **paid data-source dependencies** — we default to zero-key free sources, paid connectors ship only as `disabled` templates |
-
-> Complementary positioning: Inalpha is a **quant trading loop** (research → backtest → guarded auto-execution); financial-services is a **sell-side document workflow** (Excel/PPT drafts for human review). Inalpha is **MCP-compatible** with its connector catalog — but never requires it, defaults to it, or pays for it.
-
----
-
 ## For whom
 
 | Audience | Value |
@@ -186,13 +188,6 @@ Inalpha is not invented from scratch. It selectively inherits proven designs fro
 | Trading system engineers | A reference integration of modern agents with traditional kernels, cross-referenced against Nautilus / qlib / vnpy |
 | AI agent developers | Real-world financial deployment of multi-agent + hooks + permissions |
 | Individual traders (research-oriented) | A research companion you can talk to, plus an engineered home for your strategies |
-
-| Not for you if you want | Look here instead |
-|---|---|
-| Subscription "AI signals" or copy-trading | Inalpha is a tool, not a product |
-| Millisecond high-frequency trading | [Nautilus Trader](https://github.com/nautechsystems/nautilus_trader) (Rust kernel) |
-| Market making or cross-exchange arbitrage | [Hummingbot](https://github.com/hummingbot/hummingbot) |
-| A plug-and-play production system | Nautilus Trader (mature) |
 
 ---
 
@@ -241,10 +236,12 @@ bash scripts/dev.sh stop        # stop everything
 
 ### 4 · Open the Operator Console — your home base
 
-The **Operator Console** is the recommended way to use Inalpha. It's a read-only runtime
-dashboard that surfaces everything you'd otherwise have to ask the agent for, at a glance:
+The **Operator Console** is the recommended way to use Inalpha — your home base. A runtime
+dashboard surfaces everything you'd otherwise have to ask the agent for, at a glance:
 portfolio & positions, live runners with bar-by-bar decisions, the cross-module agent
-activity timeline, the strategy lab, the system factor library, and the risk panel.
+activity timeline, the strategy lab, the system factor library, the risk panel, and the
+Inari Omikuji. **A docked agent chat sits on the right** — talk to the orchestrator
+directly: pull quotes, run backtests, tune factors, draw a hexagram, all in one place.
 
 ```bash
 cd apps/dashboard
@@ -257,18 +254,12 @@ are inherited), so as long as the services from step 3 are up, it just connects.
 **dark / light themes** (a terminal "Vermilion" aesthetic — see [`apps/dashboard/design.md`](apps/dashboard/design.md))
 and an `en / 中` switcher in the sidebar.
 
-> The console is becoming the single front door: the **agent chat experience is moving into
-> the console** too, so over time you'll drive data, research, backtests, live runners, and
-> the conversation with the orchestrator all from one place.
+> The console is the single front door: data, research, backtests, live runners, and the
+> conversation with the orchestrator now all live in one place.
 
-### 5 · Talk to the orchestrator
-
-Until the chat lands in the console, open the `mastra dev` playground at
-**<http://127.0.0.1:4111>** — that's where you chat with the orchestrator agent and watch every
-tool call, hook event, and approval token in the live trace UI. `services/paper` does not call
-any LLM directly; only the orchestrator (Mastra) and `services/research` consume your key.
-
-Prefer the manual three-terminal flow? See [`AGENTS.md §4`](AGENTS.md).
+> Only the orchestrator (Mastra) and `services/research` consume your LLM key; `services/paper`
+> never calls an LLM directly. Prefer the manual three-terminal flow, or want the low-level live
+> trace (the `mastra dev` playground at <http://127.0.0.1:4111>)? See [`AGENTS.md §4`](AGENTS.md).
 
 ---
 

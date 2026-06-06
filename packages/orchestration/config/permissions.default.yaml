@@ -61,6 +61,9 @@ allow:
   # 第一道 AST 审计 + 第三道协议契约校验留给 Phase B 接入。
   - "sandbox.run_code(timeoutMs<=60000)"
 
+  # 玄学彩蛋（六爻 / 塔罗）—— 纯娱乐、本地确定性、不碰钱不碰数据，allow
+  - "divination.*"
+
 ask:
   # D-8a 暂无 live 引擎；规则提前写好作 forward-compat
   - "live.submit_order(notional<1000)"

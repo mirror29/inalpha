@@ -8,7 +8,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { mintServiceToken } from "../auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../auth.js";
 import { FactorClient } from "../clients/factor.js";
 import { getSettings } from "../config.js";
 
@@ -31,7 +31,7 @@ type ToolRequestContext = { authToken?: string };
 
 async function getClient(ctx?: ToolRequestContext): Promise<FactorClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
   return new FactorClient({ baseUrl: settings.factorServiceUrl, token });
 }
 

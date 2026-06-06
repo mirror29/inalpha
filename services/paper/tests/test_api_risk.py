@@ -189,6 +189,68 @@ async def test_get_locks_filter_by_scope(
     assert body["locks"][0]["scope"] == "global"
 
 
+# ─── GET /risk/locks/history ───
+
+
+@pytest.mark.asyncio
+async def test_get_locks_history_includes_expired_and_unlocked(
+    client: TestClient, auth_headers: dict[str, str], risk_locks_table: None
+) -> None:
+    """history 含已过期 / 已解锁行；同场景 /locks 只返 active 那条。"""
+    del risk_locks_table
+    from inalpha_paper.storage import risk_locks as locks_store
+
+    now = datetime.now(UTC)
+    async with get_conn() as conn:
+        await locks_store.insert(
+            conn, scope="global", rule_name="ActiveRule", reason="生效",
+            locked_until=now + timedelta(hours=1),
+        )
+        await locks_store.insert(
+            conn, scope="symbol", rule_name="CooldownRule", reason="冷却过期",
+            locked_until=now - timedelta(minutes=1),
+            market="binance", symbol="BTC/USDT@binance",
+        )
+        await conn.commit()
+
+    # /locks 只看 active → 1 条
+    r_active = client.get("/risk/locks", headers=auth_headers)
+    assert r_active.status_code == 200
+    assert len(r_active.json()["locks"]) == 1
+
+    # /locks/history 不过滤 active → 2 条，且带状态元数据
+    r_hist = client.get("/risk/locks/history", headers=auth_headers)
+    assert r_hist.status_code == 200, r_hist.text
+    locks = r_hist.json()["locks"]
+    assert len(locks) == 2
+    by_rule = {x["rule_name"]: x for x in locks}
+    assert set(by_rule) == {"ActiveRule", "CooldownRule"}
+    # 字段完整性：含 active / unlock 元数据
+    assert by_rule["ActiveRule"]["active"] is True
+    assert "unlock_reason" in by_rule["CooldownRule"]
+
+
+@pytest.mark.asyncio
+async def test_get_locks_history_respects_limit(
+    client: TestClient, auth_headers: dict[str, str], risk_locks_table: None
+) -> None:
+    del risk_locks_table
+    from inalpha_paper.storage import risk_locks as locks_store
+
+    until = datetime.now(UTC) + timedelta(hours=1)
+    async with get_conn() as conn:
+        for i in range(4):
+            await locks_store.insert(
+                conn, scope="global", rule_name=f"R{i}", reason="x",
+                locked_until=until,
+            )
+        await conn.commit()
+
+    r = client.get("/risk/locks/history?limit=2", headers=auth_headers)
+    assert r.status_code == 200
+    assert len(r.json()["locks"]) == 2
+
+
 # ─── POST /risk/locks/{id}/unlock ───
 
 

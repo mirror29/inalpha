@@ -8,6 +8,7 @@ import {
   Radio,
   ShieldAlert,
   Sigma,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +33,8 @@ const NAV: NavItem[] = [
   { key: "lab", index: "04", href: "/lab", icon: FlaskConical },
   { key: "factors", index: "05", href: "/factors", icon: Sigma },
   { key: "risk", index: "06", href: "/risk", icon: ShieldAlert },
+  // 玄学彩蛋占卜台(纯娱乐)
+  { key: "divination", index: "07", href: "/divination", icon: Sparkles },
 ];
 
 export function ConsoleSidebar() {

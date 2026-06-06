@@ -11,6 +11,7 @@
     "lab": "策略实验室",
     "factors": "因子库",
     "risk": "风控",
+    "divination": "狐神签",
     "soon": "即将"
   },
   "theme": {
@@ -246,12 +247,23 @@
     "rules": "规则",
     "rulesEmpty": "未配置规则。",
     "disabled": "风控引擎已停用。",
+    "history": "最近风控事件",
+    "historyEmpty": "近期无风控事件 —— 没有锁也没有被拒的下单。",
+    "status": {
+      "active": "生效中",
+      "expired": "已过期",
+      "unlocked": "已解锁",
+      "rejected": "已拒单"
+    },
     "col": {
       "rule": "规则",
       "scope": "范围",
       "side": "方向",
       "reason": "原因",
-      "until": "解锁于"
+      "until": "解锁于",
+      "event": "事件",
+      "status": "状态",
+      "when": "时间"
     }
   },
   "common": {
@@ -281,5 +293,31 @@
     "toolDone": "已完成",
     "errorGeneric": "Agent 回复失败，请重试 —— 多半是上游 LLM 报错或连接中断。",
     "errorDismiss": "关闭"
+  },
+  "divination": {
+    "pageTitle": "狐神签",
+    "pageSubtitle": "方向犹豫时，向稻荷狐神求一签 —— 六爻与塔罗，为你的判断添一个参照视角。落子之前，决断仍归数据与风控。",
+    "questionPlaceholder": "把心里拿不定的事写下来（比如：这个方向，该进还是该等）…",
+    "defaultQuestion": "眼下这个方向，我该进还是该等",
+    "castHexagram": "求一卦 · 六爻",
+    "drawTarotSingle": "抽一张 · 塔罗",
+    "drawTarotThree": "三张牌阵 · 塔罗",
+    "divining": "求签中…",
+    "emptyHint": "心有所惑，便写下要问的事，求一卦或抽一张。同一桩心事，签象固定；念头变了，再求一回。",
+    "emptyState": "尚未求签。",
+    "promptHexagram": "请为我求一卦（易经六爻）：{question}",
+    "promptTarotSingle": "请为我抽一张塔罗：{question}",
+    "promptTarotThree": "请为我抽塔罗三张牌阵（过去 / 现在 / 未来）：{question}",
+    "hexagramTitle": "六爻卦象",
+    "tarotTitle": "塔罗牌阵",
+    "primaryHexagram": "本卦",
+    "changedHexagram": "变卦",
+    "changingLines": "动爻：第 {lines} 爻",
+    "noChangingLines": "六爻安静，无动爻",
+    "reversed": "逆位",
+    "posPast": "过去",
+    "posPresent": "现在",
+    "posFuture": "未来",
+    "disclaimer": "狐神之签，只作参照 · 非投资建议 · 落子仍归数据与风控"
   }
 }
