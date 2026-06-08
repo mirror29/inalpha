@@ -21,6 +21,7 @@
  */
 import type { Context, Handler } from "hono";
 
+import { getSettings } from "../config.js";
 import { castHexagram } from "./hexagram.js";
 import { DIVINATION_DISCLAIMER } from "./index.js";
 import * as repo from "./repo.js";
@@ -33,8 +34,12 @@ interface ApiRouteSpec {
   handler: Handler;
 }
 
-/** 缺省身份 —— 与 dashboard `CONSOLE_SUBJECT` 默认值对齐(单租户 dev)。 */
-const DEFAULT_SUBJECT = "console:dev";
+/**
+ * 缺省身份(BFF 未注入 subject 时的兜底)—— 跟随 `CONSOLE_SUBJECT` 配置,不硬编码。
+ * 否则运维改了 `CONSOLE_SUBJECT`、又直连 mastra POST /divination/cast(无 subject body)时,
+ * 记录会落到 "console:dev" 而非配置 subject,在控制台里查不到。每次调用读(getSettings 内部缓存)。
+ */
+const defaultSubject = (): string => getSettings().consoleSubject;
 
 /** 历史条数上限,避免一次拉太多。 */
 const MAX_HISTORY = 100;
@@ -77,7 +82,7 @@ const cast: Handler = async (c: Context) => {
     typeof body["symbol"] === "string" && body["symbol"].length <= 50
       ? body["symbol"]
       : null;
-  const subject = typeof body["subject"] === "string" && body["subject"] ? body["subject"] : DEFAULT_SUBJECT;
+  const subject = typeof body["subject"] === "string" && body["subject"] ? body["subject"] : defaultSubject();
 
   // seed 与 tool 一致 —— 同问得同卦(网页直算 / 对话占卜结果可复现)。
   const seed = `${question}|${symbol ?? ""}`;
@@ -100,7 +105,7 @@ const history: Handler = async (c: Context) => {
   // 多租户下任何持有效 JWT 的调用方可传任意 subject 越权读他人占卜历史(同 getOne)。
   // 单租户 dev 下所有人 subject 相同、无实际影响;BFF 固定注入 CONSOLE_SUBJECT 也挡住了
   // 正常链路,但 mastra 端口直达时无此保护。
-  const subject = c.req.query("subject") || DEFAULT_SUBJECT;
+  const subject = c.req.query("subject") || defaultSubject();
   const limitRaw = c.req.query("limit");
   let limit = limitRaw ? Number(limitRaw) : DEFAULT_HISTORY;
   if (Number.isNaN(limit) || limit <= 0) return badRequest(c, "invalid limit");
@@ -113,7 +118,7 @@ const history: Handler = async (c: Context) => {
 const getOne: Handler = async (c: Context) => {
   const id = c.req.param("id") ?? "";
   // TODO(multi-tenant): 同 history —— subject 应从 JWT claims 派生而非 query param。
-  const subject = c.req.query("subject") || DEFAULT_SUBJECT;
+  const subject = c.req.query("subject") || defaultSubject();
   const record = await repo.getDivination(id, subject);
   return record === null ? c.json({ error: "not_found", id }, 404) : c.json(record);
 };
