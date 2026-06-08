@@ -90,11 +90,20 @@ export function parseDivination(body: string | undefined): DivinationView | null
     if (obj.data) candidates.push(obj.data);
   }
   for (const c of candidates) {
-    if (c && typeof c === "object") {
-      const kind = (c as { kind?: unknown }).kind;
-      if (kind === "hexagram" || kind === "tarot") {
-        return c as DivinationView;
-      }
+    if (!c || typeof c !== "object") continue;
+    const obj = c as Record<string, unknown>;
+    // cast 前做最小结构校验:只认 kind 不够 —— 若 message 包装层没展开导致
+    // primary / cards 缺失,HexagramViz / TarotCards 会以 undefined 渲染崩溃。
+    if (
+      obj.kind === "hexagram" &&
+      obj.primary &&
+      typeof obj.primary === "object" &&
+      Array.isArray((obj.primary as { lines?: unknown }).lines)
+    ) {
+      return c as DivinationView;
+    }
+    if (obj.kind === "tarot" && Array.isArray(obj.cards)) {
+      return c as DivinationView;
     }
   }
   return null;

@@ -171,13 +171,15 @@ async def list_locks(
     limit: int = 100,
 ) -> LocksListResponse:
     """列 PostgreSQL `risk_locks` 中 `now` 仍生效的锁。"""
+    # 与 /locks/history 对称:防 ?limit=999999 直接 LIMIT 全表扫。
+    bounded = max(1, min(limit, 200))
     rows: list[dict[str, Any]] = await locks_store.list_active(
         conn,
         now=datetime.now(UTC),
         scope=scope,
         market=market,
         symbol=symbol,
-        limit=limit,
+        limit=bounded,
     )
     return LocksListResponse(locks=[LockResponse.model_validate(r) for r in rows])
 

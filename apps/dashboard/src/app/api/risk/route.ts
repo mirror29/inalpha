@@ -78,7 +78,11 @@ export async function GET() {
     backendFetch<HistoryResp>("paper", "/risk/locks/history", {
       query: { limit: HISTORY_LIMIT },
     }),
-    backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs"),
+    // 只为"跨 run 决策"取最近 N 条 —— 上限推给服务端(按 started_at DESC),
+    // 不随 run 历史累积拉全量大载荷。
+    backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs", {
+      query: { limit: MAX_RUNS_FOR_DECISIONS },
+    }),
   ]);
 
   const rules = rulesR.status === "fulfilled" ? rulesR.value : null;
