@@ -96,6 +96,10 @@ const cast: Handler = async (c: Context) => {
 
 /** GET /divination/history?subject=&limit= */
 const history: Handler = async (c: Context) => {
+  // TODO(multi-tenant): subject 必须从 JWT claims 派生,不能取自 query param —— 否则
+  // 多租户下任何持有效 JWT 的调用方可传任意 subject 越权读他人占卜历史(同 getOne)。
+  // 单租户 dev 下所有人 subject 相同、无实际影响;BFF 固定注入 CONSOLE_SUBJECT 也挡住了
+  // 正常链路,但 mastra 端口直达时无此保护。
   const subject = c.req.query("subject") || DEFAULT_SUBJECT;
   const limitRaw = c.req.query("limit");
   let limit = limitRaw ? Number(limitRaw) : DEFAULT_HISTORY;
@@ -108,6 +112,7 @@ const history: Handler = async (c: Context) => {
 /** GET /divination/:id?subject= */
 const getOne: Handler = async (c: Context) => {
   const id = c.req.param("id") ?? "";
+  // TODO(multi-tenant): 同 history —— subject 应从 JWT claims 派生而非 query param。
   const subject = c.req.query("subject") || DEFAULT_SUBJECT;
   const record = await repo.getDivination(id, subject);
   return record === null ? c.json({ error: "not_found", id }, 404) : c.json(record);
