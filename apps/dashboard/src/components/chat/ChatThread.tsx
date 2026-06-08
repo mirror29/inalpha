@@ -148,6 +148,10 @@ export function ChatThread({
    */
   useEffect(() => {
     const orig = window.fetch;
+    // strict-mode(dev)双 mount:mount1 patch→unmount1 cleanup 还原 orig→mount2 见 orig 未被
+    // patch、重新 patch,捕获的是 mount2 的 ref(= 当前活跃组件的 ref),stop 正常。下方 cleanup
+    // 「仅自己仍是最外层时还原」保证这条还原链成立。若哪天 patch 无 cleanup,二次 mount 会因
+    // __inalphaPatched 早返、旧闭包捕获旧 ref 致 dev 下 stop 失效 —— 故 cleanup 不可删。
     if ((orig as { __inalphaPatched?: boolean }).__inalphaPatched) return;
     const patched: typeof window.fetch = (input, init) => {
       let url = "";
