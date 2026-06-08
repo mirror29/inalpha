@@ -266,6 +266,13 @@ export function ChatThread({
       agent.isRunning = false;
       agent.setMessages?.([...(agent.messages ?? [])]);
     }
+    // 兜底:`stoppingRef` 平时靠 useEffect([isLoading]) 在 isLoading→false 时复位,而那条
+    // 依赖上面 `agent.isRunning = false` 能触发 CopilotKit 重渲染让 isLoading 变 false。
+    // 万一某版本 isLoading 来自别的内部信号、这条 mutation 不生效,stoppingRef 会永久卡 true,
+    // 之后每条新消息都被 fetch patch 立即 abort。3s 后强制复位,不依赖 isLoading 这条链路。
+    window.setTimeout(() => {
+      stoppingRef.current = false;
+    }, 3000);
   };
 
   // threadId 变化(新建 / 切换 / 刷新恢复)→ 回填该会话历史消息;新会话返回空即清空。

@@ -33,6 +33,7 @@ import {
 
 import { getSettings } from "../config.js";
 import { divinationApiRoutes } from "../divination/api.js";
+import { closePool as closeDivinationPool } from "../divination/repo.js";
 import { permissionsApiRoutes } from "../permissions/api.js";
 import { pendingApprovals } from "../permissions/pending.js";
 import { schedulerApiRoutes } from "../scheduler/api.js";
@@ -103,6 +104,9 @@ function hookPendingApprovalsShutdown(): void {
   _pendingShutdownHooked = true;
   const drain = (): void => {
     pendingApprovals.clearAll("deny");
+    // divination/repo 懒建的独立 pg.Pool(max:4)也一并释放,否则高频重启时
+    // Postgres 端会留一批 idle 连接到 idle_in_transaction 超时,易顶满 max_connections。
+    void closeDivinationPool().catch(() => {});
   };
   process.once("SIGTERM", drain);
   process.once("SIGINT", drain);
