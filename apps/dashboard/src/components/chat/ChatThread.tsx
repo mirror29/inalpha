@@ -353,6 +353,9 @@ export function ChatThread({
     if (!text || isLoading) return;
     const isFirst = messages.length === 0; // 该会话首条 → 用它当会话标题
     setChatError(null); // 重发即清掉上一条错误
+    // 解除"正在停止":用户主动发新消息 = 不再是停止态,否则停止后 3s 窗口内这条会被
+    // fetch patch 当作"停止后的后续段"静默 abort 掉(消息凭空消失、无任何反馈)。
+    stoppingRef.current = false;
     setDraft("");
     void sendMessage({
       id: crypto.randomUUID(),
