@@ -236,7 +236,7 @@ async def test_run_loop_circuit_break_auto_stops(
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "stopped"  # 熔断是正常终态，非 errored
     assert calls["n"] == 1  # 处理完第一根就 auto-stop，没再拉第 2 根
-    assert any("熔断" in e.get("error", "") for e in (fresh["error_log"] or []))
+    assert any("熔断" in e.get("msg", "") for e in (fresh["run_log"] or []))
 
 
 async def test_process_bar_risk_rejected_records_decision(
@@ -400,7 +400,7 @@ async def test_run_loop_fail_closed_without_risk_guard(app_with_lifespan: Any) -
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "errored"
-    assert any("风控不可用" in e.get("error", "") for e in (fresh["error_log"] or []))
+    assert any("风控不可用" in e.get("msg", "") for e in (fresh["run_log"] or []))
 
 
 async def test_process_bar_no_signal_no_order(app_with_lifespan: Any) -> None:
@@ -465,7 +465,7 @@ async def test_run_loop_non_retryable_error_immediate_errored(
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "errored"
-    assert any("ValidationError" in e.get("error", "") for e in (fresh["error_log"] or []))
+    assert any("ValidationError" in e.get("msg", "") for e in (fresh["run_log"] or []))
 
 
 async def test_run_loop_retryable_error_accumulates_to_errored(
@@ -497,7 +497,7 @@ async def test_run_loop_retryable_error_accumulates_to_errored(
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "errored"
     # 攒到 streak=2 才挂：≥2 条网络错（证明第 1 次没杀 run）
-    blips = [e for e in (fresh["error_log"] or []) if "network blip" in e.get("error", "")]
+    blips = [e for e in (fresh["run_log"] or []) if "network blip" in e.get("msg", "")]
     assert len(blips) >= 2
 
 
@@ -543,7 +543,7 @@ async def test_run_loop_build_session_failure_errored(app_with_lifespan: Any) ->
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "errored"
-    assert any("build failed" in e.get("error", "") for e in (fresh["error_log"] or []))
+    assert any("build failed" in e.get("msg", "") for e in (fresh["run_log"] or []))
 
 
 async def test_process_bar_not_filled_rejects(
@@ -616,7 +616,7 @@ async def test_mark_running_as_errored_reconcile(app_with_lifespan: Any) -> None
         f_stopped = await runs_store.get(conn, stopped_run["id"])
     assert f_running["status"] == "errored"
     assert f_stopped["status"] == "stopped"  # 非 running 不受影响
-    assert any("reconcile" in e.get("error", "") for e in (f_running["error_log"] or []))
+    assert any("reconcile" in e.get("msg", "") for e in (f_running["run_log"] or []))
 
 
 async def test_compute_run_pnl_from_db_realized_plus_unrealized(
@@ -719,7 +719,7 @@ async def test_ttl_exceeded_stops_run(app_with_lifespan: Any) -> None:
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "stopped"
-    assert any("TTL" in e.get("error", "") for e in (fresh["error_log"] or []))
+    assert any("TTL" in e.get("msg", "") for e in (fresh["run_log"] or []))
 
 
 async def test_ttl_disabled_when_zero_or_no_start(app_with_lifespan: Any) -> None:
@@ -769,7 +769,7 @@ async def test_build_non_retryable_errors_immediately(
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "errored"
-    assert any(e.get("code") == "strategy_error" for e in (fresh["error_log"] or []))
+    assert any(e.get("code") == "strategy_error" for e in (fresh["run_log"] or []))
 
 
 async def test_build_retryable_backs_off_then_errored(
@@ -799,7 +799,7 @@ async def test_build_retryable_backs_off_then_errored(
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "errored"
     assert calls >= 2  # 退避重试过（不是一次就死）
-    assert any(e.get("code") == "infra_unavailable" for e in (fresh["error_log"] or []))
+    assert any(e.get("code") == "infra_unavailable" for e in (fresh["run_log"] or []))
 
 
 async def test_restore_position_from_db_brings_session_to_position(

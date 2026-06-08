@@ -71,8 +71,8 @@ async def test_update_progress_and_error_log(app_with_lifespan: Any) -> None:
         fresh = await runs_store.get(conn, run["id"])
     assert fresh is not None
     assert Decimal(str(fresh["cumulative_pnl"])) == Decimal("12.5")
-    assert len(fresh["error_log"]) == 1
-    assert fresh["error_log"][0]["error"] == "boom"
+    assert len(fresh["run_log"]) == 1
+    assert fresh["run_log"][0]["msg"] == "boom"
 
 
 async def test_mark_running_as_errored_reconcile(app_with_lifespan: Any) -> None:

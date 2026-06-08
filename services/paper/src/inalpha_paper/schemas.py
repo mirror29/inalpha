@@ -584,7 +584,10 @@ class StrategyRunRecord(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     last_bar_ts: datetime | None = None
     cumulative_pnl: float = 0.0
-    error_log: list[dict[str, Any]] = Field(default_factory=list)
+    run_log: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="运行日志（滚动窗口）：每条 {ts, level(info/warn/error), msg, code}",
+    )
     started_at: datetime
     stopped_at: datetime | None = None
 

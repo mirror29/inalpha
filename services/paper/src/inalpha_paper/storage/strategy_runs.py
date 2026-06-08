@@ -46,7 +46,7 @@ async def insert(
                     candidate_id, account_id, status, venue, symbol, timeframe, params
                 ) VALUES (%s, %s, 'running', %s, %s, %s, %s::jsonb)
                 RETURNING id, candidate_id, account_id, status, venue, symbol,
-                          timeframe, params, last_bar_ts, cumulative_pnl, error_log,
+                          timeframe, params, last_bar_ts, cumulative_pnl, run_log,
                           started_at, stopped_at
                 """,
                 (
@@ -69,7 +69,7 @@ async def get(conn: AsyncConnection, run_id: UUID) -> dict[str, Any] | None:
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-            "params, last_bar_ts, cumulative_pnl, error_log, started_at, stopped_at "
+            "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at "
             "FROM strategy_runs WHERE id = %s",
             (str(run_id),),
         )
@@ -86,7 +86,7 @@ async def list_by_account(
 ) -> list[dict[str, Any]]:
     sql = (
         "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-        "params, last_bar_ts, cumulative_pnl, error_log, started_at, stopped_at "
+        "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at "
         "FROM strategy_runs WHERE account_id = %s"
     )
     args: list[Any] = [str(account_id)]
@@ -129,7 +129,7 @@ async def set_status(
                 stopped_at = CASE WHEN %s <> 'running' THEN NOW() ELSE stopped_at END
             WHERE id = %s
             RETURNING id, candidate_id, account_id, status, venue, symbol, timeframe,
-                      params, last_bar_ts, cumulative_pnl, error_log, started_at, stopped_at
+                      params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at
             """,
             (status, status, str(run_id)),
         )
@@ -162,25 +162,58 @@ async def update_progress(
             )
 
 
-async def append_error_log(
-    conn: AsyncConnection, run_id: UUID, error: str, *, code: str | None = None
-) -> None:
-    """往 error_log JSONB 数组追加一条 ``{ts, error, code}``（``code`` 为错误分类，issue #41）。
+# run_log 单条容量上限 —— info 级日志按 bar 增长，只保留最近 N 条（滚动窗口），
+# 防 JSONB 数组无界膨胀拖慢 run 行读写。
+_RUN_LOG_CAP = 300
 
-    ``code`` 为 ``None`` 时写 JSON ``null``（结构仍统一）；build 阶段的可重试 / 不可重试
-    分类见 ``live_runner._classify_build_error``（infra_unavailable / strategy_error / unknown）。
+
+async def append_log(
+    conn: AsyncConnection,
+    run_id: UUID,
+    level: str,
+    msg: str,
+    *,
+    code: str | None = None,
+) -> None:
+    """往 run_log JSONB 数组追加一条 ``{ts, level, msg, code}`` 并裁到最近 ``_RUN_LOG_CAP`` 条。
+
+    ``level`` ∈ ``{info, warn, error}``：info=正常活动（起跑 / 出单 / 停止），warn=可恢复
+    异常（退避重试 / 熔断 / TTL），error=终态错误。``code`` 为错误分类（可空，仅 warn/error 用，
+    见 ``live_runner._classify_build_error``：infra_unavailable / strategy_error / unknown）。
+
+    裁剪：append 后按时间序只留尾部 N 条 —— info 级随 bar 增长，无上限会让 run 行越读越重。
     """
     async with conn.cursor() as cur:
         await cur.execute(
             """
             UPDATE strategy_runs
-            SET error_log = error_log || jsonb_build_array(
-                    jsonb_build_object('ts', NOW()::text, 'error', %s::text, 'code', %s::text)
-                )
+            SET run_log = (
+                SELECT COALESCE(jsonb_agg(elem ORDER BY ord), '[]'::jsonb)
+                FROM (
+                    SELECT elem, ord
+                    FROM jsonb_array_elements(
+                        run_log || jsonb_build_array(
+                            jsonb_build_object(
+                                'ts', NOW()::text, 'level', %s::text,
+                                'msg', %s::text, 'code', %s::text
+                            )
+                        )
+                    ) WITH ORDINALITY AS arr(elem, ord)
+                    ORDER BY ord DESC
+                    LIMIT %s
+                ) recent
+            )
             WHERE id = %s
             """,
-            (error, code, str(run_id)),
+            (level, msg, code, _RUN_LOG_CAP, str(run_id)),
         )
+
+
+async def append_error_log(
+    conn: AsyncConnection, run_id: UUID, error: str, *, code: str | None = None
+) -> None:
+    """兼容旧调用：以 ``error`` 级写一条 run_log（见 :func:`append_log`）。"""
+    await append_log(conn, run_id, "error", error, code=code)
 
 
 async def list_all_running(conn: AsyncConnection) -> list[dict[str, Any]]:
@@ -192,7 +225,7 @@ async def list_all_running(conn: AsyncConnection) -> list[dict[str, Any]]:
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-            "params, last_bar_ts, cumulative_pnl, error_log, started_at, stopped_at "
+            "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at "
             "FROM strategy_runs WHERE status = %s ORDER BY started_at",
             (_RUNNING,),
         )
@@ -208,8 +241,10 @@ async def mark_running_as_errored(conn: AsyncConnection, *, reason: str) -> int:
             UPDATE strategy_runs
             SET status = 'errored',
                 stopped_at = NOW(),
-                error_log = error_log || jsonb_build_array(
-                    jsonb_build_object('ts', NOW()::text, 'error', %s::text)
+                run_log = run_log || jsonb_build_array(
+                    jsonb_build_object(
+                        'ts', NOW()::text, 'level', 'error', 'msg', %s::text, 'code', NULL
+                    )
                 )
             WHERE status = %s
             """,
