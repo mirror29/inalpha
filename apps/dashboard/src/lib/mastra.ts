@@ -41,8 +41,21 @@ async function mastraClient(): Promise<MastraClient> {
 /** 无标题线程的标题回填上限 —— 拉首条消息有成本,bounded fan-out。 */
 const TITLE_BACKFILL_CAP = 8;
 
-/** 列出当前 resource 的历史会话(按最近更新倒序),无标题的用首条消息回填标题。 */
-export async function listChatThreads(limit = 50): Promise<ChatThreadSummary[]> {
+/** 正在回填标题的 threadId —— 防并发(两次轮询撞同一批无标题线程)重复 fan-out + 双写。 */
+const backfillInflight = new Set<string>();
+
+/**
+ * 列出当前 resource 的历史会话(按最近更新倒序)。
+ * @param limit 拉取条数上限
+ * @param opts.backfillTitles 无标题线程是否拉首条消息回填标题(默认 true)。
+ *   历史下拉要展示标题 → true;8s 轮询的活动页有 `#id` 兜底、不需要 → 传 false,
+ *   省掉热路径上每 8s 最多 8 次 `listChatMessages` fan-out + 写回。
+ */
+export async function listChatThreads(
+  limit = 50,
+  opts: { backfillTitles?: boolean } = {},
+): Promise<ChatThreadSummary[]> {
+  const { backfillTitles = true } = opts;
   const client = await mastraClient();
   const res = (await client.listMemoryThreads({
     resourceId: CONSOLE_SUBJECT,
@@ -58,16 +71,26 @@ export async function listChatThreads(limit = 50): Promise<ChatThreadSummary[]> 
     updatedAt: toIso(t.updatedAt ?? t.createdAt),
   }));
 
-  // 无标题的(老会话 / 标题还没写上)→ 拉首条用户消息当标题,bounded。
-  const titleless = summaries.filter((s) => !s.title).slice(0, TITLE_BACKFILL_CAP);
+  if (!backfillTitles) return summaries;
+
+  // 无标题的(老会话 / 标题还没写上)→ 拉首条用户消息当标题,bounded;
+  // 跳过正被别的请求回填的线程,防并发重复 fan-out / 双写。
+  const titleless = summaries
+    .filter((s) => !s.title && !backfillInflight.has(s.id))
+    .slice(0, TITLE_BACKFILL_CAP);
   await Promise.allSettled(
     titleless.map(async (s) => {
-      const msgs = await listChatMessages(s.id);
-      const first = msgs.find((m) => m.role === "user");
-      if (!first) return;
-      s.title = first.content.trim().slice(0, 60);
-      // 持久化回写,下次轮询直接读 title、不再拉消息(自愈,避免每 8s 重复 fan-out)。
-      void setChatThreadTitle(s.id, s.title).catch(() => {});
+      backfillInflight.add(s.id);
+      try {
+        const msgs = await listChatMessages(s.id);
+        const first = msgs.find((m) => m.role === "user");
+        if (!first) return;
+        s.title = first.content.trim().slice(0, 60);
+        // 持久化回写,下次轮询直接读 title、不再拉消息(自愈,避免每 8s 重复 fan-out)。
+        void setChatThreadTitle(s.id, s.title).catch(() => {});
+      } finally {
+        backfillInflight.delete(s.id);
+      }
     }),
   );
 

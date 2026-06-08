@@ -97,6 +97,11 @@ export function ChatThread({
   onSwitchThread: (id: string) => void;
 }) {
   const t = useTranslations("chat");
+  // ⚠️ `useCopilotChatInternal` 是 CopilotKit 内部 hook(名字含 Internal),跨大版本无稳定性保证。
+  // 升级 CopilotKit(>1.59.x)时必须验证此 hook 仍存在、且 messages / sendMessage /
+  // stopGeneration / setMessages / agent 字段签名一致,否则会静默变 undefined 致对话栏失效。
+  // CI 已固定 @copilotkit/* 到 1.59.5 + override @ag-ui/client 0.0.53(见 pnpm-workspace.yaml)。
+  // DivinationClient 也用了同一 hook,升级时一并验。
   const hook = useCopilotChatInternal();
   const messages = (hook.messages ?? []) as unknown as AGMessage[];
   const { sendMessage, setMessages, isLoading, stopGeneration } = hook;
@@ -142,18 +147,46 @@ export function ChatThread({
         const ctrl = new AbortController();
         if (stoppingRef.current) ctrl.abort(); // 停止后到来的后续段直接掐掉
         inflightAborts.current.add(ctrl);
+        const drop = () => inflightAborts.current.delete(ctrl);
         const signal =
           init?.signal && typeof AbortSignal.any === "function"
             ? AbortSignal.any([init.signal, ctrl.signal])
             : ctrl.signal;
-        return orig(input, { ...init, signal });
+        // 请求一结束就移出在途集合,防长 run(多工具段)内 Set 累积已完成的 ctrl。
+        // **不能**在 fetch promise resolve(仅收到 header)时删 —— 流式响应 body 还在传,
+        // 删早了 handleStop 就掐不断它;用 TransformStream.flush 探 body 真正读完。
+        return orig(input, { ...init, signal }).then(
+          (res) => {
+            if (!res.body) {
+              drop();
+              return res;
+            }
+            const monitored = res.body.pipeThrough(
+              new TransformStream({
+                flush() {
+                  drop();
+                },
+              }),
+            );
+            return new Response(monitored, {
+              status: res.status,
+              statusText: res.statusText,
+              headers: res.headers,
+            });
+          },
+          (err) => {
+            drop();
+            throw err;
+          },
+        );
       }
       return orig(input, init);
     };
     (patched as { __inalphaPatched?: boolean }).__inalphaPatched = true;
     window.fetch = patched;
     return () => {
-      window.fetch = orig;
+      // 只在自己仍是最外层 fetch 时还原,避免撤掉之后别的模块叠加的 fetch 替换。
+      if (window.fetch === patched) window.fetch = orig;
     };
   }, []);
 

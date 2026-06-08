@@ -47,16 +47,17 @@ function parseRule(reason: string | null): string {
 /** 历史锁的展示状态:生效中 / 已过期 / 人工解锁。 */
 function lockStatus(l: RecentLock, nowMs: number): RiskEvent["status"] {
   const untilMs = new Date(l.locked_until).getTime();
-  if (l.active && untilMs > nowMs) return "active";
-  // reconciler/expire 用 unlocked_by='system'+unlock_reason='expired';人工解锁是真实用户。
+  // 人工解锁优先判(reconciler/expire 用 unlocked_by='system'+unlock_reason='expired',
+  // 人工解锁是真实用户)—— 不依赖 `active` flag:DB 软删可能滞后,active 仍为 true 但
+  // 已被人工 unlock 时,旧逻辑会误显 expired。只要 unlocked_by 是真实用户即判 unlocked。
   if (
-    !l.active &&
     l.unlocked_by &&
     l.unlocked_by !== "system" &&
     l.unlock_reason !== "expired"
   ) {
     return "unlocked";
   }
+  if (l.active && untilMs > nowMs) return "active";
   return "expired";
 }
 
