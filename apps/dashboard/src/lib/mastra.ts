@@ -38,6 +38,26 @@ async function mastraClient(): Promise<MastraClient> {
   });
 }
 
+/** mastra(4111)单次读超时 —— 与 backendFetch 同档(5s)。 */
+const MASTRA_READ_TIMEOUT_MS = 5000;
+
+/**
+ * 给 mastra 读包一层超时:`MastraClient` 自身不带显式超时,4111 卡住(重启/冷启/GC)时,
+ * 调用方(activity 8s 轮询热路径 / 历史下拉)会一直挂死。超时即 reject,调用方 try/catch
+ * 降级标 source 不可用,不拖垮整页。
+ */
+function withMastraTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`mastra ${label} 超时(${MASTRA_READ_TIMEOUT_MS}ms)`)),
+        MASTRA_READ_TIMEOUT_MS,
+      ),
+    ),
+  ]);
+}
+
 /** 无标题线程的标题回填上限 —— 拉首条消息有成本,bounded fan-out。 */
 const TITLE_BACKFILL_CAP = 8;
 
@@ -57,12 +77,15 @@ export async function listChatThreads(
 ): Promise<ChatThreadSummary[]> {
   const { backfillTitles = true } = opts;
   const client = await mastraClient();
-  const res = (await client.listMemoryThreads({
-    resourceId: CONSOLE_SUBJECT,
-    agentId: AGENT_ID,
-    perPage: limit,
-    orderBy: { field: "updatedAt", direction: "DESC" },
-  })) as { threads?: RawThread[] };
+  const res = (await withMastraTimeout(
+    client.listMemoryThreads({
+      resourceId: CONSOLE_SUBJECT,
+      agentId: AGENT_ID,
+      perPage: limit,
+      orderBy: { field: "updatedAt", direction: "DESC" },
+    }),
+    "listMemoryThreads",
+  )) as { threads?: RawThread[] };
 
   const summaries: ChatThreadSummary[] = (res.threads ?? []).map((t) => ({
     id: t.id,
@@ -102,9 +125,10 @@ export async function listChatMessages(
   threadId: string,
 ): Promise<ChatHistoryMessage[]> {
   const client = await mastraClient();
-  const res = (await client.listThreadMessages(threadId, {
-    agentId: AGENT_ID,
-  })) as { messages?: RawMessage[] };
+  const res = (await withMastraTimeout(
+    client.listThreadMessages(threadId, { agentId: AGENT_ID }),
+    "listThreadMessages",
+  )) as { messages?: RawMessage[] };
   return (res.messages ?? [])
     .map(mapDbMessage)
     .filter((m): m is ChatHistoryMessage => m !== null);
