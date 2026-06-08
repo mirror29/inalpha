@@ -112,6 +112,7 @@
       "chart": "K 线",
       "chartEmpty": "该标的暂无 K 线数据。",
       "chartError": "K 线加载失败。",
+      "chartLoading": "加载中…",
       "decisions": "决策时间线",
       "decisionsEmpty": "尚无决策记录 —— runner 还没下过单。",
       "reasonFilled": "策略信号成交",

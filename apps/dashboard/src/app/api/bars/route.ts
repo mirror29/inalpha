@@ -54,22 +54,41 @@ export async function GET(req: NextRequest) {
   const nowMs = Date.now();
   // 多取一点窗口(×1.5)以防非交易时段/缺口导致根数不足。
   const fromMs = nowMs - limit * tfSec * 1500;
+  const fromTs = new Date(fromMs).toISOString();
+  const toTs = new Date(nowMs).toISOString();
 
-  try {
-    const bars = await backendFetch<BarPoint[]>("data", "/bars", {
-      query: {
-        venue,
-        symbol,
-        timeframe,
-        from_ts: new Date(fromMs).toISOString(),
-        to_ts: new Date(nowMs).toISOString(),
-        limit,
-      },
+  const readBars = () =>
+    backendFetch<BarPoint[]>("data", "/bars", {
+      query: { venue, symbol, timeframe, from_ts: fromTs, to_ts: toTs, limit },
       timeoutMs: 15_000,
     });
+  const sortAsc = (bs: BarPoint[]) =>
+    [...bs].sort((a, b) => +new Date(a.ts) - +new Date(b.ts));
 
-    // 升序排序(图表要求严格递增)+ 取末尾 limit 根。
-    const sorted = [...bars].sort((a, b) => +new Date(a.ts) - +new Date(b.ts));
+  try {
+    // 先读已落库的 bar。data 不主动回填 —— 切到没回填过的 timeframe（如某标的的 1d）
+    // 或窗口偏旧时会空/缺 → 图上"时间是空的"。
+    let sorted = sortAsc(await readBars());
+
+    // 新鲜度判定（§3.1 fresh=True）：空 或 最后一根距今 > 2×tf → 幂等回填该窗口再读，
+    // 保证 K 线完整且到当前。**只在缺/旧时回填**：数据已新鲜时直接返回，避免每次轮询都
+    // 重拉外部源（1d 回填实测可达 ~36s，不能每 20s 白跑）。best-effort：venue 不支持该
+    // tf 或外部源失败时不致命，仍用已有数据降级显示。
+    const lastMs = sorted.length ? +new Date(sorted[sorted.length - 1].ts) : 0;
+    const stale = sorted.length === 0 || nowMs - lastMs > 2 * tfSec * 1000;
+    if (stale) {
+      try {
+        await backendFetch("data", "/backfill/bars", {
+          method: "POST",
+          timeoutMs: 45_000,
+          body: { venue, symbol, timeframe, from_ts: fromTs, to_ts: toTs },
+        });
+        sorted = sortAsc(await readBars());
+      } catch {
+        // 忽略：回填失败仍用库里已有的 bar。
+      }
+    }
+
     const payload: BarsPayload = {
       venue,
       symbol,
