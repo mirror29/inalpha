@@ -73,14 +73,19 @@ export function ConsoleSidebar() {
     setMobileOpen(false);
   }, [pathname]);
 
-  // 抽屉打开时:Esc 关 + 锁背景滚动。
+  // 抽屉打开时:Esc 关 + 锁背景滚动(防遮罩下方页面仍可拖动)。
   useEffect(() => {
     if (!mobileOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMobileOpen(false);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [mobileOpen]);
 
   return (
