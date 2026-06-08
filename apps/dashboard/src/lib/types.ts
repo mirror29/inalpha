@@ -122,6 +122,8 @@ export interface OverviewPayload {
   orders: OrderRecord[];
   runs: StrategyRunRecord[];
   activeRunnerCount: number;
+  /** orders 命中上限被截断(还有更早的订单未显示) —— UI 给「仅显示最近 N」提示,不静默。 */
+  ordersTruncated: boolean;
   /** server 侧采集这一帧的时刻(ISO);UI 显示 "数据时间"。 */
   asOf: string;
 }
@@ -130,6 +132,8 @@ export interface OverviewPayload {
 export interface RunnersPayload {
   runs: StrategyRunRecord[];
   runningCount: number;
+  /** runs 命中上限被截断(还有更早的 run 未显示) —— UI 给截断提示,不静默。 */
+  truncated: boolean;
   asOf: string;
 }
 
@@ -192,6 +196,8 @@ export interface LabPayload {
   /** 后端已按 fitness DESC 排序。 */
   candidates: StrategyCandidateSummary[];
   counts: { all: number; promoted: number; candidate: number; rejected: number };
+  /** candidates 命中上限被截断(还有更多候选未显示) —— UI 给截断提示,不静默。 */
+  truncated: boolean;
   asOf: string;
 }
 
@@ -351,6 +357,8 @@ export interface ActivityPayload {
   schedulerRunning: boolean;
   pendingCount: number;
   activeLockCount: number;
+  /** 决策 fan-out 只覆盖最近 N 个 run;为 true 表示更早 run 的决策事件未纳入(不静默)。 */
+  decisionsTruncated: boolean;
   /** 每个数据源是否取到(取不到 → UI 标"该源不可用",不静默当作空)。 */
   sources: {
     scheduler: boolean;

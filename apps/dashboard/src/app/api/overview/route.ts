@@ -31,14 +31,20 @@ export async function GET() {
   }
 
   // positions / orders / runs —— 任一失败降级为空,不整页挂。
+  // orders 多取 1 条探测「是否还有更早的」(命中上限 → 截断提示,不静默)。
+  const ORDERS_SHOWN = 20;
   const [positionsRes, ordersRes, runsRes] = await Promise.allSettled([
     backendFetch<PositionRecord[]>("paper", "/positions"),
-    backendFetch<OrderRecord[]>("paper", "/orders", { query: { limit: 20 } }),
+    backendFetch<OrderRecord[]>("paper", "/orders", {
+      query: { limit: ORDERS_SHOWN + 1 },
+    }),
     backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs"),
   ]);
 
   const positions = settledOr(positionsRes, []);
-  const orders = settledOr(ordersRes, []).slice(0, 20);
+  const ordersRaw = settledOr(ordersRes, []);
+  const ordersTruncated = ordersRaw.length > ORDERS_SHOWN;
+  const orders = ordersRaw.slice(0, ORDERS_SHOWN);
   const runs = settledOr(runsRes, []);
 
   // 每个持仓 best-effort 补最新价(fresh=false:只读 DB 缓存,不触发慢 backfill)。
@@ -69,6 +75,7 @@ export async function GET() {
     orders,
     runs,
     activeRunnerCount: runs.filter((r) => r.status === "running").length,
+    ordersTruncated,
     asOf: new Date().toISOString(),
   };
 

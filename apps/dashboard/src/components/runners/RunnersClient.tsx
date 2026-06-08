@@ -11,6 +11,7 @@ import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip, Meta } from "@/components/ui/LiveStrip";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { TruncationNote } from "@/components/ui/TruncationNote";
 import { RunnerCard } from "./RunnerCard";
 
 /** live runner 贴近 bar 周期,6s 一档。 */
@@ -21,6 +22,7 @@ const STATUSES: StatusFilter[] = ["all", "running", "stopped", "errored"];
 
 export function RunnersClient() {
   const t = useTranslations("runners");
+  const tc = useTranslations("common");
   const [filter, setFilter] = useState<StatusFilter>("all");
 
   const { data, error, isValidating, isLoading, mutate } =
@@ -120,6 +122,10 @@ export function RunnersClient() {
             <RunnerCard key={run.id} run={run} />
           ))}
         </div>
+      )}
+
+      {data.truncated && (
+        <TruncationNote text={tc("truncated", { n: data.runs.length })} />
       )}
     </div>
   );

@@ -22,7 +22,7 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
-import { mintServiceToken } from "../../auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../../auth.js";
 import {
   BacktestReport as PaperBacktestReport,
   PaperClient,
@@ -234,7 +234,9 @@ const runOneStep = createStep({
   outputSchema: RunResultSchema,
   execute: async ({ inputData }) => {
     const settings = getSettings();
-    const token = await mintServiceToken({ sub: "service:swarm" });
+    // 与控制台 / orchestrator 同账户(defaultServiceSubject)——grid 回测产物落到
+    // 发起方可见的账户,而非孤立的 service:swarm（账户 = uuid5(sub)）。
+    const token = await mintServiceToken({ sub: defaultServiceSubject() });
     const client = new PaperClient({ baseUrl: settings.paperServiceUrl, token });
 
     try {

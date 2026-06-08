@@ -159,6 +159,7 @@
     "empty": "No activity yet.",
     "emptyFiltered": "No {kind} events.",
     "sourceDown": "{sources} unavailable — those events are missing from the feed.",
+    "decisionsTruncated": "Decision events only cover the most recent runs — earlier runs aren't included here. Open a run for its full timeline.",
     "source": {
       "scheduler": "Scheduler",
       "permissions": "Approvals",
@@ -264,7 +265,8 @@
     "retry": "Retry",
     "loading": "Loading…",
     "error": "Could not reach the backend.",
-    "none": "—"
+    "none": "—",
+    "truncated": "Showing the latest {n} — earlier ones aren't listed here."
   },
   "chat": {
     "title": "Agent",

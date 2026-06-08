@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { TriangleAlert } from "lucide-react";
+import { Info, TriangleAlert } from "lucide-react";
 import useSWR from "swr";
 
 import type { ActivityKind, ActivityPayload } from "@/lib/types";
@@ -118,6 +118,14 @@ export function ActivityClient() {
           <p className="text-sm text-fg-muted">
             {t("sourceDown", { sources: downSources.join(" / ") })}
           </p>
+        </div>
+      )}
+
+      {/* 决策截断提示(只覆盖最近 N 个 run,更早的决策事件未纳入)*/}
+      {data.decisionsTruncated && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-border-subtle/60 bg-bg-elev/30 px-4 py-2.5">
+          <Info className="mt-0.5 size-4 shrink-0 text-fg-muted" strokeWidth={2} />
+          <p className="text-sm text-fg-muted">{t("decisionsTruncated")}</p>
         </div>
       )}
 

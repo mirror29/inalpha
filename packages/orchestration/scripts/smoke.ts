@@ -22,7 +22,7 @@ if (existsSync(envPath)) {
   loadEnvFile(envPath);
 }
 
-import { mintServiceToken } from "../src/auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../src/auth.js";
 import {
   dataBackfillBarsTool,
   paperListStrategiesTool,
@@ -30,7 +30,7 @@ import {
 } from "../src/tools/index.js";
 
 async function main(): Promise<void> {
-  const token = await mintServiceToken({ sub: "service:smoke" });
+  const token = await mintServiceToken({ sub: defaultServiceSubject() });
   // Mastra 1.x ToolExecutionContext.requestContext 替代旧的 runtimeContext
   const ctx = { requestContext: { authToken: token } } as never;
 

@@ -11,11 +11,15 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const candidates = await backendFetch<StrategyCandidateSummary[]>(
+    // 多取 1 条探测「是否还有更多候选」(命中上限 → 截断提示,不静默)。
+    const CANDIDATES_SHOWN = 100;
+    const raw = await backendFetch<StrategyCandidateSummary[]>(
       "paper",
       "/strategy_candidates",
-      { query: { limit: 100 } },
+      { query: { limit: CANDIDATES_SHOWN + 1 } },
     );
+    const truncated = raw.length > CANDIDATES_SHOWN;
+    const candidates = raw.slice(0, CANDIDATES_SHOWN);
     const counts = {
       all: candidates.length,
       promoted: candidates.filter((c) => c.status === "promoted").length,
@@ -25,6 +29,7 @@ export async function GET() {
     const payload: LabPayload = {
       candidates,
       counts,
+      truncated,
       asOf: new Date().toISOString(),
     };
     return NextResponse.json(payload, {

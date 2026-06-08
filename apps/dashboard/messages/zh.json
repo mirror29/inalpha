@@ -159,6 +159,7 @@
     "empty": "暂无活动。",
     "emptyFiltered": "没有「{kind}」类事件。",
     "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
+    "decisionsTruncated": "决策事件只覆盖最近几个 run —— 更早的 run 未纳入。点开具体 run 看完整时间线。",
     "source": {
       "scheduler": "定时任务",
       "permissions": "审批",
@@ -264,7 +265,8 @@
     "retry": "重试",
     "loading": "加载中…",
     "error": "无法连接后端。",
-    "none": "—"
+    "none": "—",
+    "truncated": "仅显示最近 {n} 条 —— 更早的未在此列出。"
   },
   "chat": {
     "title": "Agent",

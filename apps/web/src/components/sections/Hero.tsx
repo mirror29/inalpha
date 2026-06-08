@@ -8,6 +8,7 @@ import { useTranslations } from "next-intl";
 import { CopyableCommand } from "@/components/primitives/CopyableCommand";
 import { HeroBackdrop } from "@/components/primitives/HeroBackdrop";
 import { LocaleSwitcher } from "@/components/primitives/LocaleSwitcher";
+import { ThemeToggle } from "@/components/primitives/ThemeToggle";
 import { LINKS } from "@/lib/links";
 import { fadeUp } from "@/lib/motion";
 import { releaseTag } from "@/lib/release-meta";
@@ -27,7 +28,8 @@ export function Hero() {
     <header className="relative overflow-hidden border-b border-fg/12">
       <HeroBackdrop />
 
-      <div className="absolute right-6 top-6 z-50">
+      <div className="absolute right-6 top-6 z-50 flex items-center gap-2">
+        <ThemeToggle />
         <LocaleSwitcher />
       </div>
 

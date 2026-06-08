@@ -36,6 +36,8 @@ export default async function HomePage({
     RELEASE.dateDot,
     "AUDIT-GRADE EVOLUTION",
     "FACTOR LAB · RISK ENGINE",
+    "AUTONOMOUS PAPER RUNNER",
+    "CROSS-CURRENCY CASH",
     "PLAN · APPROVE · EXECUTE",
     "AGENTS · FIRST-CLASS",
     "AGPL-3.0",

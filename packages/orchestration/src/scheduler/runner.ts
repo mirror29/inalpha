@@ -4,7 +4,8 @@
  * 职责：
  *
  * 1. 在 `scheduler_runs` 插一行 `status='running'`
- * 2. 自签 service token（sub 带 job_id，便于 audit log 区分）
+ * 2. 自签 service token（sub=defaultServiceSubject()，与控制台同账户——cron 跑出来的
+ *    run/候选/回测控制台才看得到；job_id 作为额外 claim 保留便于 audit 区分）
  * 3. 根据 mode 派发：
  *    - `tool` —— 在 wiredOrchestratorTools 里按 id 找 tool，套 plain ctx 调 execute
  *    - `agent` —— 调 mastra.getAgent('orchestrator').generate(prompt)，5min hard timeout
@@ -19,16 +20,16 @@
  * - agent mode 内部 tool 调用走 mastra runtime，token 通过 RequestContext 注入
  *   但 Inalpha 现有 tool 解构 `ctx?.requestContext.authToken` 为 plain object 字段，
  *   class 实例的 `MASTRA_AUTH_TOKEN_KEY` 不一定能拿到——此时 tool 内自带的
- *   `mintServiceToken({ sub: "service:orchestration" })` 兜底会启动，
- *   audit log 的 sub 会是 service:orchestration 而非 service:scheduler:<job>。
- *   这是 D-9 MVP 的已知限制，未来改 tool 解构方式即可修复。
+ *   `mintServiceToken({ sub: defaultServiceSubject() })` 兜底会启动，落到的还是
+ *   控制台账户（与本 runner 一致），故 cron 产物对控制台始终可见。
+ *   这是 D-9 MVP 的已知限制，未来改 tool 解构方式即可让调用者身份精确透传。
  * - permissions deny 在两种 mode 下都生效（wired tool 走完整链路），
  *   不存在"cron 绕过 plan/exec deny"风险。
  */
 import type { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
 
-import { mintServiceToken } from "../auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../auth.js";
 import { completeRun, hasRunningRun, insertRun } from "./repo.js";
 import type {
   AgentJobPayload,
@@ -75,8 +76,10 @@ export async function runJob(args: RunJobArgs): Promise<RunJobResult> {
   }
 
   const runId = await insertRun({ jobId: job.jobId, scheduledAt, trigger });
+  // sub 用 defaultServiceSubject()（=控制台账户）让 cron 产物落到用户可见的账户;
+  // job_id 作为额外 claim 保留,审计需要时仍可区分是哪个 job 跑的(account 只看 sub)。
   const token = await mintServiceToken(
-    { sub: `service:scheduler:${job.jobId}` },
+    { sub: defaultServiceSubject(), scheduler_job: job.jobId },
     3600,
   );
 
