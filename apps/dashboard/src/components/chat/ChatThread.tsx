@@ -400,20 +400,20 @@ export function ChatThread({
   return (
     <aside
       aria-hidden={!open}
-      style={{ width: `${width}px` }}
+      style={{ width: `${width}px`, maxWidth: "100vw" }}
       className={cn(
         "fixed right-0 top-0 z-30 flex h-dvh flex-col border-l border-border-subtle bg-bg-elev/95 backdrop-blur-md",
         "transition-transform duration-300 ease-[cubic-bezier(0.22,0.7,0.22,1)] motion-reduce:transition-none",
         open ? "translate-x-0" : "translate-x-full",
       )}
     >
-      {/* 左缘拖动条 —— 调整栏宽,主内容同步 reflow。 */}
+      {/* 左缘拖动条 —— 调整栏宽,主内容同步 reflow。移动端满宽,无拖宽语义,隐藏。 */}
       <div
         onPointerDown={startResize}
         role="separator"
         aria-orientation="vertical"
         aria-label={t("resize")}
-        className="group absolute left-0 top-0 z-10 h-full w-2 -translate-x-1/2 cursor-col-resize touch-none before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:content-[''] hover:before:bg-cyan/60"
+        className="group absolute left-0 top-0 z-10 hidden h-full w-2 -translate-x-1/2 cursor-col-resize touch-none before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:content-[''] hover:before:bg-cyan/60 lg:block"
       />
       {/* 标题条 —— PageHeader 同款:朱红刻度 + 编辑体标题 + 在线点。 */}
       <header className="flex items-center gap-3 border-b border-border-subtle px-4 py-3.5">

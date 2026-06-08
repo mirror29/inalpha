@@ -12,7 +12,11 @@
     "factors": "因子库",
     "risk": "风控",
     "divination": "狐神签",
-    "soon": "即将"
+    "soon": "即将",
+    "menu": "菜单",
+    "close": "关闭",
+    "collapse": "收起侧边栏",
+    "expand": "展开侧边栏"
   },
   "theme": {
     "label": "主题",

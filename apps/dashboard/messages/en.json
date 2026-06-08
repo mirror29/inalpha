@@ -12,7 +12,11 @@
     "factors": "Factors",
     "risk": "Risk",
     "divination": "Omikuji",
-    "soon": "soon"
+    "soon": "soon",
+    "menu": "Menu",
+    "close": "Close",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar"
   },
   "theme": {
     "label": "Theme",
