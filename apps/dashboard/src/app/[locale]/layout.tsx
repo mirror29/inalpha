@@ -34,7 +34,8 @@ export default async function LocaleLayout({
       <div className="grain flex min-h-dvh">
         <ConsoleSidebar />
         <main className="vignette relative flex-1 overflow-x-hidden">
-          <div className="relative z-10 mx-auto max-w-[1400px] px-6 py-8 lg:px-10">
+          {/* 移动端顶栏 fixed h-14,内容上方留位(lg 无顶栏,回正常间距)。 */}
+          <div className="relative z-10 mx-auto max-w-[1400px] px-4 pb-8 pt-[4.5rem] sm:px-6 lg:px-10 lg:py-8">
             {children}
           </div>
         </main>
