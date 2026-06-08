@@ -49,7 +49,8 @@ export interface RunJobArgs {
 }
 
 export interface RunJobResult {
-  runId: string;
+  /** 本次触发创建的 run id；`null` = 没创建 run（如 overlap 跳过,无对应 runs 行）。 */
+  runId: string | null;
   status: "success" | "failed" | "timeout";
   result?: unknown;
   error?: unknown;
@@ -66,7 +67,7 @@ export async function runJob(args: RunJobArgs): Promise<RunJobResult> {
   // 双保险防 overlap：除了 croner 内置 protection，再查一次 DB
   if (await hasRunningRun(job.jobId)) {
     return {
-      runId: "",
+      runId: null, // overlap 跳过,没创建 run —— 不用 "" 假 id 冒充
       status: "failed",
       error: {
         code: "OVERLAP_PREVENTED",
