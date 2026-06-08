@@ -26,7 +26,6 @@ export function DecisionTimeline({
 
   return (
     <Panel
-      index="2.2"
       title={t("decisions")}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">

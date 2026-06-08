@@ -13,12 +13,9 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
+import { DIVINATION_DISCLAIMER as DISCLAIMER } from "../divination/index.js";
 import { castHexagram } from "../divination/hexagram.js";
 import { drawTarot } from "../divination/tarot.js";
-
-/** 统一免责声明 —— 跟随调用语境,LLM 复述时按用户语言转译。 */
-const DISCLAIMER =
-  "仅作参照视角，非投资建议；落子仍归数据与风控 (a perspective for reference only, not investment advice)";
 
 // ────────────────────────────────────────────────────────────────────
 // divination.cast_hexagram

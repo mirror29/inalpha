@@ -32,6 +32,7 @@ import {
 } from "@mastra/observability";
 
 import { getSettings } from "../config.js";
+import { divinationApiRoutes } from "../divination/api.js";
 import { permissionsApiRoutes } from "../permissions/api.js";
 import { schedulerApiRoutes } from "../scheduler/api.js";
 import { bootstrapScheduler } from "../scheduler/index.js";
@@ -81,7 +82,7 @@ export const mastra = new Mastra({
   // （ADR-0037 调试记录）。
   server: {
     timeout: 600_000,
-    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes],
+    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes, ...divinationApiRoutes],
   },
 });
 

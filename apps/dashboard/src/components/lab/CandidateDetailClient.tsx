@@ -83,7 +83,7 @@ export function CandidateDetailClient({ id }: { id: string }) {
             </div>
           </header>
 
-          <Panel index="4.2" title={t("metrics")}>
+          <Panel title={t("metrics")}>
             <div className="p-4">
               <MetricsGrid metrics={c.metrics} fitness={c.fitness} />
             </div>
@@ -91,7 +91,7 @@ export function CandidateDetailClient({ id }: { id: string }) {
 
           {c.audit && <AuditPanel audit={c.audit} />}
 
-          <Panel index="4.4" title={t("code")}>
+          <Panel title={t("code")}>
             <pre className="max-h-[28rem] overflow-auto px-4 py-3 font-mono text-[12px] leading-relaxed text-fg-muted">
               <code>{c.code}</code>
             </pre>
@@ -113,7 +113,7 @@ function AuditPanel({ audit }: { audit: Record<string, unknown> }) {
       : null;
 
   return (
-    <Panel index="4.3" title={t("audit")}>
+    <Panel title={t("audit")}>
       <div className="flex flex-col gap-3 p-4">
         <div className="flex flex-wrap items-center gap-4 text-sm">
           <span

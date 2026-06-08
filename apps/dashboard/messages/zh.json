@@ -31,7 +31,6 @@
   },
   "overview": {
     "title": "组合总览",
-    "index": "01",
     "subtitle": "原本要问 agent 才知道的状态 —— 一眼看清。",
     "kpi": {
       "totalEquity": "总权益",
@@ -75,7 +74,6 @@
   },
   "runners": {
     "title": "Live Runner",
-    "index": "02",
     "subtitle": "promoted 策略按行情自动跑 —— 状态、累计盈亏,以及每根 bar 的决策。",
     "empty": "暂无策略运行。promote 一个候选并启动后,运行中的 Live Runner 会出现在这里。",
     "emptyFiltered": "该状态暂无 run。",
@@ -140,7 +138,6 @@
   },
   "activity": {
     "title": "Agent 活动",
-    "index": "03",
     "subtitle": "一条时间线看清 agent 跨模块都做了什么 —— 定时任务、审批、决策、风控拦截、订单。",
     "kpi": {
       "scheduler": "调度器",
@@ -184,7 +181,6 @@
   },
   "lab": {
     "title": "策略实验室",
-    "index": "04",
     "subtitle": "LLM 自创的策略候选,按多目标 fitness 排序 —— 附最近一次回测指标。",
     "candidates": "候选",
     "promoted": "已晋级",
@@ -220,7 +216,6 @@
   },
   "factors": {
     "title": "因子库",
-    "index": "05",
     "subtitle": "系统全部因子目录(pandas-ta / Alpha101 / qlib 等),以及针对所选标的的择时有效性(Rank IC)。",
     "catalogCount": "目录",
     "totalFactors": "共 {n} 个因子",
@@ -236,7 +231,6 @@
   },
   "risk": {
     "title": "风控",
-    "index": "06",
     "subtitle": "当前生效的风控规则,以及正在拦截交易的锁。",
     "engine": "引擎",
     "on": "启用",
@@ -304,10 +298,11 @@
     "drawTarotThree": "三张牌阵 · 塔罗",
     "divining": "求签中…",
     "emptyHint": "心有所惑，便写下要问的事，求一卦或抽一张。同一桩心事，签象固定；念头变了，再求一回。",
-    "emptyState": "尚未求签。",
-    "promptHexagram": "请为我求一卦（易经六爻）：{question}",
-    "promptTarotSingle": "请为我抽一张塔罗：{question}",
-    "promptTarotThree": "请为我抽塔罗三张牌阵（过去 / 现在 / 未来）：{question}",
+    "castError": "求签失败了，稍后再试一次。",
+    "historyTitle": "历史占卜",
+    "historyEmpty": "还没有占卜记录。先求一卦吧。",
+    "consultInChat": "去对话栏深聊此卦",
+    "consultPrompt": "我刚在占卜台求得【{summary}】，问的是『{question}』。请你结合这个签象，用我的语言为我细解一番——只作娱乐参照、非投资建议。",
     "hexagramTitle": "六爻卦象",
     "tarotTitle": "塔罗牌阵",
     "primaryHexagram": "本卦",

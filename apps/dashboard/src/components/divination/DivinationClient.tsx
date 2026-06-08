@@ -1,195 +1,102 @@
 "use client";
 
-import { CopilotKit, useCopilotChatInternal } from "@copilotkit/react-core";
-import { Sparkles } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { MessageSquare, Sparkles } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent } from "react";
+import useSWR from "swr";
 
 import { cn } from "@/lib/cn";
 import { DivinationCard } from "./DivinationCard";
-import { isDivinationTool, parseDivination, type DivinationView } from "./types";
+import type { DivinationView } from "./types";
 
-/** AG-UI 消息最小形态(与 ChatThread 一致)。 */
-type AGMessage = {
-  id: string;
-  role: string;
-  content?: unknown;
-  toolCalls?: { id: string; function?: { name?: string } }[];
-  toolCallId?: string;
-};
-
-/** 抽出可显示纯文本(string / 多模态数组)。 */
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((p) => (p && typeof p === "object" && "text" in p ? String(p.text ?? "") : ""))
-      .join("");
-  }
-  return "";
-}
-
+/** 占卜形态 —— 与后端 `divination/api.ts` 的 mode 一致。 */
 type Mode = "hexagram" | "tarotSingle" | "tarotThree";
 
-/** 占卜台正文 —— 在 CopilotKit 上下文内,驱动同一 orchestrator agent。 */
-function DivinationConsole() {
+/** 一条占卜记录(BFF `/api/divination` 返回,createdAt 为 ISO 串)。 */
+interface DivinationRecord {
+  id: string;
+  mode: Mode;
+  question: string;
+  symbol: string | null;
+  kind: "hexagram" | "tarot";
+  reading: DivinationView;
+  createdAt: string;
+}
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+/** 从结果里提炼一句摘要(给「去对话栏深聊」的 prompt 用)。 */
+function summarize(reading: DivinationView): string {
+  if (reading.kind === "hexagram") {
+    return reading.changed
+      ? `${reading.primary.name} → ${reading.changed.name}`
+      : reading.primary.name;
+  }
+  return reading.cards.map((c) => c.name).join("、");
+}
+
+/**
+ * 占卜台(独立趣味模块)。
+ *
+ * **不走 agent 会话**:点按钮直接 `POST /api/divination` 由后端纯函数引擎确定性出卦,
+ * 瞬时渲染 + 动画,结果落服务端;历史记录可回看。会话式深度解读由用户主动点
+ * 「去对话栏深聊此卦」触发 —— 派发 `inalpha:divination-consult` 事件交给右下角对话栏,
+ * 保持「占卜在模块、深聊在 agent、且由用户主动」的边界。
+ */
+export function DivinationClient() {
   const t = useTranslations("divination");
   const locale = useLocale();
-  const hook = useCopilotChatInternal();
-  const messages = (hook.messages ?? []) as unknown as AGMessage[];
-  const { sendMessage, isLoading } = hook;
   const [question, setQuestion] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
+  const [current, setCurrent] = useState<DivinationRecord | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
 
-  // toolCallId → tool 名(tool-result 消息只带 id)。
-  const toolNames = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of messages) {
-      if (m.toolCalls) for (const c of m.toolCalls) map.set(c.id, c.function?.name ?? "");
-    }
-    return map;
-  }, [messages]);
+  const { data, mutate } = useSWR<{ records: DivinationRecord[] }>(
+    "/api/divination/history?limit=30",
+    fetcher,
+  );
+  const history = data?.records ?? [];
 
-  // 最近一条玄学结果(倒序找第一条可解析的 divination tool-result)。
-  const latest = useMemo<DivinationView | null>(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m.role !== "tool") continue;
-      if (!isDivinationTool(toolNames.get(m.toolCallId ?? ""))) continue;
-      const reading = parseDivination(textOf(m.content));
-      if (reading) return reading;
-    }
-    return null;
-  }, [messages, toolNames]);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [latest, isLoading]);
-
-  const cast = (mode: Mode) => {
-    if (isLoading) return;
+  const cast = async (mode: Mode) => {
+    if (loading) return;
     const q = question.trim() || t("defaultQuestion");
-    const key =
-      mode === "hexagram"
-        ? "promptHexagram"
-        : mode === "tarotSingle"
-          ? "promptTarotSingle"
-          : "promptTarotThree";
-    void sendMessage({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: t(key, { question: q }),
-    } as Parameters<typeof sendMessage>[0]);
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch("/api/divination", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, question: q }),
+      });
+      if (!res.ok) throw new Error(`cast failed: ${res.status}`);
+      const record = (await res.json()) as DivinationRecord;
+      setCurrent(record);
+      void mutate();
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      cast("hexagram");
+      void cast("hexagram");
     }
   };
 
-  // 最近一条 assistant 文本(玄学旁白),给卡片配一句解读。
-  const narrative = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i];
-      if (m.role === "assistant") {
-        const txt = textOf(m.content).trim();
-        if (txt) return txt;
-      }
-    }
-    return "";
-  }, [messages]);
-
-  return (
-    <div className="flex flex-col gap-5">
-      {/* 输入 + 起卦按钮 */}
-      <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-elev/30 p-4 backdrop-blur-sm">
-        <input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={t("questionPlaceholder")}
-          lang={locale}
-          className="w-full rounded-lg border border-border-subtle bg-bg/60 px-3 py-2.5 text-sm text-fg outline-none transition-colors placeholder:text-fg-muted/60 focus:border-cyan/50"
-        />
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => cast("hexagram")}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 rounded-md bg-seal px-3 py-1.5 text-sm text-bg-deep transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            <Sparkles className="size-3.5" strokeWidth={2} />
-            {t("castHexagram")}
-          </button>
-          <button
-            type="button"
-            onClick={() => cast("tarotSingle")}
-            disabled={isLoading}
-            className="rounded-md border border-border-subtle bg-bg/60 px-3 py-1.5 text-sm text-fg transition-colors hover:border-cyan/40 disabled:opacity-40"
-          >
-            {t("drawTarotSingle")}
-          </button>
-          <button
-            type="button"
-            onClick={() => cast("tarotThree")}
-            disabled={isLoading}
-            className="rounded-md border border-border-subtle bg-bg/60 px-3 py-1.5 text-sm text-fg transition-colors hover:border-cyan/40 disabled:opacity-40"
-          >
-            {t("drawTarotThree")}
-          </button>
-        </div>
-      </div>
-
-      {/* 结果区 */}
-      {isLoading && (
-        <div className="flex items-center gap-2 px-1 font-mono text-xs text-fg-muted">
-          <span className="size-1.5 rounded-full bg-cyan caret-blink" />
-          {t("divining")}
-        </div>
-      )}
-      {latest ? (
-        <div className="flex flex-col gap-3">
-          <DivinationCard reading={latest} />
-          {narrative && (
-            <div className="max-w-2xl rounded-lg border border-border-subtle bg-bg-deep/40 px-4 py-3 text-sm leading-relaxed text-fg-muted">
-              {narrative}
-            </div>
-          )}
-        </div>
-      ) : (
-        !isLoading && (
-          <p className={cn("px-1 text-sm leading-relaxed text-fg-muted")}>{t("emptyHint")}</p>
-        )
-      )}
-      <div ref={endRef} />
-    </div>
-  );
-}
-
-const LS_DIVINATION_THREAD = "inalpha-divination-thread";
-
-/**
- * 占卜台(独立趣味页)。
- *
- * 用**独立 threadId** 包一层自己的 CopilotKit provider(与右下角对话栏互不干扰),
- * 通过同一 orchestrator agent 调 `divination.*` tool —— 单一引擎、单一卡片组件,
- * 不重复任何卦表 / 牌库。
- */
-export function DivinationClient() {
-  const t = useTranslations("divination");
-  const [threadId, setThreadId] = useState<string | null>(null);
-
-  // SSR 安全:mount 后从 localStorage 读 / 生成稳定 threadId。
-  useEffect(() => {
-    let id = localStorage.getItem(LS_DIVINATION_THREAD);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(LS_DIVINATION_THREAD, id);
-    }
-    setThreadId(id);
-  }, []);
+  /** 把当前卦象交给对话栏深聊(用户主动触发的 LLM 解读)。 */
+  const consult = (record: DivinationRecord) => {
+    const prompt = t("consultPrompt", {
+      question: record.question,
+      summary: summarize(record.reading),
+    });
+    window.dispatchEvent(
+      new CustomEvent("inalpha:divination-consult", { detail: { prompt } }),
+    );
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -201,17 +108,132 @@ export function DivinationClient() {
         </div>
       </header>
 
-      {threadId && (
-        <CopilotKit
-          runtimeUrl="/api/copilotkit"
-          agent="orchestrator"
-          threadId={threadId}
-          showDevConsole={false}
-          enableInspector={false}
-        >
-          <DivinationConsole />
-        </CopilotKit>
-      )}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        {/* 左:起卦 + 结果 */}
+        <div className="flex flex-col gap-5">
+          {/* 输入 + 起卦按钮 */}
+          <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-elev/30 p-4 backdrop-blur-sm">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={t("questionPlaceholder")}
+              lang={locale}
+              className="w-full rounded-lg border border-border-subtle bg-bg/60 px-3 py-2.5 text-sm text-fg outline-none transition-colors placeholder:text-fg-muted/60 focus:border-cyan/50"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => cast("hexagram")}
+                disabled={loading}
+                className="flex items-center gap-1.5 rounded-md bg-seal px-3 py-1.5 text-sm text-bg-deep transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                <Sparkles className="size-3.5" strokeWidth={2} />
+                {t("castHexagram")}
+              </button>
+              <button
+                type="button"
+                onClick={() => cast("tarotSingle")}
+                disabled={loading}
+                className="rounded-md border border-border-subtle bg-bg/60 px-3 py-1.5 text-sm text-fg transition-colors hover:border-cyan/40 disabled:opacity-40"
+              >
+                {t("drawTarotSingle")}
+              </button>
+              <button
+                type="button"
+                onClick={() => cast("tarotThree")}
+                disabled={loading}
+                className="rounded-md border border-border-subtle bg-bg/60 px-3 py-1.5 text-sm text-fg transition-colors hover:border-cyan/40 disabled:opacity-40"
+              >
+                {t("drawTarotThree")}
+              </button>
+            </div>
+          </div>
+
+          {/* 结果区 */}
+          {loading && (
+            <div className="flex items-center gap-2 px-1 font-mono text-xs text-fg-muted">
+              <span className="size-1.5 rounded-full bg-cyan caret-blink" />
+              {t("divining")}
+            </div>
+          )}
+          {error && (
+            <p className="rounded-lg border border-seal/40 bg-seal/5 px-4 py-3 text-sm text-fg-muted">
+              {t("castError")}
+            </p>
+          )}
+
+          <AnimatePresence mode="wait">
+            {current && !loading && (
+              <motion.div
+                key={current.id}
+                initial={{ opacity: 0, y: 16, filter: "blur(6px)" }}
+                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                className="flex flex-col gap-3"
+              >
+                <DivinationCard reading={current.reading} />
+                <button
+                  type="button"
+                  onClick={() => consult(current)}
+                  className="flex w-fit items-center gap-1.5 rounded-md border border-cyan/40 bg-cyan/5 px-3 py-1.5 text-sm text-cyan transition-colors hover:bg-cyan/10"
+                >
+                  <MessageSquare className="size-3.5" strokeWidth={1.75} />
+                  {t("consultInChat")}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {!current && !loading && !error && (
+            <p className="px-1 text-sm leading-relaxed text-fg-muted">{t("emptyHint")}</p>
+          )}
+        </div>
+
+        {/* 右:历史占卜记录 */}
+        <aside className="flex flex-col gap-3">
+          <h2 className="font-mono text-xs uppercase tracking-[0.16em] text-fg-muted">
+            {t("historyTitle")}
+          </h2>
+          {history.length === 0 ? (
+            <p className="text-sm text-fg-muted/70">{t("historyEmpty")}</p>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {history.map((rec) => {
+                const isActive = current?.id === rec.id;
+                return (
+                  <li key={rec.id}>
+                    <button
+                      type="button"
+                      onClick={() => setCurrent(rec)}
+                      className={cn(
+                        "flex w-full flex-col gap-1 rounded-lg border px-3 py-2 text-left transition-colors",
+                        isActive
+                          ? "border-seal/50 bg-seal/5"
+                          : "border-border-subtle bg-bg-elev/20 hover:border-cyan/30 hover:bg-bg-elev/40",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-display text-sm text-fg">
+                          {summarize(rec.reading)}
+                        </span>
+                        <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-fg-muted/60">
+                          {rec.kind === "hexagram" ? t("hexagramTitle") : t("tarotTitle")}
+                        </span>
+                      </div>
+                      <span className="truncate text-xs text-fg-muted">{rec.question}</span>
+                      <span className="font-mono text-[10px] text-fg-muted/50">
+                        {new Date(rec.createdAt).toLocaleString(locale)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

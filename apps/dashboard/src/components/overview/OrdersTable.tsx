@@ -15,7 +15,6 @@ export function OrdersTable({ orders }: { orders: OrderRecord[] }) {
 
   return (
     <Panel
-      index="1.2"
       title={t("title")}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">

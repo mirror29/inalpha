@@ -65,7 +65,6 @@ export function FactorsClient() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        index={t("index")}
         title={t("title")}
         subtitle={t("subtitle")}
         right={
@@ -124,7 +123,6 @@ function EffectivenessPanel({
 
   return (
     <Panel
-      index="5.2"
       title={t("effectiveness")}
       aside={
         <form
@@ -284,7 +282,6 @@ function CatalogPanel({
 
   return (
     <Panel
-      index="5.1"
       title={t("catalog")}
       aside={
         <div className="flex flex-wrap items-center gap-1">

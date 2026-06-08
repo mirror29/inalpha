@@ -31,7 +31,6 @@
   },
   "overview": {
     "title": "Portfolio Overview",
-    "index": "01",
     "subtitle": "What you'd otherwise have to ask the agent — at a glance.",
     "kpi": {
       "totalEquity": "Total Equity",
@@ -75,7 +74,6 @@
   },
   "runners": {
     "title": "Live Runners",
-    "index": "02",
     "subtitle": "Promoted strategies trading the live feed — status, PnL, and every bar-by-bar decision.",
     "empty": "No strategy runs yet. Promote a candidate and start it to see live runners here.",
     "emptyFiltered": "No {status} runs.",
@@ -140,7 +138,6 @@
   },
   "activity": {
     "title": "Agent Activity",
-    "index": "03",
     "subtitle": "One timeline for everything the agents did across modules — scheduled runs, approvals, decisions, risk blocks, orders.",
     "kpi": {
       "scheduler": "Scheduler",
@@ -184,7 +181,6 @@
   },
   "lab": {
     "title": "Strategy Lab",
-    "index": "04",
     "subtitle": "LLM-authored strategy candidates, ranked by multi-objective fitness — with their latest backtest metrics.",
     "candidates": "Candidates",
     "promoted": "Promoted",
@@ -220,7 +216,6 @@
   },
   "factors": {
     "title": "Factor Library",
-    "index": "05",
     "subtitle": "The full system factor catalog (pandas-ta / Alpha101 / qlib …), plus timing effectiveness (Rank IC) for a selected instrument.",
     "catalogCount": "Catalog",
     "totalFactors": "{n} factors",
@@ -236,7 +231,6 @@
   },
   "risk": {
     "title": "Risk",
-    "index": "06",
     "subtitle": "Risk rules in force, and any locks currently blocking trades.",
     "engine": "Engine",
     "on": "on",
@@ -304,10 +298,11 @@
     "drawTarotThree": "Three-card spread · Tarot",
     "divining": "Drawing your omikuji…",
     "emptyHint": "Got something unresolved on your mind? Write it down, then cast a hexagram or draw a card. The same question yields the same sign — let the thought shift, then ask again.",
-    "emptyState": "No sign drawn yet.",
-    "promptHexagram": "Cast an I Ching hexagram for me about: {question}",
-    "promptTarotSingle": "Draw a single tarot card for me about: {question}",
-    "promptTarotThree": "Draw a past / present / future tarot spread for me about: {question}",
+    "castError": "The draw failed — please try again in a moment.",
+    "historyTitle": "History",
+    "historyEmpty": "No divinations yet. Cast one to begin.",
+    "consultInChat": "Discuss this in chat",
+    "consultPrompt": "I just drew 【{summary}】 at the omikuji about: \"{question}\". Please read it for me in my language, weaving in this sign — purely for fun, not investment advice.",
     "hexagramTitle": "I Ching Hexagram",
     "tarotTitle": "Tarot Spread",
     "primaryHexagram": "Primary",

@@ -117,6 +117,24 @@ export function ChatThread({
   const inflightAborts = useRef<Set<AbortController>>(new Set());
   const stoppingRef = useRef(false);
 
+  // 外部(占卜台「去对话栏深聊此卦」)请求把某卦交给 agent 解读 —— 注入一条用户消息。
+  // 用 ref 持最新 sendMessage,监听器只挂一次,避免每次渲染重绑。开栏由 ConsoleChat 监听同一事件。
+  const sendRef = useRef(sendMessage);
+  sendRef.current = sendMessage;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const prompt = (e as CustomEvent<{ prompt?: string }>).detail?.prompt;
+      if (!prompt) return;
+      void sendRef.current({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: prompt,
+      } as Parameters<typeof sendMessage>[0]);
+    };
+    window.addEventListener("inalpha:divination-consult", handler);
+    return () => window.removeEventListener("inalpha:divination-consult", handler);
+  }, []);
+
   /**
    * 停止生成兜底 —— 修复"点暂停没反应,回复继续输出"。
    *

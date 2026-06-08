@@ -107,6 +107,13 @@ export function ConsoleChat() {
     return () => window.removeEventListener("inalpha:open-chat", handler);
   }, []);
 
+  // 外部(占卜台「去对话栏深聊此卦」)请求打开对话栏;消息注入由 ChatThread 监听同一事件完成。
+  useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener("inalpha:divination-consult", handler);
+    return () => window.removeEventListener("inalpha:divination-consult", handler);
+  }, []);
+
   if (threadId === null) return null;
 
   return (

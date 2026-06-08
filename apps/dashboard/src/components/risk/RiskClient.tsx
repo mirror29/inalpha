@@ -48,7 +48,6 @@ export function RiskClient() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        index={t("index")}
         title={t("title")}
         subtitle={t("subtitle")}
         right={
@@ -108,7 +107,6 @@ function EventsPanel({
 
   return (
     <Panel
-      index="5.2"
       title={t("history")}
       aside={
         <span className="inline-flex items-center gap-1 font-mono text-xs text-fg-muted">
@@ -210,7 +208,6 @@ function LocksPanel({
 
   return (
     <Panel
-      index="5.1"
       title={title}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">{locks.length}</span>
@@ -284,7 +281,6 @@ function RulesPanel({
 }) {
   return (
     <Panel
-      index="5.3"
       title={title}
       aside={
         enabled ? (

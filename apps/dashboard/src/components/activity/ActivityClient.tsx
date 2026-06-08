@@ -78,7 +78,6 @@ export function ActivityClient() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        index={t("index")}
         title={t("title")}
         subtitle={t("subtitle")}
         right={
@@ -123,7 +122,6 @@ export function ActivityClient() {
       )}
 
       <Panel
-        index="3.1"
         title={t("title")}
         aside={
           <div className="flex flex-wrap gap-1">

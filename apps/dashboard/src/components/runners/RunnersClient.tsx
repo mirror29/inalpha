@@ -76,7 +76,6 @@ export function RunnersClient() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        index={t("index")}
         title={t("title")}
         subtitle={t("subtitle")}
         right={
