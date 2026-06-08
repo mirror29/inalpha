@@ -110,7 +110,9 @@
       "chartError": "K 线加载失败。",
       "decisions": "决策时间线",
       "decisionsEmpty": "尚无决策记录 —— runner 还没下过单。",
-      "errorLog": "错误日志",
+      "reasonFilled": "策略信号成交",
+      "runLog": "运行日志",
+      "runLogEmpty": "暂无运行日志。",
       "config": "配置",
       "col": {
         "barTs": "Bar 时间",

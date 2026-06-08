@@ -110,7 +110,9 @@
       "chartError": "Could not load candles.",
       "decisions": "Decision Timeline",
       "decisionsEmpty": "No decisions recorded yet — the runner hasn't placed an order.",
-      "errorLog": "Error Log",
+      "reasonFilled": "Filled on strategy signal",
+      "runLog": "Run Log",
+      "runLogEmpty": "No activity logged yet.",
       "config": "Config",
       "col": {
         "barTs": "Bar Time",

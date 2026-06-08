@@ -19,7 +19,8 @@ export function RunnerCard({ run }: { run: StrategyRunRecord }) {
   const locale = useLocale();
   const now = useNow({ updateInterval: 10_000 });
 
-  const errorCount = run.error_log.length;
+  // 卡片角标只数 error 级(run_log 现含 info/warn 活动,全数会虚高)。
+  const errorCount = run.run_log.filter((e) => e.level === "error").length;
   // running 但 last_bar 超过 4× timeframe 没动 → 可能卡住,标黄提示。
   const lastBarStale = isLastBarStale(run, now.getTime());
 
