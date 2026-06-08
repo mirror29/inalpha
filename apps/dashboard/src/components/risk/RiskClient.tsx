@@ -1,10 +1,11 @@
 "use client";
 
 import { useLocale, useNow, useTranslations } from "next-intl";
-import { Lock, ShieldCheck, ShieldX } from "lucide-react";
+import { Ban, History, Lock, ShieldCheck, ShieldX } from "lucide-react";
 import useSWR from "swr";
 
-import type { RiskLock, RiskPayload } from "@/lib/types";
+import type { RiskEvent, RiskLock, RiskPayload } from "@/lib/types";
+import { Link } from "@/i18n/navigation";
 import { fmtDateTime, fmtRelative } from "@/lib/format";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
@@ -47,7 +48,6 @@ export function RiskClient() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        index={t("index")}
         title={t("title")}
         subtitle={t("subtitle")}
         right={
@@ -73,6 +73,9 @@ export function RiskClient() {
       {/* 活跃锁 —— 放最上(最需要关注)*/}
       <LocksPanel locks={data.locks} title={t("locks")} t={t} />
 
+      {/* 最近风控事件 —— 历史锁(含已过期)+ 跨 run 被拒下单,补「事后可查」 */}
+      <EventsPanel events={data.events} t={t} />
+
       {/* 规则配置 */}
       <RulesPanel
         rules={data.rules}
@@ -81,6 +84,113 @@ export function RiskClient() {
         emptyLabel={data.enabled ? t("rulesEmpty") : t("disabled")}
       />
     </div>
+  );
+}
+
+/** 风控事件状态 → 配色 tone。 */
+const STATUS_TONE: Record<RiskEvent["status"], string> = {
+  active: "text-fox-red",
+  expired: "text-fg-muted",
+  unlocked: "text-cyan",
+  rejected: "text-gold",
+};
+
+function EventsPanel({
+  events,
+  t,
+}: {
+  events: RiskEvent[];
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const locale = useLocale();
+  const now = useNow({ updateInterval: 10_000 });
+
+  return (
+    <Panel
+      title={t("history")}
+      aside={
+        <span className="inline-flex items-center gap-1 font-mono text-xs text-fg-muted">
+          <History className="size-3" strokeWidth={1.5} />
+          {events.length}
+        </span>
+      }
+    >
+      {events.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+          <ShieldCheck className="size-6 text-bull/70" strokeWidth={1.5} />
+          <p className="text-sm text-fg-muted">{t("historyEmpty")}</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <TableHeadRow>
+                <Th>{t("col.event")}</Th>
+                <Th>{t("col.scope")}</Th>
+                <Th>{t("col.reason")}</Th>
+                <Th>{t("col.status")}</Th>
+                <Th right>{t("col.when")}</Th>
+              </TableHeadRow>
+            </thead>
+            <tbody>
+              {events.map((e) => {
+                const isRej = e.kind === "rejection";
+                const ruleCell = (
+                  <span
+                    className={`inline-flex items-center gap-1.5 font-medium ${
+                      isRej ? "text-gold" : "text-fox-red"
+                    }`}
+                  >
+                    {isRej ? (
+                      <Ban className="size-3" strokeWidth={2} />
+                    ) : (
+                      <Lock className="size-3" strokeWidth={2} />
+                    )}
+                    {e.rule}
+                  </span>
+                );
+                return (
+                  <tr
+                    key={e.id}
+                    className="border-t border-border-subtle/60 hover:bg-bg-elev/30"
+                  >
+                    <Td>
+                      {e.href ? (
+                        <Link href={e.href} className="hover:underline">
+                          {ruleCell}
+                        </Link>
+                      ) : (
+                        ruleCell
+                      )}
+                    </Td>
+                    <Td mono muted>
+                      {e.label}
+                    </Td>
+                    <Td>
+                      <span className="font-mono text-[11px] text-fg-muted">
+                        {e.reason}
+                      </span>
+                    </Td>
+                    <Td>
+                      <span
+                        className={`font-mono text-[10px] uppercase tracking-wider ${STATUS_TONE[e.status]}`}
+                      >
+                        {t(`status.${e.status}`)}
+                      </span>
+                    </Td>
+                    <Td right mono muted>
+                      <span title={fmtDateTime(e.ts, locale)}>
+                        {fmtRelative(e.ts, now.getTime(), locale)}
+                      </span>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -98,7 +208,6 @@ function LocksPanel({
 
   return (
     <Panel
-      index="5.1"
       title={title}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">{locks.length}</span>
@@ -172,7 +281,6 @@ function RulesPanel({
 }) {
   return (
     <Panel
-      index="5.2"
       title={title}
       aside={
         enabled ? (

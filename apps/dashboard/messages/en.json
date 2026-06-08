@@ -11,6 +11,7 @@
     "lab": "Strategy Lab",
     "factors": "Factors",
     "risk": "Risk",
+    "divination": "Omikuji",
     "soon": "soon"
   },
   "theme": {
@@ -30,7 +31,6 @@
   },
   "overview": {
     "title": "Portfolio Overview",
-    "index": "01",
     "subtitle": "What you'd otherwise have to ask the agent — at a glance.",
     "kpi": {
       "totalEquity": "Total Equity",
@@ -74,7 +74,6 @@
   },
   "runners": {
     "title": "Live Runners",
-    "index": "02",
     "subtitle": "Promoted strategies trading the live feed — status, PnL, and every bar-by-bar decision.",
     "empty": "No strategy runs yet. Promote a candidate and start it to see live runners here.",
     "emptyFiltered": "No {status} runs.",
@@ -139,7 +138,6 @@
   },
   "activity": {
     "title": "Agent Activity",
-    "index": "03",
     "subtitle": "One timeline for everything the agents did across modules — scheduled runs, approvals, decisions, risk blocks, orders.",
     "kpi": {
       "scheduler": "Scheduler",
@@ -155,22 +153,35 @@
       "permission": "Approvals",
       "decision": "Decisions",
       "risk": "Risk",
-      "order": "Orders"
+      "order": "Orders",
+      "conversation": "Chats"
     },
     "empty": "No activity yet.",
     "emptyFiltered": "No {kind} events.",
     "sourceDown": "{sources} unavailable — those events are missing from the feed.",
+    "decisionsTruncated": "Decision events only cover the most recent runs — earlier runs aren't included here. Open a run for its full timeline.",
     "source": {
       "scheduler": "Scheduler",
       "permissions": "Approvals",
       "risk": "Risk",
       "runs": "Runners",
-      "orders": "Orders"
+      "orders": "Orders",
+      "conversations": "Chats"
     }
+  },
+  "footer": {
+    "title": "Activity log",
+    "expand": "Expand activity log",
+    "collapse": "Collapse activity log",
+    "empty": "No activity yet.",
+    "idle": "Waiting for agent activity…",
+    "viewAll": "View all",
+    "events": "events",
+    "openConversation": "Open this chat in the side panel",
+    "resize": "Drag to resize height"
   },
   "lab": {
     "title": "Strategy Lab",
-    "index": "04",
     "subtitle": "LLM-authored strategy candidates, ranked by multi-objective fitness — with their latest backtest metrics.",
     "candidates": "Candidates",
     "promoted": "Promoted",
@@ -206,7 +217,6 @@
   },
   "factors": {
     "title": "Factor Library",
-    "index": "05",
     "subtitle": "The full system factor catalog (pandas-ta / Alpha101 / qlib …), plus timing effectiveness (Rank IC) for a selected instrument.",
     "catalogCount": "Catalog",
     "totalFactors": "{n} factors",
@@ -222,7 +232,6 @@
   },
   "risk": {
     "title": "Risk",
-    "index": "06",
     "subtitle": "Risk rules in force, and any locks currently blocking trades.",
     "engine": "Engine",
     "on": "on",
@@ -233,18 +242,79 @@
     "rules": "Rules",
     "rulesEmpty": "No rules configured.",
     "disabled": "Risk engine is disabled.",
+    "history": "Recent Risk Events",
+    "historyEmpty": "No recent risk events — no locks or rejections lately.",
+    "status": {
+      "active": "active",
+      "expired": "expired",
+      "unlocked": "unlocked",
+      "rejected": "rejected"
+    },
     "col": {
       "rule": "Rule",
       "scope": "Scope",
       "side": "Side",
       "reason": "Reason",
-      "until": "Until"
+      "until": "Until",
+      "event": "Event",
+      "status": "Status",
+      "when": "When"
     }
   },
   "common": {
     "retry": "Retry",
     "loading": "Loading…",
     "error": "Could not reach the backend.",
-    "none": "—"
+    "none": "—",
+    "truncated": "Showing the latest {n} — earlier ones aren't listed here."
+  },
+  "chat": {
+    "title": "Agent",
+    "online": "online",
+    "open": "Open chat",
+    "close": "Close chat",
+    "clear": "Clear chat",
+    "resize": "Drag to resize",
+    "send": "Send",
+    "stop": "Stop generating",
+    "newSession": "New chat",
+    "history": "History",
+    "historyEmpty": "No past conversations yet.",
+    "historyError": "Failed to load history.",
+    "untitled": "Untitled chat",
+    "placeholder": "Ask the agent — quotes, positions, strategies, backtests…",
+    "empty": "Chat with the agent here — it can pull quotes, read positions, run backtests, tune factors. Ask about any ticker.",
+    "thinking": "Thinking…",
+    "toolRunning": "running",
+    "toolDone": "done",
+    "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",
+    "errorDismiss": "Dismiss"
+  },
+  "divination": {
+    "pageTitle": "Inari Omikuji",
+    "pageSubtitle": "Hesitant on direction? Draw an omikuji — a shrine fortune slip — at the shrine of Inari, the fox deity of fortune; an I Ching or Tarot reading for a second vantage. Before you commit, the call still belongs to the data and risk engine.",
+    "questionPlaceholder": "Write down what you can't settle (e.g. this direction — step in or wait)…",
+    "defaultQuestion": "This direction I'm eyeing — step in, or wait?",
+    "castHexagram": "Cast a hexagram · I Ching",
+    "drawTarotSingle": "Draw one · Tarot",
+    "drawTarotThree": "Three-card spread · Tarot",
+    "divining": "Drawing your omikuji…",
+    "emptyHint": "Got something unresolved on your mind? Write it down, then cast a hexagram or draw a card. The same question yields the same sign — let the thought shift, then ask again.",
+    "castError": "The draw failed — please try again in a moment.",
+    "historyTitle": "History",
+    "historyEmpty": "No divinations yet. Cast one to begin.",
+    "consultInChat": "Discuss this in chat",
+    "consultPrompt": "I just drew 【{summary}】 at the omikuji about: \"{question}\". Please read it for me in my language, weaving in this sign — purely for fun, not investment advice.",
+    "hexagramTitle": "I Ching Hexagram",
+    "tarotTitle": "Tarot Spread",
+    "primaryHexagram": "Primary",
+    "changedHexagram": "Changed",
+    "changingLines": "Changing lines: {lines}",
+    "noChangingLines": "All lines still — no changing lines",
+    "reversed": "reversed",
+    "posPast": "Past",
+    "posPresent": "Present",
+    "posFuture": "Future",
+    "disclaimer": "The omikuji is a perspective, not a signal · not investment advice · the trade still answers to data and risk"
   }
 }

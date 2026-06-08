@@ -106,3 +106,22 @@ def test_web_search_max_results_min_bound(
         params={"query": "test", "max_results": 0},
     )
     assert r.status_code == 400
+
+
+async def test_run_guarded_swallows_non_timeout_exceptions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_run_guarded 对非 TimeoutError 异常也兜底返回 []，不穿透到上层 analyst fan-out。
+
+    修复前只 except TimeoutError，底层（DDGS / to_thread）抛的其它异常会直接传出，
+    让整条 analyst 链崩掉。此 test 在修复前会因 RuntimeError 未捕获而失败。
+    """
+    from inalpha_data.connectors import web_search as ws
+
+    def boom(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        raise RuntimeError("ddgs blew up")
+
+    monkeypatch.setattr(ws, "_search_sync", boom)
+    connector = ws.WebSearchConnector()
+    result = await connector.fetch_search("anything", max_results=3)
+    assert result == []

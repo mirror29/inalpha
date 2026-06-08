@@ -8,6 +8,7 @@ import {
   Radio,
   ShieldAlert,
   Sigma,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,7 +19,6 @@ import { ThemeToggle } from "./ThemeToggle";
 
 interface NavItem {
   key: string;
-  index: string;
   href: string;
   icon: LucideIcon;
   /** false = 已落地;true = 占位(灰 + soon 角标)。 */
@@ -26,12 +26,14 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { key: "overview", index: "01", href: "/", icon: LayoutDashboard },
-  { key: "runners", index: "02", href: "/runners", icon: Radio },
-  { key: "activity", index: "03", href: "/activity", icon: Activity },
-  { key: "lab", index: "04", href: "/lab", icon: FlaskConical },
-  { key: "factors", index: "05", href: "/factors", icon: Sigma },
-  { key: "risk", index: "06", href: "/risk", icon: ShieldAlert },
+  { key: "overview", href: "/", icon: LayoutDashboard },
+  { key: "runners", href: "/runners", icon: Radio },
+  { key: "activity", href: "/activity", icon: Activity },
+  { key: "lab", href: "/lab", icon: FlaskConical },
+  { key: "factors", href: "/factors", icon: Sigma },
+  { key: "risk", href: "/risk", icon: ShieldAlert },
+  // 玄学彩蛋占卜台(纯娱乐)
+  { key: "divination", href: "/divination", icon: Sparkles },
 ];
 
 export function ConsoleSidebar() {
@@ -67,14 +69,6 @@ export function ConsoleSidebar() {
           const Icon = item.icon;
           const inner = (
             <>
-              <span
-                className={cn(
-                  "font-mono text-[10px] tabular-nums transition-colors",
-                  active ? "text-cyan" : "text-fg-muted/50",
-                )}
-              >
-                {item.index}
-              </span>
               <Icon
                 className={cn(
                   "size-4 shrink-0 transition-colors",

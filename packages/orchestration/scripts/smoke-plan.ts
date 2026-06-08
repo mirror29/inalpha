@@ -21,7 +21,7 @@ if (existsSync(envPath)) {
   loadEnvFile(envPath);
 }
 
-import { mintServiceToken } from "../src/auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../src/auth.js";
 import {
   approveTradePlanTool,
   createTradePlanTool,
@@ -35,7 +35,7 @@ import {
 type AnyResult = Record<string, unknown>;
 
 async function main(): Promise<void> {
-  const token = await mintServiceToken({ sub: "service:smoke" });
+  const token = await mintServiceToken({ sub: defaultServiceSubject() });
   const ctx = { requestContext: { authToken: token } } as never;
 
   // D-8a'：不再需要 LLM/smoke 自取 refPrice——paper /orders/submit 服务端调 data /ticker 自取

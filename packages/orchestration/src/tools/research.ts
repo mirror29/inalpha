@@ -4,7 +4,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { mintServiceToken } from "../auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../auth.js";
 import { ResearchClient, type PersonaKey } from "../clients/research.js";
 import { getSettings } from "../config.js";
 
@@ -32,7 +32,7 @@ type ToolRequestContext = { authToken?: string };
 
 async function getClient(ctx?: ToolRequestContext): Promise<ResearchClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
   return new ResearchClient({ baseUrl: settings.researchServiceUrl, token });
 }
 

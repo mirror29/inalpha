@@ -27,7 +27,6 @@ export function PositionsTable({
 
   return (
     <Panel
-      index="1.1"
       title={t("title")}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">

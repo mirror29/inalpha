@@ -211,7 +211,7 @@ function BackLink({ label }: { label: string }) {
 function ErrorLog({ entries }: { entries: Array<Record<string, unknown>> }) {
   const t = useTranslations("runners.detail");
   return (
-    <Panel index="2.3" title={t("errorLog")}>
+    <Panel title={t("errorLog")}>
       <ul className="divide-y divide-border-subtle/60">
         {entries.map((e, i) => (
           <li

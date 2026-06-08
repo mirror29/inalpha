@@ -8,14 +8,21 @@ import { fmtNum, fmtQty, fmtTime, instrumentLabel } from "@/lib/format";
 import { Panel } from "@/components/ui/Panel";
 import { OrderStatusBadge } from "@/components/ui/StatusBadge";
 import { Td, TableEmpty, TableHeadRow, Th } from "@/components/ui/Table";
+import { TruncationNote } from "@/components/ui/TruncationNote";
 
-export function OrdersTable({ orders }: { orders: OrderRecord[] }) {
+export function OrdersTable({
+  orders,
+  truncated = false,
+}: {
+  orders: OrderRecord[];
+  truncated?: boolean;
+}) {
   const t = useTranslations("overview.orders");
+  const tc = useTranslations("common");
   const locale = useLocale();
 
   return (
     <Panel
-      index="1.2"
       title={t("title")}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">
@@ -81,6 +88,11 @@ export function OrdersTable({ orders }: { orders: OrderRecord[] }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {truncated && (
+        <div className="px-4 pb-3 pt-2">
+          <TruncationNote text={tc("truncated", { n: orders.length })} />
         </div>
       )}
     </Panel>

@@ -2,6 +2,8 @@ import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
+import { ActivityFooter } from "@/components/activity/ActivityFooter";
+import { ConsoleChat } from "@/components/chat/ConsoleChat";
 import { ConsoleSidebar } from "@/components/shell/ConsoleSidebar";
 import { routing } from "@/i18n/routing";
 
@@ -36,6 +38,10 @@ export default async function LocaleLayout({
             {children}
           </div>
         </main>
+        {/* 内嵌 agent 对话栏 —— 常驻 layout,切面切换不丢对话(见 ConsoleChat)。 */}
+        <ConsoleChat />
+        {/* 常驻底部活动日志(终端风)—— 随时可回溯 agent 跨模块活动(见 ActivityFooter)。 */}
+        <ActivityFooter />
       </div>
     </NextIntlClientProvider>
   );

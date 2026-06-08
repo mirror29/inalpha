@@ -89,6 +89,37 @@ async def list_active(
     return list(rows)  # type: ignore[arg-type]
 
 
+async def list_recent(
+    conn: AsyncConnection,
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """列**最近**的风控锁——含已过期 / 已解锁的行（``active`` 不过滤），按 ``locked_at`` DESC。
+
+    与 ``list_active`` 互补：``list_active`` 是「当前生效锁」实时视图；本函数是
+    「最近触发过的风控」审计 / 历史视图，让短时效锁（如 CooldownRule 5min）过期后
+    仍可事后复盘。走 ``risk_locks_locked_at_idx`` 索引。
+
+    返回行带上解锁元数据（``active`` / ``unlocked_at`` / ``unlocked_by`` /
+    ``unlock_reason``），调用方据此区分「生效中 / 已过期 / 人工解锁」。
+
+    ``active`` 返回**有效生效**（``active AND locked_until > NOW()``）而非 DB 原始列：
+    时效过期但 reconciler 尚未跑 ``expire_past_locks`` 的锁，DB 原始 ``active`` 仍是 TRUE，
+    原样返回会让历史面板把已过期锁误显为生效中。人工解锁 vs 时效过期由
+    ``unlocked_by`` / ``unlock_reason`` 区分，不靠 ``active``。
+    """
+    sql = (
+        "SELECT id, scope, market, symbol, side, rule_name, reason, "
+        "locked_at, locked_until, (active AND locked_until > NOW()) AS active, "
+        "unlocked_at, unlocked_by, unlock_reason "
+        "FROM risk_locks ORDER BY locked_at DESC LIMIT %s"
+    )
+    async with conn.cursor() as cur:
+        await cur.execute(sql, (limit,))
+        rows = await cur.fetchall()
+    return list(rows)  # type: ignore[arg-type]
+
+
 async def is_locked(
     conn: AsyncConnection,
     *,

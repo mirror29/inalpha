@@ -44,7 +44,6 @@ export function OverviewClient() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        index={t("index")}
         title={t("title")}
         subtitle={t("subtitle")}
         right={
@@ -71,7 +70,7 @@ export function OverviewClient() {
           positions={data.positions}
           baseCcy={data.account.base_currency}
         />
-        <OrdersTable orders={data.orders} />
+        <OrdersTable orders={data.orders} truncated={data.ordersTruncated} />
       </div>
     </div>
   );

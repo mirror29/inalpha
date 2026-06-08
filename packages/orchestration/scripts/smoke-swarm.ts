@@ -27,7 +27,7 @@ if (existsSync(envPath)) {
   loadEnvFile(envPath);
 }
 
-import { mintServiceToken } from "../src/auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../src/auth.js";
 import { DataClient } from "../src/clients/data.js";
 import { getSettings } from "../src/config.js";
 import { mastra } from "../src/mastra/index.js";
@@ -57,7 +57,7 @@ async function backfillIfNeeded(token: string, symbol: string): Promise<void> {
 
 async function main(): Promise<void> {
   console.log("─── 0. mint service token ───");
-  const token = await mintServiceToken({ sub: "service:swarm-smoke" });
+  const token = await mintServiceToken({ sub: defaultServiceSubject() });
   console.log("  ✓ service token minted");
 
   console.log("\n─── 1. backfill 3 symbols × 30d 1h bars ───");

@@ -35,6 +35,11 @@ import {
   factorTimingTool,
   factorTools,
 } from "./factor.js";
+import {
+  divinationCastHexagramTool,
+  divinationDrawTarotTool,
+  divinationTools,
+} from "./divination.js";
 import { researchDeepDiveTool, researchTools } from "./research.js";
 import {
   riskDescribeRulesTool,
@@ -77,6 +82,8 @@ export {
   dataGetBarsTool,
   dataGetFundamentalsTool,
   dataGetTickerTool,
+  divinationCastHexagramTool,
+  divinationDrawTarotTool,
   executeTradePlanTool,
   factorCatalogTool,
   factorScoreTool,
@@ -134,6 +141,8 @@ export const allTools = [
   riskDescribeRulesTool,
   riskListLocksTool,
   riskUnlockTool,
+  // 玄学彩蛋（六爻 / 塔罗）—— 纯娱乐，硬隔离于决策
+  ...divinationTools,
 ] as const;
 
 /** 给 trader subagent 用（不含 risk 的 approve/reject）。 */
@@ -225,6 +234,9 @@ export const orchestratorToolList = [
   // D-9.1b · ADR-0006 §D6：agent 自检 + 解释风控（unlock 不挂，admin UI 用 allTools 走）
   riskDescribeRulesTool,
   riskListLocksTool,
+  // 玄学彩蛋（六爻 / 塔罗）—— 仅用户明确点名时召唤，输出禁入决策
+  divinationCastHexagramTool,
+  divinationDrawTarotTool,
 ] as const;
 
 /** 名字 → tool 索引，给 framework 路由用。 */

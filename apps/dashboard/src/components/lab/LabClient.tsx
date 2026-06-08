@@ -13,6 +13,7 @@ import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip, Meta } from "@/components/ui/LiveStrip";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
+import { TruncationNote } from "@/components/ui/TruncationNote";
 import { CandidateStatusBadge } from "@/components/ui/StatusBadge";
 import { Td, TableEmpty, TableHeadRow, Th } from "@/components/ui/Table";
 
@@ -29,6 +30,7 @@ function metric(c: StrategyCandidateSummary, key: string): number | null {
 
 export function LabClient() {
   const t = useTranslations("lab");
+  const tc = useTranslations("common");
   const locale = useLocale();
   const [filter, setFilter] = useState<StatusFilter>("all");
 
@@ -69,7 +71,6 @@ export function LabClient() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        index={t("index")}
         title={t("title")}
         subtitle={t("subtitle")}
         right={
@@ -88,7 +89,6 @@ export function LabClient() {
       />
 
       <Panel
-        index="4.1"
         title={t("candidates")}
         aside={
           <div className="flex flex-wrap gap-1">
@@ -128,6 +128,10 @@ export function LabClient() {
           </div>
         )}
       </Panel>
+
+      {data.truncated && (
+        <TruncationNote text={tc("truncated", { n: data.candidates.length })} />
+      )}
     </div>
   );
 }

@@ -39,6 +39,18 @@ export async function mintServiceToken(
 }
 
 /**
+ * Agent 后台调后端时的默认身份 ``sub``。
+ *
+ * 单租户 dev 下对齐控制台账户（``getSettings().consoleSubject``，默认 ``"console:dev"``），
+ * 使 agent 写的 live run / 订单 / 候选与控制台读取落到同一个 ``account_id``。
+ * 工具应在缺少调用者 token 时回落到这个 sub：
+ * ``ctx?.authToken ?? mintServiceToken({ sub: defaultServiceSubject() })``。
+ */
+export function defaultServiceSubject(): string {
+  return getSettings().consoleSubject;
+}
+
+/**
  * 验签 + 解码 JWT。失败抛 ``Error``（让 caller 决定怎么响应）。
  */
 export async function verifyToken(token: string): Promise<Payload> {

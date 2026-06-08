@@ -3,8 +3,6 @@ import * as React from "react";
 import { cn } from "@/lib/cn";
 
 interface PanelProps {
-  /** 编辑体序号,如 "01" —— broadsheet 调性。 */
-  index?: string;
   title: string;
   /** 标题右侧的附属信息(计数 / 操作)。 */
   aside?: React.ReactNode;
@@ -13,9 +11,9 @@ interface PanelProps {
 }
 
 /**
- * 看板里的内容分区 —— hairline 边框 + 序号 + 标题,统一各 section 的外观。
+ * 看板里的内容分区 —— hairline 边框 + 标题,统一各 section 的外观。
  */
-export function Panel({ index, title, aside, className, children }: PanelProps) {
+export function Panel({ title, aside, className, children }: PanelProps) {
   return (
     <section
       className={cn(
@@ -27,11 +25,6 @@ export function Panel({ index, title, aside, className, children }: PanelProps) 
         <div className="flex items-center gap-2.5">
           {/* 朱红印章刻度 —— 每个 section 的品牌锚点。 */}
           <span className="h-3.5 w-0.5 shrink-0 rounded-full bg-seal/70" />
-          {index && (
-            <span className="font-display text-sm italic text-fg-muted/70">
-              {index}
-            </span>
-          )}
           <h2 className="whitespace-nowrap font-mono text-xs uppercase tracking-[0.16em] text-fg-muted">
             {title}
           </h2>

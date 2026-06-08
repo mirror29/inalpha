@@ -17,7 +17,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { mintServiceToken } from "../auth.js";
+import { defaultServiceSubject, mintServiceToken } from "../auth.js";
 import { RiskClient } from "../clients/risk.js";
 import { getSettings } from "../config.js";
 
@@ -25,7 +25,7 @@ type ToolRequestContext = { authToken?: string };
 
 async function getClient(ctx?: ToolRequestContext): Promise<RiskClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: "service:orchestration" }));
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
   return new RiskClient({ baseUrl: settings.paperServiceUrl, token });
 }
 
@@ -84,7 +84,9 @@ export const riskListLocksTool = createTool({
     scope: z.enum(["global", "market", "symbol"]).optional(),
     market: z.string().optional(),
     symbol: z.string().optional(),
-    limit: z.number().int().positive().max(500).optional(),
+    // 与 Python /risk/locks 的服务端硬上限对齐(api/risk.py: min(limit,200))——
+    // 别让 Zod 放过 201~500 后被服务端静默截到 200,LLM 误判"已拿全"。
+    limit: z.number().int().positive().max(200).optional(),
   }),
   execute: async (input, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;

@@ -9,16 +9,16 @@
  */
 
 export const RELEASE = {
-  rev: "0.9",
-  phase: "D-9",
+  rev: "0.11",
+  phase: "D-11",
   /** Broadsheet 点号写法，供 UI 展示。 */
-  dateDot: "2026.05.28",
+  dateDot: "2026.06.05",
   /** ISO，供 <time dateTime> 或后续 schema.org。 */
-  dateIso: "2026-05-28",
+  dateIso: "2026-06-05",
 } as const;
 
-/** 复合短串，如 "rev 0.9 · D-9"。 */
+/** 复合短串，如 "rev 0.11 · D-11"。 */
 export const releaseTag = `rev ${RELEASE.rev} · ${RELEASE.phase}`;
 
-/** 复合长串，如 "0.9-D9 · 2026.05.28"。 */
+/** 复合长串，如 "0.11-D11 · 2026.06.05"。 */
 export const releaseFootline = `${RELEASE.rev}-${RELEASE.phase.replace("-", "")} · ${RELEASE.dateDot}`;

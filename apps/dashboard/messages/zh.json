@@ -11,6 +11,7 @@
     "lab": "策略实验室",
     "factors": "因子库",
     "risk": "风控",
+    "divination": "狐神签",
     "soon": "即将"
   },
   "theme": {
@@ -30,7 +31,6 @@
   },
   "overview": {
     "title": "组合总览",
-    "index": "01",
     "subtitle": "原本要问 agent 才知道的状态 —— 一眼看清。",
     "kpi": {
       "totalEquity": "总权益",
@@ -74,7 +74,6 @@
   },
   "runners": {
     "title": "Live Runner",
-    "index": "02",
     "subtitle": "promoted 策略按行情自动跑 —— 状态、累计盈亏,以及每根 bar 的决策。",
     "empty": "暂无策略运行。promote 一个候选并启动后,运行中的 Live Runner 会出现在这里。",
     "emptyFiltered": "该状态暂无 run。",
@@ -139,7 +138,6 @@
   },
   "activity": {
     "title": "Agent 活动",
-    "index": "03",
     "subtitle": "一条时间线看清 agent 跨模块都做了什么 —— 定时任务、审批、决策、风控拦截、订单。",
     "kpi": {
       "scheduler": "调度器",
@@ -155,22 +153,35 @@
       "permission": "审批",
       "decision": "决策",
       "risk": "风控",
-      "order": "订单"
+      "order": "订单",
+      "conversation": "会话"
     },
     "empty": "暂无活动。",
     "emptyFiltered": "没有「{kind}」类事件。",
     "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
+    "decisionsTruncated": "决策事件只覆盖最近几个 run —— 更早的 run 未纳入。点开具体 run 看完整时间线。",
     "source": {
       "scheduler": "定时任务",
       "permissions": "审批",
       "risk": "风控",
       "runs": "Runner",
-      "orders": "订单"
+      "orders": "订单",
+      "conversations": "会话"
     }
+  },
+  "footer": {
+    "title": "活动日志",
+    "expand": "展开活动日志",
+    "collapse": "收起活动日志",
+    "empty": "暂无活动。",
+    "idle": "等待 agent 活动…",
+    "viewAll": "查看全部",
+    "events": "事件",
+    "openConversation": "在右侧对话栏查看该会话",
+    "resize": "拖动调整高度"
   },
   "lab": {
     "title": "策略实验室",
-    "index": "04",
     "subtitle": "LLM 自创的策略候选,按多目标 fitness 排序 —— 附最近一次回测指标。",
     "candidates": "候选",
     "promoted": "已晋级",
@@ -206,7 +217,6 @@
   },
   "factors": {
     "title": "因子库",
-    "index": "05",
     "subtitle": "系统全部因子目录(pandas-ta / Alpha101 / qlib 等),以及针对所选标的的择时有效性(Rank IC)。",
     "catalogCount": "目录",
     "totalFactors": "共 {n} 个因子",
@@ -222,7 +232,6 @@
   },
   "risk": {
     "title": "风控",
-    "index": "06",
     "subtitle": "当前生效的风控规则,以及正在拦截交易的锁。",
     "engine": "引擎",
     "on": "启用",
@@ -233,18 +242,79 @@
     "rules": "规则",
     "rulesEmpty": "未配置规则。",
     "disabled": "风控引擎已停用。",
+    "history": "最近风控事件",
+    "historyEmpty": "近期无风控事件 —— 没有锁也没有被拒的下单。",
+    "status": {
+      "active": "生效中",
+      "expired": "已过期",
+      "unlocked": "已解锁",
+      "rejected": "已拒单"
+    },
     "col": {
       "rule": "规则",
       "scope": "范围",
       "side": "方向",
       "reason": "原因",
-      "until": "解锁于"
+      "until": "解锁于",
+      "event": "事件",
+      "status": "状态",
+      "when": "时间"
     }
   },
   "common": {
     "retry": "重试",
     "loading": "加载中…",
     "error": "无法连接后端。",
-    "none": "—"
+    "none": "—",
+    "truncated": "仅显示最近 {n} 条 —— 更早的未在此列出。"
+  },
+  "chat": {
+    "title": "Agent",
+    "online": "在线",
+    "open": "打开对话",
+    "close": "收起对话",
+    "clear": "清空对话",
+    "resize": "拖动调整宽度",
+    "send": "发送",
+    "stop": "停止生成",
+    "newSession": "新建会话",
+    "history": "历史会话",
+    "historyEmpty": "暂无历史会话。",
+    "historyError": "历史会话加载失败。",
+    "untitled": "未命名会话",
+    "placeholder": "问问 agent —— 行情、持仓、策略、回测…",
+    "empty": "在这里和 agent 对话 —— 它能查行情、看持仓、跑回测、调因子。问任何标的都行。",
+    "thinking": "思考中…",
+    "toolRunning": "调用中",
+    "toolDone": "已完成",
+    "errorGeneric": "Agent 回复失败，请重试 —— 多半是上游 LLM 报错或连接中断。",
+    "errorDismiss": "关闭"
+  },
+  "divination": {
+    "pageTitle": "狐神签",
+    "pageSubtitle": "方向犹豫时，向稻荷狐神求一签 —— 六爻与塔罗，为你的判断添一个参照视角。落子之前，决断仍归数据与风控。",
+    "questionPlaceholder": "把心里拿不定的事写下来（比如：这个方向，该进还是该等）…",
+    "defaultQuestion": "眼下这个方向，我该进还是该等",
+    "castHexagram": "求一卦 · 六爻",
+    "drawTarotSingle": "抽一张 · 塔罗",
+    "drawTarotThree": "三张牌阵 · 塔罗",
+    "divining": "求签中…",
+    "emptyHint": "心有所惑，便写下要问的事，求一卦或抽一张。同一桩心事，签象固定；念头变了，再求一回。",
+    "castError": "求签失败了，稍后再试一次。",
+    "historyTitle": "历史占卜",
+    "historyEmpty": "还没有占卜记录。先求一卦吧。",
+    "consultInChat": "去对话栏深聊此卦",
+    "consultPrompt": "我刚在占卜台求得【{summary}】，问的是『{question}』。请你结合这个签象，用我的语言为我细解一番——只作娱乐参照、非投资建议。",
+    "hexagramTitle": "六爻卦象",
+    "tarotTitle": "塔罗牌阵",
+    "primaryHexagram": "本卦",
+    "changedHexagram": "变卦",
+    "changingLines": "动爻：第 {lines} 爻",
+    "noChangingLines": "六爻安静，无动爻",
+    "reversed": "逆位",
+    "posPast": "过去",
+    "posPresent": "现在",
+    "posFuture": "未来",
+    "disclaimer": "狐神之签，只作参照 · 非投资建议 · 落子仍归数据与风控"
   }
 }

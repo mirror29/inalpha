@@ -1,18 +1,23 @@
 {
   "meta": {
-    "title": "Inalpha — Quant agents that evolve under audit.",
-    "description": "Inalpha is an open-source quant agent framework bringing engineering discipline to LLM-driven trading. Factor lab, risk engine, strategy evolution, audit-grade plan/exec — every factor proposed, every strategy mutated, every order routed is logged, versioned, and reviewable. The LLM writes the code; the engineering harness signs every decision. Built on Claude Code hooks/permissions patterns and NautilusTrader's unified backtest=paper=live kernel."
+    "title": "Inalpha — Quant agents that evolve and trade under audit.",
+    "description": "Inalpha is an open-source quant agent framework bringing engineering discipline to LLM-driven trading. Factor lab, risk engine, strategy evolution, and an autonomous paper runner — promoted strategies trade a simulated account on live market data, machine-approved through plan/exec with full decision replay. Every factor proposed, every strategy mutated, every order routed is logged, versioned, and reviewable. The LLM writes the code; the engineering harness signs every decision. Built on Claude Code hooks/permissions patterns and NautilusTrader's unified backtest=paper=live kernel."
   },
   "nav": {
     "github": "GitHub",
     "docs": "Docs",
     "demoAnchor": "Live demo"
   },
+  "theme": {
+    "label": "Theme",
+    "dark": "Dark",
+    "light": "Light"
+  },
   "hero": {
     "wordmark": "Inalpha",
     "title": "Quant agents",
     "titleAlt": "that evolve under audit.",
-    "sub": "Factor lab · Risk engine · Strategy evolution · Plan/Exec — every factor proposed, every strategy mutated, every order routed is logged, versioned, and reviewable. The LLM writes the code; the engineering harness signs every decision.",
+    "sub": "Factor lab · Risk engine · Strategy evolution · Autonomous paper runner — every factor proposed, every strategy mutated, every order routed is logged, versioned, and reviewable. The LLM writes the code; the engineering harness signs every decision — even when it trades unattended.",
     "ctaPrimary": "git clone",
     "ctaSecondary": "Live demo",
     "stats": {
@@ -234,9 +239,9 @@
     "currentState": {
       "title": "Where we are honest with you",
       "items": [
-        "D-9 in flight: LLM-authored strategies (E1 MVP) with sandbox gates + multi-objective fitness",
-        "RiskEngine rules enforced at the paper HTTP boundary (notional cap / price deviation / drawdown veto)",
-        "No real-money deployment yet — every change passes plan/exec approval and lands on disk"
+        "D-11 shipped: cross-currency cash + an autonomous paper runner — promoted strategies trade a simulated account on live bars, machine-approved through plan/exec, with full decision replay",
+        "RiskEngine enforced at the paper HTTP boundary: notional cap / price deviation / drawdown veto / real exchange calendars across every market",
+        "No real-capital deployment — the runner trades a paper account, orders matched locally; every step passes plan/exec approval and lands on disk"
       ]
     }
   },
@@ -258,7 +263,7 @@
       },
       {
         "question": "Can I trade real money with Inalpha right now?",
-        "answer": "No. Inalpha is in alpha (Phase D-9). The framework supports backtesting and paper trading, but there is no live brokerage integration yet. The live runner is planned for Phase D-10. We are explicit about this: do not route real capital through Inalpha until the live path has been hardened and audited."
+        "answer": "No — and that's deliberate. As of Phase D-11, Inalpha ships an autonomous paper runner: promoted strategies trade a simulated account on live market data, gated by two human checkpoints (you promote, you start), machine-approved through plan/exec, with a full decision-replay log. But every order is matched locally — there is no live brokerage integration, and real-capital trading is out of the current plan. The kernel is designed to extend to live execution later; that is not today's scope. Do not route real money through Inalpha."
       },
       {
         "question": "What markets and asset classes does Inalpha cover?",

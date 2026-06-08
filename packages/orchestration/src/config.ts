@@ -15,6 +15,11 @@ const SettingsSchema = z.object({
   jwtAlgorithm: z.literal("HS256").default("HS256"),
   schedulerEnabled: z.coerce.boolean().default(false),
   databaseUrl: z.string().min(1).optional(),
+  // 控制台身份 subject —— agent 后台调后端时的默认账户。默认值刻意对齐 dashboard
+  // apps/dashboard/src/lib/backend.ts 的 CONSOLE_SUBJECT 默认值,这样不设任何 env
+  // 两边就自动落到同一个 account_id(account_id = uuid5(sub)),agent 写的 live run /
+  // 订单 / 候选才能被控制台读到。上多租户时改 CONSOLE_SUBJECT 来源即可两边同步。
+  consoleSubject: z.string().min(1).default("console:dev"),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -38,6 +43,7 @@ export function getSettings(): Settings {
     jwtAlgorithm: process.env.JWT_ALGORITHM,
     schedulerEnabled: process.env.SCHEDULER_ENABLED,
     databaseUrl: process.env.DATABASE_URL,
+    consoleSubject: process.env.CONSOLE_SUBJECT,
   });
 
   if (!parsed.success) {

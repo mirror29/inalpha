@@ -122,6 +122,8 @@ export interface OverviewPayload {
   orders: OrderRecord[];
   runs: StrategyRunRecord[];
   activeRunnerCount: number;
+  /** orders 命中上限被截断(还有更早的订单未显示) —— UI 给「仅显示最近 N」提示,不静默。 */
+  ordersTruncated: boolean;
   /** server 侧采集这一帧的时刻(ISO);UI 显示 "数据时间"。 */
   asOf: string;
 }
@@ -130,6 +132,8 @@ export interface OverviewPayload {
 export interface RunnersPayload {
   runs: StrategyRunRecord[];
   runningCount: number;
+  /** runs 命中上限被截断(还有更早的 run 未显示) —— UI 给截断提示,不静默。 */
+  truncated: boolean;
   asOf: string;
 }
 
@@ -192,6 +196,8 @@ export interface LabPayload {
   /** 后端已按 fitness DESC 排序。 */
   candidates: StrategyCandidateSummary[];
   counts: { all: number; promoted: number; candidate: number; rejected: number };
+  /** candidates 命中上限被截断(还有更多候选未显示) —— UI 给截断提示,不静默。 */
+  truncated: boolean;
   asOf: string;
 }
 
@@ -222,14 +228,40 @@ export interface RiskLock {
   locked_until: string;
 }
 
-/** GET /api/risk —— 风控面板负载(规则 + 活跃锁)。 */
+/** 一条风控事件 —— 归一自「历史锁」与「跨 run 被风控拒的下单」。 */
+export interface RiskEvent {
+  /** 稳定去重 id:`lock:<id>` / `rej:<decisionId>`。 */
+  id: string;
+  /** lock=触发了一把锁;rejection=一笔下单被风控拦(可能没产生锁)。 */
+  kind: "lock" | "rejection";
+  /** 事件时点(lock=locked_at;rejection=bar_ts)。 */
+  ts: string;
+  /** 命中的风控规则名(拒单从 reason 里解析 `[RuleName]`,解析不到给 "risk")。 */
+  rule: string;
+  /** global / market / symbol(拒单恒 symbol)。 */
+  scope: string;
+  /** 人类可读对象:market/symbol 或 run 的 symbol。 */
+  label: string;
+  reason: string;
+  /** lock:active/expired/unlocked;rejection:rejected。 */
+  status: "active" | "expired" | "unlocked" | "rejected";
+  /** lock 的解锁时点;rejection 为 null。 */
+  until: string | null;
+  /** rejection 跳到对应 run;lock 为 null。 */
+  href: string | null;
+}
+
+/** GET /api/risk —— 风控面板负载(规则 + 活跃锁 + 最近风控事件)。 */
 export interface RiskPayload {
   /** 风控是否启用(rules 配置)。 */
   enabled: boolean;
   starting_balance: number;
   rules: RiskRule[];
+  /** 当前生效锁(实时拦截视图)。 */
   locks: RiskLock[];
-  sources: { rules: boolean; locks: boolean };
+  /** 最近风控事件(历史锁 + 跨 run 被拒决策),按时间倒序。 */
+  events: RiskEvent[];
+  sources: { rules: boolean; locks: boolean; history: boolean; rejections: boolean };
   asOf: string;
 }
 
@@ -295,7 +327,8 @@ export type ActivityKind =
   | "permission"
   | "decision"
   | "risk"
-  | "order";
+  | "order"
+  | "conversation";
 
 export type ActivityTone = "bull" | "fox" | "gold" | "cyan" | "muted";
 
@@ -324,6 +357,8 @@ export interface ActivityPayload {
   schedulerRunning: boolean;
   pendingCount: number;
   activeLockCount: number;
+  /** 决策 fan-out 只覆盖最近 N 个 run;为 true 表示更早 run 的决策事件未纳入(不静默)。 */
+  decisionsTruncated: boolean;
   /** 每个数据源是否取到(取不到 → UI 标"该源不可用",不静默当作空)。 */
   sources: {
     scheduler: boolean;
@@ -331,6 +366,7 @@ export interface ActivityPayload {
     risk: boolean;
     runs: boolean;
     orders: boolean;
+    conversations: boolean;
   };
   asOf: string;
 }

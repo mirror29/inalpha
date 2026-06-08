@@ -32,7 +32,10 @@ import {
 } from "@mastra/observability";
 
 import { getSettings } from "../config.js";
+import { divinationApiRoutes } from "../divination/api.js";
+import { closePool as closeDivinationPool } from "../divination/repo.js";
 import { permissionsApiRoutes } from "../permissions/api.js";
+import { pendingApprovals } from "../permissions/pending.js";
 import { schedulerApiRoutes } from "../scheduler/api.js";
 import { bootstrapScheduler } from "../scheduler/index.js";
 import { orchestrator } from "./agents/orchestrator.js";
@@ -81,7 +84,7 @@ export const mastra = new Mastra({
   // （ADR-0037 调试记录）。
   server: {
     timeout: 600_000,
-    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes],
+    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes, ...divinationApiRoutes],
   },
 });
 
@@ -90,3 +93,22 @@ export const mastra = new Mastra({
 if (getSettings().schedulerEnabled) {
   bootstrapScheduler(mastra);
 }
+
+// 进程优雅退出(SIGTERM/SIGINT)时,把在途 ask 审批 fail-closed 地 deny 掉:agent 的
+// await 拿到干净的 deny + telemetry 留痕,而不是被进程终止静默切断。
+// 注意:这些挂起本就随进程消失不可恢复(等待方在内存里),deny 只让关停语义干净,
+// 不是「持久化待审批」——后者无意义(重启后没有 await 方可被 resolve)。
+let _pendingShutdownHooked = false;
+function hookPendingApprovalsShutdown(): void {
+  if (_pendingShutdownHooked) return;
+  _pendingShutdownHooked = true;
+  const drain = (): void => {
+    pendingApprovals.clearAll("deny");
+    // divination/repo 懒建的独立 pg.Pool(max:4)也一并释放,否则高频重启时
+    // Postgres 端会留一批 idle 连接到 idle_in_transaction 超时,易顶满 max_connections。
+    void closeDivinationPool().catch(() => {});
+  };
+  process.once("SIGTERM", drain);
+  process.once("SIGINT", drain);
+}
+hookPendingApprovalsShutdown();

@@ -16,6 +16,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ag-ui/mastra": "^1.0.3",
+    "@copilotkit/react-core": "^1.59.5",
+    "@copilotkit/runtime": "^1.59.5",
+    "@mastra/client-js": "^1.23.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "geist": "^1.7.1",
@@ -25,8 +29,11 @@
     "motion": "^12.40.0",
     "next": "^16.2.6",
     "next-intl": "^4.12.0",
+    "openai": "^6.42.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
     "swr": "^2.3.6",
     "tailwind-merge": "^3.6.0"

@@ -80,9 +80,14 @@
   --color-bull: var(--up);
   --color-success-dim: var(--up-dim);
 
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
-  --font-display: var(--font-display), ui-serif, "Iowan Old Style", Georgia, serif;
+  /* 统一的中文回退栈 —— Geist(sans/mono)/Fraunces 均为纯拉丁字体,中文会回退到
+     系统字体。把同一组 CJK 字体显式接到每条字体栈末尾,保证无论 sans 还是 mono 语境,
+     中文都落到同一族(粗细/字形一致),不再"中文粗细不一"。 */
+  --font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, var(--font-cjk);
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", var(--font-cjk);
+  --font-display: var(--font-display), ui-serif, "Iowan Old Style", Georgia, var(--font-cjk);
 }
 
 @layer base {
@@ -269,6 +274,49 @@
   }
   .flash-cyan {
     animation: flash-cyan 0.9s ease-out;
+  }
+}
+
+/* ── 内嵌对话栏:非浮层 reflow ──────────────────────────────────────
+   ConsoleChat 打开时给 <html> 打 data-chat-open,主内容让出右侧宽度(与对话栏
+   同宽),页面其余部分照常可滚动 / 可点击 / 可切面 —— 不是覆盖式浮层。
+   窄屏(<1024px)退化:对话栏覆盖在内容上,main 不再被挤,避免密集表格被压裂。 */
+main {
+  /* 底部留出常驻活动日志条的高度(--activity-h 由 ActivityFooter 写入)。 */
+  padding-bottom: var(--activity-h, 0px);
+  transition:
+    padding-right 0.3s cubic-bezier(0.22, 0.7, 0.22, 1),
+    padding-bottom 0.3s cubic-bezier(0.22, 0.7, 0.22, 1);
+}
+html[data-chat-open="true"] main {
+  padding-right: var(--chat-w, 400px);
+}
+/* 拖动调宽 / 调高时关过渡 —— 让主内容跟手,不滞后。 */
+html[data-chat-dragging="true"] main,
+html[data-activity-dragging="true"] main {
+  transition: none;
+}
+@media (max-width: 1024px) {
+  html[data-chat-open="true"] main {
+    padding-right: 0;
+  }
+}
+
+/* 底部活动日志:对话栏打开时让出右侧,不被对话栏盖住(窄屏铺满)。 */
+.activity-footer {
+  transition: right 0.3s cubic-bezier(0.22, 0.7, 0.22, 1);
+}
+html[data-chat-open="true"] .activity-footer {
+  right: var(--chat-w, 400px);
+}
+@media (max-width: 1024px) {
+  html[data-chat-open="true"] .activity-footer {
+    right: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  main {
+    transition: none;
   }
 }
 

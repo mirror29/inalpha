@@ -1,18 +1,23 @@
 {
   "meta": {
-    "title": "Inalpha — 可审计的量化 agent，能进化的策略。",
-    "description": "Inalpha 是开源专业量化 agent 框架，将工程纪律引入 LLM 驱动交易。因子实验室、风控引擎、策略进化、审计级 plan/exec——每个因子提案、每次策略变异、每笔订单路由都有日志、有版本、可复核。LLM 只负责写代码，工程 harness 为每个决策签名。借鉴 Claude Code 的 hooks/permissions 模式和 NautilusTrader 的 backtest=paper=live 统一内核。"
+    "title": "Inalpha — 可审计的量化 agent：自进化，自交易。",
+    "description": "Inalpha 是开源专业量化 agent 框架，将工程纪律引入 LLM 驱动交易。因子实验室、风控引擎、策略进化，以及无人值守模拟盘 runner——promoted 策略在真实行情上自动跑模拟账户，经 plan/exec 机器审批、留完整决策复盘。每个因子提案、每次策略变异、每笔订单路由都有日志、有版本、可复核。LLM 只负责写代码，工程 harness 为每个决策签名。借鉴 Claude Code 的 hooks/permissions 模式和 NautilusTrader 的 backtest=paper=live 统一内核。"
   },
   "nav": {
     "github": "GitHub",
     "docs": "文档",
     "demoAnchor": "实时演示"
   },
+  "theme": {
+    "label": "主题",
+    "dark": "深色",
+    "light": "浅色"
+  },
   "hero": {
     "wordmark": "Inalpha",
     "title": "可审计的量化 agent，",
     "titleAlt": "能进化的策略。",
-    "sub": "因子实验室 · 风控引擎 · 策略进化 · Plan/Exec 审批——每个因子提案、每次策略变异、每笔订单路由都有日志、有版本、可复核。LLM 只负责写代码，工程纪律为每个决策背书。",
+    "sub": "因子实验室 · 风控引擎 · 策略进化 · 无人值守模拟盘——每个因子提案、每次策略变异、每笔订单路由都有日志、有版本、可复核。LLM 只负责写代码，工程纪律为每个决策背书——哪怕是在无人值守自动交易时。",
     "ctaPrimary": "git clone",
     "ctaSecondary": "实时演示",
     "stats": {
@@ -234,9 +239,9 @@
     "currentState": {
       "title": "诚实告知 ——",
       "items": [
-        "D-9 进行中：LLM 自创策略 E1 MVP（三道沙盒 + 多目标 fitness）",
-        "RiskEngine 规则在 paper HTTP 边界生效（仓位上限 / 价格偏离 / 回撤一票否决）",
-        "暂不支持真金部署——每一次改动都经 plan/exec 审批，决策记录落盘"
+        "D-11 已落地：跨币种 cash + 无人值守模拟盘 runner——promoted 策略在真实 bar 上自动跑模拟账户，经 plan/exec 机器审批，留完整决策复盘",
+        "RiskEngine 在 paper HTTP 边界生效：仓位上限 / 价格偏离 / 回撤一票否决 / 全市场真实交易日历",
+        "暂不接真金——runner 跑的是模拟账户，订单本地撮合；每步走 plan/exec 审批并落盘"
       ]
     }
   },
@@ -258,7 +263,7 @@
       },
       {
         "question": "现在能用 Inalpha 交易真金白银吗？",
-        "answer": "不能。Inalpha 目前处于 alpha 阶段（Phase D-9）。框架支持回测和模拟盘交易，但尚未集成实盘 broker。实盘执行器计划在 Phase D-10 实现。我们对此非常明确：在实盘路径经过充分加固和审计之前，请不要将真实资金接入 Inalpha。"
+        "answer": "不能——这是当前的有意设计。到 Phase D-11 为止，Inalpha 已经带了无人值守模拟盘 runner：promoted 策略在真实行情上自动跑一个模拟账户，由两道人工闸门把关（你 promote、你 start），经 plan/exec 机器审批，并留完整的决策复盘日志。但每一笔订单都是本地撮合——没有接入实盘券商，真金交易不在当前计划内。内核在设计上可延伸到实盘执行，但那不是当前阶段的范围。请不要把真实资金接入 Inalpha。"
       },
       {
         "question": "Inalpha 覆盖哪些市场和资产类别？",
