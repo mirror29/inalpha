@@ -77,6 +77,16 @@ class WebSearchConnector:
                     timeout_s=self._overall_timeout,
                 )
                 return []
+            except Exception as exc:
+                # 搜索是尽力而为的增强项:DDGS / to_thread / semaphore 等的罕见异常
+                # 不能穿透到上层 analyst fan-out 把整条链搞崩,一律吞掉返回 []。
+                _logger.warning(
+                    "web_search_error",
+                    kind=kind,
+                    query=str(kwargs.get("query", ""))[:100],
+                    error=str(exc),
+                )
+                return []
 
     async def close(self) -> None:
         return None
