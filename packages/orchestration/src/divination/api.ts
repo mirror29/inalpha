@@ -82,6 +82,9 @@ const cast: Handler = async (c: Context) => {
     typeof body["symbol"] === "string" && body["symbol"].length <= 50
       ? body["symbol"]
       : null;
+  // TODO(multi-tenant): 同 history/getOne —— subject 来自客户端 body、可控,无 JWT 校验。
+  // 单租户 dev 无影响、BFF 固定注入挡住正常链路;mastra 端口直达时可向任意 subject 写记录,
+  // 接多租户时 subject 必须从 JWT claims 派生。
   const subject = typeof body["subject"] === "string" && body["subject"] ? body["subject"] : defaultSubject();
 
   // seed 与 tool 一致 —— 同问得同卦(网页直算 / 对话占卜结果可复现)。
