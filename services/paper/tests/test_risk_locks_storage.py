@@ -282,6 +282,9 @@ async def test_list_recent_includes_inactive_and_expired() -> None:
     assert by_rule["MarketHoursRule"]["active"] is False
     assert by_rule["MarketHoursRule"]["unlocked_by"] == "admin@test"
     assert by_rule["ActiveRule"]["active"] is True
+    # 时效过期(locked_until 已过)但 reconciler 未跑 expire → list_recent 返回有效生效=False,
+    # 不能原样返回 DB 的 active=TRUE 把已过期锁误显为生效中(覆盖 computed active 计算路径)。
+    assert by_rule["CooldownRule"]["active"] is False
 
 
 async def test_list_recent_respects_limit() -> None:
