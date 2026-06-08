@@ -234,21 +234,36 @@ async def list_all_running(conn: AsyncConnection) -> list[dict[str, Any]]:
 
 
 async def mark_running_as_errored(conn: AsyncConnection, *, reason: str) -> int:
-    """把所有 running 行标 errored（服务重启 reconcile：内存 task 已丢失）。返回受影响行数。"""
+    """把所有 running 行标 errored（服务重启 reconcile：内存 task 已丢失）。返回受影响行数。
+
+    追加 error 条后同样按 ``_RUN_LOG_CAP`` 滚动裁剪 —— 这些 run 标 errored 后不再收到
+    :func:`append_log`，若此处不裁，恰好满 300 条的 run_log 会被推到 301 条且永久超限。
+    """
     async with conn.cursor() as cur:
         await cur.execute(
             """
             UPDATE strategy_runs
             SET status = 'errored',
                 stopped_at = NOW(),
-                run_log = run_log || jsonb_build_array(
-                    jsonb_build_object(
-                        'ts', NOW()::text, 'level', 'error', 'msg', %s::text, 'code', NULL
-                    )
+                run_log = (
+                    SELECT COALESCE(jsonb_agg(elem ORDER BY ord), '[]'::jsonb)
+                    FROM (
+                        SELECT elem, ord
+                        FROM jsonb_array_elements(
+                            run_log || jsonb_build_array(
+                                jsonb_build_object(
+                                    'ts', NOW()::text, 'level', 'error',
+                                    'msg', %s::text, 'code', NULL
+                                )
+                            )
+                        ) WITH ORDINALITY AS arr(elem, ord)
+                        ORDER BY ord DESC
+                        LIMIT %s
+                    ) recent
                 )
             WHERE status = %s
             """,
-            (reason, _RUNNING),
+            (reason, _RUN_LOG_CAP, _RUNNING),
         )
         return cur.rowcount
 
