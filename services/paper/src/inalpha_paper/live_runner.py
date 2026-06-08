@@ -157,6 +157,7 @@ class LiveRunnerManager:
         async with get_conn() as conn:
             current = await runs_store.get(conn, run_id)
             if current is not None and current["status"] == "running":
+                await runs_store.append_log(conn, run_id, "info", "用户停止运行")
                 await runs_store.set_status(conn, run_id, "stopped")
 
     async def stop_all(self) -> None:
@@ -194,8 +195,8 @@ class LiveRunnerManager:
             # 显式放行：留一条醒目告警，让用户知道这个 run 在零风控下跑
             _logger.warning("live run %s: 风控不可用但已显式放行，零风控运行", run_id)
             async with get_conn() as conn:
-                await runs_store.append_error_log(
-                    conn, run_id,
+                await runs_store.append_log(
+                    conn, run_id, "warn",
                     "⚠ 风控不可用且 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false，本 run 在零风控下运行",
                 )
         # build 退避（issue #41）：data 服务短暂不可用不该直接判死，退避重试；策略代码 /
@@ -223,8 +224,8 @@ class LiveRunnerManager:
                         await runs_store.set_status(conn, run_id, "errored")
                     return
                 async with get_conn() as conn:
-                    await runs_store.append_error_log(
-                        conn, run_id, f"build retry {build_streak}: {e}", code=code
+                    await runs_store.append_log(
+                        conn, run_id, "warn", f"build retry {build_streak}: {e}", code=code
                     )
                 await asyncio.sleep(min(2 ** build_streak, 60))
 
@@ -232,6 +233,14 @@ class LiveRunnerManager:
         # resume 续跑时 warmup 已把历史喂到 warmup_ts（可能 > DB last_bar_ts），若只用 DB
         # 边界，第一根 fetch 到的 warmup_ts bar 会绕过 dedup → 对已喂过的 bar 二次 on_bar →
         # 信号重复 → spurious 订单落库。全新 run（last_bar_ts 为 None）退化为 warmup_ts，行为不变。
+        # 起跑 / 恢复 —— info 级运行日志（供运行详情「运行日志」面板观测，不只记错误）。
+        async with get_conn() as conn:
+            await runs_store.append_log(
+                conn, run_id, "info",
+                f"{'恢复运行' if run.get('last_bar_ts') else '策略起跑'}："
+                f"{run['venue']} {run['symbol']} {run['timeframe']}",
+            )
+
         _db_bound = run.get("last_bar_ts")
         last_bar_ts: datetime | None = (
             max(_db_bound, warmup_ts)
@@ -265,8 +274,8 @@ class LiveRunnerManager:
                 if circuit_break and self._settings.live_runner_auto_stop_on_circuit_break:
                     _logger.warning("live run %s: 账户级风控熔断，auto-stop", run_id)
                     async with get_conn() as conn:
-                        await runs_store.append_error_log(
-                            conn, run_id,
+                        await runs_store.append_log(
+                            conn, run_id, "warn",
                             "账户级风控熔断（global scope 锁：回撤 / 连续止损上限）→ auto-stop；"
                             "复核账户状态后可重新 start。设 "
                             "INALPHA_LIVE_RUNNER_AUTO_STOP_ON_CIRCUIT_BREAK=false 维持旧行为（继续跑）",
@@ -321,8 +330,8 @@ class LiveRunnerManager:
             "live run %s: 运行 %.0fs 超过 TTL %ds，auto-stop", run_id, elapsed, max_runtime_s
         )
         async with get_conn() as conn:
-            await runs_store.append_error_log(
-                conn, run_id,
+            await runs_store.append_log(
+                conn, run_id, "warn",
                 f"运行时长 {elapsed:.0f}s 超过 TTL（INALPHA_LIVE_RUNNER_MAX_RUNTIME_S="
                 f"{max_runtime_s}s）→ auto-stop（防长尾僵尸 run）；复核后可重新 start。",
             )
@@ -485,6 +494,17 @@ class LiveRunnerManager:
                     )
             except Exception:
                 _logger.exception("live run %s: 记不支持单型决策行失败", run["id"])
+        # 本根 bar 有下单意图 → info 级运行日志（无信号的空 bar 不记，避免刷屏）。
+        if orders:
+            try:
+                async with get_conn() as conn:
+                    await runs_store.append_log(
+                        conn, run["id"], "info",
+                        f"bar {_ns_to_dt(bar.ts_event):%Y-%m-%d %H:%M} · "
+                        f"策略产生 {len(orders)} 个下单意图",
+                    )
+            except Exception:
+                _logger.exception("live run %s: 写出单日志失败", run["id"])
         circuit_break = False
         for order, strategy_id in orders:
             try:
@@ -648,8 +668,8 @@ class LiveRunnerManager:
                 reason=f"RISK_REJECTED: {e.message}", ts_event=bar.ts_event,
             )
             async with get_conn() as conn:
-                await runs_store.append_error_log(
-                    conn, run_id, f"order rejected by risk: {e.message}"
+                await runs_store.append_log(
+                    conn, run_id, "warn", f"order rejected by risk: {e.message}"
                 )
                 await self._record_decision(
                     conn, run, order, bar, outcome="risk_rejected", intent=intent,
