@@ -84,7 +84,9 @@ export const riskListLocksTool = createTool({
     scope: z.enum(["global", "market", "symbol"]).optional(),
     market: z.string().optional(),
     symbol: z.string().optional(),
-    limit: z.number().int().positive().max(500).optional(),
+    // 与 Python /risk/locks 的服务端硬上限对齐(api/risk.py: min(limit,200))——
+    // 别让 Zod 放过 201~500 后被服务端静默截到 200,LLM 误判"已拿全"。
+    limit: z.number().int().positive().max(200).optional(),
   }),
   execute: async (input, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
