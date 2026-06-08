@@ -102,10 +102,16 @@ async def list_recent(
 
     返回行带上解锁元数据（``active`` / ``unlocked_at`` / ``unlocked_by`` /
     ``unlock_reason``），调用方据此区分「生效中 / 已过期 / 人工解锁」。
+
+    ``active`` 返回**有效生效**（``active AND locked_until > NOW()``）而非 DB 原始列：
+    时效过期但 reconciler 尚未跑 ``expire_past_locks`` 的锁，DB 原始 ``active`` 仍是 TRUE，
+    原样返回会让历史面板把已过期锁误显为生效中。人工解锁 vs 时效过期由
+    ``unlocked_by`` / ``unlock_reason`` 区分，不靠 ``active``。
     """
     sql = (
         "SELECT id, scope, market, symbol, side, rule_name, reason, "
-        "locked_at, locked_until, active, unlocked_at, unlocked_by, unlock_reason "
+        "locked_at, locked_until, (active AND locked_until > NOW()) AS active, "
+        "unlocked_at, unlocked_by, unlock_reason "
         "FROM risk_locks ORDER BY locked_at DESC LIMIT %s"
     )
     async with conn.cursor() as cur:

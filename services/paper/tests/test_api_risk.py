@@ -228,6 +228,9 @@ async def test_get_locks_history_includes_expired_and_unlocked(
     # 字段完整性：含 active / unlock 元数据
     assert by_rule["ActiveRule"]["active"] is True
     assert "unlock_reason" in by_rule["CooldownRule"]
+    # 时效过期(locked_until 已过)但 reconciler 未跑 → active 应为有效生效=False,
+    # 不能原样返回 DB 的 active=TRUE 把已过期锁误显为生效中。
+    assert by_rule["CooldownRule"]["active"] is False
 
 
 @pytest.mark.asyncio
