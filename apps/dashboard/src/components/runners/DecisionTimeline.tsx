@@ -54,6 +54,12 @@ export function DecisionTimeline({
             <tbody>
               {decisions.map((d) => {
                 const blocked = d.outcome === "risk_rejected";
+                // reason 回退:拒单有真实 reason;成交(reason 为空)退到策略 tag,
+                // 再退到「策略信号成交」——让该列对正常成交行也有信息,不再一片「—」。
+                const reasonText =
+                  d.reason ??
+                  d.tag ??
+                  (d.outcome === "filled" ? t("reasonFilled") : null);
                 return (
                   <tr
                     key={d.id}
@@ -109,14 +115,16 @@ export function DecisionTimeline({
                       />
                     </Td>
                     <Td>
-                      {d.reason ? (
+                      {reasonText ? (
                         <span
+                          title={reasonText}
                           className={cn(
-                            "font-mono text-[11px]",
+                            // 单行不换行,过长截断省略,悬浮 title 看全文。
+                            "block max-w-[22rem] truncate font-mono text-[11px]",
                             blocked ? "text-fox-red" : "text-fg-muted",
                           )}
                         >
-                          {d.reason}
+                          {reasonText}
                         </span>
                       ) : (
                         <span className="text-fg-muted/40">—</span>

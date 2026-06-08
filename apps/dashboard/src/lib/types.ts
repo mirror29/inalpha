@@ -53,6 +53,17 @@ export interface OrderRecord {
   trade_plan_id: string | null;
 }
 
+/** 运行日志级别 —— 与后端 live_runner 写入一致。 */
+export type RunLogLevel = "info" | "warn" | "error";
+
+/** run_log 一条 —— 运行日志(info 活动 / warn 可恢复 / error 终态)。 */
+export interface RunLogEntry {
+  ts: string;
+  level: RunLogLevel;
+  msg: string;
+  code: string | null;
+}
+
 /** GET /strategy_runs 元素(live runner 运行态)。 */
 export interface StrategyRunRecord {
   id: string;
@@ -65,7 +76,8 @@ export interface StrategyRunRecord {
   params: Record<string, unknown>;
   last_bar_ts: string | null;
   cumulative_pnl: number;
-  error_log: Array<Record<string, unknown>>;
+  /** 运行日志(滚动窗口,最近 N 条):起跑 / 出单 / 停止 / 退避 / 错误。 */
+  run_log: RunLogEntry[];
   started_at: string;
   stopped_at: string | null;
 }

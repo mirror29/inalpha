@@ -1,11 +1,13 @@
 "use client";
 
 import { useLocale, useNow, useTranslations } from "next-intl";
-import { ArrowLeft, TriangleAlert } from "lucide-react";
+import { ArrowLeft, CircleAlert, Info, TriangleAlert } from "lucide-react";
 import useSWR from "swr";
 
 import type {
   RunDetailPayload,
+  RunLogEntry,
+  RunLogLevel,
   StrategyRunDecisionRecord,
   StrategyRunRecord,
 } from "@/lib/types";
@@ -100,8 +102,8 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
 
           <DecisionTimeline decisions={data.decisions} />
 
-          {/* 错误日志置底(running 失败的逐次记录)。 */}
-          {run.error_log.length > 0 && <ErrorLog entries={run.error_log} />}
+          {/* 运行日志置底 —— agent 全量活动(起跑 / 出单 / 停止 / 退避 / 错误),按级别着色。 */}
+          <RunLog entries={run.run_log} />
         </>
       )}
     </div>
@@ -208,25 +210,55 @@ function BackLink({ label }: { label: string }) {
   );
 }
 
-function ErrorLog({ entries }: { entries: Array<Record<string, unknown>> }) {
+/** 日志级别 → 图标 + 颜色（info=电光青 / warn=金 / error=朱红）。 */
+const LEVEL_STYLE: Record<RunLogLevel, { icon: typeof Info; cls: string }> = {
+  info: { icon: Info, cls: "text-cyan" },
+  warn: { icon: TriangleAlert, cls: "text-gold" },
+  error: { icon: CircleAlert, cls: "text-fox-red" },
+};
+
+/** 运行日志面板 —— 全量活动按级别着色,最新在上。 */
+function RunLog({ entries }: { entries: RunLogEntry[] }) {
   const t = useTranslations("runners.detail");
+  // 后端按时间序追加(最新在末尾),这里倒序展示——最近活动一眼可见。
+  const rows = [...entries].reverse();
+
   return (
-    <Panel title={t("errorLog")}>
-      <ul className="divide-y divide-border-subtle/60">
-        {entries.map((e, i) => (
-          <li
-            key={i}
-            className="flex items-start gap-2 px-4 py-2.5 font-mono text-[11px] text-fox-red"
-          >
-            <TriangleAlert className="mt-0.5 size-3 shrink-0" strokeWidth={2} />
-            <span className="break-all text-fg-muted">
-              {typeof e === "object"
-                ? JSON.stringify(e)
-                : String(e)}
-            </span>
-          </li>
-        ))}
-      </ul>
+    <Panel
+      title={t("runLog")}
+      aside={
+        <span className="tnum font-mono text-xs text-fg-muted">{entries.length}</span>
+      }
+    >
+      {rows.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-fg-muted/70">
+          {t("runLogEmpty")}
+        </p>
+      ) : (
+        <ul className="divide-y divide-border-subtle/60">
+          {rows.map((e, i) => {
+            const lvl: RunLogLevel =
+              e.level === "warn" || e.level === "error" ? e.level : "info";
+            const { icon: Icon, cls } = LEVEL_STYLE[lvl];
+            return (
+              <li key={i} className="flex items-start gap-2.5 px-4 py-2 font-mono text-[11px]">
+                <Icon className={cn("mt-0.5 size-3 shrink-0", cls)} strokeWidth={2} />
+                <span className="shrink-0 text-fg-muted/60">{fmtLogTs(e.ts)}</span>
+                <span className="break-all text-fg-muted">
+                  {e.msg}
+                  {e.code ? <span className="ml-1.5 text-fg-muted/50">[{e.code}]</span> : null}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </Panel>
   );
+}
+
+/** 日志时间戳 —— 后端写 `NOW()::text`(形如 "2026-06-08 11:35:00.12+00")，取月日时分秒、不做时区换算。 */
+function fmtLogTs(ts: string): string {
+  const m = ts.match(/^\d{4}-(\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
+  return m ? `${m[1]} ${m[2]}` : ts;
 }
