@@ -76,10 +76,21 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
                 <RunStatusBadge status={run.status} />
               </div>
               <div className="mt-1.5 font-mono text-xs text-fg-muted">
-                {run.venue} · {run.timeframe} ·{" "}
-                <span title={run.candidate_id}>
-                  cand {run.candidate_id.slice(0, 8)}
+                {run.venue} · {run.timeframe}
+              </div>
+              {/* 当前所跑策略 —— 可点进策略详情(模拟盘 → 策略可追溯)。 */}
+              <div className="mt-1 flex items-center gap-1.5 text-xs">
+                <span className="font-mono uppercase tracking-[0.14em] text-fg-muted/70">
+                  {t("strategy")}
                 </span>
+                <Link
+                  href={`/lab/${run.candidate_id}`}
+                  title={t("viewStrategy")}
+                  className="truncate font-medium text-cyan transition-colors hover:text-cyan/80 hover:underline"
+                >
+                  {data.candidate?.description?.trim() ||
+                    `cand ${run.candidate_id.slice(0, 8)}`}
+                </Link>
               </div>
             </div>
             <LiveStrip

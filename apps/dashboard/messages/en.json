@@ -149,6 +149,8 @@
     "detail": {
       "back": "Live Runners",
       "notFound": "Run not found.",
+      "strategy": "Strategy",
+      "viewStrategy": "View strategy",
       "chart": "Price",
       "chartEmpty": "No candles available for this instrument.",
       "chartError": "Could not load candles.",

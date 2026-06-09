@@ -158,6 +158,8 @@ export interface RunDetailPayload {
   /** 在 list 里按 id 找到的 run;不存在为 null。 */
   run: StrategyRunRecord | null;
   decisions: StrategyRunDecisionRecord[];
+  /** 该 run 所跑的策略候选摘要(用 run.candidate_id 反查);拿不到为 null,UI 退化为只显 id。 */
+  candidate: StrategyCandidateSummary | null;
   asOf: string;
 }
 
