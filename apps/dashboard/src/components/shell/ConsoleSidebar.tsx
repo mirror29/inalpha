@@ -30,15 +30,17 @@ interface NavItem {
   soon?: boolean;
 }
 
+// 顺序按「看板 → 研究 → 执行 → 风控 → 彩蛋 → 日志」的操作动线:
+// 总览(总控制台)→ 策略实验室 → Live Runner → 因子库 → 风控 → 狐神签 → Agent 活动。
 const NAV: NavItem[] = [
   { key: "overview", href: "/", icon: LayoutDashboard },
-  { key: "runners", href: "/runners", icon: Radio },
-  { key: "activity", href: "/activity", icon: Activity },
   { key: "lab", href: "/lab", icon: FlaskConical },
+  { key: "runners", href: "/runners", icon: Radio },
   { key: "factors", href: "/factors", icon: Sigma },
   { key: "risk", href: "/risk", icon: ShieldAlert },
   // 玄学彩蛋占卜台(纯娱乐)
   { key: "divination", href: "/divination", icon: Sparkles },
+  { key: "activity", href: "/activity", icon: Activity },
 ];
 
 const LS_COLLAPSED = "inalpha-sidebar-collapsed";
