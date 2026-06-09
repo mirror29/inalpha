@@ -157,7 +157,14 @@ class LiveRunnerManager:
         async with get_conn() as conn:
             current = await runs_store.get(conn, run_id)
             if current is not None and current["status"] == "running":
-                await runs_store.append_log(conn, run_id, "info", "用户停止运行")
+                # 日志写入是 best-effort，失败不应阻断 set_status——否则 run 停不下来、
+                # API 返回 500，用户以为停止失败（CR）。用 savepoint 隔离：append_log 抛错
+                # 只回滚这一步（否则会污染整个事务，连带 set_status 也失败），再照常置 stopped。
+                try:
+                    async with conn.transaction():
+                        await runs_store.append_log(conn, run_id, "info", "用户停止运行")
+                except Exception:
+                    _logger.warning("live run %s: 停止日志写入失败（已忽略）", run_id, exc_info=True)
                 await runs_store.set_status(conn, run_id, "stopped")
 
     async def stop_all(self) -> None:
