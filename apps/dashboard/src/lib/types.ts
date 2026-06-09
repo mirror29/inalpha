@@ -134,6 +134,10 @@ export interface OverviewPayload {
   orders: OrderRecord[];
   runs: StrategyRunRecord[];
   activeRunnerCount: number;
+  /** 策略池快照(后端按 fitness DESC 排序,总览只取前若干条);失败降级为空。 */
+  candidates: StrategyCandidateSummary[];
+  /** 策略池按 status 计数(总数取自后端原始集合,非截断后的)。 */
+  candidateCounts: { all: number; promoted: number; candidate: number };
   /** orders 命中上限被截断(还有更早的订单未显示) —— UI 给「仅显示最近 N」提示,不静默。 */
   ordersTruncated: boolean;
   /** server 侧采集这一帧的时刻(ISO);UI 显示 "数据时间"。 */

@@ -38,11 +38,16 @@
     "subtitle": "原本要问 agent 才知道的状态 —— 一眼看清。",
     "kpi": {
       "totalEquity": "总权益",
+      "totalReturn": "总收益率",
       "cash": "现金",
+      "unrealizedPnl": "浮动盈亏",
       "realizedPnl": "已实现盈亏",
       "activeRunners": "运行中策略",
       "positionsValue": "持仓估值",
       "convertedTo": "已折算到 {ccy}",
+      "netSinceInception": "累计净盈亏 {pnl}",
+      "partialMark": "部分持仓缺最新价",
+      "openPositions": "{count} 个持仓",
       "running": "运行中",
       "ofRuns": "共 {total} 个 run"
     },
@@ -73,6 +78,41 @@
         "qty": "数量",
         "fill": "成交均价",
         "status": "状态"
+      }
+    },
+    "runnersPanel": {
+      "title": "Live Runner",
+      "empty": "暂无策略运行。promote 候选并启动后,运行中的策略会出现在这里。",
+      "viewAll": "查看全部",
+      "running": "{count} 运行中",
+      "col": {
+        "instrument": "标的",
+        "tf": "周期",
+        "cumulativePnl": "累计盈亏",
+        "lastBar": "最后 bar",
+        "status": "状态"
+      },
+      "status": {
+        "running": "运行中",
+        "stopped": "已停止",
+        "errored": "错误"
+      }
+    },
+    "strategyPanel": {
+      "title": "策略池",
+      "empty": "策略池为空。让 agent 写一个策略并回测后会出现在这里。",
+      "viewAll": "查看全部",
+      "promoted": "{promoted}/{all} 已晋级",
+      "col": {
+        "strategy": "策略",
+        "status": "状态",
+        "fitness": "适应度",
+        "return": "回测收益"
+      },
+      "status": {
+        "promoted": "已晋级",
+        "candidate": "候选",
+        "rejected": "已拒"
       }
     }
   },

@@ -38,11 +38,16 @@
     "subtitle": "What you'd otherwise have to ask the agent — at a glance.",
     "kpi": {
       "totalEquity": "Total Equity",
+      "totalReturn": "Total Return",
       "cash": "Cash",
+      "unrealizedPnl": "Unrealized PnL",
       "realizedPnl": "Realized PnL",
       "activeRunners": "Active Runners",
       "positionsValue": "Positions Value",
       "convertedTo": "converted to {ccy}",
+      "netSinceInception": "net PnL {pnl}",
+      "partialMark": "some marks unavailable",
+      "openPositions": "{count} positions",
       "running": "running",
       "ofRuns": "of {total} runs"
     },
@@ -73,6 +78,41 @@
         "qty": "Qty",
         "fill": "Avg Fill",
         "status": "Status"
+      }
+    },
+    "runnersPanel": {
+      "title": "Live Runners",
+      "empty": "No strategy running. Promote a candidate and start it — running strategies show up here.",
+      "viewAll": "View all",
+      "running": "{count} running",
+      "col": {
+        "instrument": "Instrument",
+        "tf": "TF",
+        "cumulativePnl": "Cumulative PnL",
+        "lastBar": "Last bar",
+        "status": "Status"
+      },
+      "status": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "errored": "Errored"
+      }
+    },
+    "strategyPanel": {
+      "title": "Strategy Pool",
+      "empty": "Strategy pool is empty. Have the agent write and backtest a strategy — it shows up here.",
+      "viewAll": "View all",
+      "promoted": "{promoted}/{all} promoted",
+      "col": {
+        "strategy": "Strategy",
+        "status": "Status",
+        "fitness": "Fitness",
+        "return": "Return"
+      },
+      "status": {
+        "promoted": "Promoted",
+        "candidate": "Candidate",
+        "rejected": "Rejected"
       }
     }
   },
