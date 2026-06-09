@@ -294,6 +294,7 @@
     "placeholder": "Ask the agent — quotes, positions, strategies, backtests…",
     "empty": "Chat with the agent here — it can pull quotes, read positions, run backtests, tune factors. Ask about any ticker.",
     "thinking": "Thinking…",
+    "loadingHistory": "Loading history…",
     "toolRunning": "running",
     "toolDone": "done",
     "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",

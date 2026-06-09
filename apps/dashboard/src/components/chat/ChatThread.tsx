@@ -106,6 +106,10 @@ export function ChatThread({
   const messages = (hook.messages ?? []) as unknown as AGMessage[];
   const { sendMessage, setMessages, isLoading, stopGeneration } = hook;
   const [draft, setDraft] = useState("");
+  // 切会话回填历史消息的在途态 —— 与「思考中」(agent 生成中)区分:切 thread 时 CopilotKit
+  // 会重连 agent(connectAgent → isRunning=true),若此时只看 isLoading 会把「正在拉历史」
+  // 误显示成「思考中」,且历史还没回填 → 满屏只有「思考中」。见下方回填 effect 与消息区渲染。
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [threads, setThreads] = useState<ThreadSummary[] | null>(null);
   const [historyError, setHistoryError] = useState(false);
@@ -280,10 +284,12 @@ export function ChatThread({
   };
 
   // threadId 变化(新建 / 切换 / 刷新恢复)→ 回填该会话历史消息;新会话返回空即清空。
+  // 回填期间打 historyLoading:消息区显示「加载历史会话…」而非误显示的「思考中」/ 上个会话残影。
   useEffect(() => {
     if (!threadId || loadedThreadRef.current === threadId) return;
     loadedThreadRef.current = threadId;
     let cancelled = false;
+    setHistoryLoading(true);
     fetch(`/api/chat/threads/${threadId}/messages`)
       .then((r) => (r.ok ? r.json() : { messages: [] }))
       .then((d: { messages?: { id: string; role: string; content: string }[] }) => {
@@ -291,6 +297,9 @@ export function ChatThread({
       })
       .catch(() => {
         if (!cancelled) setMessages([] as never);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
       });
     return () => {
       cancelled = true;
@@ -508,7 +517,13 @@ export function ChatThread({
 
       {/* 消息区 */}
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {visible.length === 0 ? (
+        {historyLoading ? (
+          // 切会话回填中:整屏显示加载态(盖住上个会话残影 + agent 重连产生的「思考中」误判)。
+          <div className="flex items-center gap-2 px-1 font-mono text-xs text-fg-muted">
+            <span className="size-1.5 rounded-full bg-cyan caret-blink" />
+            {t("loadingHistory")}
+          </div>
+        ) : visible.length === 0 ? (
           <p className="mt-8 px-2 text-center text-sm leading-relaxed text-fg-muted">
             {t("empty")}
           </p>
@@ -524,7 +539,8 @@ export function ChatThread({
             />
           ))
         )}
-        {isLoading && (
+        {/* 「思考中」仅用于 agent 真正生成回复时,回填历史期间不展示(那是 connectAgent 误置 isRunning)。 */}
+        {isLoading && !historyLoading && (
           <div className="flex items-center gap-2 px-1 font-mono text-xs text-fg-muted">
             <span className="size-1.5 rounded-full bg-cyan caret-blink" />
             {t("thinking")}

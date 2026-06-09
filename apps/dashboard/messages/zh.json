@@ -294,6 +294,7 @@
     "placeholder": "问问 agent —— 行情、持仓、策略、回测…",
     "empty": "在这里和 agent 对话 —— 它能查行情、看持仓、跑回测、调因子。问任何标的都行。",
     "thinking": "思考中…",
+    "loadingHistory": "加载历史会话…",
     "toolRunning": "调用中",
     "toolDone": "已完成",
     "errorGeneric": "Agent 回复失败，请重试 —— 多半是上游 LLM 报错或连接中断。",
