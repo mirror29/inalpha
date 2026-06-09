@@ -257,8 +257,25 @@ function RunLog({ entries }: { entries: RunLogEntry[] }) {
   );
 }
 
-/** 日志时间戳 —— 后端写 `NOW()::text`(形如 "2026-06-08 11:35:00.12+00")，取月日时分秒、不做时区换算。 */
+/**
+ * 日志时间戳 —— 后端写 `NOW()::text`(形如 "2026-06-08 11:35:00.12+00"，带时区偏移)。
+ * 按**用户本地时区**显示月日时分秒：否则 UTC+8 用户会把 UTC 的 "11:35" 误读成本地 11:35
+ * (实为本地 19:35)，排障对不上运行记录(§3 面向全球用户)。解析失败回退原串截取。
+ */
 function fmtLogTs(ts: string): string {
+  // 空格→T、裸偏移 "+00"→"+00:00" 以满足跨浏览器 ISO 解析；偏移由串自带,不硬编码 UTC。
+  const iso = ts.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
+  const d = new Date(iso);
+  if (!Number.isNaN(d.getTime())) {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(d);
+  }
   const m = ts.match(/^\d{4}-(\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
   return m ? `${m[1]} ${m[2]}` : ts;
 }
