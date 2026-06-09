@@ -4,15 +4,17 @@ import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import useSWR from "swr";
 
-import type { CandidateDetailPayload } from "@/lib/types";
+import type { CandidateDetailPayload, StrategyRunRecord } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
-import { fmtDateTime } from "@/lib/format";
+import { fmtDateTime, fmtSigned, pnlColor } from "@/lib/format";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip } from "@/components/ui/LiveStrip";
 import { Panel } from "@/components/ui/Panel";
-import { CandidateStatusBadge } from "@/components/ui/StatusBadge";
+import { CandidateStatusBadge, RunStatusBadge } from "@/components/ui/StatusBadge";
+import { DecisionTimeline } from "@/components/runners/DecisionTimeline";
+import { RunnerChart } from "@/components/runners/RunnerChart";
 import { MetricsGrid } from "./MetricsGrid";
 
 const REFRESH_MS = 30_000;
@@ -89,6 +91,20 @@ export function CandidateDetailClient({ id }: { id: string }) {
             </div>
           </Panel>
 
+          {/* 执行记录:该策略派生的 live runner + 最近一个 run 的 K 线 / 历史交易。 */}
+          <RunInstancesPanel runs={data.runs} locale={locale} />
+          {data.runs[0] && (
+            <>
+              <RunnerChart
+                venue={data.runs[0].venue}
+                symbol={data.runs[0].symbol}
+                timeframe={data.runs[0].timeframe}
+                decisions={data.latestRunDecisions}
+              />
+              <DecisionTimeline decisions={data.latestRunDecisions} />
+            </>
+          )}
+
           {c.audit && <AuditPanel audit={c.audit} />}
 
           <Panel title={t("code")}>
@@ -99,6 +115,70 @@ export function CandidateDetailClient({ id }: { id: string }) {
         </>
       )}
     </div>
+  );
+}
+
+/** 该候选派生的 live runner 列表 —— 行可点进 run 详情。 */
+function RunInstancesPanel({
+  runs,
+  locale,
+}: {
+  runs: StrategyRunRecord[];
+  locale: string;
+}) {
+  const t = useTranslations("lab.detail");
+  const tStatus = useTranslations("runners");
+
+  return (
+    <Panel
+      title={t("instances")}
+      aside={
+        <span className="tnum font-mono text-xs text-fg-muted">
+          {runs.length}
+        </span>
+      }
+    >
+      {runs.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-fg-muted/70">
+          {t("instancesEmpty")}
+        </p>
+      ) : (
+        <>
+          <p className="border-b border-border-subtle/60 px-4 py-2 text-[11px] text-fg-muted/70">
+            {t("instancesHint")}
+          </p>
+          <ul className="divide-y divide-border-subtle/60">
+            {runs.map((r) => (
+              <li key={r.id}>
+                <Link
+                  href={`/runners/${r.id}`}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 transition-colors hover:bg-bg-elev/30"
+                >
+                  <RunStatusBadge status={r.status} />
+                  <span className="font-mono text-xs text-fg">
+                    {r.symbol}
+                  </span>
+                  <span className="font-mono text-[11px] text-fg-muted">
+                    {r.venue} · {r.timeframe}
+                  </span>
+                  <span
+                    className={cn(
+                      "tnum ml-auto font-mono text-xs",
+                      pnlColor(r.cumulative_pnl),
+                    )}
+                  >
+                    {fmtSigned(r.cumulative_pnl, null, locale)}
+                  </span>
+                  <span className="font-mono text-[10px] text-fg-muted/60 tabular-nums">
+                    {fmtDateTime(r.started_at, locale)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Panel>
   );
 }
 

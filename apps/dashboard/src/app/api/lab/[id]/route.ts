@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
-import type { CandidateDetailPayload, StrategyCandidateRecord } from "@/lib/types";
+import type {
+  CandidateDetailPayload,
+  StrategyCandidateRecord,
+  StrategyRunDecisionRecord,
+  StrategyRunRecord,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +32,28 @@ export async function GET(
       "paper",
       `/strategy_candidates/${id}`,
     );
+
+    // 该候选派生的 live runner —— 后端无「按 candidate 查 run」端点,拉列表本地过滤
+    // (best-effort,失败降级空,不阻塞详情)。最近一个 run 再拉决策给 K 线叠加 + 历史交易。
+    const allRuns = await backendFetch<StrategyRunRecord[]>(
+      "paper",
+      "/strategy_runs",
+    ).catch(() => [] as StrategyRunRecord[]);
+    const runs = allRuns
+      .filter((r) => r.candidate_id === id)
+      .sort((a, b) => b.started_at.localeCompare(a.started_at));
+    const latestRunDecisions = runs[0]
+      ? await backendFetch<StrategyRunDecisionRecord[]>(
+          "paper",
+          `/strategy_runs/${runs[0].id}/decisions`,
+          { query: { limit: 200 } },
+        ).catch(() => [] as StrategyRunDecisionRecord[])
+      : [];
+
     const payload: CandidateDetailPayload = {
       candidate,
+      runs,
+      latestRunDecisions,
       asOf: new Date().toISOString(),
     };
     return NextResponse.json(payload, {
@@ -40,6 +65,8 @@ export async function GET(
       if (err.status === 404) {
         const payload: CandidateDetailPayload = {
           candidate: null,
+          runs: [],
+          latestRunDecisions: [],
           asOf: new Date().toISOString(),
         };
         return NextResponse.json(payload, { status: 404 });
