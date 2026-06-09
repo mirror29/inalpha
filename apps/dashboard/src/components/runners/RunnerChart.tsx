@@ -53,6 +53,10 @@ export function RunnerChart({
   // 切周期/刷新失败但 keepPreviousData 仍留着旧 bars：图照常画但内容与选中周期不符,
   // 给个淡提示避免「按钮高亮 1d、图却是 1h」的静默误导(CR)。
   const staleError = !!error && !switching && bars.length > 0;
+  // 进一步区分:周期切换失败时图上是**别的周期**(data.timeframe ≠ 选中 tf),提示要点名
+  // 实际在显示哪个周期;同周期刷新失败则只是旧快照。两者文案不同,避免语义误导(CR)。
+  const staleTf = data?.timeframe;
+  const staleSwitch = staleError && staleTf !== tf;
 
   return (
     <Panel
@@ -102,12 +106,14 @@ export function RunnerChart({
               </span>
             </div>
           )}
-          {/* 刷新失败、图上是旧数据：角标提示「显示的是上一次数据」,不静默误导。 */}
+          {/* 刷新/切周期失败、图上是旧数据：角标提示,不静默误导。切周期失败时点名实际周期。 */}
           {staleError && (
             <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-6">
               <span className="flex items-center gap-1.5 rounded-md border border-gold/30 bg-bg-elev/90 px-2.5 py-1 font-mono text-[11px] text-gold">
                 <span className="size-1.5 rounded-full bg-gold" />
-                {t("chartStale")}
+                {staleSwitch
+                  ? t("chartStaleSwitch", { tf: staleTf ?? "" })
+                  : t("chartStale")}
               </span>
             </div>
           )}
