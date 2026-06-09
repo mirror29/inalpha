@@ -12,6 +12,8 @@ import { FxWarningBanner } from "./FxWarningBanner";
 import { KpiBar } from "./KpiBar";
 import { OrdersTable } from "./OrdersTable";
 import { PositionsTable } from "./PositionsTable";
+import { RunnersPanel } from "./RunnersPanel";
+import { StrategyPanel } from "./StrategyPanel";
 
 /** 账户/持仓/订单变化较慢,8s 一档(见设计文档轮询节奏)。 */
 const REFRESH_MS = 8000;
@@ -42,7 +44,9 @@ export function OverviewClient() {
   if (!data) return null;
 
   return (
-    <div className="flex flex-col gap-6">
+    // @container:总览各栅格按「主内容实际可用宽度」自适应,而非视口宽 —— 对话栏展开后
+    // main 被挤窄(padding-right: --chat-w),视口断点会误判仍宽 → KPI 数字被截断。
+    <div className="@container flex flex-col gap-6">
       <PageHeader
         title={t("title")}
         subtitle={t("subtitle")}
@@ -65,7 +69,16 @@ export function OverviewClient() {
 
       <KpiBar data={data} />
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_1fr]">
+      {/* 系统在做什么:运行中的 live runner + 策略池,并排成「执行 / 研究」两栏。 */}
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
+        <RunnersPanel runs={data.runs} />
+        <StrategyPanel
+          candidates={data.candidates}
+          counts={data.candidateCounts}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[1.4fr_1fr]">
         <PositionsTable
           positions={data.positions}
           baseCcy={data.account.base_currency}
@@ -78,14 +91,18 @@ export function OverviewClient() {
 
 function OverviewSkeleton() {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="@container flex flex-col gap-6">
       <SkeletonBlock className="h-16 w-72 border-0 bg-bg-elev/40" />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @5xl:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
           <SkeletonBlock key={i} className="h-24" />
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
+        <SkeletonBlock className="h-44" />
+        <SkeletonBlock className="h-44" />
+      </div>
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[1.4fr_1fr]">
         <SkeletonBlock className="h-64" />
         <SkeletonBlock className="h-64" />
       </div>

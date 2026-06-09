@@ -7,18 +7,42 @@ import type { OverviewPayload } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { fmtMoney, fmtSigned, pnlColor } from "@/lib/format";
 
+/** 收益率(已带 +/− 号),2 位小数;不可计算(初始资金为 0)时返回 null。 */
+function fmtReturnPct(net: number, initial: number, locale: string): string | null {
+  if (!initial) return null;
+  const pct = (net / initial) * 100;
+  const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
+  return `${sign}${new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(pct))}%`;
+}
+
 /**
- * 顶部 KPI 条:总权益 / 现金(多币种)/ 已实现盈亏 / 运行中策略数。
+ * 顶部 KPI 条 —— 总控制台看板的「一眼总览」行:
+ * 总权益 / 总收益率 / 现金(多币种)/ 浮动盈亏 / 已实现盈亏 / 运行中策略数。
  * 大号等宽数字,工程仪表盘观感。
  */
 export function KpiBar({ data }: { data: OverviewPayload }) {
   const t = useTranslations("overview.kpi");
   const locale = useLocale();
-  const { account, activeRunnerCount, runs } = data;
+  const { account, activeRunnerCount, runs, positions } = data;
   const ccy = account.base_currency;
 
+  // 浮动盈亏聚合:仅累加拿到最新价的持仓;有持仓缺价时标 partial(不静默低估)。
+  let unrealizedSum = 0;
+  let unrealizedPartial = false;
+  for (const p of positions) {
+    if (p.unrealized_pnl === null) unrealizedPartial = true;
+    else unrealizedSum += p.unrealized_pnl;
+  }
+
+  // 总收益率 / 累计净盈亏(权益相对起始资金)。
+  const netPnl = account.total_equity - account.initial_cash;
+  const returnPct = fmtReturnPct(netPnl, account.initial_cash, locale);
+
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @5xl:grid-cols-3">
       <KpiCard label={t("totalEquity")} accent="cyan" i={0}>
         <Figure>{fmtMoney(account.total_equity, ccy, locale)}</Figure>
         <Sub>
@@ -26,19 +50,37 @@ export function KpiBar({ data }: { data: OverviewPayload }) {
         </Sub>
       </KpiCard>
 
-      <KpiCard label={t("cash")} i={1}>
+      <KpiCard label={t("totalReturn")} accent="cyan" i={1}>
+        <Figure className={pnlColor(netPnl)}>{returnPct ?? "—"}</Figure>
+        <Sub>
+          {t("netSinceInception", { pnl: fmtSigned(netPnl, ccy, locale) })}
+        </Sub>
+      </KpiCard>
+
+      <KpiCard label={t("cash")} i={2}>
         <Figure>{fmtMoney(account.cash, ccy, locale)}</Figure>
         <CashBuckets balances={account.cash_balances} base={ccy} />
       </KpiCard>
 
-      <KpiCard label={t("realizedPnl")} i={2}>
+      <KpiCard label={t("unrealizedPnl")} i={3}>
+        <Figure className={pnlColor(unrealizedSum)}>
+          {fmtSigned(unrealizedSum, ccy, locale)}
+        </Figure>
+        <Sub>
+          {unrealizedPartial
+            ? t("partialMark")
+            : t("openPositions", { count: positions.length })}
+        </Sub>
+      </KpiCard>
+
+      <KpiCard label={t("realizedPnl")} i={4}>
         <Figure className={pnlColor(account.realized_pnl)}>
           {fmtSigned(account.realized_pnl, ccy, locale)}
         </Figure>
         <Sub>{t("convertedTo", { ccy })}</Sub>
       </KpiCard>
 
-      <KpiCard label={t("activeRunners")} accent="bull" i={3}>
+      <KpiCard label={t("activeRunners")} accent="bull" i={5}>
         <Figure className={activeRunnerCount > 0 ? "text-bull" : undefined}>
           {activeRunnerCount}
         </Figure>
@@ -98,7 +140,8 @@ function Figure({
   return (
     <div
       className={cn(
-        "tnum font-mono text-[1.65rem] leading-none tracking-tight text-fg lg:text-3xl",
+        // 总控制台一行 3 张卡,数字给足横向空间;truncate 防超长币值溢出裁切。
+        "tnum truncate font-mono text-2xl leading-none tracking-tight text-fg lg:text-[1.75rem]",
         className,
       )}
     >

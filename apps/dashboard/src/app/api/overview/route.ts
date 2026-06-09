@@ -7,9 +7,13 @@ import type {
   OverviewPayload,
   PositionRecord,
   PositionWithMark,
+  StrategyCandidateSummary,
   StrategyRunRecord,
   TickerResponse,
 } from "@/lib/types";
+
+/** 总览策略池面板展示的候选条数上限(后端已按 fitness DESC 排,取头部即可)。 */
+const CANDIDATES_SHOWN = 6;
 
 export const dynamic = "force-dynamic";
 
@@ -33,19 +37,30 @@ export async function GET() {
   // positions / orders / runs —— 任一失败降级为空,不整页挂。
   // orders 多取 1 条探测「是否还有更早的」(命中上限 → 截断提示,不静默)。
   const ORDERS_SHOWN = 20;
-  const [positionsRes, ordersRes, runsRes] = await Promise.allSettled([
-    backendFetch<PositionRecord[]>("paper", "/positions"),
-    backendFetch<OrderRecord[]>("paper", "/orders", {
-      query: { limit: ORDERS_SHOWN + 1 },
-    }),
-    backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs"),
-  ]);
+  const [positionsRes, ordersRes, runsRes, candidatesRes] =
+    await Promise.allSettled([
+      backendFetch<PositionRecord[]>("paper", "/positions"),
+      backendFetch<OrderRecord[]>("paper", "/orders", {
+        query: { limit: ORDERS_SHOWN + 1 },
+      }),
+      backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs"),
+      backendFetch<StrategyCandidateSummary[]>("paper", "/strategy_candidates"),
+    ]);
 
   const positions = settledOr(positionsRes, []);
   const ordersRaw = settledOr(ordersRes, []);
   const ordersTruncated = ordersRaw.length > ORDERS_SHOWN;
   const orders = ordersRaw.slice(0, ORDERS_SHOWN);
   const runs = settledOr(runsRes, []);
+
+  // 策略池:计数取自完整集合(promoted/候选),面板只展示头部 N 条。
+  const candidatesAll = settledOr(candidatesRes, []);
+  const candidateCounts = {
+    all: candidatesAll.length,
+    promoted: candidatesAll.filter((c) => c.status === "promoted").length,
+    candidate: candidatesAll.filter((c) => c.status === "candidate").length,
+  };
+  const candidates = candidatesAll.slice(0, CANDIDATES_SHOWN);
 
   // 每个持仓 best-effort 补最新价(fresh=false:只读 DB 缓存,不触发慢 backfill)。
   const marked: PositionWithMark[] = await Promise.all(
@@ -75,6 +90,8 @@ export async function GET() {
     orders,
     runs,
     activeRunnerCount: runs.filter((r) => r.status === "running").length,
+    candidates,
+    candidateCounts,
     ordersTruncated,
     asOf: new Date().toISOString(),
   };
