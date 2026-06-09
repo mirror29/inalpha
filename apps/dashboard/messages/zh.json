@@ -284,6 +284,8 @@
       "backtestPeriod": "区间",
       "backtestTrades": "回测成交",
       "backtestTradesEmpty": "最近一次回测无成交。",
+      "copy": "复制",
+      "copied": "已复制",
       "tradeCol": {
         "time": "Bar 时间",
         "intent": "意图",
