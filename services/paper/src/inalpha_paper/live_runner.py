@@ -502,13 +502,15 @@ class LiveRunnerManager:
             except Exception:
                 _logger.exception("live run %s: 记不支持单型决策行失败", run["id"])
         # 本根 bar 有下单意图 → info 级运行日志（无信号的空 bar 不记，避免刷屏）。
+        # 措辞「触发 N 个信号（待撮合）」：此处 orders 是策略意图、尚未过风控/撮合，
+        # 后续可能被 risk_rejected 全拦——不写「产生 N 个下单意图」以免与最终无成交割裂（CR）。
         if orders:
             try:
                 async with get_conn() as conn:
                     await runs_store.append_log(
                         conn, run["id"], "info",
                         f"bar {_ns_to_dt(bar.ts_event):%Y-%m-%d %H:%M} · "
-                        f"策略产生 {len(orders)} 个下单意图",
+                        f"策略触发 {len(orders)} 个信号（待撮合）",
                     )
             except Exception:
                 _logger.exception("live run %s: 写出单日志失败", run["id"])
