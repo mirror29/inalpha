@@ -23,6 +23,7 @@ from ..model.events import OrderFilled, PositionChanged, PositionClosed, Positio
 from ..model.orders import OrderSide
 from ..model.positions import Position
 from .close_detector import ClosedTradeStaging, detect_close
+from .report import FillRecord
 
 
 class Portfolio:
@@ -64,6 +65,8 @@ class Portfolio:
         self._equity_curve: list[tuple[int, float]] = []
         # round-trip 单笔盈亏（仅在 position 完全平仓时记一笔），用于胜率
         self._closed_trade_pnls: list[float] = []
+        # 逐笔成交快照（含每笔实现盈亏），回测结束塞进 BacktestReport → 落 backtest_trades
+        self._fills: list[FillRecord] = []
         # 上一次 close 时 position.realized_pnl 的快照，便于算单笔增量
         self._last_realized_pnl: dict[InstrumentId, float] = {}
 
@@ -161,6 +164,11 @@ class Portfolio:
         return out
 
     @property
+    def fills(self) -> list[FillRecord]:
+        """逐笔成交快照（含每笔实现盈亏）；`BacktestEngine` 结束时塞进 report。"""
+        return list(self._fills)
+
+    @property
     def closed_trade_pnls(self) -> list[float]:
         """每次完整平仓记一笔的 round-trip 盈亏（已扣手续费？否，**仅价差盈亏**）。
 
@@ -196,6 +204,7 @@ class Portfolio:
 
         was_flat = pos.is_flat
         prev_qty = pos.quantity  # apply_fill 前的方向，用于 flip 检测
+        prev_realized = pos.realized_pnl  # 算本笔实现盈亏增量用（apply_fill 后会变）
 
         # ADR-0007：detect close **必须**在 apply_fill 之前，否则 prev_position 已变
         if self._account_id is not None:
@@ -233,6 +242,28 @@ class Portfolio:
             self._cash += notional - fee
         self._total_fees += fee
         self._trade_count += 1
+
+        # 逐笔成交快照：每笔实现盈亏 = 本笔引起的 realized_pnl 增量（开仓笔=0，平仓/反手笔
+        # 为价差盈亏，不含手续费）；intent 按成交前持仓方向 + side 判（同 live_runner._intent_for）。
+        # bar_close 撮合早于本根 bar mark 更新 → 用最新 mark（上一根 close），缺失退回 fill_price。
+        if msg.side == OrderSide.BUY:
+            intent = "close" if prev_qty < 0 else "open_long"
+        else:
+            intent = "close" if prev_qty > 0 else "open_short"
+        self._fills.append(
+            FillRecord(
+                ts_ns=msg.ts_event,
+                bar_close=self._marks.get(instrument_id, msg.fill_price),
+                side=msg.side.value,
+                quantity=msg.fill_quantity,
+                order_type="MARKET",
+                fill_price=msg.fill_price,
+                fee=fee,
+                realized_pnl=pos.realized_pnl - prev_realized,
+                intent=intent,
+                tag=msg.tag,
+            )
+        )
 
         # 选择对应的 PositionEvent 类型 + round-trip 入账
         event_cls: type[PositionOpened] | type[PositionChanged] | type[PositionClosed]

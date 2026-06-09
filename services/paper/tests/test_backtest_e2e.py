@@ -94,6 +94,57 @@ def test_backtest_sma_cross_on_oscillating_prices() -> None:
     assert 0.0 <= report.win_rate <= 100.0
 
 
+# ─── 逐笔成交记录（含每笔盈亏） ───
+
+
+def test_backtest_records_per_fill_trades() -> None:
+    """振荡市 → report.fills 收齐每笔成交，含正确 intent 与每笔实现盈亏。
+
+    验收（D-11+ 详情页「回测成交」）：
+    - 每笔 fill 一条记录，条数 == num_trades
+    - intent 取值合法，且首笔（空仓 BUY）= open_long
+    - 平仓笔 realized_pnl 增量之和 == round-trip closed_trade_pnls 之和（开仓笔=0）
+    """
+    prices = [100 + 10 * math.sin(2 * math.pi * i / 20) for i in range(100)]
+    bars = _gen_bars(prices)
+
+    engine = BacktestEngine(initial_cash=10_000.0, fee_rate=0.001)
+    strat = SMACrossStrategy(
+        name="sma",
+        clock=engine.clock,
+        msgbus=engine.msgbus,
+        instrument_id=_btc(),
+        timeframe="1h",
+        fast_period=5,
+        slow_period=15,
+        trade_size=0.05,
+    )
+    engine.add_strategy(strat)
+    report = engine.run(bars)
+
+    assert report.num_trades >= 2
+    # 每笔成交一条记录
+    assert len(report.fills) == report.num_trades
+    # 字段合理
+    for f in report.fills:
+        assert f.side in ("BUY", "SELL")
+        assert f.intent in ("open_long", "open_short", "close")
+        assert f.quantity > 0
+        assert f.fill_price > 0
+        assert f.fee >= 0
+        assert f.order_type == "MARKET"
+    # 现货 long-only：首笔必是空仓买入 = 开多
+    assert report.fills[0].side == "BUY"
+    assert report.fills[0].intent == "open_long"
+    # 每笔实现盈亏之和 == round-trip 盈亏之和（开仓笔贡献 0；in-process 跑，portfolio 即最终态）
+    assert math.isclose(
+        sum(f.realized_pnl for f in report.fills),
+        sum(engine.portfolio.closed_trade_pnls),
+        rel_tol=1e-9,
+        abs_tol=1e-6,
+    )
+
+
 # ─── 上涨趋势：买入持有 ───
 
 
