@@ -52,7 +52,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # 回退条目形态 {ts, level, msg, code} → {ts, error, code}（丢弃 level；msg→error）
+    # 回退条目形态 {ts, level, msg, code} → {ts, error, code}（丢弃 level；msg→error）。
+    # **只保留 level='error'**：旧 error_log 语义是纯错误日志，旧版 RunnerCard 角标 =
+    # error_log.length（不分级）、面板把每条都当错误显示。若把 info/warn（起跑 / 出单 /
+    # 停止，随 bar 累积）一并写回，回滚后角标暴增、正常活动被当错误 —— 在排障窗口反成噪音。
+    # 保留 WITH ORDINALITY + ORDER BY ord 维持时序。
     op.execute(
         """
         UPDATE strategy_runs
@@ -60,8 +64,10 @@ def downgrade() -> None:
             (
                 SELECT jsonb_agg(
                     jsonb_build_object('ts', e->>'ts', 'error', e->>'msg', 'code', e->'code')
+                    ORDER BY ord
                 )
-                FROM jsonb_array_elements(run_log) AS e
+                FROM jsonb_array_elements(run_log) WITH ORDINALITY AS arr(e, ord)
+                WHERE e->>'level' = 'error'
             ),
             '[]'::jsonb
         )
