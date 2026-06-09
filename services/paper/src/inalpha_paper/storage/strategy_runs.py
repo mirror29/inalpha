@@ -192,7 +192,9 @@ async def append_log(
                 FROM (
                     SELECT elem, ord
                     FROM jsonb_array_elements(
-                        run_log || jsonb_build_array(
+                        -- NULL::jsonb || '[...]' 求值为 NULL → 新条目被静默丢弃；
+                        -- COALESCE 兜底,防 run_log 日后改 nullable / fixture 插 NULL（CR）。
+                        COALESCE(run_log, '[]'::jsonb) || jsonb_build_array(
                             jsonb_build_object(
                                 'ts', NOW()::text, 'level', %s::text,
                                 'msg', %s::text, 'code', %s::text
@@ -250,7 +252,8 @@ async def mark_running_as_errored(conn: AsyncConnection, *, reason: str) -> int:
                     FROM (
                         SELECT elem, ord
                         FROM jsonb_array_elements(
-                            run_log || jsonb_build_array(
+                            -- COALESCE 兜底 NULL run_log（见 append_log 同款防护，CR）。
+                            COALESCE(run_log, '[]'::jsonb) || jsonb_build_array(
                                 jsonb_build_object(
                                     'ts', NOW()::text, 'level', 'error',
                                     'msg', %s::text, 'code', NULL
