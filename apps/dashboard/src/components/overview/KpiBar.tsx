@@ -141,7 +141,8 @@ function Figure({
     <div
       className={cn(
         // 总控制台一行 3 张卡,数字给足横向空间;truncate 防超长币值溢出裁切。
-        "tnum truncate font-mono text-2xl leading-none tracking-tight text-fg lg:text-[1.75rem]",
+        // 字号走 Tailwind 标准档(不用 rem 任意值),容器查询已保证不挤裂。
+        "tnum truncate font-mono text-2xl leading-none tracking-tight text-fg lg:text-3xl",
         className,
       )}
     >
