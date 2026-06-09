@@ -284,6 +284,8 @@
       "backtestPeriod": "Period",
       "backtestTrades": "Backtest Fills",
       "backtestTradesEmpty": "No fills in the latest backtest.",
+      "copy": "Copy",
+      "copied": "Copied",
       "tradeCol": {
         "time": "Bar Time",
         "intent": "Intent",

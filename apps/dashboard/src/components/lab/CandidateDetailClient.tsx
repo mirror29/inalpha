@@ -19,6 +19,7 @@ import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip } from "@/components/ui/LiveStrip";
 import { Panel } from "@/components/ui/Panel";
 import { CandidateStatusBadge, RunStatusBadge } from "@/components/ui/StatusBadge";
+import { CodeViewer } from "@/components/ui/CodeViewer";
 import { Td, TableEmpty, TableHeadRow, Th } from "@/components/ui/Table";
 import { DecisionTimeline } from "@/components/runners/DecisionTimeline";
 import { RunnerChart } from "@/components/runners/RunnerChart";
@@ -126,9 +127,14 @@ export function CandidateDetailClient({ id }: { id: string }) {
           {c.audit && <AuditPanel audit={c.audit} />}
 
           <Panel title={t("code")}>
-            <pre className="max-h-[28rem] overflow-auto px-4 py-3 font-mono text-[12px] leading-relaxed text-fg-muted">
-              <code>{c.code}</code>
-            </pre>
+            <div className="p-3">
+              <CodeViewer
+                code={c.code}
+                lang="python"
+                copyLabel={t("copy")}
+                copiedLabel={t("copied")}
+              />
+            </div>
           </Panel>
         </>
       )}
