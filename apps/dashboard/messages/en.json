@@ -263,7 +263,12 @@
       "metrics": "Backtest Metrics",
       "audit": "Sandbox Audit",
       "promotion": "Promotion",
-      "code": "Source"
+      "code": "Source",
+      "instances": "Run Instances",
+      "instancesEmpty": "This strategy hasn't run paper trading yet. Promote and start it to see instances here.",
+      "instancesHint": "Price action and fills for the most recent run are shown below.",
+      "chart": "Price (latest run)",
+      "trades": "Trades (latest run)"
     }
   },
   "factors": {
@@ -340,7 +345,22 @@
     "toolRunning": "running",
     "toolDone": "done",
     "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",
-    "errorDismiss": "Dismiss"
+    "errorDismiss": "Dismiss",
+    "context": {
+      "viewing": "Viewing",
+      "dismiss": "Don't include this page",
+      "kind": {
+        "runner_detail": "Paper run",
+        "candidate_detail": "Strategy candidate",
+        "runners_list": "Paper runs",
+        "lab_list": "Strategy lab",
+        "factors": "Factor library",
+        "risk": "Risk panel",
+        "activity": "Agent log",
+        "divination": "Divination",
+        "overview": "Overview"
+      }
+    }
   },
   "divination": {
     "pageTitle": "Inari Omikuji",

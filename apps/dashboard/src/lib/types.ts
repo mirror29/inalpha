@@ -222,6 +222,10 @@ export interface LabPayload {
 /** GET /api/lab/[id] —— 候选详情。 */
 export interface CandidateDetailPayload {
   candidate: StrategyCandidateRecord | null;
+  /** 该候选派生的 live runner(按 started_at 倒序);用于「执行记录 / K 线 / 历史交易」。 */
+  runs: StrategyRunRecord[];
+  /** 最近一个 run 的决策(K 线叠加 + 历史交易表用);无 run 时为空。 */
+  latestRunDecisions: StrategyRunDecisionRecord[];
   asOf: string;
 }
 
