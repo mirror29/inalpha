@@ -279,7 +279,20 @@
       "instancesEmpty": "This strategy hasn't run paper trading yet. Promote and start it to see instances here.",
       "instancesHint": "Price action and fills for the most recent run are shown below.",
       "chart": "Price (latest run)",
-      "trades": "Trades (latest run)"
+      "trades": "Trades (latest run)",
+      "backtestTime": "Backtested",
+      "backtestPeriod": "Period",
+      "backtestTrades": "Backtest Fills",
+      "backtestTradesEmpty": "No fills in the latest backtest.",
+      "tradeCol": {
+        "time": "Bar Time",
+        "intent": "Intent",
+        "side": "Side",
+        "qty": "Qty",
+        "fill": "Fill",
+        "fee": "Fee",
+        "pnl": "Realized PnL"
+      }
     }
   },
   "factors": {

@@ -279,7 +279,20 @@
       "instancesEmpty": "该策略还没启动过模拟盘。promote 后启动会出现在这里。",
       "instancesHint": "最近一个 run 的行情与成交,见下方 K 线与历史交易。",
       "chart": "K 线（最近 run）",
-      "trades": "历史交易（最近 run）"
+      "trades": "历史交易（最近 run）",
+      "backtestTime": "回测于",
+      "backtestPeriod": "区间",
+      "backtestTrades": "回测成交",
+      "backtestTradesEmpty": "最近一次回测无成交。",
+      "tradeCol": {
+        "time": "Bar 时间",
+        "intent": "意图",
+        "side": "方向",
+        "qty": "数量",
+        "fill": "成交价",
+        "fee": "手续费",
+        "pnl": "实现盈亏"
+      }
     }
   },
   "factors": {
