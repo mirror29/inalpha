@@ -35,6 +35,7 @@ from .schemas import (
     PositionSnapshot,
 )
 from .storage import backtest_runs as backtest_runs_store
+from .storage import backtest_trades as backtest_trades_store
 from .storage import strategy_candidates as candidates_store
 from .strategies import BASELINE_BUY_AND_HOLD, get_strategy_class
 from .strategy_authoring import (
@@ -251,6 +252,18 @@ async def run_backtest(
             started_at=started_at,
             finished_at=finished_at,
         )
+        # 6a'. 逐笔成交落 backtest_trades（含每笔实现盈亏）—— best-effort，失败 warning 不阻断。
+        # 只写主候选/内置策略的 fills，**不写 baseline**（baseline_report 仅作对照）。
+        if run_id is not None and report.fills:
+            try:
+                async with conn.transaction():
+                    await backtest_trades_store.insert_fills(conn, run_id, report.fills)
+            except Exception:
+                logger.warning(
+                    "backtest_trades insert failed",
+                    exc_info=True,
+                    extra={"run_id": str(run_id)},
+                )
         # 6a. candidate 路径：回写 candidates 表（最近一次 metrics / fitness）
         if req.candidate_id is not None:
             try:

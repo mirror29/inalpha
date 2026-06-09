@@ -17,8 +17,14 @@ from inalpha_shared.errors import UnauthorizedError, ValidationError
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
 from ..runner import run_backtest as _run_backtest
-from ..schemas import BacktestRequest, BacktestResponse, BacktestRunSummary
+from ..schemas import (
+    BacktestRequest,
+    BacktestResponse,
+    BacktestRunSummary,
+    BacktestTradeRecord,
+)
 from ..storage import backtest_runs as backtest_runs_store
+from ..storage import backtest_trades as backtest_trades_store
 from ..strategies import list_strategies
 
 router = APIRouter(tags=["backtest"])
@@ -108,6 +114,40 @@ async def get_backtest_runs(
             strategy_hint=r["strategy_hint"],
             status=r["status"],
             created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+
+
+@router.get(
+    "/backtest_runs/{run_id}/trades",
+    response_model=list[BacktestTradeRecord],
+)
+async def get_backtest_run_trades(
+    run_id: UUID,
+    db: DBConn,
+    _user: Annotated[User, Depends(get_current_user)],
+    limit: Annotated[int, Query(ge=1, le=2000)] = 500,
+) -> list[BacktestTradeRecord]:
+    """一次回测的**逐笔成交**（含每笔实现盈亏），按成交先后（seq）排序。
+
+    用途：策略详情页 ``/lab/[id]`` 展示该候选最近一次回测的逐笔买卖 + 盈亏复盘。
+    run 不存在 / 无成交时返回空数组（不报错）。
+    """
+    rows = await backtest_trades_store.list_by_run(db, run_id, limit=limit)
+    return [
+        BacktestTradeRecord(
+            seq=r["seq"],
+            bar_ts=r["bar_ts"],
+            bar_close=r["bar_close"],
+            side=r["side"],
+            quantity=r["quantity"],
+            order_type=r["order_type"],
+            fill_price=r["fill_price"],
+            fee=r["fee"],
+            realized_pnl=r["realized_pnl"],
+            intent=r["intent"],
+            tag=r["tag"],
         )
         for r in rows
     ]

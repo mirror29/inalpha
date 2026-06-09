@@ -203,3 +203,48 @@ def test_research_id_not_found_returns_empty_list(
     )
     assert r.status_code == 200
     assert r.json() == []
+
+
+# ────────────────────────────────────────────────────────────────────
+# GET /backtest_runs/{id}/trades 逐笔成交（含每笔盈亏）
+# ────────────────────────────────────────────────────────────────────
+
+
+@respx.mock
+def test_backtest_run_trades_recorded(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """回测落库的逐笔成交可经 endpoint 读回，条数 == num_trades，含盈亏/意图。"""
+    respx.get("http://data-mock.test/bars").mock(
+        return_value=Response(200, json=_bars_oscillating(100))
+    )
+    r = client.post("/backtest", headers=auth_headers, json=_backtest_payload())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    run_id = body["run_id"]
+    assert body["num_trades"] >= 2
+
+    tr = client.get(f"/backtest_runs/{run_id}/trades", headers=auth_headers)
+    assert tr.status_code == 200, tr.text
+    trades = tr.json()
+    # 每笔成交一行，seq 从 0 连续递增
+    assert len(trades) == body["num_trades"]
+    assert [t["seq"] for t in trades] == list(range(len(trades)))
+    for t in trades:
+        assert t["side"] in ("BUY", "SELL")
+        assert t["intent"] in ("open_long", "open_short", "close")
+        assert t["fill_price"] is not None
+        assert t["realized_pnl"] is not None
+    # 现货 long-only：首笔空仓买入 = 开多；振荡市必有平仓
+    assert trades[0]["side"] == "BUY"
+    assert trades[0]["intent"] == "open_long"
+    assert any(t["intent"] == "close" for t in trades)
+
+
+def test_backtest_run_trades_empty_for_unknown_run(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """未知 run_id → 空数组（不报错）。"""
+    r = client.get(f"/backtest_runs/{uuid4()}/trades", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json() == []

@@ -318,6 +318,26 @@ class BacktestRunSummary(BaseModel):
     created_at: datetime
 
 
+class BacktestTradeRecord(BaseModel):
+    """D-11+ · ``GET /backtest_runs/{run_id}/trades`` 响应里的一行 —— 回测逐笔成交。
+
+    ``realized_pnl``：本笔成交引起的持仓 realized_pnl 增量（开仓笔=0，平仓/反手笔为
+    价差盈亏，不含手续费）。``intent``：open_long / open_short / close。
+    """
+
+    seq: int
+    bar_ts: datetime
+    bar_close: float
+    side: str
+    quantity: float
+    order_type: str
+    fill_price: float | None = None
+    fee: float | None = None
+    realized_pnl: float | None = None
+    intent: str | None = None
+    tag: str | None = None
+
+
 # ────────────────────────────────────────────────────────────────────
 # 单笔下单（D-8a 起步，in-memory）
 # ────────────────────────────────────────────────────────────────────
