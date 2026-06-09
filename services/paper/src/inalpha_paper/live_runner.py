@@ -241,12 +241,18 @@ class LiveRunnerManager:
         # 边界，第一根 fetch 到的 warmup_ts bar 会绕过 dedup → 对已喂过的 bar 二次 on_bar →
         # 信号重复 → spurious 订单落库。全新 run（last_bar_ts 为 None）退化为 warmup_ts，行为不变。
         # 起跑 / 恢复 —— info 级运行日志（供运行详情「运行日志」面板观测，不只记错误）。
-        async with get_conn() as conn:
-            await runs_store.append_log(
-                conn, run_id, "info",
-                f"{'恢复运行' if run.get('last_bar_ts') else '策略起跑'}："
-                f"{run['venue']} {run['symbol']} {run['timeframe']}",
-            )
+        # best-effort：日志写入失败（连接池耗尽 / DB 抖动）绝不能逃逸 _run_loop——否则 task
+        # 带异常退出，done_callback 只移除引用、不置 errored，run 永久卡 'running' 却无 task 在跑
+        # （与 stop()/_process_bar 出单日志的 try/except 对齐）（CR）。
+        try:
+            async with get_conn() as conn:
+                await runs_store.append_log(
+                    conn, run_id, "info",
+                    f"{'恢复运行' if run.get('last_bar_ts') else '策略起跑'}："
+                    f"{run['venue']} {run['symbol']} {run['timeframe']}",
+                )
+        except Exception:
+            _logger.warning("live run %s: 起跑日志写入失败（已忽略）", run_id, exc_info=True)
 
         _db_bound = run.get("last_bar_ts")
         last_bar_ts: datetime | None = (
