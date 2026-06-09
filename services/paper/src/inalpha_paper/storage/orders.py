@@ -71,6 +71,25 @@ async def insert(
         )
 
 
+async def set_realized_pnl(
+    conn: AsyncConnection,
+    *,
+    client_order_id: str,
+    realized_pnl: Decimal | float,
+) -> None:
+    """回写某订单的已实现盈亏（毛口径）。
+
+    订单行在 fill 之前已插入（closed_trades 外键依赖其先在），盈亏要等 fill 落账后
+    才算得出 —— 故 fill 之后单独 UPDATE 这一列。开仓/加仓单写 0，平/减仓单写该笔实现盈亏。
+    与 insert 在同一事务里调用。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "UPDATE orders SET realized_pnl = %s WHERE client_order_id = %s",
+            (realized_pnl, client_order_id),
+        )
+
+
 async def list_by_account(
     conn: AsyncConnection,
     account_id: UUID,
@@ -82,7 +101,7 @@ async def list_by_account(
     """列出某 account 的订单流水，按 ts_event DESC 排，最多 limit 条。"""
     sql = (
         "SELECT client_order_id, venue, symbol, side, type, quantity, price, "
-        "status, filled_quantity, avg_fill_price, fee, notional, "
+        "status, filled_quantity, avg_fill_price, fee, notional, realized_pnl, "
         "ts_event, ts_init, trade_plan_id "
         "FROM orders WHERE account_id = %s"
     )

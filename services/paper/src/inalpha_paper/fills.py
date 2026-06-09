@@ -36,8 +36,13 @@ async def apply_fill_to_positions_and_cash(
     fee: Decimal,
     ts_event: datetime,
     order_id: str,
-) -> None:
-    """把一笔 fill 同时更新 positions + cash + closed_trades（在调用方的事务里）。"""
+) -> Decimal:
+    """把一笔 fill 同时更新 positions + cash + closed_trades（在调用方的事务里）。
+
+    返回**这笔成交的已实现盈亏**（毛口径，不减手续费，与 position.realized_pnl 同口径）：
+    平/减仓单 = ``close_profit_abs``；纯开/加仓单 = ``0``。调用方据此回写 orders.realized_pnl，
+    让每笔交易记录都带盈亏（开仓单恒 0，平仓单记该笔实现盈亏）。
+    """
     currency = resolve_currency(venue, symbol)
     notional = quantity * fill_price
     cash_delta = (-notional if side == "BUY" else notional) - fee
@@ -72,3 +77,5 @@ async def apply_fill_to_positions_and_cash(
             open_order_id=close_info.open_order_id,
             close_order_id=close_info.close_order_id,
         )
+        return Decimal(str(close_info.close_profit_abs))
+    return Decimal(0)

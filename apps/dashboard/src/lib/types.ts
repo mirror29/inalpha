@@ -48,6 +48,8 @@ export interface OrderRecord {
   avg_fill_price: number | null;
   fee: number | null;
   notional: number | null;
+  /** 这笔成交的已实现盈亏(毛口径):开仓/加仓单为 0,平/减仓单为实现盈亏;未成交为 null。 */
+  realized_pnl: number | null;
   ts_event: string;
   ts_init: string;
   trade_plan_id: string | null;

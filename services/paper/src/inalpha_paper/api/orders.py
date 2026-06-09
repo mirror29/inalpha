@@ -124,7 +124,7 @@ async def post_submit_order(
             order_id = result["client_order_id"]
             assert isinstance(ts_event, datetime)
             assert isinstance(order_id, str)
-            await apply_fill_to_positions_and_cash(
+            realized_pnl = await apply_fill_to_positions_and_cash(
                 db,
                 account_id=account_id,
                 venue=req.venue,
@@ -135,6 +135,10 @@ async def post_submit_order(
                 fee=Decimal(str(result["fee"])),
                 ts_event=ts_event,
                 order_id=order_id,
+            )
+            # 回写这笔成交的已实现盈亏(开仓单 0 / 平仓单实现盈亏)——每笔交易记录都带盈亏。
+            await orders_store.set_realized_pnl(
+                db, client_order_id=order_id, realized_pnl=realized_pnl
             )
 
     return SubmitOrderResponse(**result)  # type: ignore[arg-type]
@@ -303,6 +307,9 @@ def _row_to_order_record(row: dict[str, Any]) -> OrderRecord:
         ),
         fee=float(row["fee"]) if row.get("fee") is not None else None,
         notional=float(row["notional"]) if row.get("notional") is not None else None,
+        realized_pnl=(
+            float(row["realized_pnl"]) if row.get("realized_pnl") is not None else None
+        ),
         ts_event=row["ts_event"],
         ts_init=row["ts_init"],
         trade_plan_id=str(row["trade_plan_id"]) if row.get("trade_plan_id") else None,

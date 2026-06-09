@@ -414,6 +414,9 @@ class OrderRecord(BaseModel):
     avg_fill_price: float | None = None
     fee: float | None = None
     notional: float | None = None
+    # 这笔成交的已实现盈亏(毛口径,不减手续费):开仓/加仓单为 0,平/减仓单为实现盈亏;
+    # 未成交(REJECTED 等)为 None。
+    realized_pnl: float | None = None
     ts_event: datetime
     ts_init: datetime
     trade_plan_id: str | None = None
