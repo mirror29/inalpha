@@ -50,6 +50,9 @@ export function RunnerChart({
   // 首次切到没回填过的周期要 backfill,可能十几~几十秒,这期间给明确「加载中」反馈,
   // 否则看着像「切了没反应」(其实在拉数据)。
   const switching = data?.timeframe !== tf && isValidating && !error;
+  // 切周期/刷新失败但 keepPreviousData 仍留着旧 bars：图照常画但内容与选中周期不符,
+  // 给个淡提示避免「按钮高亮 1d、图却是 1h」的静默误导(CR)。
+  const staleError = !!error && !switching && bars.length > 0;
 
   return (
     <Panel
@@ -96,6 +99,15 @@ export function RunnerChart({
               <span className="flex items-center gap-1.5 rounded-md border border-cyan/30 bg-bg-elev/90 px-2.5 py-1 font-mono text-[11px] text-cyan">
                 <span className="size-1.5 rounded-full bg-cyan caret-blink" />
                 {t("chartLoading")}
+              </span>
+            </div>
+          )}
+          {/* 刷新失败、图上是旧数据：角标提示「显示的是上一次数据」,不静默误导。 */}
+          {staleError && (
+            <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-6">
+              <span className="flex items-center gap-1.5 rounded-md border border-gold/30 bg-bg-elev/90 px-2.5 py-1 font-mono text-[11px] text-gold">
+                <span className="size-1.5 rounded-full bg-gold" />
+                {t("chartStale")}
               </span>
             </div>
           )}

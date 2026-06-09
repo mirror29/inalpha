@@ -112,6 +112,7 @@
       "chart": "Price",
       "chartEmpty": "No candles available for this instrument.",
       "chartError": "Could not load candles.",
+      "chartStale": "Refresh failed — showing previous data.",
       "chartLoading": "Loading…",
       "decisions": "Decision Timeline",
       "decisionsEmpty": "No decisions recorded yet — the runner hasn't placed an order.",
