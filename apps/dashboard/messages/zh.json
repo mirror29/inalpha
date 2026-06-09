@@ -264,6 +264,16 @@
       "audit": "沙盒审计",
       "promotion": "晋级",
       "code": "源码",
+      "opsLog": "操作日志",
+      "opsLogHint": "这条策略从创建到运行的全过程 —— 创建、晋级、每次启动/停止模拟盘。",
+      "op": {
+        "created": "创建策略",
+        "promoted": "晋级为正式策略",
+        "started": "启动模拟盘",
+        "stopped": "停止模拟盘",
+        "errored": "运行出错停止",
+        "by": "by {who}"
+      },
       "instances": "运行实例",
       "instancesEmpty": "该策略还没启动过模拟盘。promote 后启动会出现在这里。",
       "instancesHint": "最近一个 run 的行情与成交,见下方 K 线与历史交易。",

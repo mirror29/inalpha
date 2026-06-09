@@ -264,6 +264,16 @@
       "audit": "Sandbox Audit",
       "promotion": "Promotion",
       "code": "Source",
+      "opsLog": "Operation Log",
+      "opsLogHint": "This strategy's full lifecycle — created, promoted, every paper-trading start/stop.",
+      "op": {
+        "created": "Strategy created",
+        "promoted": "Promoted to live pool",
+        "started": "Paper trading started",
+        "stopped": "Paper trading stopped",
+        "errored": "Stopped on error",
+        "by": "by {who}"
+      },
       "instances": "Run Instances",
       "instancesEmpty": "This strategy hasn't run paper trading yet. Promote and start it to see instances here.",
       "instancesHint": "Price action and fills for the most recent run are shown below.",
