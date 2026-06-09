@@ -117,6 +117,12 @@ export function ChatThread({
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const loadedThreadRef = useRef<string | null>(null);
+  // 持最新 setMessages —— 回填 effect 只依赖 threadId,不把 setMessages 进依赖:它来自
+  // useCopilotChatInternal,agent 重连/流式时身份会变,若进依赖会让回填 effect 反复 cleanup
+  // 重跑;而重跑因 loadedThreadRef 去重提前 return,**原 fetch 的 finally 被 cancelled 跳过
+  // → historyLoading 永远卡 true、栏内一直显示「加载历史会话…」**。用 ref 断开这条链。
+  const setMessagesRef = useRef(setMessages);
+  setMessagesRef.current = setMessages;
   // 本轮 run 期间所有在途 `/api/copilotkit` 请求的中止器 + "正在停止"标志(见 handleStop)。
   const inflightAborts = useRef<Set<AbortController>>(new Set());
   const stoppingRef = useRef(false);
@@ -293,18 +299,20 @@ export function ChatThread({
     fetch(`/api/chat/threads/${threadId}/messages`)
       .then((r) => (r.ok ? r.json() : { messages: [] }))
       .then((d: { messages?: { id: string; role: string; content: string }[] }) => {
-        if (!cancelled) setMessages((d.messages ?? []) as never);
+        if (!cancelled) setMessagesRef.current((d.messages ?? []) as never);
       })
       .catch(() => {
-        if (!cancelled) setMessages([] as never);
+        if (!cancelled) setMessagesRef.current([] as never);
       })
       .finally(() => {
-        if (!cancelled) setHistoryLoading(false);
+        // 不加 cancelled 守卫:即便本 effect 被 cleanup,该 threadId 的回填确已结束,
+        // loading 态必须落回 false,否则一旦 cleanup 抢在 finally 前就永久卡 true。
+        setHistoryLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [threadId, setMessages]);
+  }, [threadId]);
 
   // 每次点开历史下拉都重新拉列表:先清空回到 loading 态(不显示上次的旧列表),
   // 再 no-store 强制走网络(避免浏览器缓存 GET),保证看到的是最新会话。
@@ -482,7 +490,7 @@ export function ChatThread({
               </p>
             ) : threads === null ? (
               <p className="px-3 py-3 font-mono text-xs text-fg-muted">
-                {t("thinking")}
+                {t("loadingHistory")}
               </p>
             ) : threads.length === 0 ? (
               <p className="px-3 py-3 text-xs text-fg-muted">
