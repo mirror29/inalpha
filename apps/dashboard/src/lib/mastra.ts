@@ -3,6 +3,7 @@ import "server-only";
 import { MastraClient } from "@mastra/client-js";
 
 import { BACKENDS, CONSOLE_SUBJECT, getServiceToken } from "./backend";
+import { stripPageContext } from "./page-context-shared";
 
 /**
  * Mastra memory(会话/线程)读取层 —— **仅 server 侧**。
@@ -89,7 +90,9 @@ export async function listChatThreads(
 
   const summaries: ChatThreadSummary[] = (res.threads ?? []).map((t) => ({
     id: t.id,
-    title: t.title?.trim() || null,
+    // 清洗标题里夹带的 <page_context> 块（对话栏给消息加的页面上下文,不该进标题）。
+    // 老会话标题被回填进了 envelope → 清洗后变 null → 进下面的回填重导出干净标题并持久化(自愈)。
+    title: cleanTitle(t.title),
     createdAt: toIso(t.createdAt),
     updatedAt: toIso(t.updatedAt ?? t.createdAt),
   }));
@@ -108,7 +111,10 @@ export async function listChatThreads(
         const msgs = await listChatMessages(s.id);
         const first = msgs.find((m) => m.role === "user");
         if (!first) return;
-        s.title = first.content.trim().slice(0, 60);
+        // 从首条用户消息导出标题 —— 先剥掉 <page_context> 块,只留用户原话。
+        const clean = cleanTitle(first.content);
+        if (!clean) return;
+        s.title = clean;
         // 持久化回写,下次轮询直接读 title、不再拉消息(自愈,避免每 8s 重复 fan-out)。
         void setChatThreadTitle(s.id, s.title).catch(() => {});
       } finally {
@@ -180,6 +186,16 @@ interface RawMessage {
 function toIso(v: string | Date | undefined): string {
   if (!v) return "";
   return v instanceof Date ? v.toISOString() : String(v);
+}
+
+/**
+ * 清洗会话标题:剥掉 <page_context> 块 + 截断到 60 字。空/纯 envelope → null。
+ * 用于读取(老标题里混入了 envelope)与回填(从首条消息导出)两处,保证标题只显用户原话。
+ */
+function cleanTitle(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const cleaned = stripPageContext(raw).trim().slice(0, 60).trim();
+  return cleaned || null;
 }
 
 /** MastraDBMessage.content 可能是 string,或 {parts:[{type,text}]},或多模态数组。 */

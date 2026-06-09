@@ -3,6 +3,7 @@
 import { useCopilotChatInternal } from "@copilotkit/react-core";
 import {
   History,
+  MapPin,
   SendHorizontal,
   SquarePen,
   Square,
@@ -22,6 +23,11 @@ import {
 } from "react";
 
 import { cn } from "@/lib/cn";
+import {
+  buildPageContextEnvelope,
+  stripPageContext,
+  usePageContext,
+} from "@/lib/page-context";
 import { DivinationCard } from "@/components/divination/DivinationCard";
 import { isDivinationTool, parseDivination } from "@/components/divination/types";
 import { ChatMarkdown } from "./ChatMarkdown";
@@ -106,6 +112,14 @@ export function ChatThread({
   const messages = (hook.messages ?? []) as unknown as AGMessage[];
   const { sendMessage, setMessages, isLoading, stopGeneration } = hook;
   const [draft, setDraft] = useState("");
+  // 当前页面上下文(随路由更新)+ 用户是否临时摘掉本页上下文。
+  // 摘掉只对「当前这页」生效 —— 一旦导航到别的页(kind/id 变化)即恢复默认带上。
+  const page = usePageContext();
+  const [contextDismissed, setContextDismissed] = useState(false);
+  useEffect(() => {
+    setContextDismissed(false);
+  }, [page.kind, page.id]);
+  const contextAttached = !contextDismissed;
   // 切会话回填历史消息的在途态 —— 与「思考中」(agent 生成中)区分:切 thread 时 CopilotKit
   // 会重连 agent(connectAgent → isRunning=true),若此时只看 isLoading 会把「正在拉历史」
   // 误显示成「思考中」,且历史还没回填 → 满屏只有「思考中」。见下方回填 effect 与消息区渲染。
@@ -314,13 +328,13 @@ export function ChatThread({
     };
   }, [threadId]);
 
-  // 每次点开历史下拉都重新拉列表:先清空回到 loading 态(不显示上次的旧列表),
-  // 再 no-store 强制走网络(避免浏览器缓存 GET),保证看到的是最新会话。
+  // 点开历史下拉:**保留上次列表立即展示**(不再清空回 loading 态),后台 no-store 重新拉、
+  // 拿到再替换 —— 重开瞬间出内容,避免每次「思考中」白屏 +（标题持久化后）后端只剩一次
+  // listMemoryThreads 调用。仅首次(threads===null)才显加载态。
   useEffect(() => {
     if (!historyOpen) return;
     let cancelled = false;
     setHistoryError(false);
-    setThreads(null);
     fetch("/api/chat/threads", { cache: "no-store" })
       .then((r) => r.json())
       .then((d: { threads?: ThreadSummary[]; sourceDown?: boolean }) => {
@@ -378,10 +392,15 @@ export function ChatThread({
     // fetch patch 当作"停止后的后续段"静默 abort 掉(消息凭空消失、无任何反馈)。
     stoppingRef.current = false;
     setDraft("");
+    // 带上页面上下文(若用户没摘掉):拼在 content 开头,让 agent 知道用户此刻在看哪个页面。
+    // 标题仍用原始 text(见下),不被 envelope 污染;用户气泡渲染时由 stripPageContext 剥回原话。
+    const content = contextAttached
+      ? buildPageContextEnvelope(page) + text
+      : text;
     void sendMessage({
       id: crypto.randomUUID(),
       role: "user",
-      content: text,
+      content,
     } as Parameters<typeof sendMessage>[0]);
     if (isFirst && threadId) {
       void fetch(`/api/chat/threads/${threadId}/title`, {
@@ -442,6 +461,34 @@ export function ChatThread({
             {t("online")}
           </span>
         </div>
+        {/* 页面上下文胶囊 —— 透明地告诉用户「agent 此刻看到了哪个页面」,✕ 可临时摘掉。 */}
+        {contextAttached && (
+          <div
+            title={`${t("context.viewing")} ${t(`context.kind.${page.kind}`)}${
+              page.id ? ` · ${page.id.slice(0, 8)}` : ""
+            }`}
+            className="flex min-w-0 items-center gap-1 rounded-full border border-border-subtle bg-bg/60 py-0.5 pl-2 pr-1 text-[11px] text-fg-muted"
+          >
+            <MapPin className="size-3 shrink-0 text-cyan" strokeWidth={2} />
+            <span className="truncate text-fg">
+              {t(`context.kind.${page.kind}`)}
+            </span>
+            {page.id && (
+              <span className="shrink-0 font-mono text-fg-muted/70 tabular-nums">
+                {page.id.slice(0, 8)}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setContextDismissed(true)}
+              aria-label={t("context.dismiss")}
+              title={t("context.dismiss")}
+              className="shrink-0 rounded-full p-0.5 text-fg-muted/70 transition-colors hover:bg-bg-elev/60 hover:text-fg"
+            >
+              <X className="size-3" strokeWidth={2} />
+            </button>
+          </div>
+        )}
         <button
           type="button"
           onClick={onNewSession}
@@ -632,10 +679,11 @@ function MessageRow({
   const text = textOf(message.content);
 
   if (message.role === "user") {
+    // 剥掉随消息夹带的 <page_context> 块 —— 气泡只显示用户原话(新消息 + 历史回填同理)。
     return (
       <div className="rise flex justify-end">
         <div className="max-w-[85%] whitespace-pre-wrap rounded-lg rounded-br-sm bg-cyan/10 px-3 py-2 text-sm text-fg">
-          {text}
+          {stripPageContext(text)}
         </div>
       </div>
     );
