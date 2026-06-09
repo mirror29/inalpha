@@ -4,7 +4,14 @@ import { useLocale, useTranslations } from "next-intl";
 
 import type { OrderRecord } from "@/lib/types";
 import { cn } from "@/lib/cn";
-import { fmtNum, fmtQty, fmtTime, instrumentLabel } from "@/lib/format";
+import {
+  fmtNum,
+  fmtQty,
+  fmtSigned,
+  fmtTime,
+  instrumentLabel,
+  pnlColor,
+} from "@/lib/format";
 import { Panel } from "@/components/ui/Panel";
 import { OrderStatusBadge } from "@/components/ui/StatusBadge";
 import { Td, TableEmpty, TableHeadRow, Th } from "@/components/ui/Table";
@@ -43,6 +50,7 @@ export function OrdersTable({
                 <Th>{t("col.type")}</Th>
                 <Th right>{t("col.qty")}</Th>
                 <Th right>{t("col.fill")}</Th>
+                <Th right>{t("col.pnl")}</Th>
                 <Th right>{t("col.status")}</Th>
               </TableHeadRow>
             </thead>
@@ -80,6 +88,18 @@ export function OrdersTable({
                     {o.avg_fill_price === null
                       ? "—"
                       : fmtNum(o.avg_fill_price, locale, 4)}
+                  </Td>
+                  <Td right mono>
+                    {/* == null 同时挡 null 与 undefined(旧 paper 服务未升级前不返该字段)。 */}
+                    {o.realized_pnl == null ? (
+                      <span className="text-fg-muted/40">—</span>
+                    ) : o.realized_pnl === 0 ? (
+                      <span className="text-fg-muted/60">0</span>
+                    ) : (
+                      <span className={pnlColor(o.realized_pnl)}>
+                        {fmtSigned(o.realized_pnl, null, locale)}
+                      </span>
+                    )}
                   </Td>
                   <Td right>
                     <OrderStatusBadge status={o.status} />

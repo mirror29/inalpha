@@ -328,7 +328,7 @@ async def execute_plan(
             assert isinstance(order_id, str)
             # D-11：统一走共享 fills helper（多币种桶 + positions.currency + closed_trades）。
             # 顺带修了原 plan 路径漏传 ts_event/order_id（apply_fill 必填）+ 漏写 closed_trades。
-            await apply_fill_to_positions_and_cash(
+            realized_pnl = await apply_fill_to_positions_and_cash(
                 db,
                 account_id=account_id,
                 venue=venue,
@@ -339,6 +339,10 @@ async def execute_plan(
                 fee=Decimal(str(result["fee"])),
                 ts_event=ts_event,
                 order_id=order_id,
+            )
+            # 回写这笔成交的已实现盈亏(开仓单 0 / 平仓单实现盈亏)。
+            await orders_store.set_realized_pnl(
+                db, client_order_id=order_id, realized_pnl=realized_pnl
             )
         # plan 切 executed（即使 result.status=REJECTED 也 executed —— "已尝试"是事实）
         await plans_store.record_execution(
