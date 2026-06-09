@@ -95,7 +95,10 @@ export async function GET(req: NextRequest) {
             body: { venue, symbol, timeframe, from_ts: fromTs, to_ts: toTs },
           }).then(() => undefined);
           inflightBackfill.set(key, pending);
-          pending.finally(() => inflightBackfill.delete(key));
+          // finally 链返回的 Promise 在 backfill reject 时本身也 rejected,下方只 await pending、
+          // 不消费它 → Node 15+ 会升级成 unhandledRejection;补 .catch 吞掉(实际错误仍由
+          // await pending 的 try/catch 处理)（CR）。
+          pending.finally(() => inflightBackfill.delete(key)).catch(() => {});
         }
         await pending;
         sorted = sortAsc(await readBars());
