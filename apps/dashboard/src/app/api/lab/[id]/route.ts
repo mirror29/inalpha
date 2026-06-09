@@ -2,11 +2,20 @@ import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
 import type {
+  BacktestRunSummary,
+  BacktestTradeRecord,
   CandidateDetailPayload,
   StrategyCandidateRecord,
   StrategyRunDecisionRecord,
   StrategyRunRecord,
 } from "@/lib/types";
+
+/** 后端 GET /backtest_runs 一行(只取本页要的字段)。 */
+interface RawBacktestRun {
+  run_id: string;
+  config: Record<string, unknown>;
+  created_at: string;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -50,10 +59,37 @@ export async function GET(
         ).catch(() => [] as StrategyRunDecisionRecord[])
       : [];
 
+    // 最近一次回测概要(回测时间/区间)+ 逐笔成交 —— best-effort,失败降级,不阻塞详情。
+    // 回测 strategy_code 对候选路径固定为 "candidate:<id>"(见 paper runner)。
+    const backtestRunsRaw = await backendFetch<RawBacktestRun[]>("paper", "/backtest_runs", {
+      query: { strategy_code: `candidate:${id}`, limit: 1 },
+    }).catch(() => [] as RawBacktestRun[]);
+    const latestBacktest = backtestRunsRaw[0];
+    const backtestRun: BacktestRunSummary | null = latestBacktest
+      ? {
+          runId: latestBacktest.run_id,
+          createdAt: latestBacktest.created_at,
+          periodStart: strOrNull(latestBacktest.config.from_ts),
+          periodEnd: strOrNull(latestBacktest.config.to_ts),
+          venue: strOrNull(latestBacktest.config.venue),
+          symbol: strOrNull(latestBacktest.config.symbol),
+          timeframe: strOrNull(latestBacktest.config.timeframe),
+        }
+      : null;
+    const backtestTrades = backtestRun
+      ? await backendFetch<BacktestTradeRecord[]>(
+          "paper",
+          `/backtest_runs/${backtestRun.runId}/trades`,
+          { query: { limit: 500 } },
+        ).catch(() => [] as BacktestTradeRecord[])
+      : [];
+
     const payload: CandidateDetailPayload = {
       candidate,
       runs,
       latestRunDecisions,
+      backtestRun,
+      backtestTrades,
       asOf: new Date().toISOString(),
     };
     return NextResponse.json(payload, {
@@ -67,6 +103,8 @@ export async function GET(
           candidate: null,
           runs: [],
           latestRunDecisions: [],
+          backtestRun: null,
+          backtestTrades: [],
           asOf: new Date().toISOString(),
         };
         return NextResponse.json(payload, { status: 404 });
@@ -81,4 +119,9 @@ export async function GET(
       { status: 500 },
     );
   }
+}
+
+/** config 里的字段可能缺失/非字符串 —— 取字符串否则 null。 */
+function strOrNull(v: unknown): string | null {
+  return typeof v === "string" && v ? v : null;
 }

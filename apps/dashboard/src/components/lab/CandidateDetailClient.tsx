@@ -5,18 +5,21 @@ import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import useSWR from "swr";
 
 import type {
+  BacktestRunSummary,
+  BacktestTradeRecord,
   CandidateDetailPayload,
   StrategyCandidateRecord,
   StrategyRunRecord,
 } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
-import { fmtDateTime, fmtSigned, pnlColor } from "@/lib/format";
+import { fmtDateTime, fmtNum, fmtQty, fmtSigned, pnlColor } from "@/lib/format";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip } from "@/components/ui/LiveStrip";
 import { Panel } from "@/components/ui/Panel";
 import { CandidateStatusBadge, RunStatusBadge } from "@/components/ui/StatusBadge";
+import { Td, TableEmpty, TableHeadRow, Th } from "@/components/ui/Table";
 import { DecisionTimeline } from "@/components/runners/DecisionTimeline";
 import { RunnerChart } from "@/components/runners/RunnerChart";
 import { MetricsGrid } from "./MetricsGrid";
@@ -90,10 +93,17 @@ export function CandidateDetailClient({ id }: { id: string }) {
           </header>
 
           <Panel title={t("metrics")}>
+            {/* 回测时间 / 区间 —— 让用户知道这组指标是哪天、跑哪段行情得出的。 */}
+            {data.backtestRun && (
+              <BacktestMeta run={data.backtestRun} locale={locale} />
+            )}
             <div className="p-4">
               <MetricsGrid metrics={c.metrics} fitness={c.fitness} />
             </div>
           </Panel>
+
+          {/* 回测逐笔成交(含每笔实现盈亏)—— 该候选最近一次回测的买卖复盘。 */}
+          <BacktestTradesPanel trades={data.backtestTrades} locale={locale} />
 
           {/* 操作日志:由现有状态(创建/晋级/各 run 启停)派生的统一时间线 —— agent 对这条
               策略做过的事一目了然,便于回溯。 */}
@@ -323,6 +333,153 @@ function RunInstancesPanel({
       )}
     </Panel>
   );
+}
+
+/** 回测时间 / 区间小条 —— 置于 metrics 面板顶部,标明这组指标的来源回测。 */
+function BacktestMeta({
+  run,
+  locale,
+}: {
+  run: BacktestRunSummary;
+  locale: string;
+}) {
+  const t = useTranslations("lab.detail");
+  const period =
+    run.periodStart && run.periodEnd
+      ? `${fmtDateTime(run.periodStart, locale)} → ${fmtDateTime(run.periodEnd, locale)}`
+      : null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border-subtle/60 px-4 py-2 font-mono text-[11px] text-fg-muted">
+      <span>
+        <span className="text-fg-muted/60">{t("backtestTime")}</span>{" "}
+        <span className="text-fg-muted">{fmtDateTime(run.createdAt, locale)}</span>
+      </span>
+      {period && (
+        <span>
+          <span className="text-fg-muted/60">{t("backtestPeriod")}</span>{" "}
+          <span className="text-fg-muted">{period}</span>
+        </span>
+      )}
+      {run.symbol && (
+        <span className="text-fg-muted/70">
+          {run.symbol}
+          {run.timeframe ? ` · ${run.timeframe}` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 回测逐笔成交表(含每笔实现盈亏)—— 复用 Table 原语,不套 DecisionTimeline
+ * (它无 PnL 列且带 live-run 语义)。回测无被拒单,outcome 恒成交,故不设 outcome 列。
+ */
+function BacktestTradesPanel({
+  trades,
+  locale,
+}: {
+  trades: BacktestTradeRecord[];
+  locale: string;
+}) {
+  const t = useTranslations("lab.detail");
+  const tIntent = useTranslations("runners.intent");
+
+  return (
+    <Panel
+      title={t("backtestTrades")}
+      aside={
+        <span className="tnum font-mono text-xs text-fg-muted">
+          {trades.length}
+        </span>
+      }
+    >
+      {trades.length === 0 ? (
+        <TableEmpty>{t("backtestTradesEmpty")}</TableEmpty>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <TableHeadRow>
+                <Th>{t("tradeCol.time")}</Th>
+                <Th>{t("tradeCol.intent")}</Th>
+                <Th>{t("tradeCol.side")}</Th>
+                <Th right>{t("tradeCol.qty")}</Th>
+                <Th right>{t("tradeCol.fill")}</Th>
+                <Th right>{t("tradeCol.fee")}</Th>
+                <Th right>{t("tradeCol.pnl")}</Th>
+              </TableHeadRow>
+            </thead>
+            <tbody>
+              {trades.map((d) => (
+                <tr
+                  key={d.seq}
+                  className="border-t border-border-subtle/60 hover:bg-bg-elev/30"
+                >
+                  <Td mono muted className="whitespace-nowrap">
+                    {fmtBacktestTs(d.bar_ts, locale)}
+                  </Td>
+                  <Td className="whitespace-nowrap">
+                    <span className="font-mono text-[11px] uppercase tracking-wider text-fg">
+                      {d.intent ? tIntent(d.intent) : tIntent("unknown")}
+                    </span>
+                  </Td>
+                  <Td>
+                    <span
+                      className={cn(
+                        "font-mono text-xs font-medium uppercase",
+                        d.side === "BUY" ? "text-bull" : "text-fox-red",
+                      )}
+                    >
+                      {d.side}
+                    </span>
+                  </Td>
+                  <Td right mono>
+                    {fmtQty(d.quantity, locale)}
+                  </Td>
+                  <Td right mono>
+                    {d.fill_price === null ? (
+                      <span className="text-fg-muted/50">—</span>
+                    ) : (
+                      fmtNum(d.fill_price, locale, 4)
+                    )}
+                  </Td>
+                  <Td right mono muted>
+                    {d.fee === null || d.fee === 0 ? (
+                      <span className="text-fg-muted/50">—</span>
+                    ) : (
+                      fmtNum(d.fee, locale, 4)
+                    )}
+                  </Td>
+                  <Td right mono>
+                    {d.realized_pnl === null || d.realized_pnl === 0 ? (
+                      <span className="text-fg-muted/50">—</span>
+                    ) : (
+                      <span className={pnlColor(d.realized_pnl)}>
+                        {fmtSigned(d.realized_pnl, null, locale)}
+                      </span>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+/** 回测成交时间到分钟(跨多根 bar,带日期)。 */
+function fmtBacktestTs(iso: string, locale: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat(locale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
 }
 
 function AuditPanel({ audit }: { audit: Record<string, unknown> }) {

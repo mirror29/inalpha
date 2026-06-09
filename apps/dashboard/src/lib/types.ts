@@ -221,6 +221,35 @@ export interface LabPayload {
   asOf: string;
 }
 
+/** 该候选最近一次回测的概要(回测时间 / 区间)。 */
+export interface BacktestRunSummary {
+  runId: string;
+  /** 回测落库时刻(= 跑于)。 */
+  createdAt: string;
+  /** 回测区间(config.from_ts / to_ts)；拿不到为 null。 */
+  periodStart: string | null;
+  periodEnd: string | null;
+  venue: string | null;
+  symbol: string | null;
+  timeframe: string | null;
+}
+
+/** GET /backtest_runs/{id}/trades 一行 —— 回测逐笔成交(含每笔实现盈亏)。 */
+export interface BacktestTradeRecord {
+  seq: number;
+  bar_ts: string;
+  bar_close: number;
+  side: "BUY" | "SELL";
+  quantity: number;
+  order_type: string;
+  fill_price: number | null;
+  fee: number | null;
+  /** 本笔成交实现盈亏(开仓笔=0,平仓/反手笔为价差盈亏,不含手续费)。 */
+  realized_pnl: number | null;
+  intent: "open_long" | "open_short" | "close" | null;
+  tag: string | null;
+}
+
 /** GET /api/lab/[id] —— 候选详情。 */
 export interface CandidateDetailPayload {
   candidate: StrategyCandidateRecord | null;
@@ -228,6 +257,10 @@ export interface CandidateDetailPayload {
   runs: StrategyRunRecord[];
   /** 最近一个 run 的决策(K 线叠加 + 历史交易表用);无 run 时为空。 */
   latestRunDecisions: StrategyRunDecisionRecord[];
+  /** 最近一次回测概要(回测时间/区间);拿不到为 null。 */
+  backtestRun: BacktestRunSummary | null;
+  /** 最近一次回测的逐笔成交(含每笔实现盈亏);无回测/无成交为空。 */
+  backtestTrades: BacktestTradeRecord[];
   asOf: string;
 }
 
