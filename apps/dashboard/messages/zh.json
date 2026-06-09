@@ -149,6 +149,8 @@
     "detail": {
       "back": "Live Runner",
       "notFound": "未找到该 run。",
+      "strategy": "策略",
+      "viewStrategy": "查看策略详情",
       "chart": "K 线",
       "chartEmpty": "该标的暂无 K 线数据。",
       "chartError": "K 线加载失败。",

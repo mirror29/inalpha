@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { backendFetch, BackendError } from "@/lib/backend";
 import type {
   RunDetailPayload,
+  StrategyCandidateSummary,
   StrategyRunDecisionRecord,
   StrategyRunRecord,
 } from "@/lib/types";
@@ -46,9 +47,19 @@ export async function GET(
       ).catch(() => [] as StrategyRunDecisionRecord[]),
     ]);
 
+    // run 所跑的策略候选(用 candidate_id 反查)—— best-effort,失败/缺失为 null,
+    // 详情页退化为只显 candidate_id 短码,不阻塞主体。run 不存在则无需查。
+    const candidate = run
+      ? await backendFetch<StrategyCandidateSummary>(
+          "paper",
+          `/strategy_candidates/${run.candidate_id}`,
+        ).catch(() => null)
+      : null;
+
     const payload: RunDetailPayload = {
       run,
       decisions: decisionsRes,
+      candidate,
       asOf: new Date().toISOString(),
     };
     return NextResponse.json(payload, {
