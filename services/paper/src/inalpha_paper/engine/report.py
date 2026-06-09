@@ -31,6 +31,30 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
+class FillRecord:
+    """回测期间单笔成交的快照 —— 逐笔成交复盘用（D-11+ · 详情页「回测成交」表）。
+
+    由 ``Portfolio._handle_fill`` 每笔 fill 追加一条；``BacktestReport`` 带回主进程后
+    落 ``backtest_trades`` 表。**纯原生字段，frozen+slots → 可 pickle**（子进程回传）。
+
+    - ``realized_pnl``：本笔 fill 引起的 ``Position.realized_pnl`` 增量（开仓笔=0，
+      平仓/反手笔=该笔价差盈亏，**不含手续费**，与 ``Portfolio.closed_trade_pnls`` 同口径）
+    - ``bar_close``：成交当时的 mark（撮合早于本根 bar mark 更新，缺失时退回 ``fill_price``，近似）
+    - ``intent``：按成交前持仓方向 + side 派生（open_long / open_short / close）
+    """
+    ts_ns: int
+    bar_close: float
+    side: str
+    quantity: float
+    order_type: str
+    fill_price: float
+    fee: float
+    realized_pnl: float
+    intent: str | None = None
+    tag: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BacktestReport:
     initial_cash: float
     final_equity: float
@@ -55,6 +79,8 @@ class BacktestReport:
     win_rate: float | None = None
     #: ``[(ts_ns, equity)]`` 序列
     equity_curve: list[tuple[int, float]] = field(default_factory=list)
+    #: 逐笔成交（含每笔实现盈亏），落 ``backtest_trades`` 表用
+    fills: list[FillRecord] = field(default_factory=list)
     #: 账户是否"穿仓"——任意时点 equity 跌破 -1% × initial_cash（物理上 spot
     #: 账户 equity 不应 < 0）。True 表示本次回测结果在物理上不可信，agent /
     #: 前端应当显式警告，不要直接渲染 Sharpe / 收益率（数学正确但语义无效）。
@@ -115,6 +141,7 @@ class BacktestReport:
             max_drawdown_pct=metrics.max_drawdown_pct(equity_values),
             win_rate=metrics.win_rate(portfolio.closed_trade_pnls),
             equity_curve=equity_curve,
+            fills=list(portfolio.fills),
             blew_up=blew_up,
             health_warnings=warnings,
         )
