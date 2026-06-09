@@ -4,7 +4,11 @@ import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import useSWR from "swr";
 
-import type { CandidateDetailPayload, StrategyRunRecord } from "@/lib/types";
+import type {
+  CandidateDetailPayload,
+  StrategyCandidateRecord,
+  StrategyRunRecord,
+} from "@/lib/types";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
 import { fmtDateTime, fmtSigned, pnlColor } from "@/lib/format";
@@ -91,6 +95,10 @@ export function CandidateDetailClient({ id }: { id: string }) {
             </div>
           </Panel>
 
+          {/* 操作日志:由现有状态(创建/晋级/各 run 启停)派生的统一时间线 —— agent 对这条
+              策略做过的事一目了然,便于回溯。 */}
+          <OpsLog candidate={c} runs={data.runs} locale={locale} />
+
           {/* 执行记录:该策略派生的 live runner + 最近一个 run 的 K 线 / 历史交易。 */}
           <RunInstancesPanel runs={data.runs} locale={locale} />
           {data.runs[0] && (
@@ -115,6 +123,141 @@ export function CandidateDetailClient({ id }: { id: string }) {
         </>
       )}
     </div>
+  );
+}
+
+/** 操作日志一条(由现有状态派生)。 */
+type OpEvent = {
+  ts: string;
+  type: "created" | "promoted" | "started" | "stopped" | "errored";
+  /** 副信息:晋级理由 / run 标的。 */
+  detail?: string;
+  /** 发起方(author / promoted_by)。 */
+  by?: string;
+  /** 关联 run —— 有则整条可点进 run 详情。 */
+  runId?: string;
+};
+
+/** 操作类型 → 状态灯颜色。 */
+const OP_DOT: Record<OpEvent["type"], string> = {
+  created: "bg-fg-muted/50",
+  promoted: "bg-bull",
+  started: "bg-cyan",
+  stopped: "bg-fg-muted/50",
+  errored: "bg-fox-red",
+};
+
+/**
+ * 策略操作日志 —— 从现有状态派生的统一时间线(不额外请求 / 不改后端):
+ * 创建(created_at + author)、晋级(audit.promotion)、各 run 的启动 / 停止 / 出错。
+ * 让「agent 对这条策略做过什么」一眼可回溯。
+ */
+function OpsLog({
+  candidate,
+  runs,
+  locale,
+}: {
+  candidate: StrategyCandidateRecord;
+  runs: StrategyRunRecord[];
+  locale: string;
+}) {
+  const t = useTranslations("lab.detail");
+
+  const events: OpEvent[] = [];
+  // 创建
+  events.push({
+    ts: candidate.created_at,
+    type: "created",
+    by: candidate.author,
+  });
+  // 晋级(audit.promotion 里有就加)
+  const promotion =
+    candidate.audit && typeof candidate.audit["promotion"] === "object"
+      ? (candidate.audit["promotion"] as Record<string, unknown>)
+      : null;
+  if (promotion && typeof promotion["promoted_at"] === "string") {
+    events.push({
+      ts: promotion["promoted_at"],
+      type: "promoted",
+      detail:
+        typeof promotion["reason"] === "string" ? promotion["reason"] : undefined,
+      by:
+        typeof promotion["promoted_by"] === "string"
+          ? promotion["promoted_by"]
+          : undefined,
+    });
+  }
+  // 各 run 的启动 / 停止(停止态才有 stopped_at)
+  for (const r of runs) {
+    const inst = `${r.symbol} · ${r.venue} · ${r.timeframe}`;
+    events.push({ ts: r.started_at, type: "started", detail: inst, runId: r.id });
+    if (r.stopped_at) {
+      events.push({
+        ts: r.stopped_at,
+        type: r.status === "errored" ? "errored" : "stopped",
+        detail: inst,
+        runId: r.id,
+      });
+    }
+  }
+  // 最新在上
+  events.sort((a, b) => b.ts.localeCompare(a.ts));
+
+  return (
+    <Panel
+      title={t("opsLog")}
+      aside={
+        <span className="tnum font-mono text-xs text-fg-muted">
+          {events.length}
+        </span>
+      }
+    >
+      <p className="border-b border-border-subtle/60 px-4 py-2 text-[11px] text-fg-muted/70">
+        {t("opsLogHint")}
+      </p>
+      <ul className="divide-y divide-border-subtle/60">
+        {events.map((e, i) => {
+          const row = (
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-2.5">
+              <span
+                className={cn(
+                  "inline-block size-2 shrink-0 rounded-full",
+                  OP_DOT[e.type],
+                )}
+              />
+              <span className="text-sm text-fg">{t(`op.${e.type}`)}</span>
+              {e.detail && (
+                <span className="font-mono text-[11px] text-fg-muted">
+                  {e.detail}
+                </span>
+              )}
+              {e.by && (
+                <span className="font-mono text-[10px] uppercase tracking-wider text-fg-muted/60">
+                  {t("op.by", { who: e.by })}
+                </span>
+              )}
+              <span className="tnum ml-auto font-mono text-[10px] text-fg-muted/60 tabular-nums">
+                {fmtDateTime(e.ts, locale)}
+              </span>
+            </div>
+          );
+          return (
+            <li key={`${e.ts}-${e.type}-${i}`}>
+              {e.runId ? (
+                <Link
+                  href={`/runners/${e.runId}`}
+                  className="block transition-colors hover:bg-bg-elev/30"
+                >
+                  {row}
+                </Link>
+              ) : (
+                row
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Panel>
   );
 }
 
