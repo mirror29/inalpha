@@ -7,6 +7,13 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_LIMIT = 300;
 
+/**
+ * 进程级在途回填去重 —— 慢周期(1d 实测 ~36s)回填 > SWR 轮询间隔(20s),否则同一
+ * venue/symbol/tf 会在前一次还没回来时又发一次,两个请求都走进 stale 分支并发回填。
+ * 这里用 key→Promise 把同 key 的并发回填合并成一次,后到者复用同一 Promise。
+ */
+const inflightBackfill = new Map<string, Promise<void>>();
+
 /** timeframe → 秒;不认识返回 null。 */
 function timeframeSeconds(tf: string): number | null {
   const m = /^(\d+)(m|h|d|wk|mo)$/.exec(tf);
@@ -78,11 +85,19 @@ export async function GET(req: NextRequest) {
     const stale = sorted.length === 0 || nowMs - lastMs > 2 * tfSec * 1000;
     if (stale) {
       try {
-        await backendFetch("data", "/backfill/bars", {
-          method: "POST",
-          timeoutMs: 45_000,
-          body: { venue, symbol, timeframe, from_ts: fromTs, to_ts: toTs },
-        });
+        // 同 key 已有在途回填则复用,不再并发发第二次(见 inflightBackfill 注释)。
+        const key = `${venue}|${symbol}|${timeframe}`;
+        let pending = inflightBackfill.get(key);
+        if (!pending) {
+          pending = backendFetch("data", "/backfill/bars", {
+            method: "POST",
+            timeoutMs: 45_000,
+            body: { venue, symbol, timeframe, from_ts: fromTs, to_ts: toTs },
+          }).then(() => undefined);
+          inflightBackfill.set(key, pending);
+          pending.finally(() => inflightBackfill.delete(key));
+        }
+        await pending;
         sorted = sortAsc(await readBars());
       } catch {
         // 忽略：回填失败仍用库里已有的 bar。
