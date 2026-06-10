@@ -247,7 +247,19 @@ function FooterRow({
         {fmtTime(event.ts, locale)}
       </time>
       <KindTag kind={event.kind} />
-      <span className="min-w-0 flex-1 truncate text-fg">{event.title}</span>
+      <span className="min-w-0 truncate text-fg">{event.title}</span>
+      {event.stats?.map((st, i) => (
+        <span
+          key={i}
+          className={cn(
+            "tnum hidden shrink-0 font-mono sm:inline",
+            TONE_TEXT[st.tone ?? "muted"],
+          )}
+        >
+          {st.text}
+        </span>
+      ))}
+      <span className="min-w-0 flex-1" />
       {event.outcome && (
         <span
           className={cn(

@@ -6,6 +6,7 @@ import type {
   ActivityEvent,
   ActivityKind,
   ActivityPayload,
+  ActivityStat,
   ActivityTone,
   OrderRecord,
   StrategyRunDecisionRecord,
@@ -241,15 +242,31 @@ export async function GET() {
   // ── 订单流 ──
   if (ordersR.status === "fulfilled") {
     for (const o of ordersR.value) {
+      const ordStats: ActivityStat[] = [
+        { text: o.side, tone: o.side === "BUY" ? "bull" : "fox" },
+      ];
+      if (o.filled_quantity > 0 && o.avg_fill_price !== null) {
+        ordStats.push({
+          text: `${o.filled_quantity} @ ${o.avg_fill_price}`,
+          tone: "muted",
+        });
+      }
+      if (o.realized_pnl !== null && o.realized_pnl !== 0) {
+        ordStats.push({
+          text: `${o.realized_pnl > 0 ? "+" : ""}${o.realized_pnl.toFixed(2)}`,
+          tone: o.realized_pnl > 0 ? "bull" : "fox",
+        });
+      }
       events.push({
         id: `ord:${o.client_order_id}`,
         kind: "order",
         ts: o.ts_event,
-        title: `${o.symbol ?? "—"} · ${o.side}`,
+        title: o.symbol ?? "—",
         detail: `${o.type} · ${o.status}`,
         outcome: o.status,
         tone: orderTone(o.status),
         href: null,
+        stats: ordStats,
       });
     }
   } else {
@@ -273,17 +290,33 @@ export async function GET() {
         typeof b.metrics?.fitness === "number" ? b.metrics.fitness : null;
       const trades =
         typeof b.metrics?.num_trades === "number" ? b.metrics.num_trades : null;
-      const parts: string[] = [];
-      if (fitness !== null) parts.push(`fitness ${fitness.toFixed(3)}`);
-      if (trades !== null) parts.push(`${trades} trades`);
+      const retPct =
+        typeof b.metrics?.total_return_pct === "number"
+          ? b.metrics.total_return_pct
+          : null;
+      const btStats: ActivityStat[] = [];
+      if (fitness !== null) {
+        btStats.push({
+          text: `fit ${fitness > 0 ? "+" : ""}${fitness.toFixed(2)}`,
+          tone: fitness > 0 ? "bull" : fitness < 0 ? "fox" : "muted",
+        });
+      }
+      if (retPct !== null) {
+        btStats.push({
+          text: `${retPct > 0 ? "+" : ""}${retPct.toFixed(2)}%`,
+          tone: retPct > 0 ? "bull" : retPct < 0 ? "fox" : "muted",
+        });
+      }
+      if (trades !== null) btStats.push({ text: `${trades} tr`, tone: "muted" });
       events.push({
         id: `bt:${b.run_id}`,
         kind: "backtest",
         ts: b.created_at,
         title: `${symbol}${tf ? ` · ${tf}` : ""}`,
-        detail: parts.length > 0 ? parts.join(" · ") : b.strategy_code,
+        detail: b.strategy_code,
         outcome: b.status,
         tone: b.status === "done" ? "cyan" : "fox",
+        stats: btStats,
         // 候选回测 → 策略详情(信息全);内置策略回测 → 通用回测详情页。
         href: candidateId ? `/lab/${candidateId}` : `/backtests/${b.run_id}`,
       });
