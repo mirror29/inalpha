@@ -259,8 +259,14 @@ export async function GET() {
     for (const b of backtestsR.value) {
       const symbol = typeof b.config.symbol === "string" ? b.config.symbol : "—";
       const tf = typeof b.config.timeframe === "string" ? b.config.timeframe : "";
+      // candidate 回测 → 可点进策略详情。config.candidate_id 为主,strategy_code
+      // 的 "candidate:<uuid>" 前缀兜底(防老数据 config 缺字段);内置策略无详情页。
       const candidateId =
-        typeof b.config.candidate_id === "string" ? b.config.candidate_id : null;
+        typeof b.config.candidate_id === "string"
+          ? b.config.candidate_id
+          : b.strategy_code.startsWith("candidate:")
+            ? b.strategy_code.slice("candidate:".length)
+            : null;
       const fitness =
         typeof b.metrics?.fitness === "number" ? b.metrics.fitness : null;
       const trades =
