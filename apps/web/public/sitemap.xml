@@ -4,6 +4,7 @@
   <!-- English homepage (default) -->
   <url>
     <loc>https://inalpha.dev/</loc>
+    <lastmod>2026-06-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>1.0</priority>
     <xhtml:link rel="alternate" hreflang="en" href="https://inalpha.dev/" />
@@ -13,6 +14,7 @@
   <!-- Chinese homepage -->
   <url>
     <loc>https://inalpha.dev/zh/</loc>
+    <lastmod>2026-06-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
     <xhtml:link rel="alternate" hreflang="en" href="https://inalpha.dev/" />

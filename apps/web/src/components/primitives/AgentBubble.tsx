@@ -51,7 +51,7 @@ export function AgentBubble({
   return (
     <article
       className={cn(
-        "relative rounded-lg border bg-bg-elev/40 p-4 backdrop-blur-md transition-colors",
+        "relative rounded-md border bg-bg-elev p-4 transition-colors",
         r.border,
         className,
       )}

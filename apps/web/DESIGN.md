@@ -56,30 +56,36 @@
 
 ## 3. Color System
 
-### 3.1 Token 定义（`src/app/globals.css` `@theme` 块）
+### 3.1 Token 定义（`src/app/globals.css`）
+
+双主题机制：原始语义变量声明在 `:root`/`[data-theme="dark"]` 与 `[data-theme="light"]`，`@theme inline` 把 Tailwind `--color-*` 指向这些原始变量。切 `<html data-theme>` 即整盘换肤。**自定义 CSS / inline-SVG motif 直接吃原始变量（`var(--seal)` / `var(--ink)` / `var(--accent)` …），不要写 `var(--color-*)`**——`@theme inline` 会把 `--color-*` 内联进工具类、不挂到 `:root`。
 
 ```css
-@theme {
+:root, [data-theme="dark"] {
   /* 基底 */
-  --color-bg: #0a0e1a;
-  --color-bg-deep: #060814;     /* hero / widget 浮起感 */
-  --color-bg-elev: #11162a;
-  --color-fg: #f5f5f7;
-  --color-fg-muted: #9ba3b4;
-  --color-border-subtle: #1f2740;
-
-  /* 品牌主调 */
-  --color-cyan: #5fb3ff;        /* primary CTA / lineage / accent */
-  --color-cyan-dim: #2a5a7a;
-  --color-fox-red: #c8463c;     /* 反方 / bear / 风险 / 立场对立 */
-  --color-gold: #d4a744;        /* risk gate / 成功告警 / GitHub stars */
-
-  /* 语义色 (D-9 新增) */
-  --color-bull: #4ade80;        /* 看涨 / 加仓 / profit (国际惯例) */
-  --color-success-dim: #2a7a55;
-  --color-line-data: #5fb3ff;   /* = cyan 的语义化别名，data lineage 用 */
+  --surface-deep:#060814; --surface:#0a0e1a; --surface-elev:#11162a;
+  --ink:#f5f5f7; --ink-muted:#9ba3b4; --hairline:#1f2740;
+  /* 数据 / 交互（国际惯例 green-up / red-down） */
+  --accent:#5fb3ff; --accent-dim:#2a5a7a;   /* 电光青 = 数据 / CTA / lineage */
+  --bull:#4ade80; --bull-dim:#2a7a55; --down:#c8463c; --gold:#d4a744;
+  /* 品牌神道层（神秘 accent —— 绝不进 D2 数据面） */
+  --seal:#c8463c;    /* 朱红印章 —— 鸟居 / 朱印 / 章节锚 */
+  --foxfire:#5fd3b0; /* 狐火 —— 仅氛围 / 彩蛋 */
+  --cream:#f5f0e8;   /* 月白 —— 暖中性高光 / 匾额纸 */
+  --copper:#8a6b3f;  /* 古铜 —— 次要描线 / 边注 */
+}
+[data-theme="light"] {  /* 月白报纸：surface #f4f1e8 / ink #15171d / accent #0d6db0
+                           关键压深：--foxfire #2fa783（#5fd3b0 在月白上几乎不可见） */
+}
+@theme inline {
+  --color-bg:var(--surface); --color-fg:var(--ink); /* …等映射 */
+  --color-cyan:var(--accent); --color-fox-red:var(--down); /* 数据红用法不变 */
+  --color-seal:var(--seal); --color-foxfire:var(--foxfire);
+  --color-cream:var(--cream); --color-copper:var(--copper);
 }
 ```
+
+> 完整 hex（含 light 全套）见 `globals.css`。`--seal` 与 `--down`（数据 bear 红）是**两个 token**（hex 暂同），用途不可混：seal 给 motif / 品牌，down 给数据面。
 
 ### 3.2 使用规则
 
@@ -96,6 +102,33 @@
 ### 3.3 透明度规范
 
 仅用 6 档：`/10 /20 /40 /60 /80 /100`。禁用 `/15 /25 /33` 等任意值。
+
+### 3.4 神秘 accent 纪律（神社 × 审计链 · ADR-0040）
+
+定位是「神秘又不失严谨」：神秘只做**一层包装 accent**，严谨内核临床干净。
+
+**D2 四个临床红线面**（零神秘措辞、零花哨色、等宽精确，**绝不上 seal-watermark / foxfire / 签卦语汇**）：
+
+1. 数字 / 金额 / 收益指标（PnL / Sharpe / IC / 胜率 / 换手）
+2. 审计链 / Plan-Exec / 风控锁（决策留痕 / approval_token / 拒单原因）
+3. 数据 freshness / as_of 标记（最多一句「数据默认溯源」，不当 headline 卖点）
+4. 因子有效性 / 回测报告（factor.timing 选因子依据 / Rank IC / 统计检验）
+
+对应 section（保持纯净）：`BlackBoxProblem` / `UnifiedKernel` / `EngineeringHarness` / `GlobalCoverage`(数字行) / `FAQ`(严肃回答)。新 `AgentIntelligence` 的 factor-timing 子块也属第 ④ 面，强制临床。
+
+**允许神秘的地方（accent 层）**：命名 / 微文案、`--foxfire` 点缀、motif（鸟居 / 朱印 / 御神签 / 狐火 / 卷轴 / 三铜钱 / α 狐崽）、mascot——出现在 hero / CTAFooter / footer colophon / 彩蛋。
+
+**数据青 vs 狐火绿隔离（硬红线）**：
+
+| Token | 唯一语境 | 永不出现在 |
+|---|---|---|
+| `--accent` 数据青 | CTA / 链接 / lineage / 数据 hover / stat | 装饰 / 氛围 / 彩蛋 |
+| `--foxfire` 狐火绿 | 鸟居微光 / 御神签 / 空·加载态 / hover 彩蛋 / mascot 灵光 | 任何数字 / 审计 / freshness / 因子回测 / code diff |
+
+两色色相相近（蓝 vs 蓝绿），**同屏不相邻**。grep 自检（应为空）：
+`rg "foxfire" src/components/sections/{BlackBoxProblem,UnifiedKernel,EngineeringHarness,GlobalCoverage,FAQ}.tsx`
+
+**数量纪律**：每 viewport ≤2 个 motif；数据 section motif=0；motif 永远 z-0 背景层、opacity ≤0.2、不盖信息。装饰 utility 见 `globals.css`：`.seal-glow` / `.foxfire-flicker` / `.seal-watermark` / `.seal-stamp`（均 reduced-motion 静态）。
 
 ---
 
@@ -268,7 +301,7 @@ const prefersReducedMotion = useReducedMotion();
 
 #### `<GlassCard tint="cyan|fox|neutral" />`
 
-- `bg-bg-elev/40 backdrop-blur-md border border-border-subtle rounded-xl p-6`
+- **名称历史遗留**——实现**不用毛玻璃**（§8 已禁 `backdrop-blur`）：纯色 + hairline，`bg-bg-elev border border-border-subtle rounded-md p-6`
 - tint 决定 hover 边框色：cyan→cyan/40 / fox→fox-red/40 / neutral→fg-muted/40
 - 共用：Hero `<LiveDebatePanel>`、DualThesis 双卡、CurrentState 状态卡
 

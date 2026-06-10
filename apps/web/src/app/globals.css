@@ -11,70 +11,150 @@
    覆盖同名 --color-* 变量 —— 切 <html data-theme> 即整盘换肤，所有 bg-·/text-·/
    border-· 工具类（含 opacity 修饰）自动跟随。
    ════════════════════════════════════════════════════════════════════ */
-@theme {
-  /* Base surface — see DESIGN.md §3（dark 默认值） */
-  --color-bg: #0a0e1a;
-  --color-bg-deep: #060814;
-  --color-bg-elev: #11162a;
-  --color-fg: #f5f5f7;
-  --color-fg-muted: #9ba3b4;
-  --color-border-subtle: #1f2740;
-
-  /* Brand */
-  --color-cyan: #5fb3ff;
-  --color-cyan-dim: #2a5a7a;
-  --color-fox-red: #c8463c;
-  --color-gold: #d4a744;
-
-  /* Semantic (D-9 redesign) — international green-up / red-down.
-     ZH-CN fixture data layer reverses on render, never the visual layer. */
-  --color-bull: #4ade80;
-  --color-success-dim: #2a7a55;
-
-  /* Aliases — for clarity in lineage / data-flow contexts. */
-  --color-line-data: var(--color-cyan);
-
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
-  --font-display: var(--font-display), ui-serif, "Iowan Old Style", Georgia, serif;
+/* ── CJK 字面钉死（macOS 鸳鸯体修复，与 dashboard globals.css 同款） ──
+   macOS Chromium 用系统族名 "PingFang SC" 时，weight 500/600 的中文段落会在
+   shaping run 边界丢字重 → 同段前粗后细。local() 按 weight 区间钉死具体字面；
+   非 macOS 不命中即透明跳过。700 钉到 Semibold（PingFang 无 Bold）。 */
+@font-face {
+  font-family: "PingFang Pinned";
+  src: local("PingFangSC-Light"), local("PingFang SC Light");
+  font-weight: 100 349;
+}
+@font-face {
+  font-family: "PingFang Pinned";
+  src: local("PingFangSC-Regular"), local("PingFang SC Regular");
+  font-weight: 350 449;
+}
+@font-face {
+  font-family: "PingFang Pinned";
+  src: local("PingFangSC-Medium"), local("PingFang SC Medium");
+  font-weight: 450 559;
+}
+@font-face {
+  font-family: "PingFang Pinned";
+  src: local("PingFangSC-Semibold"), local("PingFang SC Semibold");
+  font-weight: 560 900;
 }
 
-/* ── 主题：照明 + 纹理 ────────────────────────────────────────────────
-   --color-* 的 dark 默认值已由 @theme 写入 :root；此处只补 color-scheme 与
-   纹理强度。unlayered 规则优先级高于 @theme 的 layered :root，故 light 覆盖生效。 */
+/* ── 原始语义变量（dark 默认） ─────────────────────────────────────────
+   @theme inline 把 Tailwind --color-* 指向这些原始变量；切 <html data-theme>
+   即整盘换肤，所有 bg-·/text-·/border-· 工具类（含 opacity 修饰）自动跟随。
+   自定义 CSS / inline-SVG motif 直接吃原始变量（var(--seal) / var(--ink) …），
+   语义更对，也不依赖 --color-* 是否被 inline。
+   数据青(--accent) 与 狐火绿(--foxfire) 严格隔离：见 DESIGN.md §3.4。 */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
+
+  /* 基底 */
+  --surface-deep: #060814;
+  --surface: #0a0e1a;
+  --surface-elev: #11162a;
+  --ink: #f5f5f7;
+  --ink-muted: #9ba3b4;
+  --hairline: #1f2740;
+
+  /* 数据 / 交互 —— 国际惯例 green-up / red-down */
+  --accent: #5fb3ff; /* 电光青 —— CTA / lineage / 实时数据 */
+  --accent-dim: #2a5a7a;
+  --bull: #4ade80; /* 涨 / 成交 */
+  --bull-dim: #2a7a55;
+  --down: #c8463c; /* 跌 / bear / 风控拒单 / 错误（数据面红） */
+  --gold: #d4a744; /* risk gate / stars / α 高亮 */
+
+  /* 品牌神道层（神秘 accent —— 绝不进 D2 数据面） */
+  --seal: #c8463c; /* 朱红印章 —— 鸟居 / 朱印 / 章节锚 */
+  --foxfire: #5fd3b0; /* 狐火 —— 仅氛围 / 彩蛋 */
+  --cream: #f5f0e8; /* 月白 —— 暖中性高光 / 匾额纸 */
+  --copper: #8a6b3f; /* 古铜 —— 次要描线 / 边注 */
+
+  /* 纹理 */
   --grain-opacity: 0.035;
   --grain-blend: overlay;
+  --vignette: color-mix(in oklab, var(--surface-deep) 70%, transparent);
+  --seal-ink: color-mix(in oklab, var(--seal) 12%, transparent);
 }
 
 [data-theme="light"] {
   color-scheme: light;
 
-  --color-bg: #f4f1e8; /* 报纸暖白 */
-  --color-bg-deep: #e7e3d6; /* 凹槽 */
-  --color-bg-elev: #fcfbf5; /* 抬起的近白卡片 */
-  --color-fg: #15171d; /* 墨黑 */
-  --color-fg-muted: #5b6170;
-  --color-border-subtle: #d9d4c5;
+  --surface-deep: #e7e3d6; /* 凹槽 */
+  --surface: #f4f1e8; /* 报纸暖白 */
+  --surface-elev: #fcfbf5; /* 抬起的近白卡片 */
+  --ink: #15171d; /* 墨黑 */
+  --ink-muted: #5b6170;
+  --hairline: #d9d4c5;
 
-  --color-cyan: #0d6db0; /* 深青 —— 亮底上可读 */
-  --color-cyan-dim: #9cc3df;
-  --color-fox-red: #c8463c;
-  --color-gold: #9a7416;
+  --accent: #0d6db0; /* 深青 —— 亮底上可读 */
+  --accent-dim: #9cc3df;
+  --bull: #0f8a58;
+  --bull-dim: #6fb495;
+  --down: #c0392c;
+  --gold: #9a7416;
 
-  --color-bull: #0f8a58;
-  --color-success-dim: #6fb495;
+  --seal: #b8392f; /* 亮底略压深的朱红，避免发飘 */
+  --foxfire: #2fa783; /* 关键：亮底狐火压深，#5fd3b0 在月白上几乎不可见 */
+  --cream: #fcfbf5;
+  --copper: #6f5630;
 
   --grain-opacity: 0.045;
   --grain-blend: multiply;
+  --vignette: color-mix(in oklab, var(--surface-deep) 55%, transparent);
+  --seal-ink: color-mix(in oklab, var(--seal) 10%, transparent);
+}
+
+/* 按主题切换元素（hero 氛围图 dusk/day 各一张）。 */
+[data-theme="dark"] .theme-light-only {
+  display: none;
+}
+[data-theme="light"] .theme-dark-only {
+  display: none;
+}
+
+/* ── Tailwind token 映射（inline → 工具类引用原始变量） ────────────────── */
+@theme inline {
+  --color-bg: var(--surface);
+  --color-bg-deep: var(--surface-deep);
+  --color-bg-elev: var(--surface-elev);
+  --color-fg: var(--ink);
+  --color-fg-muted: var(--ink-muted);
+  --color-border-subtle: var(--hairline);
+
+  --color-cyan: var(--accent);
+  --color-cyan-dim: var(--accent-dim);
+  --color-bull: var(--bull);
+  --color-success-dim: var(--bull-dim);
+  --color-fox-red: var(--down); /* 数据面 bear 红，用法不变 */
+  --color-gold: var(--gold);
+
+  /* 品牌神道层工具类：text-seal / bg-foxfire / border-copper / bg-cream … */
+  --color-seal: var(--seal);
+  --color-foxfire: var(--foxfire);
+  --color-cream: var(--cream);
+  --color-copper: var(--copper);
+
+  --color-line-data: var(--accent);
+
+  /* 统一 CJK 回退栈 —— 接到每条字体栈末尾，保证中文粗细 / 字形一致。
+     "PingFang Pinned" 见下方 @font-face：macOS Chromium 直接用系统族名时
+     weight 500/600 中文段落会鸳鸯体（同段前粗后细），用 local() 钉死字面绕过；
+     非 macOS 不命中自动跳过。
+     sans/mono 直接写 GeistSans/GeistMono 字族名：geist 包变量自带以通用族
+     收尾的回退链，通用族必命中，接在后面的 CJK 永远不可达。 */
+  --font-cjk: "PingFang Pinned", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+  /* 钉面必须排在 ui-sans-serif / system-ui 之前:macOS 的 system-ui 会内部
+     级联接管 CJK,排在它后面的 CJK 族轮不到,鸳鸯体照旧。 */
+  --font-sans: GeistSans, "PingFang Pinned", ui-sans-serif, system-ui, var(--font-cjk);
+  --font-mono: GeistMono, "PingFang Pinned", ui-monospace, "SF Mono", var(--font-cjk);
+  --font-display: var(--font-display), "PingFang Pinned", ui-serif,
+    "Iowan Old Style", Georgia, var(--font-cjk);
 }
 
 @layer base {
   html {
-    background-color: var(--color-bg);
-    color: var(--color-fg);
+    background-color: var(--surface);
+    color: var(--ink);
     /* 换肤平滑过渡 —— 只过渡颜色，不动布局 */
     transition:
       background-color 0.4s ease,
@@ -89,8 +169,8 @@
   }
 
   ::selection {
-    background-color: color-mix(in oklab, var(--color-cyan) 35%, transparent);
-    color: var(--color-fg);
+    background-color: color-mix(in oklab, var(--accent) 35%, transparent);
+    color: var(--ink);
   }
 }
 
@@ -98,7 +178,7 @@
   .dot-grid {
     background-image: radial-gradient(
       circle at center,
-      color-mix(in oklab, var(--color-cyan) 18%, transparent) 1px,
+      color-mix(in oklab, var(--accent) 18%, transparent) 1px,
       transparent 1px
     );
     background-size: 28px 28px;
@@ -110,11 +190,11 @@
 
   @keyframes pulse-glow {
     0%, 100% {
-      filter: drop-shadow(0 0 6px color-mix(in oklab, var(--color-cyan) 30%, transparent));
+      filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 30%, transparent));
       opacity: 0.85;
     }
     50% {
-      filter: drop-shadow(0 0 14px color-mix(in oklab, var(--color-cyan) 70%, transparent));
+      filter: drop-shadow(0 0 14px color-mix(in oklab, var(--accent) 70%, transparent));
       opacity: 1;
     }
   }
@@ -122,8 +202,8 @@
   /* Hairline grid — drafting-table background. 80px x 80px, 1px lines at 8%. */
   .hairline-grid {
     background-image:
-      linear-gradient(to right, color-mix(in oklab, var(--color-fg) 6%, transparent) 1px, transparent 1px),
-      linear-gradient(to bottom, color-mix(in oklab, var(--color-fg) 6%, transparent) 1px, transparent 1px);
+      linear-gradient(to right, color-mix(in oklab, var(--ink) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--ink) 6%, transparent) 1px, transparent 1px);
     background-size: 80px 80px;
     background-position: -1px -1px;
   }
@@ -153,6 +233,67 @@
   .display {
     font-family: var(--font-display);
     font-variation-settings: "opsz" 144, "SOFT" 20;
+  }
+
+  /* ── 神社 accent 层（只用于氛围 / 装饰 / 彩蛋，绝不上 D2 数据面） ──────
+     朱印呼吸辉 —— 给 hero logo emblem / 朱印落款用。半径克制（≤13px），
+     不是反 AI-slop 红线里的 blur orb。reduced-motion 下只留静态辉。 */
+  .seal-glow {
+    filter:
+      drop-shadow(0 0 0.5px color-mix(in oklab, var(--seal) 60%, transparent))
+      drop-shadow(0 1px 8px color-mix(in oklab, var(--seal) 22%, transparent));
+    animation: seal-breathe 5s ease-in-out infinite;
+  }
+  @keyframes seal-breathe {
+    0%, 100% {
+      filter:
+        drop-shadow(0 0 0.5px color-mix(in oklab, var(--seal) 55%, transparent))
+        drop-shadow(0 1px 7px color-mix(in oklab, var(--seal) 18%, transparent));
+    }
+    50% {
+      filter:
+        drop-shadow(0 0 0.5px color-mix(in oklab, var(--seal) 85%, transparent))
+        drop-shadow(0 2px 13px color-mix(in oklab, var(--seal) 36%, transparent));
+    }
+  }
+
+  /* 狐火微闪 —— 1–3 颗小点用，极弱 opacity 缓动 + 小半径辉（≤6px）。 */
+  .foxfire-flicker {
+    animation: foxfire-flicker 3.5s ease-in-out infinite;
+  }
+  @keyframes foxfire-flicker {
+    0%, 100% {
+      opacity: 0.55;
+      filter: drop-shadow(0 0 3px color-mix(in oklab, var(--foxfire) 50%, transparent));
+    }
+    50% {
+      opacity: 1;
+      filter: drop-shadow(0 0 6px color-mix(in oklab, var(--foxfire) 80%, transparent));
+    }
+  }
+
+  /* 朱印水印 —— 章节序号 / 落款角落的极淡朱砂底，只点睛不抢信息。 */
+  .seal-watermark {
+    position: relative;
+  }
+  .seal-watermark::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: var(--seal-ink);
+  }
+
+  /* 朱印盖章 —— hero signature moment：缩放 + 轻微旋转落定。
+     由组件加 .seal-stamp 触发一次；reduced-motion 下不动（静态呈现）。 */
+  @keyframes seal-stamp {
+    0%   { opacity: 0; transform: scale(1.6) rotate(-8deg); }
+    60%  { opacity: 1; transform: scale(0.94) rotate(1.5deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  }
+  .seal-stamp {
+    animation: seal-stamp 0.6s cubic-bezier(0.22, 0.7, 0.22, 1) both;
   }
 
   /* Marquee for the top ticker strip. */
@@ -217,7 +358,10 @@
   .drift-dots,
   .ticker-scroll,
   .pulse-glow,
-  .caret-blink {
+  .caret-blink,
+  .seal-glow,
+  .foxfire-flicker,
+  .seal-stamp {
     animation: none !important;
   }
   /* Slow log-rise way down rather than killing it, so motion-sensitive

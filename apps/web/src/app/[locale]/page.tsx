@@ -1,13 +1,14 @@
 import { setRequestLocale } from "next-intl/server";
 
-import { BlackBoxProblem } from "@/components/sections/BlackBoxProblem";
+import { AgentIntelligence } from "@/components/sections/AgentIntelligence";
+import { CoreWedge } from "@/components/sections/CoreWedge";
 import { CTAFooter } from "@/components/sections/CTAFooter";
-import { DualThesis } from "@/components/sections/DualThesis";
-import { EngineeringHarness } from "@/components/sections/EngineeringHarness";
 import { FAQ } from "@/components/sections/FAQ";
 import { GlobalCoverage } from "@/components/sections/GlobalCoverage";
 import { Hero } from "@/components/sections/Hero";
-import { SystemSchematic } from "@/components/sections/SystemSchematic";
+import { ResearchFloor } from "@/components/sections/ResearchFloor";
+import { StrategyEvolution } from "@/components/sections/StrategyEvolution";
+import { TrustBoundary } from "@/components/sections/TrustBoundary";
 import { UnifiedKernel } from "@/components/sections/UnifiedKernel";
 import { TickerStrip } from "@/components/primitives/TickerStrip";
 import { getGithubStats } from "@/lib/github";
@@ -34,15 +35,16 @@ export default async function HomePage({
     RELEASE.phase,
     `REV ${RELEASE.rev}`,
     RELEASE.dateDot,
-    "AUDIT-GRADE EVOLUTION",
-    "FACTOR LAB · RISK ENGINE",
-    "AUTONOMOUS PAPER RUNNER",
-    "CROSS-CURRENCY CASH",
+    "AN ORACLE THAT KEEPS A LEDGER",
+    "FACTOR TIMING · RANK IC",
+    "INVESTING LEGENDS PANEL",
+    "STRATEGY EVOLUTION",
     "PLAN · APPROVE · EXECUTE",
+    "AUTONOMOUS PAPER RUNNER",
     "AGENTS · FIRST-CLASS",
     "AGPL-3.0",
-    "ALPHA QUALITY",
     "12 MARKETS",
+    "INARI OMIKUJI",
   ];
 
   return (
@@ -51,17 +53,18 @@ export default async function HomePage({
 
       <Hero />
 
-      <main className="mx-auto max-w-6xl space-y-28 px-6 py-24 md:space-y-36 md:px-12 md:py-28">
-        <BlackBoxProblem />
-        <DualThesis />
-        <SystemSchematic />
+      <main className="mx-auto max-w-[88rem] space-y-28 px-6 py-24 md:space-y-40 md:px-14 md:py-28">
+        <CoreWedge />
+        <AgentIntelligence />
+        <ResearchFloor />
+        <StrategyEvolution />
         <UnifiedKernel />
-        <EngineeringHarness />
+        <TrustBoundary />
+        <GlobalCoverage />
         <FAQ />
-        <GlobalCoverage stats={githubStats} />
       </main>
 
-      <CTAFooter />
+      <CTAFooter stats={githubStats} />
     </div>
   );
 }

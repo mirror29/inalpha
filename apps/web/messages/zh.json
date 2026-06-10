@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "Inalpha — 可审计的量化 agent：自进化，自交易。",
-    "description": "Inalpha 是开源专业量化 agent 框架，将工程纪律引入 LLM 驱动交易。因子实验室、风控引擎、策略进化，以及无人值守模拟盘 runner——promoted 策略在真实行情上自动跑模拟账户，经 plan/exec 机器审批、留完整决策复盘。每个因子提案、每次策略变异、每笔订单路由都有日志、有版本、可复核。LLM 只负责写代码，工程 harness 为每个决策签名。借鉴 Claude Code 的 hooks/permissions 模式和 NautilusTrader 的 backtest=paper=live 统一内核。"
+    "title": "Inalpha — 可审计的量化 agent，能进化的策略。",
+    "description": "Inalpha 是开源量化 agent 框架——一个会记账的神谕。Agent 自己挑当前有效的因子来择时（按时序 Rank IC 排名），叫上投资大师团做对立研究，写策略、自进化；每一笔下单都经机器审批——LLM 没有直连下单的路径。回测、模拟盘、live runner 共用一份代码，全球多市场自动路由，外加一层 Claude Code 式 hooks / permissions / plan-exec，让每个决策可证明、可回放。"
   },
   "nav": {
     "github": "GitHub",
@@ -17,7 +17,8 @@
     "wordmark": "Inalpha",
     "title": "可审计的量化 agent，",
     "titleAlt": "能进化的策略。",
-    "sub": "因子实验室 · 风控引擎 · 策略进化 · 无人值守模拟盘——每个因子提案、每次策略变异、每笔订单路由都有日志、有版本、可复核。LLM 只负责写代码，工程纪律为每个决策背书——哪怕是在无人值守自动交易时。",
+    "tagline": "问卜有签，落子有据。",
+    "sub": "Agent 自己挑当前有效的因子来择时，叫上投资大师团对立辩论，写策略、自进化——每一笔下单都过机器审批。LLM 只写代码，工程纪律为每个决策背书。",
     "ctaPrimary": "git clone",
     "ctaSecondary": "实时演示",
     "stats": {
@@ -82,8 +83,85 @@
     },
     "conclusion": "只有 A，是 chat wrapper。只有 B，是又一个回测框架。两者同时成立，方为 Inalpha。"
   },
+  "wedge": {
+    "title": "大多数 AI 交易是个黑盒。",
+    "titleAlt": "Inalpha 把每一步都记下来。",
+    "blackboxLabel": "黑盒",
+    "inalphaLabel": "Inalpha",
+    "rows": {
+      "lose": {
+        "trait": "亏钱时",
+        "blackbox": "「买入 BTC，置信度 0.62」——到底哪份数据、哪一步出了错，无从查起。",
+        "inalpha": "把那次决策原样重放：它看了什么数据、跑了什么逻辑、给了什么理由。"
+      },
+      "win": {
+        "trait": "赚钱时",
+        "blackbox": "是真本事，还是运气？复现不出来，就没法信。",
+        "inalpha": "每个想法、每次测试都留底，是真本事还是碰运气，能验证给你看。"
+      },
+      "trigger": {
+        "trait": "谁能下单",
+        "blackbox": "模型直接握着你的账户钥匙，一句乱指令就变成一笔真单。",
+        "inalpha": "AI 只负责提议，真正下单由你设好的规则执行——它自己扣不动扳机。"
+      }
+    },
+    "close": "一个会解释自己、也绝不背着你下单的 AI。"
+  },
+  "intelligence": {
+    "eyebrow": "03 / 智能",
+    "title": "会挑当前有效因子的 agent。",
+    "sub": "不是写死的一套指标。Agent 按时序 Rank IC 给因子排名，挑出当下最灵的那几个；在写下一行策略之前，先让多位分析师对立辩论。",
+    "timing": {
+      "heading": "因子择时",
+      "body": "factor.timing 用滚动 Rank IC 给因子库排名，浮出当前有效的信号——每个因子都经形式化、IC 检验、多重检验校正，并记录提出人、时点与经济学故事门的判定。",
+      "caption": "factor.timing · 滚动 Rank IC"
+    },
+    "panel": {
+      "heading": "投资大师团",
+      "body": "一次 deep dive 会召集技术、基本面、情绪分析师，外加可选的投资大师团，对立观点再综合，绝不只听一个声音。",
+      "legendsLabel": "对立视角"
+    }
+  },
+  "research": {
+    "title": "研究是一场辩论，不是一个声音。",
+    "body": "一次 deep dive 会召集技术、基本面、情绪、估值分析师，需要时再加一桌投资大师团。他们各执一词、正反交锋，再由 Inalpha 把分歧综合成一份留底的决策。",
+    "transcriptLabel": "deep_dive ~ NVDA · 实时辩论",
+    "transcriptHint": "示例",
+    "debate": [
+      { "speaker": "技术面", "side": "bull", "text": "NVDA 创新高，量能在确认这一波。" },
+      { "speaker": "情绪面", "side": "bear", "text": "NVDA 大家都已经在多头，太拥挤了。" },
+      { "speaker": "巴菲特", "side": "bear", "text": "价格是你付的——这个估值，价值在哪？" },
+      { "speaker": "伍德", "side": "bull", "text": "AI 算力需求会复利，TAM 被低估了。" },
+      { "speaker": "伯里", "side": "bear", "text": "去读库存那一行，还有中国区营收的脚注。" },
+      { "speaker": "林奇", "side": "bull", "text": "我懂他们卖什么，订单簿仍然成立。" },
+      { "speaker": "德鲁肯米勒", "side": "bull", "text": "别跟资本开支周期对着干，流动性站它这边。" },
+      { "speaker": "Marks", "side": "legend", "text": "问题不是 NVDA 好不好，而是好有没有被 price in。" },
+      { "speaker": "风控", "side": "risk", "text": "按你择不了时的回撤来定仓位。" }
+    ],
+    "verdict": "decision_record",
+    "verdictText": "做多 NVDA · 信念 0.41 · 每个立场都留底",
+    "legendsLabel": "可选 · 一桌投资大师团"
+  },
+  "evolution": {
+    "title": "Agent 写策略——再改写策略，去打败自己。",
+    "body": "agent 用 Python 写出完整策略。先过三道沙盒关，才允许跑第一次回测。然后在多目标 fitness 下变异迭代，单一指标刷不动分——只有跑赢基线的策略才留下。",
+    "writeLabel": "Agent 写出",
+    "writeCode": "class Strategy(Bar): ...",
+    "gatesLabel": "三道沙盒关",
+    "gates": {
+      "ast": "AST 审计",
+      "astNote": "禁 os / eval / 越狱式 import",
+      "subprocess": "子进程隔离",
+      "subprocessNote": "与内核隔墙运行",
+      "contract": "Strategy 契约",
+      "contractNote": "必须继承 + 实现 on_bar"
+    },
+    "fitnessLabel": "多目标 fitness",
+    "fitness": "sharpe + 0.3·calmar − 0.1·turnover − 1.0·(maxDD > 30%)",
+    "loop": "变异 · 评估 · 留下跑赢基线的"
+  },
   "demo": {
-    "eyebrow": "03 / 演示",
+    "eyebrow": "04 / 演示",
     "title": "看 Agent 当面争辩。",
     "blurb": "一条 prompt 进来，4 个 agent 立场对立、工具集不同、数据来源各异。输出是一条结构化 decision record，不是一段散文。",
     "promptLabel": "$ inalpha>",
@@ -130,10 +208,10 @@
     "reducedMotionFallback": "动效已关闭。显示 decision_record 静态快照。"
   },
   "kernel": {
-    "eyebrow": "04 / 统一内核",
+    "eyebrow": "05 / 统一内核",
     "title": "一份代码，",
     "titleAlt": "三种模式。",
-    "sub": "策略代码只写一次。回测 vs 实盘切换 Clock；模拟盘 vs 撮合切换 Gateway——业务逻辑不动。剩下能让分歧出现的，只有物理差异（滑点、延迟、数据精度）。",
+    "sub": "策略代码只写一次。回测、模拟盘、live runner 共用同一份——只换 Clock 和 Gateway，业务逻辑不动。剩下能让分歧出现的，只有物理差异（滑点、延迟、数据精度）。",
     "diff": {
       "beforeLabel": "backtest",
       "afterLabel": "live",
@@ -168,8 +246,21 @@
       }
     }
   },
+  "trust": {
+    "title": "AI 只负责提议，",
+    "titleAlt": "永远不亲手下单。",
+    "body": "每一个下单意图都走一条单向路：agent 起草一份 plan，由你设的规则（或你本人）批准，之后才有一枚一次性、会过期的 token 解锁执行。模型手里没有任何能直接碰到订单簿的工具——越狱也好、幻觉也好，都绕不过去。",
+    "steps": {
+      "propose": { "label": "agent 起草 plan", "tool": "trade.create_plan" },
+      "approve": { "label": "规则 / 你 批准", "tool": "trade.approve_plan" },
+      "execute": { "label": "一次性 token 执行", "tool": "trade.execute_plan" }
+    },
+    "agentLabel": "LLM agent",
+    "orderLabel": "订单簿",
+    "wall": "deny —— LLM 没有直达路径"
+  },
   "harness": {
-    "eyebrow": "05 / 工程绑带",
+    "eyebrow": "06 / 工程绑带",
     "title": "Claude Code 的工程哲学，",
     "titleAlt": "应用于量化交易。",
     "sub": "声明式配置规定每个 agent 的工具调用权限。Plan → approve → execute 由一次性、短 TTL 的 token 强制——LLM 永远不会绕过审批触达订单路径。subagent 隔离风险与复盘。MCP 协议接入工具，免去胶水代码。",
@@ -208,7 +299,7 @@
     }
   },
   "coverage": {
-    "eyebrow": "06 / 覆盖",
+    "eyebrow": "07 / 覆盖",
     "title": "同一内核 · 同一 prompt · 同一组 agent。",
     "sub": "所有市场共享同一个 orchestrator。新增一个 venue，所有 agent 即刻可用。",
     "groups": {
@@ -247,7 +338,7 @@
   },
   "faq": {
     "eyebrow": {
-      "index": "07",
+      "index": "08",
       "label": "常见问题"
     },
     "title": "你可能在想的问题。",
@@ -272,11 +363,15 @@
       {
         "question": "Inalpha 免费吗？是什么许可证？",
         "answer": "Inalpha 采用 AGPL-3.0 许可证，个人研究、学术用途和商业内部使用均免费。如果你修改了 Inalpha 并将其作为网络服务提供，必须按相同许可证公开你的修改。如需专有或闭源商业使用，请提 issue 讨论双重许可。"
+      },
+      {
+        "question": "真的有个狐神签功能？",
+        "answer": "有——稻荷狐神签，一个好玩的彩蛋。方向犹豫时，求一卦或抽一张牌，给自己一个数据之外的参照视角。它纯属娱乐、硬隔离于决策：碰不到风控、下单、因子、回测，不预测价格，也绝不给买卖信号。"
       }
     ]
   },
   "cta": {
-    "eyebrow": "07 / 开始",
+    "eyebrow": "开始",
     "title": "Star 它。读它。彻底拆解它。",
     "sub": "Inalpha 仍在 alpha 阶段，AGPL-3.0 协议。请暂缓真金部署——但每一行代码都在 GitHub 公开。",
     "commands": {
@@ -290,6 +385,8 @@
   "footer": {
     "license": "AGPL-3.0",
     "tagline": "可审计的量化 agent，能进化的策略。",
+    "oracle": "问卜有签，落子有据 · the quant familiar",
+    "nameStory": "稻荷狐神 Inari 遇上量化的 alpha——一个读懂你方向、为每一步留痕的伙伴。",
     "rights": "Inalpha · 开源 · 2026",
     "fineprintMotion": "动效遵循系统偏好。"
   },

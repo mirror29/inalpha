@@ -1,7 +1,7 @@
 /**
  * 单点维护的发布元信息。
  *
- * 任何展示 rev / phase / date 的位置（Hero / TickerStrip / SystemSchematic /
+ * 任何展示 rev / phase / date 的位置（Hero / TickerStrip /
  * CTAFooter colophon）都从这里读，避免散落硬编码导致版本漂移。
  *
  * - 切换 milestone 时只动这里一处。
