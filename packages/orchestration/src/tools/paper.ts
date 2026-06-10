@@ -266,6 +266,9 @@ export const paperListBacktestRunsTool = createTool({
     - 想跑新回测 → paper.run_backtest（直接跑，run_id 落库自动产出）
 
     必须至少给 research_id 或 strategy_code 一个；同时给 → 优先用 research_id。
+    （后端 HTTP 端点本身已放开"无过滤=全局最近 N 条"——那是给控制台活动流用的；
+    agent 工具层**有意保留**必填校验:无锚点的全局列表对决策无意义,漏传参数
+    应当报错暴露而不是静默拿到一堆不相关的 run。）
 
     返回字段：
     - run_id / params_hash：可作下游 trade.create_plan 的血缘锚点
