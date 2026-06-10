@@ -232,6 +232,8 @@ export interface BacktestRunSummary {
   venue: string | null;
   symbol: string | null;
   timeframe: string | null;
+  /** 该次回测的指标字典(backtest_runs.metrics,含专业级扩展指标;可 null)。 */
+  metrics: Record<string, number | null> | null;
 }
 
 /** GET /backtest_runs/{id}/trades 一行 —— 回测逐笔成交(含每笔实现盈亏)。 */
