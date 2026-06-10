@@ -152,15 +152,20 @@ async def list_strategy_runs(
     db: DBConn,
     user: Annotated[User, Depends(get_current_user)],
     status: Annotated[Literal["running", "stopped", "errored"] | None, Query()] = None,
+    candidate_id: Annotated[UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
 ) -> list[StrategyRunRecord]:
     """列出当前账户的 live run（status 传非法值 → FastAPI 自动 422，不静默返空）。
 
+    ``candidate_id``:按候选过滤（策略详情页用）——服务端过滤,不再让前端拉全量
+    本地 filter(全局 run 超 limit 后老候选的 run 被整批挤出窗口,详情页假装没跑过)。
     ``limit`` 兜底上限（默认 200，按 started_at DESC 取最近）——防 run 历史无界增长后
     dashboard 6s 轮询全量越来越重。
     """
     account_id = account_id_from_user(user)
-    rows = await runs_store.list_by_account(db, account_id, status=status, limit=limit)
+    rows = await runs_store.list_by_account(
+        db, account_id, status=status, candidate_id=candidate_id, limit=limit
+    )
     return [_row_to_record(r) for r in rows]
 
 
