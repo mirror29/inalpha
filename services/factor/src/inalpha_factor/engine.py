@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -35,6 +37,39 @@ _TF_SECONDS: dict[str, int] = {
 
 def _tf_seconds(timeframe: str) -> int:
     return _TF_SECONDS.get(timeframe, 3600)
+
+
+# ── 因子面板缓存（live 热路径）────────────────────────────────────────
+# engine 每请求新建（deps.get_engine），缓存放模块级。只缓存 is_live 调用——
+# agent timing 短时间内对同一标的连问是常态，每次重拉 bar + 重算 50 因子纯浪费。
+# 金融时效性守门：实际 TTL = min(FACTOR_CACHE_TTL_S, 半根 bar)，最多半根 bar stale；
+# 历史 as_of 不走缓存（低频且 key 难收敛）；空 df 不入缓存（data 抖一下别毒 5 分钟）。
+_PANEL_CACHE_MAX = 64
+_PanelEntry = tuple[float, pd.DataFrame, dict[str, pd.Series]]
+_panel_cache: OrderedDict[tuple[Any, ...], _PanelEntry] = OrderedDict()
+
+
+def _panel_cache_get(
+    key: tuple[Any, ...], ttl_s: float
+) -> tuple[pd.DataFrame, dict[str, pd.Series]] | None:
+    entry = _panel_cache.get(key)
+    if entry is None:
+        return None
+    ts, df, series = entry
+    if time.monotonic() - ts > ttl_s:
+        _panel_cache.pop(key, None)
+        return None
+    _panel_cache.move_to_end(key)
+    return df, series
+
+
+def _panel_cache_put(
+    key: tuple[Any, ...], df: pd.DataFrame, series: dict[str, pd.Series]
+) -> None:
+    _panel_cache[key] = (time.monotonic(), df, series)
+    _panel_cache.move_to_end(key)
+    while len(_panel_cache) > _PANEL_CACHE_MAX:
+        _panel_cache.popitem(last=False)
 
 
 class FactorEngine:
@@ -172,18 +207,30 @@ class FactorEngine:
         now = datetime.now(UTC)
         is_live = as_of is None or as_of >= now - timedelta(seconds=_tf_seconds(timeframe) * 2)
         as_of = as_of or now
-        # 多拉 horizon + 60 根 warmup，保证有效性样本充足
-        span_bars = lookback_bars + horizon_bars + 60
-        from_ts = as_of - timedelta(seconds=_tf_seconds(timeframe) * span_bars)
-        df = await self._fetch_df(
-            venue=venue, symbol=symbol, timeframe=timeframe,
-            from_ts=from_ts, to_ts=as_of, fresh=is_live,
-        )
-        # 只用 <= as_of 的 bar（防未来数据）；空 df 的 index 是 RangeIndex，跳过比较
-        if not df.empty and isinstance(df.index, pd.DatetimeIndex):
-            df = df[df.index <= pd.Timestamp(as_of)]
-        ids = factor_ids or self._computable_ids()
-        series = self.compute_on_df(df, ids)
+        # live 调用走面板缓存：TTL 上限半根 bar，stale 风险有界（§3.1）
+        ttl_s = min(float(self._settings.cache_ttl_s), _tf_seconds(timeframe) / 2)
+        ids_key = tuple(sorted(factor_ids)) if factor_ids else "*"
+        cache_key = (venue, symbol, timeframe, lookback_bars, horizon_bars, ids_key)
+        cacheable = is_live and ttl_s > 0
+        cached = _panel_cache_get(cache_key, ttl_s) if cacheable else None
+        if cached is not None:
+            df, series = cached
+            ids = factor_ids or self._computable_ids()
+        else:
+            # 多拉 horizon + 60 根 warmup，保证有效性样本充足
+            span_bars = lookback_bars + horizon_bars + 60
+            from_ts = as_of - timedelta(seconds=_tf_seconds(timeframe) * span_bars)
+            df = await self._fetch_df(
+                venue=venue, symbol=symbol, timeframe=timeframe,
+                from_ts=from_ts, to_ts=as_of, fresh=is_live,
+            )
+            # 只用 <= as_of 的 bar（防未来数据）；空 df 的 index 是 RangeIndex，跳过比较
+            if not df.empty and isinstance(df.index, pd.DatetimeIndex):
+                df = df[df.index <= pd.Timestamp(as_of)]
+            ids = factor_ids or self._computable_ids()
+            series = self.compute_on_df(df, ids)
+            if cacheable and not df.empty:
+                _panel_cache_put(cache_key, df, series)
         specs = self._spec_index()
         results: list[dict[str, Any]] = []
         close = df["close"].astype(float) if not df.empty else pd.Series(dtype=float)
