@@ -21,6 +21,7 @@ import { Panel } from "@/components/ui/Panel";
 import { RunStatusBadge } from "@/components/ui/StatusBadge";
 import { DecisionTimeline } from "./DecisionTimeline";
 import { RunnerChart } from "./RunnerChart";
+import { RunnerFactors } from "./RunnerFactors";
 
 const REFRESH_MS = 6000;
 
@@ -112,6 +113,13 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
           />
 
           <DecisionTimeline decisions={data.decisions} />
+
+          {/* 标的当前的有效因子 + 衰减状态(近期 IC vs 全样本 IC),按 run 的标的实时算。 */}
+          <RunnerFactors
+            venue={run.venue}
+            symbol={run.symbol}
+            timeframe={run.timeframe}
+          />
 
           {/* 运行日志置底 —— agent 全量活动(起跑 / 出单 / 停止 / 退避 / 错误),按级别着色。 */}
           <RunLog entries={run.run_log} />
