@@ -234,6 +234,10 @@ class FactorEngine:
         """单条 FRED 序列（venue="fred"，值在 close）。live 走专属缓存（daily 序列
         一天一变，TTL 放宽到 1 小时，不占面板缓存的半根 bar 约束）。
 
+        ⚠️ ``fresh`` 语义与 DataClient 相反,别按字面反转条件:这里 fresh=True
+        = live 调用(**启用**缓存,TTL 内直接命中);fresh=False = 历史 as_of
+        请求(**跳过**缓存——历史 key 难收敛,缓存只会污染)。
+
         坑:缓存 key 含 to_ts.date() —— 此缓存只对 T+1 发布的 daily 序列正确;
         若后续加日内更新的 macro 源(如 VIX spot),必须改用面板缓存的
         半根 bar TTL,否则当日内会静默返回 stale 值。
