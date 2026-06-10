@@ -177,6 +177,22 @@
         "reason": "原因"
       }
     },
+    "factors": {
+      "title": "标的有效因子",
+      "hint": "针对本模拟盘标的实时算出的 top 有效因子(Rank IC)。近期 IC(近 1/3 样本)相对全样本 IC 反号或趋零 = 因子正在衰减。注意:这是标的当前的因子环境,不代表策略源码内部用了这些因子。",
+      "unavailable": "因子有效性暂不可用(factor 服务未起或数据不足)。",
+      "empty": "暂无过有效性阈值的因子。",
+      "barsUsed": "{n} 根 bar",
+      "colFactor": "因子",
+      "colIc": "RANK IC",
+      "colRecent": "近期 IC",
+      "colTurnover": "换手",
+      "colDecay": "状态",
+      "viewDetail": "查看因子详情",
+      "stable": "稳定",
+      "fading": "走弱",
+      "decaying": "衰减"
+    },
     "intent": {
       "open_long": "开多",
       "open_short": "开空",
@@ -207,6 +223,7 @@
       "decision": "决策",
       "risk": "风控",
       "order": "订单",
+      "backtest": "回测",
       "conversation": "会话"
     },
     "empty": "暂无活动。",
@@ -219,6 +236,7 @@
       "risk": "风控",
       "runs": "Runner",
       "orders": "订单",
+      "backtests": "回测",
       "conversations": "会话"
     }
   },
@@ -304,19 +322,32 @@
   },
   "factors": {
     "title": "因子库",
-    "subtitle": "系统全部因子目录(pandas-ta / Alpha101 / qlib 等),以及针对所选标的的择时有效性(Rank IC)。",
+    "subtitle": "系统全部因子目录(pandas-ta / Alpha101 / qlib 等),点卡片看因子说明。针对标的的择时有效性见各模拟盘详情页。",
     "catalogCount": "目录",
     "totalFactors": "共 {n} 个因子",
-    "serviceDown": "因子服务不可用 —— 目录和有效性都拉不到。",
-    "effectiveness": "择时有效性(针对标的)",
-    "effectivenessHint": "下方是针对所选标的算出的因子择时有效性(Rank IC)—— 换个标的看不同市场的表现,与上方系统全量目录互补。",
-    "apply": "应用",
-    "noEffectiveness": "该标的暂无有效性数据。",
-    "barsUsed": "{n} 根 bar",
+    "serviceDown": "因子服务不可用 —— 目录拉不到。",
+    "viewDetail": "查看因子详情",
     "catalog": "系统因子目录",
-    "catalogHint": "系统当前可用的全部因子,按来源分组(不限标的 / 市场)。",
+    "catalogHint": "系统当前可用的全部因子,按来源分组(不限标的 / 市场)。点卡片查看该因子度量什么、怎么读。",
     "filter": {
       "all": "全部"
+    },
+    "detail": {
+      "close": "关闭",
+      "source": "来源",
+      "kind": "类别",
+      "dirPrior": "方向先验",
+      "dirMeasured": "实测方向",
+      "universe": "原版为横截面因子(需股票池),此处为单标的时序近似。",
+      "noDescription": "暂无该因子的说明。",
+      "effTitle": "当前标的实测有效性",
+      "mRankIc": "RANK IC",
+      "mRecent": "近期 IC",
+      "mTurnover": "换手",
+      "mSample": "样本数",
+      "mLs": "多空价差",
+      "lowConfidence": "样本不足,该读数不足以据此择时。",
+      "legend": "RANK IC:因子值与未来收益的秩相关,绝对值越大择时信息越多。近期 IC:近 1/3 样本的 IC,反号或趋零说明因子正在衰减。ICIR:IC 的稳定性。换手:信号跳动速度,高换手意味着实盘摩擦成本高。"
     }
   },
   "risk": {

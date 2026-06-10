@@ -177,6 +177,22 @@
         "reason": "Reason"
       }
     },
+    "factors": {
+      "title": "Effective Factors (Instrument)",
+      "hint": "Top effective factors (Rank IC) computed live for this runner's instrument. Recent IC (last ⅓ of the sample) flipping sign or fading toward zero vs the full-sample IC = the factor is decaying. Note: this is the instrument's current factor environment, not the factors referenced inside the strategy code.",
+      "unavailable": "Factor effectiveness unavailable (factor service down or insufficient data).",
+      "empty": "No factor passed the effectiveness threshold.",
+      "barsUsed": "{n} bars",
+      "colFactor": "Factor",
+      "colIc": "RANK IC",
+      "colRecent": "RECENT IC",
+      "colTurnover": "TURNOVER",
+      "colDecay": "STATUS",
+      "viewDetail": "View factor detail",
+      "stable": "stable",
+      "fading": "fading",
+      "decaying": "decaying"
+    },
     "intent": {
       "open_long": "OPEN LONG",
       "open_short": "OPEN SHORT",
@@ -207,6 +223,7 @@
       "decision": "Decisions",
       "risk": "Risk",
       "order": "Orders",
+      "backtest": "Backtests",
       "conversation": "Chats"
     },
     "empty": "No activity yet.",
@@ -219,6 +236,7 @@
       "risk": "Risk",
       "runs": "Runners",
       "orders": "Orders",
+      "backtests": "Backtests",
       "conversations": "Chats"
     }
   },
@@ -304,19 +322,32 @@
   },
   "factors": {
     "title": "Factor Library",
-    "subtitle": "The full system factor catalog (pandas-ta / Alpha101 / qlib …), plus timing effectiveness (Rank IC) for a selected instrument.",
+    "subtitle": "The full system factor catalog (pandas-ta / Alpha101 / qlib …) — click a card for what each factor measures. Per-instrument timing effectiveness lives on each runner's detail page.",
     "catalogCount": "Catalog",
     "totalFactors": "{n} factors",
-    "serviceDown": "Factor service unavailable — catalog and effectiveness can't be loaded.",
-    "effectiveness": "Timing Effectiveness (per instrument)",
-    "effectivenessHint": "Below is factor timing effectiveness (Rank IC) computed for the selected instrument — switch targets to compare markets. Complements the system-wide catalog above.",
-    "apply": "Apply",
-    "noEffectiveness": "No effectiveness data for this instrument.",
-    "barsUsed": "{n} bars",
+    "serviceDown": "Factor service unavailable — the catalog can't be loaded.",
+    "viewDetail": "View factor detail",
     "catalog": "System Factor Catalog",
-    "catalogHint": "Every factor currently available in the system, grouped by source (instrument- and market-agnostic).",
+    "catalogHint": "Every factor currently available in the system, grouped by source (instrument- and market-agnostic). Click a card to see what it measures and how to read it.",
     "filter": {
       "all": "All"
+    },
+    "detail": {
+      "close": "Close",
+      "source": "SOURCE",
+      "kind": "KIND",
+      "dirPrior": "PRIOR",
+      "dirMeasured": "MEASURED",
+      "universe": "Originally a cross-sectional factor (needs a universe); approximated here as a single-instrument time series.",
+      "noDescription": "No description available for this factor yet.",
+      "effTitle": "Measured effectiveness (this instrument)",
+      "mRankIc": "RANK IC",
+      "mRecent": "RECENT IC",
+      "mTurnover": "TURNOVER",
+      "mSample": "SAMPLE",
+      "mLs": "LONG-SHORT",
+      "lowConfidence": "Sample too small — don't time on this reading.",
+      "legend": "Rank IC: rank correlation between factor values and forward returns — larger magnitude means more timing information. Recent IC: IC over the last ⅓ of the sample; flipping sign or fading toward zero means the factor is decaying. ICIR: stability of the IC. Turnover: how fast the signal flips; high turnover means high trading friction in practice."
     }
   },
   "risk": {

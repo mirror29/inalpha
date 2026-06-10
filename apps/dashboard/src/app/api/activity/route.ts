@@ -39,6 +39,15 @@ interface SchedulerJobsResp {
 interface PendingResp {
   pending: Array<{ requestId: string; toolName: string; createdAt: string }>;
 }
+/** /backtest_runs 一行(只声明活动流用到的字段)。 */
+interface BacktestRunRow {
+  run_id: string;
+  strategy_code: string;
+  status: string;
+  created_at: string;
+  config: Record<string, unknown>;
+  metrics: Record<string, unknown> | null;
+}
 /** /risk/locks/history 一行 —— 含已过期/已解锁(比 active 锁多 active 字段)。 */
 interface RiskLocksResp {
   locks: Array<{
@@ -58,7 +67,7 @@ interface RiskLocksResp {
 /**
  * GET /api/activity —— 跨模块 agent 活动流。
  *
- * 把 scheduler runs / 待审批 / 风控锁 / runner 决策 / 订单 归一成 ActivityEvent[],
+ * 把 scheduler runs / 待审批 / 风控锁 / runner 决策 / 订单 / 回测 归一成 ActivityEvent[],
  * 按时间倒序合并。每个源独立 try —— 任一不可用(尤其 mastra:4111 可能没起)只标记
  * sources.<x>=false,不拖垮整页;绝不把"取不到"静默当成"没有"。
  */
@@ -69,6 +78,7 @@ export async function GET() {
     risk: true,
     runs: true,
     orders: true,
+    backtests: true,
     conversations: true,
   };
   const events: ActivityEvent[] = [];
@@ -77,7 +87,7 @@ export async function GET() {
   let activeLockCount = 0;
 
   // mastra(scheduler / permissions):dev 端不需要 JWT,auth:false。
-  const [jobsR, runsR, pendingR, locksR, strategyRunsR, ordersR, threadsR] =
+  const [jobsR, runsR, pendingR, locksR, strategyRunsR, ordersR, backtestsR, threadsR] =
     await Promise.allSettled([
       backendFetch<SchedulerJobsResp>("mastra", "/scheduler/jobs", {
         auth: false,
@@ -105,6 +115,10 @@ export async function GET() {
       }),
       backendFetch<OrderRecord[]>("paper", "/orders", {
         query: { limit: ORDERS_LIMIT },
+      }),
+      // 回测史(无 filter = 全局最近 N 条)—— agent 跑的策略回测进活动流。
+      backendFetch<BacktestRunRow[]>("paper", "/backtest_runs", {
+        query: { limit: 30 },
       }),
       // 用户对话(mastra memory threads)—— 让"发起了什么会话"进入活动流。
       // 8s 轮询热路径:跳过标题回填(下方用 `#id` 兜底),回填只在历史下拉里做。
@@ -240,6 +254,35 @@ export async function GET() {
     sources.orders = false;
   }
 
+  // ── 策略回测(agent 跑的 backtest)──
+  if (backtestsR.status === "fulfilled") {
+    for (const b of backtestsR.value) {
+      const symbol = typeof b.config.symbol === "string" ? b.config.symbol : "—";
+      const tf = typeof b.config.timeframe === "string" ? b.config.timeframe : "";
+      const candidateId =
+        typeof b.config.candidate_id === "string" ? b.config.candidate_id : null;
+      const fitness =
+        typeof b.metrics?.fitness === "number" ? b.metrics.fitness : null;
+      const trades =
+        typeof b.metrics?.num_trades === "number" ? b.metrics.num_trades : null;
+      const parts: string[] = [];
+      if (fitness !== null) parts.push(`fitness ${fitness.toFixed(3)}`);
+      if (trades !== null) parts.push(`${trades} trades`);
+      events.push({
+        id: `bt:${b.run_id}`,
+        kind: "backtest",
+        ts: b.created_at,
+        title: `${symbol}${tf ? ` · ${tf}` : ""}`,
+        detail: parts.length > 0 ? parts.join(" · ") : b.strategy_code,
+        outcome: b.status,
+        tone: b.status === "done" ? "cyan" : "fox",
+        href: candidateId ? `/lab/${candidateId}` : null,
+      });
+    }
+  } else {
+    sources.backtests = false;
+  }
+
   // ── 用户对话(会话发起 / 最近活跃)──
   if (threadsR.status === "fulfilled") {
     for (const th of threadsR.value) {
@@ -294,6 +337,7 @@ function countByKind(events: ActivityEvent[]): Record<ActivityKind, number> {
     decision: 0,
     risk: 0,
     order: 0,
+    backtest: 0,
     conversation: 0,
   };
   for (const e of events) c[e.kind] += 1;

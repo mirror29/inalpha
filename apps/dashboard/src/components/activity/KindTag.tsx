@@ -5,6 +5,7 @@ import {
   Activity,
   ArrowLeftRight,
   Clock,
+  FlaskConical,
   MessageSquare,
   ShieldAlert,
   ShieldQuestion,
@@ -20,6 +21,7 @@ const META: Record<ActivityKind, { icon: LucideIcon; cls: string }> = {
   decision: { icon: Activity, cls: "border-bull/30 bg-bull/10 text-bull" },
   risk: { icon: ShieldAlert, cls: "border-fox-red/30 bg-fox-red/10 text-fox-red" },
   order: { icon: ArrowLeftRight, cls: "border-border-subtle bg-bg-elev/40 text-fg-muted" },
+  backtest: { icon: FlaskConical, cls: "border-cyan/30 bg-cyan/10 text-cyan" },
   conversation: { icon: MessageSquare, cls: "border-seal/30 bg-seal/10 text-seal" },
 };
 
