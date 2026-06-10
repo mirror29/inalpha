@@ -452,5 +452,10 @@
     "posPresent": "Present",
     "posFuture": "Future",
     "disclaimer": "The omikuji is a perspective, not a signal · not investment advice · the trade still answers to data and risk"
+  },
+  "backtests": {
+    "back": "Agent Activity",
+    "notFound": "Backtest run not found.",
+    "viewCandidate": "View strategy"
   }
 }
