@@ -76,6 +76,14 @@ export async function GET(req: NextRequest) {
   // 多取一点窗口(×1.5)以防非交易时段/缺口导致根数不足。
   const fromMs = historical ? fromParsed : nowMs - limit * tfSec * 1500;
   const toMs = historical ? Math.min(toParsed, nowMs) : nowMs;
+  // to 被 now 截断而 from 不截 —— from 传未来日期会形成 from > to 发往下游,
+  // 下游静默返空,图上看着像"没数据"。按参数错误显式拒绝。
+  if (historical && fromMs >= toMs) {
+    return NextResponse.json(
+      { error: "from 必须早于 to,且不能是未来时间" },
+      { status: 400 },
+    );
+  }
   const fromTs = new Date(fromMs).toISOString();
   const toTs = new Date(toMs).toISOString();
 
