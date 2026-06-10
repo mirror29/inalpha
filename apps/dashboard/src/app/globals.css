@@ -82,11 +82,14 @@
 
   /* 统一的中文回退栈 —— Geist(sans/mono)/Fraunces 均为纯拉丁字体,中文会回退到
      系统字体。把同一组 CJK 字体显式接到每条字体栈末尾,保证无论 sans 还是 mono 语境,
-     中文都落到同一族(粗细/字形一致),不再"中文粗细不一"。 */
+     中文都落到同一族(粗细/字形一致),不再"中文粗细不一"。
+     注意:不能引用 var(--font-geist-*) —— geist 包变量自带完整回退链且以通用族
+     (sans-serif / monospace)收尾,通用族必命中,接在后面的 CJK 永远轮不到,
+     mono 语境中文会掉进浏览器默认中文等宽(宋体类)。直接写 @font-face 字族名。 */
   --font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
 
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, var(--font-cjk);
-  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", var(--font-cjk);
+  --font-sans: GeistSans, ui-sans-serif, system-ui, var(--font-cjk);
+  --font-mono: GeistMono, ui-monospace, "SF Mono", var(--font-cjk);
   --font-display: var(--font-display), ui-serif, "Iowan Old Style", Georgia, var(--font-cjk);
 }
 
