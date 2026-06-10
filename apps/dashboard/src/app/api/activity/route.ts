@@ -284,7 +284,8 @@ export async function GET() {
         detail: parts.length > 0 ? parts.join(" · ") : b.strategy_code,
         outcome: b.status,
         tone: b.status === "done" ? "cyan" : "fox",
-        href: candidateId ? `/lab/${candidateId}` : null,
+        // 候选回测 → 策略详情(信息全);内置策略回测 → 通用回测详情页。
+        href: candidateId ? `/lab/${candidateId}` : `/backtests/${b.run_id}`,
       });
     }
   } else {

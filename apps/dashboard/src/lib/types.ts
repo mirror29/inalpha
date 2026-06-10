@@ -252,6 +252,22 @@ export interface BacktestTradeRecord {
   tag: string | null;
 }
 
+/** GET /api/backtests/[runId] —— 单次回测详情(活动流点击回测事件的落地页)。 */
+export interface BacktestRunDetailPayload {
+  run:
+    | (BacktestRunSummary & {
+        strategyCode: string;
+        status: string;
+        /** candidate 回测时非空 → 可跳策略详情;内置策略为 null。 */
+        candidateId: string | null;
+        /** 候选描述(标题可读);拿不到为 null,退化显示 strategyCode。 */
+        candidateDescription: string | null;
+      })
+    | null;
+  trades: BacktestTradeRecord[];
+  asOf: string;
+}
+
 /** GET /api/lab/[id] —— 候选详情。 */
 export interface CandidateDetailPayload {
   candidate: StrategyCandidateRecord | null;
