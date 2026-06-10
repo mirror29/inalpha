@@ -101,6 +101,8 @@ async function fetchPositionWithMark(
   venue: string,
   symbol: string,
 ): Promise<PositionWithMark | null> {
+  // /positions 契约 = 账户活跃持仓**全量**(无翻页/limit,量级天然小);若后端
+  // 未来加 symbol 过滤或 limit,这里必须同步,否则超窗持仓会被静默当成"无持仓"。
   const positions = await backendFetch<PositionRecord[]>(
     "paper",
     "/positions",
