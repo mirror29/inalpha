@@ -13,7 +13,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .adapters import Alpha101Adapter, FactorAdapter, FactorSpec, PandasTAAdapter, QlibAlphaAdapter
+from .adapters import (
+    Alpha101Adapter,
+    FactorAdapter,
+    FactorSpec,
+    MacroAdapter,
+    PandasTAAdapter,
+    QlibAlphaAdapter,
+)
+from .adapters.macro_adapter import MACRO_TIMEFRAMES
 from .config import FactorSettings
 from .data_client import DataClient
 from .effectiveness import EffResult, score_factor
@@ -45,6 +53,8 @@ def _tf_seconds(timeframe: str) -> int:
 # 金融时效性守门：实际 TTL = min(FACTOR_CACHE_TTL_S, 半根 bar)，最多半根 bar stale；
 # 历史 as_of 不走缓存（低频且 key 难收敛）；空 df 不入缓存（data 抖一下别毒 5 分钟）。
 _PANEL_CACHE_MAX = 64
+# FRED daily 序列一天才更新一次，live 缓存 TTL 放宽到 1 小时（ADR-0044 D1）
+_MACRO_CACHE_TTL_S = 3600.0
 _PanelEntry = tuple[float, pd.DataFrame, dict[str, pd.Series]]
 _panel_cache: OrderedDict[tuple[Any, ...], _PanelEntry] = OrderedDict()
 
@@ -78,10 +88,12 @@ class FactorEngine:
     def __init__(self, settings: FactorSettings, token: str = "") -> None:
         self._settings = settings
         self._token = token
+        self._macro = MacroAdapter(enabled=settings.macro_enabled)
         self._adapters: list[FactorAdapter] = [
             PandasTAAdapter(),
             Alpha101Adapter(),
             QlibAlphaAdapter(enabled=settings.qlib_enabled),
+            self._macro,
         ]
 
     # ── catalog ──────────────────────────────────────────────────────
@@ -100,11 +112,18 @@ class FactorEngine:
     def _spec_index(self) -> dict[str, FactorSpec]:
         return {s.factor_id: s for s in self.catalog()}
 
-    def _computable_ids(self) -> list[str]:
-        """所有可时序计算（非横截面、源可用）的因子 id。"""
+    def _computable_ids(self, timeframe: str | None = None) -> list[str]:
+        """所有可时序计算（非横截面、源可用）的因子 id。
+
+        宏观因子只在 1d/1wk timeframe 进入（ADR-0044 D3：intraday ffill 会造
+        rank-tie 伪样本，IC 虚高）；timeframe=None 表示不过滤（catalog 视角）。
+        """
+        macro_ok = timeframe is None or timeframe in MACRO_TIMEFRAMES
         ids: list[str] = []
         for a in self._adapters:
             if not a.available():
+                continue
+            if a.source == "macro" and not macro_ok:
                 continue
             for s in a.specs():
                 if not s.needs_universe:
@@ -143,8 +162,70 @@ class FactorEngine:
         df = await self._fetch_df(
             venue=venue, symbol=symbol, timeframe=timeframe, from_ts=from_ts, to_ts=to_ts
         )
-        series = self.compute_on_df(df, factor_ids)
+        ids = factor_ids or self._computable_ids(timeframe)
+        series = self.compute_on_df(df, ids)
+        series.update(
+            await self._compute_macro(
+                df, timeframe=timeframe, factor_ids=ids, as_of=to_ts, fresh=False
+            )
+        )
         return df, series
+
+    # ── macro（ADR-0044）─────────────────────────────────────────────
+    async def _compute_macro(
+        self,
+        df: pd.DataFrame,
+        *,
+        timeframe: str,
+        factor_ids: list[str],
+        as_of: datetime,
+        fresh: bool,
+    ) -> dict[str, pd.Series]:
+        """拉 FRED 序列并算宏观因子。任何一环失败只降级（少这批因子），不破坏价量结果。"""
+        if df.empty or timeframe not in MACRO_TIMEFRAMES or not self._macro.available():
+            return {}
+        want = [fid for fid in factor_ids if fid.startswith("macro.")]
+        if not want:
+            return {}
+        # 多拉 120 天给 daily 公式 warmup（chg_60 + 余量）
+        from_ts = (
+            df.index[0].to_pydatetime() if isinstance(df.index, pd.DatetimeIndex) else as_of
+        ) - timedelta(days=120)
+        macro: dict[str, pd.Series] = {}
+        for sid in self._macro.required_series(want):
+            try:
+                macro[sid] = await self._fetch_macro_series(
+                    sid, from_ts=from_ts, to_ts=as_of, fresh=fresh
+                )
+            except Exception as exc:  # FRED key 缺失 / data 无 fred venue → 优雅降级
+                logger.warning("macro series %s fetch failed: %r", sid, exc)
+        if not macro:
+            return {}
+        try:
+            return self._macro.compute_with_macro(df, macro, want)
+        except Exception as exc:
+            logger.warning("macro adapter compute failed: %r", exc)
+            return {}
+
+    async def _fetch_macro_series(
+        self, series_id: str, *, from_ts: datetime, to_ts: datetime, fresh: bool
+    ) -> pd.Series:
+        """单条 FRED 序列（venue="fred"，值在 close）。live 走专属缓存（daily 序列
+        一天一变，TTL 放宽到 1 小时，不占面板缓存的半根 bar 约束）。"""
+        key = ("__macro__", series_id, from_ts.date().isoformat())
+        if fresh:
+            cached = _panel_cache_get(key, _MACRO_CACHE_TTL_S)
+            if cached is not None:
+                return cached[1]["close"]
+        df = await self._fetch_df(
+            venue="fred", symbol=series_id, timeframe="1d",
+            from_ts=from_ts, to_ts=to_ts, fresh=fresh,
+        )
+        if df.empty:
+            raise ValueError(f"no data for FRED series {series_id}")
+        if fresh:
+            _panel_cache_put(key, df, {})
+        return df["close"]
 
     def compute_on_df(
         self, df: pd.DataFrame, factor_ids: list[str] | None
@@ -215,7 +296,7 @@ class FactorEngine:
         cached = _panel_cache_get(cache_key, ttl_s) if cacheable else None
         if cached is not None:
             df, series = cached
-            ids = factor_ids or self._computable_ids()
+            ids = factor_ids or self._computable_ids(timeframe)
         else:
             # 多拉 horizon + 60 根 warmup，保证有效性样本充足
             span_bars = lookback_bars + horizon_bars + 60
@@ -227,8 +308,13 @@ class FactorEngine:
             # 只用 <= as_of 的 bar（防未来数据）；空 df 的 index 是 RangeIndex，跳过比较
             if not df.empty and isinstance(df.index, pd.DatetimeIndex):
                 df = df[df.index <= pd.Timestamp(as_of)]
-            ids = factor_ids or self._computable_ids()
+            ids = factor_ids or self._computable_ids(timeframe)
             series = self.compute_on_df(df, ids)
+            series.update(
+                await self._compute_macro(
+                    df, timeframe=timeframe, factor_ids=ids, as_of=as_of, fresh=is_live
+                )
+            )
             if cacheable and not df.empty:
                 _panel_cache_put(cache_key, df, series)
         specs = self._spec_index()
