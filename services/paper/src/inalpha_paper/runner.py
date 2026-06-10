@@ -279,6 +279,18 @@ async def run_backtest(
                         "num_trades": report.num_trades,
                         "num_bars_processed": report.num_bars_processed,
                         "calmar": calmar,
+                        # 专业级扩展指标（与 _persist_run 的 metrics 同源,可 None）
+                        "annualized_return_pct": report.annualized_return_pct,
+                        "annualized_volatility_pct": report.annualized_volatility_pct,
+                        "profit_factor": report.profit_factor,
+                        "payoff_ratio": report.payoff_ratio,
+                        "expectancy": report.expectancy,
+                        "best_trade_pnl": report.best_trade_pnl,
+                        "worst_trade_pnl": report.worst_trade_pnl,
+                        "max_consecutive_wins": report.max_consecutive_wins,
+                        "max_consecutive_losses": report.max_consecutive_losses,
+                        "max_drawdown_duration_bars": report.max_drawdown_duration_bars,
+                        "exposure_pct": report.exposure_pct,
                     },
                     fitness=fitness_value,
                     backtest_run_id=run_id,
@@ -353,6 +365,19 @@ async def _persist_run(
         "num_bars_processed": report.num_bars_processed,
         "final_equity": report.final_equity,
         "fitness": fitness,
+        # 专业级扩展指标（D-11+,engine/metrics.py;可 None）
+        "annualized_return_pct": report.annualized_return_pct,
+        "annualized_volatility_pct": report.annualized_volatility_pct,
+        "calmar": report.calmar,
+        "profit_factor": report.profit_factor,
+        "payoff_ratio": report.payoff_ratio,
+        "expectancy": report.expectancy,
+        "best_trade_pnl": report.best_trade_pnl,
+        "worst_trade_pnl": report.worst_trade_pnl,
+        "max_consecutive_wins": report.max_consecutive_wins,
+        "max_consecutive_losses": report.max_consecutive_losses,
+        "max_drawdown_duration_bars": report.max_drawdown_duration_bars,
+        "exposure_pct": report.exposure_pct,
     }
     try:
         async with conn.transaction():
