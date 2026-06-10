@@ -86,7 +86,7 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
                 <Link
                   href={`/lab/${run.candidate_id}`}
                   title={t("viewStrategy")}
-                  className="truncate font-medium text-cyan transition-colors hover:text-cyan/80 hover:underline"
+                  className="truncate text-cyan transition-colors hover:text-cyan/80 hover:underline"
                 >
                   {data.candidate?.description?.trim() ||
                     `cand ${run.candidate_id.slice(0, 8)}`}
