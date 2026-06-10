@@ -741,12 +741,19 @@ class LiveRunnerManager:
                 trade_plan_id=plan_id,
             )
             if result["status"] == "FILLED":
-                await apply_fill_to_positions_and_cash(
+                realized_pnl = await apply_fill_to_positions_and_cash(
                     conn, account_id=account_id, venue=venue, symbol=symbol, side=side,
                     quantity=Decimal(str(result["filled_quantity"])),
                     fill_price=Decimal(str(result["avg_fill_price"])),
                     fee=Decimal(str(result["fee"])),
                     ts_event=result["ts_event"], order_id=result["client_order_id"],
+                )
+                # 回写该笔已实现盈亏(开仓 0 / 平仓实现值)——与 api/orders 提交路径
+                # 同口径;漏写会让控制台「最近订单」的本笔盈亏恒为空。
+                await orders_store.set_realized_pnl(
+                    conn,
+                    client_order_id=result["client_order_id"],
+                    realized_pnl=realized_pnl,
                 )
             await plans_store.record_execution(
                 conn, plan_id=plan_id, resulting_order_id=result["client_order_id"]
