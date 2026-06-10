@@ -293,6 +293,10 @@ def max_drawdown_duration_bars(equity_curve: list[float]) -> int:
     longest = 0
     for i, v in enumerate(equity_curve):
         if v >= peak:
+            # 收复 bar 本身也计入间隔(否则比标准定义少 1 bar);
+            # 仅当前一根仍低于 peak 才算"曾在回撤中",平走/连创新高不计。
+            if i > peak_i and equity_curve[i - 1] < peak:
+                longest = max(longest, i - peak_i)
             peak = v
             peak_i = i
         else:
