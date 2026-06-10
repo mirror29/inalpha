@@ -55,7 +55,7 @@ services:
     # 客户端连接串同步用 redis://:password@redis:6379/0(见 .env.prod.example)。
     command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:?required}"
     healthcheck:
-      test: ["CMD", "sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
+      test: ["CMD", "sh", "-c", "redis-cli --no-auth-warning -a \"$REDIS_PASSWORD\" ping"]
       interval: 5s
       timeout: 3s
       retries: 10
