@@ -38,7 +38,7 @@ const SPEC: Array<{ key: string; label: string; fmt: Fmt }> = [
   { key: "initial_cash", label: "INITIAL CASH", fmt: "num" },
   { key: "final_equity", label: "FINAL EQUITY", fmt: "num" },
   { key: "total_fees", label: "FEES", fmt: "num" },
-  { key: "num_bars_processed", label: "BARS", fmt: "int" },
+  // num_bars_processed 不展示:对用户是引擎细节,区间/timeframe 已在 BacktestMeta 标明。
 ];
 
 export function MetricsGrid({
