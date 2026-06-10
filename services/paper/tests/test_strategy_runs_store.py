@@ -83,3 +83,21 @@ async def test_mark_running_as_errored_reconcile(app_with_lifespan: Any) -> None
     assert n >= 1
     assert fresh is not None
     assert fresh["status"] == "errored"
+
+
+async def test_list_by_account_filters_by_candidate(app_with_lifespan: Any) -> None:
+    """candidate_id 过滤(策略详情页用):只回该候选的 run,不混入同账户其他候选。"""
+    account_id = uuid4()
+    cand_a = await _make_candidate()
+    cand_b = await _make_candidate()
+    run_a = await _insert(cand_a, account_id)
+    run_b = await _insert(cand_b, account_id)
+
+    async with get_conn() as conn:
+        only_a = await runs_store.list_by_account(
+            conn, account_id, candidate_id=cand_a
+        )
+        both = await runs_store.list_by_account(conn, account_id)
+
+    assert {r["id"] for r in only_a} == {run_a["id"]}
+    assert {run_a["id"], run_b["id"]} <= {r["id"] for r in both}
