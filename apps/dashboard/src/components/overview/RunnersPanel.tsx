@@ -96,7 +96,7 @@ export function RunnersPanel({ runs }: { runs: StrategyRunRecord[] }) {
                   <Td>
                     <Link
                       href={`/runners/${r.id}`}
-                      className="font-medium text-fg transition-colors hover:text-cyan"
+                      className="text-fg transition-colors hover:text-cyan"
                     >
                       {instrumentLabel(r.symbol, r.venue)}
                     </Link>

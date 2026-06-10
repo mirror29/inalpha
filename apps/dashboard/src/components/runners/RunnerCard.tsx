@@ -35,7 +35,7 @@ export function RunnerCard({ run }: { run: StrategyRunRecord }) {
       {/* 顶部:标的 + 状态 */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate font-medium text-fg">
+          <div className="truncate text-fg">
             {run.symbol}
             <span className="ml-1.5 font-mono text-xs text-fg-muted">
               · {run.venue}
