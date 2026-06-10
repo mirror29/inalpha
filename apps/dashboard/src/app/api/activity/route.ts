@@ -70,7 +70,7 @@ interface RiskLocksResp {
 /**
  * GET /api/activity —— 跨模块 agent 活动流。
  *
- * 把 scheduler runs / 待审批 / 风控锁 / runner 决策 / 订单 / 回测 归一成 ActivityEvent[],
+ * 把 scheduler runs / 待审批 / 风控锁 / runner 生命周期与决策 / 订单 / 回测 归一成 ActivityEvent[],
  * 按时间倒序合并。每个源独立 try —— 任一不可用(尤其 mastra:4111 可能没起)只标记
  * sources.<x>=false,不拖垮整页;绝不把"取不到"静默当成"没有"。
  */
@@ -239,6 +239,44 @@ export async function GET() {
     }
   }
 
+  // ── 模拟盘生命周期(启动 / 停止 / 报错)—— 从 strategy_runs 派生,无需新接口。
+  // 覆盖范围与决策 fan-out 相同(最近 N 个 run);停止/报错事件带当次盈亏 chip。
+  for (const run of recentRuns) {
+    const inst = `${run.symbol} · ${run.timeframe}`;
+    events.push({
+      id: `runstart:${run.id}`,
+      kind: "runner",
+      ts: run.started_at,
+      title: inst,
+      detail: `run ${run.id.slice(0, 8)}`,
+      outcome: "started",
+      tone: "cyan",
+      href: `/runners/${run.id}`,
+    });
+    if (run.stopped_at) {
+      const pnl = run.cumulative_pnl;
+      events.push({
+        id: `runstop:${run.id}`,
+        kind: "runner",
+        ts: run.stopped_at,
+        title: inst,
+        detail: `run ${run.id.slice(0, 8)}`,
+        outcome: run.status === "errored" ? "errored" : "stopped",
+        tone: run.status === "errored" ? "fox" : "muted",
+        href: `/runners/${run.id}`,
+        stats:
+          pnl !== 0
+            ? [
+                {
+                  text: `${pnl > 0 ? "+" : ""}${pnl.toFixed(2)}`,
+                  tone: pnl > 0 ? "bull" : "fox",
+                },
+              ]
+            : undefined,
+      });
+    }
+  }
+
   // ── 订单流 ──
   if (ordersR.status === "fulfilled") {
     for (const o of ordersR.value) {
@@ -399,6 +437,7 @@ function countByKind(events: ActivityEvent[]): Record<ActivityKind, number> {
     risk: 0,
     order: 0,
     backtest: 0,
+    runner: 0,
     conversation: 0,
   };
   for (const e of events) c[e.kind] += 1;

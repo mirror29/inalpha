@@ -224,6 +224,7 @@
       "risk": "风控",
       "order": "订单",
       "backtest": "回测",
+      "runner": "模拟盘",
       "conversation": "会话"
     },
     "empty": "暂无活动。",

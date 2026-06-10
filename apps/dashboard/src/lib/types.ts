@@ -409,6 +409,7 @@ export type ActivityKind =
   | "risk"
   | "order"
   | "backtest"
+  | "runner"
   | "conversation";
 
 export type ActivityTone = "bull" | "fox" | "gold" | "cyan" | "muted";
