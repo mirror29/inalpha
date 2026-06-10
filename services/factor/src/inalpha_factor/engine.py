@@ -52,6 +52,9 @@ def _tf_seconds(timeframe: str) -> int:
 # agent timing 短时间内对同一标的连问是常态，每次重拉 bar + 重算 50 因子纯浪费。
 # 金融时效性守门：实际 TTL = min(FACTOR_CACHE_TTL_S, 半根 bar)，最多半根 bar stale；
 # 历史 as_of 不走缓存（低频且 key 难收敛）；空 df 不入缓存（data 抖一下别毒 5 分钟）。
+# 坑(单租户假设):key 不含用户/账户标识 —— 因子面板是公共行情衍生数据,当前可共享;
+# 若未来缓存内容沾上用户私有维度(自定义因子/私有数据源),必须把 token 加进 key,
+# 否则 A 的面板会返给 B。
 _PANEL_CACHE_MAX = 64
 # FRED daily 序列一天才更新一次，live 缓存 TTL 放宽到 1 小时（ADR-0044 D1）
 _MACRO_CACHE_TTL_S = 3600.0
@@ -181,11 +184,25 @@ class FactorEngine:
         as_of: datetime,
         fresh: bool,
     ) -> dict[str, pd.Series]:
-        """拉 FRED 序列并算宏观因子。任何一环失败只降级（少这批因子），不破坏价量结果。"""
-        if df.empty or timeframe not in MACRO_TIMEFRAMES or not self._macro.available():
-            return {}
+        """拉 FRED 序列并算宏观因子。任何一环失败只降级（少这批因子），不破坏价量结果。
+
+        降级必须**显式留痕**(§3.1 拿不到时不静默):请求里点名了 macro.* 却返 {}
+        时,每条路径都有带原因的日志,排查"宏观因子怎么没了"不用猜。
+        """
         want = [fid for fid in factor_ids if fid.startswith("macro.")]
         if not want:
+            return {}
+        if timeframe not in MACRO_TIMEFRAMES:
+            logger.info(
+                "macro factors skipped: timeframe %s not in %s (macro 仅日/周频)",
+                timeframe, sorted(MACRO_TIMEFRAMES),
+            )
+            return {}
+        if not self._macro.available():
+            logger.info("macro factors skipped: macro source disabled (FACTOR_MACRO_ENABLED)")
+            return {}
+        if df.empty:
+            logger.info("macro factors skipped: no price bars to align against")
             return {}
         # 多拉 120 天给 daily 公式 warmup（chg_60 + 余量）
         from_ts = (
@@ -200,6 +217,10 @@ class FactorEngine:
             except Exception as exc:  # FRED key 缺失 / data 无 fred venue → 优雅降级
                 logger.warning("macro series %s fetch failed: %r", sid, exc)
         if not macro:
+            logger.info(
+                "macro factors degraded: 0/%d FRED series fetched, %d macro factor(s) dropped",
+                len(self._macro.required_series(want)), len(want),
+            )
             return {}
         try:
             return self._macro.compute_with_macro(df, macro, want)
