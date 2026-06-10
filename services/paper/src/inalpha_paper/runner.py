@@ -25,6 +25,7 @@ from .data_client import DataClient
 from .engine.backtest import BacktestEngine
 from .engine.metrics import periods_per_year
 from .engine.pool import get_pool
+from .kernel.clock import datetime_to_ns
 from .kernel.identifiers import InstrumentId
 from .model.data import Bar
 from .schemas import (
@@ -243,6 +244,8 @@ async def run_backtest(
     )
     run_id: UUID | None = None
     if conn is not None:
+        # run 行 + 逐笔成交同一事务写入(只写主候选/内置策略的 fills,**不写 baseline**):
+        # 拆两事务时 trades 失败会留下"有记录但成交永远空白"的孤儿 run。
         run_id = await _persist_run(
             conn=conn,
             req=req,
@@ -252,18 +255,6 @@ async def run_backtest(
             started_at=started_at,
             finished_at=finished_at,
         )
-        # 6a'. 逐笔成交落 backtest_trades（含每笔实现盈亏）—— best-effort，失败 warning 不阻断。
-        # 只写主候选/内置策略的 fills，**不写 baseline**（baseline_report 仅作对照）。
-        if run_id is not None and report.fills:
-            try:
-                async with conn.transaction():
-                    await backtest_trades_store.insert_fills(conn, run_id, report.fills)
-            except Exception:
-                logger.warning(
-                    "backtest_trades insert failed",
-                    exc_info=True,
-                    extra={"run_id": str(run_id)},
-                )
         # 6a. candidate 路径：回写 candidates 表（最近一次 metrics / fitness）
         if req.candidate_id is not None:
             try:
@@ -344,7 +335,11 @@ async def _persist_run(
     started_at: datetime,
     finished_at: datetime,
 ) -> UUID | None:
-    """写一行 backtest_runs。失败 log warning 后返 None，不阻断回测响应。"""
+    """写一行 backtest_runs + 逐笔成交(同一事务)。失败 log warning 后返 None，不阻断回测响应。
+
+    run 行与 ``backtest_trades`` 必须同事务：拆开写时 trades 失败会留下
+    "run_id 已暴露给调用方、UI 成交表却永远空白"的孤儿行。
+    """
     config = {
         "venue": req.venue,
         "symbol": req.symbol,
@@ -384,7 +379,7 @@ async def _persist_run(
     }
     try:
         async with conn.transaction():
-            return await backtest_runs_store.insert_run(
+            run_id = await backtest_runs_store.insert_run(
                 conn,
                 strategy_code=strategy_code,
                 config=config,
@@ -394,6 +389,9 @@ async def _persist_run(
                 started_at=started_at,
                 finished_at=finished_at,
             )
+            if report.fills:
+                await backtest_trades_store.insert_fills(conn, run_id, report.fills)
+            return run_id
     except Exception:
         logger.warning(
             "backtest_runs insert failed",
@@ -582,20 +580,8 @@ def run_engine_in_subprocess(
     return engine.run(bars)
 
 
-def _datetime_to_ns(dt: datetime) -> int:
-    """``datetime`` → 纳秒整数，**不走 float**。
-
-    旧实现 ``int(dt.timestamp() * 1_000_000_000)`` 对 2026 年的时间戳精度不够：
-    ts_ns ≈ 1.7e18 超 float64 mantissa，可能丢 ~100ns，导致 ``Portfolio.snapshot``
-    用 ``==`` 比较 ts_ns 时误覆盖（D-8b' review 高风险 #5）。
-
-    分两步：先取整秒，再补 microsecond × 1000，纯整数运算。
-    """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    # int(dt.timestamp()) 仍走 float，但秒数量级 < 2^53 安全
-    secs = int(dt.timestamp())
-    return secs * 1_000_000_000 + dt.microsecond * 1_000
+# datetime → ns 整数转换已上移 kernel.clock.datetime_to_ns(report.py 也要用,
+# 留在 runner 会形成 engine → runner 反向依赖)。
 
 
 def _bar_from_dict(d: dict[str, Any], instrument_id: InstrumentId, timeframe: str) -> Bar:
@@ -608,7 +594,7 @@ def _bar_from_dict(d: dict[str, Any], instrument_id: InstrumentId, timeframe: st
         dt = ts_str
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
-    ts_ns = _datetime_to_ns(dt)
+    ts_ns = datetime_to_ns(dt)
 
     return Bar(
         instrument_id=instrument_id,

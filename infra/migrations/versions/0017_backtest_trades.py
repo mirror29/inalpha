@@ -46,8 +46,10 @@ def upgrade() -> None:
         )
         """
     )
+    # UNIQUE:同一 run 的 seq 不可重复 —— insert_fills 被重试/重复调用时由约束层
+    # 拒绝,否则静默双份成交记录会被 UI 当真实交易展示。
     op.execute(
-        "CREATE INDEX backtest_trades_run_idx "
+        "CREATE UNIQUE INDEX backtest_trades_run_idx "
         "ON backtest_trades (backtest_run_id, seq)"
     )
 
