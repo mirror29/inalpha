@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 from ..kernel.clock import datetime_to_ns
 from ..kernel.identifiers import InstrumentId
+from ..model.orders import OrderSide
 from ..model.positions import Position
 from . import metrics
 
@@ -96,11 +97,12 @@ class BacktestReport:
     #: 最佳 / 最差单笔（货币,round-trip 口径）
     best_trade_pnl: float | None = None
     worst_trade_pnl: float | None = None
-    #: 最大连胜 / 连亏笔数
-    max_consecutive_wins: int | None = None
-    max_consecutive_losses: int | None = None
-    #: 最长回撤持续期（bar 数,含未收复的尾段）
-    max_drawdown_duration_bars: int | None = None
+    #: 最大连胜 / 连亏笔数。恒为 int（无成交 = 0,与"零连胜"同值——要区分
+    #: 看 num_trades==0）,不用 Optional 假装会出 None。
+    max_consecutive_wins: int = 0
+    max_consecutive_losses: int = 0
+    #: 最长回撤持续期（bar 数,含未收复的尾段;恒为 int,无回撤 = 0）
+    max_drawdown_duration_bars: int = 0
     #: 持仓时间占比（%）
     exposure_pct: float | None = None
     #: 逐笔成交（含每笔实现盈亏），落 ``backtest_trades`` 表用
@@ -159,7 +161,10 @@ class BacktestReport:
         start_ns = datetime_to_ns(period_start) if period_start else None
         end_ns = datetime_to_ns(period_end) if period_end else None
         fill_events = [
-            (f.ts_ns, f.quantity if f.side == "BUY" else -f.quantity) for f in fills
+            # 用枚举值常量而非字面量:OrderSide 值若改写法,这里跟着编译期变,
+            # 不会静默把所有 BUY 当 SELL 算 exposure。
+            (f.ts_ns, f.quantity if f.side == OrderSide.BUY.value else -f.quantity)
+            for f in fills
         ]
 
         return cls(
