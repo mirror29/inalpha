@@ -80,6 +80,10 @@ export async function GET(
           venue: strOrNull(latestBacktest.config.venue),
           symbol: strOrNull(latestBacktest.config.symbol),
           timeframe: strOrNull(latestBacktest.config.timeframe),
+          metrics: (latestBacktest.metrics ?? null) as Record<
+            string,
+            number | null
+          > | null,
         }
       : null;
     const backtestTrades = backtestRun

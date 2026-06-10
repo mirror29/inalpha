@@ -103,7 +103,12 @@ export function CandidateDetailClient({ id }: { id: string }) {
               <BacktestMeta run={data.backtestRun} locale={locale} />
             )}
             <div className="p-4">
-              <MetricsGrid metrics={c.metrics} fitness={c.fitness} />
+              {/* 候选自带 metrics(进化期)与最近一次回测 metrics 合并展示;
+                  同 key 以回测为准(更新、含专业级扩展指标)。 */}
+              <MetricsGrid
+                metrics={{ ...c.metrics, ...(data.backtestRun?.metrics ?? {}) }}
+                fitness={c.fitness}
+              />
             </div>
           </Panel>
 
