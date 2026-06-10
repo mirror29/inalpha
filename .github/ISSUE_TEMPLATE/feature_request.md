@@ -25,9 +25,9 @@ How do you think it could be solved? (Leave blank if you don't have an idea yet.
 
 ## Which Phase does this belong to? / 这个建议属于哪个 Phase？
 
-- [ ] D-9 (current — LLM-authored strategies, RiskEngine rules, multi-market routing)
-- [ ] D-10+ (paper / live milestones, multi-strategy execution)
-- [ ] E-series (research crew, strategy evolution beyond E1, factor L2–L3)
+- [ ] D-series (data / paper-trading mainline — D-11 landed: multi-market paper, cross-currency cash, live runner)
+- [ ] research-hub (#6 — research workspace / 研究工作台)
+- [ ] E-series (strategy evolution E2+ (#7), factor L2–L3, research crew)
 - [ ] Unsure / needs discussion / 不确定 / 需要讨论
 
 ## Does it violate any hard constraints? / 是否破坏现有约束？

@@ -15,7 +15,7 @@ Briefly describe the change (1–3 sentences). For bug fixes, link the related i
 ## Scope / 涉及范围
 
 - Affected service / 受影响 service: `services/data` / `services/paper` / `services/research` / `packages/orchestration` / other
-- Current Phase / 当前 Phase: D-9 / D-10+ / E-series / N/A
+- Current Phase / 当前 Phase: D-11 / D-12+ / E-series / N/A
 - Type / 类型: `feat` / `fix` / `refactor` / `docs` / `test` / `chore`
 
 ## Self-review checklist / 自检清单
