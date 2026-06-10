@@ -20,10 +20,13 @@ USER node
 # 依赖清单先行做层缓存
 COPY --chown=node:node package.json pnpm-lock.yaml* ./
 # pnpm 11 默认拦截依赖的构建脚本并以非零退出（ERR_PNPM_IGNORED_BUILDS）——这是"装完之后"的守门，
-# 此时依赖已正确链接,故容忍该退出码;但**必须验证 node_modules 真的生成了**,
-# 否则 pnpm 彻底失败也会静默通过,推到运行时才崩、难排查。
+# 此时依赖已正确链接,故容忍该退出码;但**必须验证关键依赖真的链接成功**——
+# 只查 .pnpm 目录存在不够(网络半途失败会留下残目录但包未链接),改为解析
+# esbuild 包 + mastra 可执行文件,失败在构建期响亮报错而非运行时才崩。
 RUN (pnpm install --frozen-lockfile || pnpm install || true) \
- && { [ -d node_modules/.pnpm ] || { echo "pnpm install 失败:node_modules 未生成" >&2; exit 1; }; }
+ && { node -e "require.resolve('esbuild/package.json')" >/dev/null 2>&1 \
+      && [ -e node_modules/.bin/mastra ]; } \
+ || { echo "pnpm install 失败:关键依赖(esbuild / mastra CLI)未就绪" >&2; exit 1; }
 # 显式 rebuild esbuild 确保其原生二进制就绪（mastra 打包器需要;若真未就绪,
 # 下面的 `mastra build` 会响亮失败,故此处可容错）
 RUN pnpm rebuild esbuild 2>&1 | tail -3 || true
