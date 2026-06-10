@@ -51,6 +51,17 @@ export function ActivityFeed({ events }: { events: ActivityEvent[] }) {
               <div className="flex flex-wrap items-center gap-2">
                 <KindTag kind={e.kind} />
                 <span className="truncate text-fg">{e.title}</span>
+                {e.stats?.map((st, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      "tnum shrink-0 font-mono text-[11px]",
+                      toneText[st.tone ?? "muted"],
+                    )}
+                  >
+                    {st.text}
+                  </span>
+                ))}
                 {e.outcome && (
                   <span
                     className={cn(

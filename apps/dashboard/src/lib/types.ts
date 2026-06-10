@@ -413,6 +413,12 @@ export type ActivityKind =
 
 export type ActivityTone = "bull" | "fox" | "gold" | "cyan" | "muted";
 
+/** 行内迷你指标 chip(回测的 fitness/收益、订单的方向/盈亏)—— 扫读定位用。 */
+export interface ActivityStat {
+  text: string;
+  tone?: ActivityTone;
+}
+
 /** 一条归一化的 agent 活动事件。 */
 export interface ActivityEvent {
   id: string;
@@ -428,6 +434,8 @@ export interface ActivityEvent {
   tone: ActivityTone;
   /** 可点进的目标(如 runner 详情);无则 null。 */
   href: string | null;
+  /** 行内迷你指标(可选):紧跟标题,带语调染色,扫一眼能定位关键数字。 */
+  stats?: ActivityStat[];
 }
 
 /** GET /api/activity —— Agent 活动流聚合负载。 */
