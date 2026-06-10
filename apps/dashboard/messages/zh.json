@@ -452,5 +452,10 @@
     "posPresent": "现在",
     "posFuture": "未来",
     "disclaimer": "狐神之签，只作参照 · 非投资建议 · 落子仍归数据与风控"
+  },
+  "backtests": {
+    "back": "Agent 活动",
+    "notFound": "未找到该回测记录。",
+    "viewCandidate": "查看策略详情"
   }
 }
