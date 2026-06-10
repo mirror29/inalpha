@@ -70,7 +70,8 @@ services:
     volumes:
       - ../infra/migrations:/app/migrations:ro
     working_dir: /app
-    # ⚠️ 待验证：alembic 是否在 paper 镜像依赖内；若否，改用专用 migrate 镜像或 pip install alembic
+    # alembic 已是 paper 的**显式直接依赖**(services/paper/pyproject.toml,
+    # 不再依赖 optuna 的传递依赖,上游换后端也不会让迁移静默消失)
     command: ["sh", "-c", "uv --project paper run alembic -c /app/migrations/alembic.ini upgrade head"]
 
   data:

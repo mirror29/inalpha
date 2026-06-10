@@ -11,6 +11,10 @@ dependencies = [
     "httpx>=0.28.0",
     "backtester-mcp>=0.1.0",
     "exchange-calendars>=4.5",
+    # 显式声明:生产 migrate 容器复用 paper 镜像跑 `uv --project paper run alembic`
+    # (infra/docker-compose.prod.yml)。此前 alembic 只是 optuna 的传递依赖——上游
+    # 换后端就会静默消失,生产迁移会无报警地跳过。
+    "alembic>=1.13",
 ]
 
 [dependency-groups]

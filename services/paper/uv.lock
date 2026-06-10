@@ -451,6 +451,7 @@ name = "inalpha-paper"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "alembic" },
     { name = "backtester-mcp" },
     { name = "exchange-calendars" },
     { name = "fastapi" },
@@ -471,6 +472,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "alembic", specifier = ">=1.13" },
     { name = "backtester-mcp", specifier = ">=0.1.0" },
     { name = "exchange-calendars", specifier = ">=4.5" },
     { name = "fastapi", specifier = ">=0.136.0" },
