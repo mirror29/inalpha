@@ -167,3 +167,14 @@ def datetime_to_ns(dt: datetime) -> int:
     # int(dt.timestamp()) 仍走 float，但秒数量级 < 2^53 安全
     secs = int(dt.timestamp())
     return secs * 1_000_000_000 + dt.microsecond * 1_000
+
+
+def ns_to_datetime(ts_ns: int) -> datetime:
+    """纳秒整数 → tz-aware datetime（UTC），``datetime_to_ns`` 的逆向。
+
+    同样**不走 float**：``fromtimestamp(ts_ns / 1e9)`` 对 2026 年时间戳丢
+    ~100ns,导致同一 ts_ns 存取不能整数轮转。divmod 拆秒 + 微秒,纯整数;
+    亚微秒部分截断(datetime 本身只有微秒精度)。
+    """
+    secs, rem_ns = divmod(ts_ns, 1_000_000_000)
+    return datetime.fromtimestamp(secs, tz=UTC).replace(microsecond=rem_ns // 1_000)
