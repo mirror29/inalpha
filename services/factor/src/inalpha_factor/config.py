@@ -28,11 +28,20 @@ class FactorSettings(BaseSettings):
     )
 
     qlib_enabled: bool = Field(
-        default=False,
+        default=True,
         alias="FACTOR_QLIB_ENABLED",
-        description="是否启用 qlib Alpha158/360 适配器。默认 False —— pyqlib 体量大且"
-        "Apple Silicon 偶有装机坑，需 `uv sync --extra qlib` 后再开。关闭时 catalog"
+        description="是否启用 qlib Alpha158 风格适配器。默认 True —— 因子是纯 pandas"
+        "公式本地算，不依赖 pyqlib（ADR-0043 D1）。开关保留作降级阀门；关闭时 catalog"
         "里 qlib 因子标 available=false，pandas-ta + Alpha101 仍可用。",
+    )
+
+    snapshot_corr_threshold: float = Field(
+        default=0.85,
+        ge=0.5,
+        le=1.0,
+        alias="FACTOR_SNAPSHOT_CORR_THRESHOLD",
+        description="snapshot top-N 去相关阈值：候选因子与已选因子时序 |spearman| ≥ 此值"
+        "则跳过（ADR-0043 D3）。1.0 = 关闭去相关。",
     )
 
     snapshot_top_n: int = Field(

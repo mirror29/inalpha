@@ -56,11 +56,15 @@ export const factorTimingTool = createTool({
     - 全市场扫描 N 个标的 → 单次只查一个标的，别在 loop 里滥用
 
     返回 top_factors[]：每个含 name / kind / value（最新读数）/ rank_ic（越大越有效，正=因子高→后市涨）/
-    direction（+1 看多 / -1 看空 / 0 无效）/ strength（0-1）/ low_confidence。
+    rank_ic_recent（近 1/3 窗 IC，与 rank_ic 反号或趋零=因子正在衰减，引用时要降权并说明）/
+    turnover（0-1 换手，高 IC+高换手的信号实盘打折）/ direction（+1 看多 / -1 看空 / 0 无效）/
+    strength（0-1）/ low_confidence / corr_pruned（被它挤掉的同质因子，top-N 已去相关）。
     available=false 或 top 为空时说明该标的样本不足，**别硬编故事**，如实告诉用户数据不够。
 
     坑：
     - rank_ic 是历史统计有效性，非未来保证；direction 只在 |rank_ic| 过阈值才非 0
+    - candidates_evaluated 是"top-N 从多少候选里挑的"——候选几十个时最高 |IC| 天然偏乐观
+      （多重检验），引用时别把 top1 的 IC 当确定性结论
     - lookbackBars 太小 → low_confidence；horizonBars 决定"预测多远的收益"（默认 5 根）
   `.trim(),
   inputSchema: z.object({
@@ -175,7 +179,7 @@ export const factorCatalogTool = createTool({
     - 只想知道"现在哪些因子有效" → factor.timing（直接给有效性排序，不用先 catalog）
 
     来源：pandas_ta（技术指标）/ alpha101（WorldQuant 101，部分横截面项 needs_universe=true 本期不算）/
-    qlib_alpha158（默认未启用，available=false）。
+    qlib_alpha158（Alpha158 风格公式因子，纯 pandas 本地算，默认启用）。
   `.trim(),
   inputSchema: z.object({}),
   execute: async (_inputData, ctx) => {

@@ -30,8 +30,14 @@ export type FactorEffectiveness = {
   kind: string;
   value: number | null;
   rank_ic: number;
+  /** 近 1/3 样本窗 Rank IC：与 rank_ic 反号/趋零 = 因子正在衰减（ADR-0043） */
+  rank_ic_recent: number;
   icir: number;
+  /** 因子换手 0-1：高 IC + 高换手的信号应打折 */
+  turnover: number;
   sample_size: number;
+  /** snapshot 去相关时被本因子挤掉的同质因子 id */
+  corr_pruned?: string[];
   quantile_returns: { q: number; mean_return: number; sample_size: number }[];
   long_short_return: number;
   direction: number; // +1/-1/0
@@ -59,6 +65,10 @@ export type SnapshotResult = {
   available: boolean;
   reason: string | null;
   top_factors: FactorEffectiveness[];
+  /** top-N 是从多少个候选里挑的（多重检验背景：候选越多，最高 |IC| 的期望越虚高） */
+  candidates_evaluated: number;
+  /** 样本不足被排除排序的因子数 */
+  low_confidence_count: number;
 };
 
 export class FactorClient {

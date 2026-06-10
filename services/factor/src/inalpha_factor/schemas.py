@@ -103,8 +103,20 @@ class FactorEffectiveness(BaseModel):
     kind: str
     value: float | None = Field(description="as_of 时点的最新因子值")
     rank_ic: float = Field(description="时序 Rank IC：spearman(rank(factor), rank(fwd_return))")
+    rank_ic_recent: float = Field(
+        default=0.0,
+        description="近 1/3 样本窗的 Rank IC：与 rank_ic 同号且量级接近≈稳定，反号/趋零≈正在衰减",
+    )
     icir: float = Field(description="分段 IC 的均值 / 标准差")
+    turnover: float = Field(
+        default=0.0,
+        description="因子换手：1 - spearman(f_t, f_{t-1})，0≈信号几乎不动；高 IC+高换手应打折",
+    )
     sample_size: int = Field(description="有效（因子, 前瞻收益）对数")
+    corr_pruned: list[str] = Field(
+        default_factory=list,
+        description="snapshot 去相关时被本因子挤掉的同质因子 id（|spearman| ≥ 阈值）",
+    )
     quantile_returns: list[QuantileStat] = Field(default_factory=list)
     long_short_return: float = Field(default=0.0, description="top 分位 - bottom 分位 平均前瞻收益")
     direction: int = Field(description="择时方向 +1/-1/0（sign(rank_ic)，过阈值才非 0）")
@@ -171,6 +183,13 @@ class SnapshotResponse(BaseModel):
     available: bool = Field(description="factor 计算是否成功（false 时 caller 应降级）")
     reason: str | None = None
     top_factors: list[FactorEffectiveness] = Field(default_factory=list)
+    candidates_evaluated: int = Field(
+        default=0,
+        description="本次共评估的候选因子数——top-N 是从这么多里挑的（多重检验背景，ADR-0043 D4）",
+    )
+    low_confidence_count: int = Field(
+        default=0, description="样本不足被排除排序的因子数（区分'没因子'和'有因子但样本不够'）"
+    )
 
 
 class ComputeErrorResponse(BaseModel):

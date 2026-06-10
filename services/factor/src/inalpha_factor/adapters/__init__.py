@@ -5,7 +5,7 @@
 
 - ``pandas_ta_adapter`` —— pandas-ta 技术指标（库不可用时用纯 pandas 兜底，永远可用）
 - ``alpha101_adapter``  —— WorldQuant 101 alpha 的可时序子集（纯 pandas）
-- ``qlib_alpha_adapter`` —— qlib Alpha158 风格因子（FACTOR_QLIB_ENABLED 开关 + import 守卫）
+- ``qlib_alpha_adapter`` —— qlib Alpha158 风格因子（纯 pandas，FACTOR_QLIB_ENABLED 开关，ADR-0043）
 """
 from __future__ import annotations
 

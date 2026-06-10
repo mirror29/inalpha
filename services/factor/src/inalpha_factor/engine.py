@@ -4,15 +4,19 @@
 """
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from .adapters import Alpha101Adapter, FactorAdapter, FactorSpec, PandasTAAdapter, QlibAlphaAdapter
 from .config import FactorSettings
 from .data_client import DataClient
 from .effectiveness import EffResult, score_factor
+
+logger = logging.getLogger(__name__)
 
 # 不同 timeframe 估算每根 bar 的秒数，用于把 lookback_bars 换算成时间窗口拉数据。
 _TF_SECONDS: dict[str, int] = {
@@ -118,7 +122,8 @@ class FactorEngine:
                 continue
             try:
                 out.update(a.compute(df, factor_ids))
-            except Exception:  # 单个源算挂不影响其他源
+            except Exception as exc:  # 单个源算挂不影响其他源，但要可观测（ADR-0043 D5）
+                logger.warning("factor adapter %s compute failed: %r", a.source, exc)
                 continue
         return out
 
@@ -135,6 +140,31 @@ class FactorEngine:
         quantiles: int,
         factor_ids: list[str] | None,
     ) -> dict[str, Any]:
+        scored, _series = await self._score_with_series(
+            venue=venue,
+            symbol=symbol,
+            timeframe=timeframe,
+            as_of=as_of,
+            lookback_bars=lookback_bars,
+            horizon_bars=horizon_bars,
+            quantiles=quantiles,
+            factor_ids=factor_ids,
+        )
+        return scored
+
+    async def _score_with_series(
+        self,
+        *,
+        venue: str,
+        symbol: str,
+        timeframe: str,
+        as_of: datetime | None,
+        lookback_bars: int,
+        horizon_bars: int,
+        quantiles: int,
+        factor_ids: list[str] | None,
+    ) -> tuple[dict[str, Any], dict[str, pd.Series]]:
+        """score 主体；额外返回因子时序，给 snapshot 去相关用（ADR-0043 D3）。"""
         # "现在"做择时（factor.timing/snapshot，含 research analyst 传 as_of=deep_dive 的当前
         # 时刻）→ 必须 fresh（先 backfill 到现在再算），否则尾巴 stale 让"当前因子方向"是几小时
         # 前的状态（§3.1）。判 live 不能只看 as_of is None —— 调用方常显式传"当前时刻"；as_of 落在
@@ -174,7 +204,7 @@ class FactorEngine:
             "as_of": as_of,
             "bars_used": len(df),
             "factors": results,
-        }
+        }, series
 
     async def snapshot(
         self,
@@ -187,7 +217,7 @@ class FactorEngine:
         horizon_bars: int,
         top_n: int | None,
     ) -> dict[str, Any]:
-        scored = await self.score(
+        scored, series = await self._score_with_series(
             venue=venue,
             symbol=symbol,
             timeframe=timeframe,
@@ -198,17 +228,21 @@ class FactorEngine:
             factor_ids=None,
         )
         factors: list[dict[str, Any]] = scored["factors"]
-        # 只保留有信心的，按 |rank_ic| 降序取 top-N
+        # 只保留有信心的，按 |rank_ic| 降序、去相关后取 top-N（ADR-0043 D3）
         confident = [f for f in factors if not f["low_confidence"]]
         confident.sort(key=lambda f: abs(f["rank_ic"]), reverse=True)
         n = top_n or self._settings.snapshot_top_n
-        top = confident[:n]
+        top = _select_decorrelated(
+            confident, series, n, self._settings.snapshot_corr_threshold
+        )
         return {
             "as_of": scored["as_of"],
             "bars_used": scored["bars_used"],
             "available": scored["bars_used"] > 0 and len(factors) > 0,
             "reason": None if scored["bars_used"] > 0 else "no bars from data-service",
             "top_factors": top,
+            "candidates_evaluated": len(factors),
+            "low_confidence_count": len(factors) - len(confident),
         }
 
 
@@ -237,6 +271,51 @@ def _mark_unavailable(spec: FactorSpec) -> FactorSpec:
     )
 
 
+def _select_decorrelated(
+    ranked: list[dict[str, Any]],
+    series: dict[str, pd.Series],
+    n: int,
+    threshold: float,
+) -> list[dict[str, Any]]:
+    """贪心去相关：按 |rank_ic| 降序遍历，与已选因子时序 |spearman| ≥ threshold 则跳过。
+
+    被挤掉的因子 id 记进胜者的 ``corr_pruned``，让 agent 知道该信号有多少同质替身。
+    重叠样本 < 30 时不判相关（信息不足，宁可放行）。
+    """
+    selected: list[dict[str, Any]] = []
+    for cand in ranked:
+        if len(selected) >= n:
+            break
+        cand_series = series.get(cand["factor_id"])
+        winner: dict[str, Any] | None = None
+        for sel in selected:
+            corr = _abs_spearman(cand_series, series.get(sel["factor_id"]))
+            if corr is not None and corr >= threshold:
+                winner = sel
+                break
+        if winner is not None:
+            winner["corr_pruned"].append(cand["factor_id"])
+        else:
+            cand["corr_pruned"] = []
+            selected.append(cand)
+    return selected
+
+
+def _abs_spearman(a: pd.Series | None, b: pd.Series | None) -> float | None:
+    """两条因子时序的 |spearman|；样本不足 / 常数列返回 None（视作不可判）。"""
+    if a is None or b is None:
+        return None
+    pair = pd.concat([a, b], axis=1).replace([np.inf, -np.inf], np.nan).dropna()
+    if len(pair) < 30:
+        return None
+    ar = pair.iloc[:, 0].rank()
+    br = pair.iloc[:, 1].rank()
+    if ar.std(ddof=0) == 0 or br.std(ddof=0) == 0:
+        return None
+    c = ar.corr(br)
+    return None if np.isnan(c) else abs(float(c))
+
+
 def _eff_to_dict(spec: FactorSpec, eff: EffResult) -> dict[str, Any]:
     return {
         "factor_id": spec.factor_id,
@@ -245,7 +324,9 @@ def _eff_to_dict(spec: FactorSpec, eff: EffResult) -> dict[str, Any]:
         "kind": spec.kind,
         "value": eff.value,
         "rank_ic": eff.rank_ic,
+        "rank_ic_recent": eff.rank_ic_recent,
         "icir": eff.icir,
+        "turnover": eff.turnover,
         "sample_size": eff.sample_size,
         "quantile_returns": [
             {"q": q, "mean_return": m, "sample_size": n} for (q, m, n) in eff.quantile_returns

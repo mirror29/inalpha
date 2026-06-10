@@ -36,7 +36,9 @@ def test_health(client: TestClient) -> None:
     assert body["service"] == "factor"
     assert "pandas_ta" in body["adapters"]
     assert body["adapters"]["pandas_ta"] is True
-    assert body["qlib_enabled"] is False
+    # ADR-0043 D1：qlib 风格因子纯 pandas 本地算，默认启用
+    assert body["qlib_enabled"] is True
+    assert body["adapters"]["qlib_alpha158"] is True
 
 
 def test_catalog(client: TestClient) -> None:
@@ -46,9 +48,9 @@ def test_catalog(client: TestClient) -> None:
     ids = {f["factor_id"] for f in body["factors"]}
     assert "pandas_ta.rsi_14" in ids
     assert "alpha101.a101" in ids
-    # qlib 因子露出但 available=false
+    # qlib 风格因子默认可用（ADR-0043 D1/D2：纯 pandas，扩容到 30）
     qlib = [f for f in body["factors"] if f["source"] == "qlib_alpha158"]
-    assert qlib and all(f["available"] is False for f in qlib)
+    assert len(qlib) >= 30 and all(f["available"] is True for f in qlib)
 
 
 def test_score_with_fake_data() -> None:
@@ -84,6 +86,40 @@ def test_snapshot_returns_top_n() -> None:
         # 按 |rank_ic| 降序
         ics = [abs(f["rank_ic"]) for f in body["top_factors"]]
         assert ics == sorted(ics, reverse=True)
+        # ADR-0043 D4：选择透明化 + 新有效性字段
+        assert body["candidates_evaluated"] >= 50  # 三源扩容后候选 ≥ 50
+        assert body["low_confidence_count"] >= 0
+        for f in body["top_factors"]:
+            assert {"rank_ic_recent", "turnover", "corr_pruned"} <= set(f)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_snapshot_decorrelates_top_n() -> None:
+    """ADR-0043 D3：top-N 内任意两因子时序 |spearman| < 阈值（同质因子被挤掉）。"""
+    from itertools import combinations
+
+    from inalpha_factor.engine import _abs_spearman
+
+    df = make_ohlcv(400)
+    fake = _FakeEngine(df)
+    app.dependency_overrides[get_engine] = lambda: fake
+    try:
+        client = TestClient(app)
+        r = client.post(
+            "/snapshot",
+            json={"symbol": "BTC/USDT", "timeframe": "1h", "top_n": 8, "lookback_bars": 300},
+        )
+        assert r.status_code == 200, r.text
+        top = r.json()["top_factors"]
+        assert len(top) >= 2
+        series = fake.compute_on_df(df, None)
+        threshold = get_factor_settings().snapshot_corr_threshold
+        for a, b in combinations(top, 2):
+            corr = _abs_spearman(series.get(a["factor_id"]), series.get(b["factor_id"]))
+            assert corr is None or corr < threshold, (
+                f"{a['factor_id']} vs {b['factor_id']} corr={corr}"
+            )
     finally:
         app.dependency_overrides.clear()
 
