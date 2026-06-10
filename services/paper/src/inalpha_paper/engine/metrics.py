@@ -312,7 +312,9 @@ def exposure_pct(
     """持仓时间占比（百分比）= 净仓位 ≠ 0 的时间 / 回测总时长。
 
     Args:
-        fill_events: ``[(ts_ns, signed_qty_delta)]``,按时间升序（BUY 为正 SELL 为负）
+        fill_events: ``[(ts_ns, signed_qty_delta)]``（BUY 为正 SELL 为负）;
+            函数内部按 ts 升序兜底排序——逐段累计隐式要求有序,乱序时 exposed
+            会中途变负再被 clamp 成"看着合理"的值,静默错而不报
         period_start_ns / period_end_ns: 回测窗口（纳秒）;缺任一返 ``None``
 
     无成交返 ``0.0``（全程空仓）。浮点累计的 |net| < 1e-12 视为已平。
@@ -324,6 +326,9 @@ def exposure_pct(
         return None
     if not fill_events:
         return 0.0
+    # 当前调用方(BacktestReport.from_portfolio)按回测顺序追加本就有序,
+    # sorted 对已序输入 O(n);未来 fill-replay / 多策略合并传乱序也不会静默错。
+    fill_events = sorted(fill_events, key=lambda e: e[0])
     net = 0.0
     prev_ts = period_start_ns
     exposed = 0
