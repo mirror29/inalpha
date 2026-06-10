@@ -32,8 +32,17 @@ export function RunnersPanel({ runs }: { runs: StrategyRunRecord[] }) {
   const nowMs = Date.now();
 
   const runningCount = runs.filter((r) => r.status === "running").length;
+  // 按策略(candidate)去重:重启会新建 run 记录,这里只展示每个策略最新一次
+  // run —— 与 Live Runner 页的分组口径一致,完整历史去该页的卡片里看。
+  const latestByCandidate = new Map<string, StrategyRunRecord>();
+  for (const r of runs) {
+    const prev = latestByCandidate.get(r.candidate_id);
+    if (!prev || r.started_at.localeCompare(prev.started_at) > 0) {
+      latestByCandidate.set(r.candidate_id, r);
+    }
+  }
   // 运行中排前,同状态按启动时间倒序(最近启动的在上)。
-  const sorted = [...runs].sort((a, b) => {
+  const sorted = [...latestByCandidate.values()].sort((a, b) => {
     const ar = a.status === "running" ? 0 : 1;
     const br = b.status === "running" ? 0 : 1;
     if (ar !== br) return ar - br;
