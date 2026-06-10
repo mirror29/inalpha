@@ -178,13 +178,16 @@ def test_list_backtest_runs_by_strategy_code(
     assert any(row["strategy_code"] == "sma_cross" for row in rows)
 
 
-def test_list_backtest_runs_requires_filter(
+def test_list_backtest_runs_without_filter_returns_recent(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    """不带任何 filter 时拒绝。"""
+    """不带 filter → 全局最近 N 条（控制台 Agent 活动流用），不再 400。"""
     r = client.get("/backtest_runs", headers=auth_headers)
-    assert r.status_code == 400
-    assert r.json()["code"] == "MISSING_FILTER"
+    assert r.status_code == 200
+    rows = r.json()
+    assert isinstance(rows, list)
+    # 前面的用例已落过 sma_cross 的 run,全局列表应能看到。
+    assert any(row["strategy_code"] == "sma_cross" for row in rows)
 
 
 def test_list_backtest_runs_requires_auth(client: TestClient) -> None:
