@@ -14,6 +14,7 @@ import type {
 interface RawBacktestRun {
   run_id: string;
   config: Record<string, unknown>;
+  metrics: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -61,10 +62,15 @@ export async function GET(
 
     // 最近一次回测概要(回测时间/区间)+ 逐笔成交 —— best-effort,失败降级,不阻塞详情。
     // 回测 strategy_code 对候选路径固定为 "candidate:<id>"(见 paper runner)。
+    // 取「最近一次**有成交**的回测,否则最近一次」:同一候选可能混有跑错标的/参数的
+    // 0 成交脏 run(如 NVDA 策略灌 BTC 数据),只按 created_at 取最新会把脏 run 顶到
+    // 详情页(K 线标的都不对)。展示哪个 run 在 BacktestMeta 标的/区间里是透明的。
     const backtestRunsRaw = await backendFetch<RawBacktestRun[]>("paper", "/backtest_runs", {
-      query: { strategy_code: `candidate:${id}`, limit: 1 },
+      query: { strategy_code: `candidate:${id}`, limit: 10 },
     }).catch(() => [] as RawBacktestRun[]);
-    const latestBacktest = backtestRunsRaw[0];
+    const latestBacktest =
+      backtestRunsRaw.find((r) => Number(r.metrics?.num_trades) > 0) ??
+      backtestRunsRaw[0];
     const backtestRun: BacktestRunSummary | null = latestBacktest
       ? {
           runId: latestBacktest.run_id,
