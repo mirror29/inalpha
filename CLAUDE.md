@@ -23,7 +23,7 @@
 - **不要碰**：`.mastra/` / `docs/miro/` gitignored / `services/_shared/` 基础设施（改前评估）
 - **tool description 三段式**：功能 + 何时用 + 何时不用 + 坑
 - **commit**：中文 + `<type>(<scope>): <desc>`，可标 Phase D-N
-- **git 协作**：详 `.github/CONTRIBUTING.md`
+- **git 协作**：详 `CONTRIBUTING.md`
 
 ### 3.1 金融时效性硬约束（D-9 · 全 service 必守）
 

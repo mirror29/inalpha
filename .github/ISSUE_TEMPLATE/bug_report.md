@@ -5,16 +5,16 @@ title: "[bug] "
 labels: bug
 ---
 
-> Inalpha is in **alpha** (Phase D-9). **Please confirm the problem is "implemented incorrectly," not "not yet implemented."**
+> Inalpha is in **alpha** (Phase D-11 landed). **Please confirm the problem is "implemented incorrectly," not "not yet implemented."**
 > See `CLAUDE.md §3` and `docs/04-current-state.md` for the roadmap.
 >
-> 项目处于 alpha 阶段（当前 Phase D-9）。**请先确认你的问题不是「未实现」而是「实现错了」。**
+> 项目处于 alpha 阶段（Phase D-11 已落地）。**请先确认你的问题不是「未实现」而是「实现错了」。**
 > Roadmap 见 `CLAUDE.md §3` 与 `docs/04-current-state.md`。
 
 ## Environment / 环境
 
 - Affected service / 受影响 service: `services/data` / `services/paper` / `services/research` / `packages/orchestration` / other
-- Current Phase / 当前 Phase: D-9 / D-10+ / E-series / N/A
+- Current Phase / 当前 Phase: D-11 / D-12+ / E-series / N/A
 - OS / Node / Python versions:
 - Git commit SHA (`git rev-parse --short HEAD`):
 

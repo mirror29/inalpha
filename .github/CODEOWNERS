@@ -1,10 +1,12 @@
 # Inalpha · CODEOWNERS
-# PR 必须有至少一人审核（哪怕是作者自己审核自己）。
-# Every PR must have at least one approving review — self-review is allowed.
+# All paths default to @mirror29 — every PR auto-requests review from the owner.
+# 所有路径默认 owner 为 @mirror29——每个 PR 自动请求其 review。
 #
-# GitHub repo 侧：Settings → Branches → Branch protection rules →
-#   "Require a pull request before merging" ✅
-#   "Require approvals" ≥ 1 ✅
-#   "Allow actors to approve their own pull requests" ✅
+# Current branch protection (main / staging) — see CONTRIBUTING.md §7:
+#   PR + 6 CI status checks required; required approvals = 0
+#   (solo project, avoids self-approval deadlock); no force-push / deletion.
+# 当前分支保护（main / staging）——详见 CONTRIBUTING.md §7：
+#   必走 PR + 必过 6 个 CI check；required approvals = 0（单人项目，避免自批死锁）；
+#   禁 force push / 删除。
 
 * @mirror29
