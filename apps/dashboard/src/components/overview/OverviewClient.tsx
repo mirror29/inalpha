@@ -69,21 +69,32 @@ export function OverviewClient() {
 
       <KpiBar data={data} />
 
-      {/* 系统在做什么:运行中的 live runner + 策略池,并排成「执行 / 研究」两栏。 */}
+      {/* 系统在做什么:运行中的 live runner + 策略池,并排成「执行 / 研究」两栏。
+          grid 子项包 min-w-0:表格内容宽默认会把 fr 轨道撑爆(min-width:auto),
+          面板溢出页面;min-w-0 后宽表在面板内部 overflow-x 滚动。 */}
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
-        <RunnersPanel runs={data.runs} />
-        <StrategyPanel
-          candidates={data.candidates}
-          counts={data.candidateCounts}
-        />
+        <div className="min-w-0">
+          <RunnersPanel runs={data.runs} />
+        </div>
+        <div className="min-w-0">
+          <StrategyPanel
+            candidates={data.candidates}
+            counts={data.candidateCounts}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[1.4fr_1fr]">
-        <PositionsTable
-          positions={data.positions}
-          baseCcy={data.account.base_currency}
-        />
-        <OrdersTable orders={data.orders} truncated={data.ordersTruncated} />
+      {/* 持仓 / 最近订单:与上排同为 1:1 两栏,栏缝对齐(此前 1.4fr:1fr 错位)。 */}
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
+        <div className="min-w-0">
+          <PositionsTable
+            positions={data.positions}
+            baseCcy={data.account.base_currency}
+          />
+        </div>
+        <div className="min-w-0">
+          <OrdersTable orders={data.orders} truncated={data.ordersTruncated} />
+        </div>
       </div>
     </div>
   );
@@ -102,7 +113,7 @@ function OverviewSkeleton() {
         <SkeletonBlock className="h-44" />
         <SkeletonBlock className="h-44" />
       </div>
-      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
         <SkeletonBlock className="h-64" />
         <SkeletonBlock className="h-64" />
       </div>

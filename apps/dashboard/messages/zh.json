@@ -35,7 +35,7 @@
   },
   "overview": {
     "title": "组合总览",
-    "subtitle": "原本要问 agent 才知道的状态 —— 一眼看清。",
+    "subtitle": "账户、持仓、订单与策略池的实时快照。",
     "kpi": {
       "totalEquity": "总权益",
       "totalReturn": "总收益率",
@@ -314,7 +314,9 @@
     "barsUsed": "{n} 根 bar",
     "catalog": "系统因子目录",
     "catalogHint": "系统当前可用的全部因子,按来源分组(不限标的 / 市场)。",
-    "filter": { "all": "全部" }
+    "filter": {
+      "all": "全部"
+    }
   },
   "risk": {
     "title": "风控",
