@@ -162,6 +162,10 @@ export interface RunDetailPayload {
   decisions: StrategyRunDecisionRecord[];
   /** 该 run 所跑的策略候选摘要(用 run.candidate_id 反查);拿不到为 null,UI 退化为只显 id。 */
   candidate: StrategyCandidateSummary | null;
+  /** 该 run 标的的**账户当前持仓**(账户级,同标的多 run 共享);空仓/拿不到为 null。 */
+  position: PositionWithMark | null;
+  /** 账户计价货币(持仓行货币兜底);拿不到为 null。 */
+  baseCurrency: string | null;
   asOf: string;
 }
 

@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
 import type {
+  AccountSnapshot,
+  PositionRecord,
+  PositionWithMark,
   RunDetailPayload,
   StrategyCandidateSummary,
   StrategyRunDecisionRecord,
   StrategyRunRecord,
+  TickerResponse,
 } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -47,19 +51,27 @@ export async function GET(
       ).catch(() => [] as StrategyRunDecisionRecord[]),
     ]);
 
-    // run 所跑的策略候选(用 candidate_id 反查)—— best-effort,失败/缺失为 null,
-    // 详情页退化为只显 candidate_id 短码,不阻塞主体。run 不存在则无需查。
-    const candidate = run
-      ? await backendFetch<StrategyCandidateSummary>(
-          "paper",
-          `/strategy_candidates/${run.candidate_id}`,
-        ).catch(() => null)
-      : null;
+    // run 所跑的策略候选(用 candidate_id 反查)+ 该标的账户持仓 + 计价货币 ——
+    // 均 best-effort,失败/缺失为 null,不阻塞主体。run 不存在则无需查。
+    const [candidate, position, baseCurrency] = run
+      ? await Promise.all([
+          backendFetch<StrategyCandidateSummary>(
+            "paper",
+            `/strategy_candidates/${run.candidate_id}`,
+          ).catch(() => null),
+          fetchPositionWithMark(run.venue, run.symbol),
+          backendFetch<AccountSnapshot>("paper", "/accounts/me")
+            .then((a) => a.base_currency)
+            .catch(() => null),
+        ])
+      : [null, null, null];
 
     const payload: RunDetailPayload = {
       run,
       decisions: decisionsRes,
       candidate,
+      position,
+      baseCurrency,
       asOf: new Date().toISOString(),
     };
     return NextResponse.json(payload, {
@@ -77,5 +89,38 @@ export async function GET(
       { error: err instanceof Error ? err.message : "unknown error" },
       { status: 500 },
     );
+  }
+}
+
+/**
+ * 该标的的账户当前持仓 + 最新价(浮动盈亏)。注意是**账户级**持仓 —— 同标的
+ * 多个 run 共享同一仓位。空仓 / 接口失败返回 null;最新价拿不到不猜价,
+ * mark 标 stale、浮动盈亏留空(金融时效硬约束,与总览同款)。
+ */
+async function fetchPositionWithMark(
+  venue: string,
+  symbol: string,
+): Promise<PositionWithMark | null> {
+  const positions = await backendFetch<PositionRecord[]>(
+    "paper",
+    "/positions",
+  ).catch(() => [] as PositionRecord[]);
+  const p = positions.find(
+    (x) => x.venue === venue && x.symbol === symbol && x.quantity !== 0,
+  );
+  if (!p) return null;
+  try {
+    const ticker = await backendFetch<TickerResponse>("data", "/ticker", {
+      query: { venue: p.venue, symbol: p.symbol, fresh: false },
+      timeoutMs: 4000,
+    });
+    return {
+      ...p,
+      mark_price: ticker.price,
+      mark_stale: ticker.is_stale,
+      unrealized_pnl: (ticker.price - p.avg_open_price) * p.quantity,
+    };
+  } catch {
+    return { ...p, mark_price: null, mark_stale: true, unrealized_pnl: null };
   }
 }
