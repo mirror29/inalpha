@@ -145,7 +145,8 @@
       "stopped": "停止于",
       "errors": "{count} 条错误",
       "viewDecisions": "查看决策",
-      "neverRan": "尚未处理任何 bar"
+      "neverRan": "尚未处理任何 bar",
+      "history": "历史运行 {count} 次"
     },
     "detail": {
       "back": "Live Runner",

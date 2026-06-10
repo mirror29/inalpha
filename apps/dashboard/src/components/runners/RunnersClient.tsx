@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { Radio } from "lucide-react";
 import useSWR from "swr";
 
-import type { RunnersPayload } from "@/lib/types";
+import type { RunnersPayload, StrategyRunRecord } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
@@ -31,24 +31,46 @@ export function RunnersClient() {
       keepPreviousData: true,
     });
 
-  // 各状态计数(chip 角标)。
+  // 按策略(candidate)分组:重启会新建 run 记录(审计保留),平铺会让一个策略
+  // 重启 N 次长出 N 张并排卡片、看起来像 N 个策略。每组立最新 run 的卡,
+  // 更早的 run 作为 history 折叠进卡底。
+  const groups = useMemo(() => {
+    const byCandidate = new Map<string, StrategyRunRecord[]>();
+    for (const r of data?.runs ?? []) {
+      const list = byCandidate.get(r.candidate_id);
+      if (list) list.push(r);
+      else byCandidate.set(r.candidate_id, [r]);
+    }
+    const out = [...byCandidate.values()].map((rs) => {
+      const sorted = [...rs].sort((a, b) =>
+        b.started_at.localeCompare(a.started_at),
+      );
+      return { latest: sorted[0], history: sorted.slice(1) };
+    });
+    // 运行中的策略排前,同状态按最新启动时间倒序。
+    out.sort((a, b) => {
+      const ar = a.latest.status === "running" ? 0 : 1;
+      const br = b.latest.status === "running" ? 0 : 1;
+      if (ar !== br) return ar - br;
+      return b.latest.started_at.localeCompare(a.latest.started_at);
+    });
+    return out;
+  }, [data]);
+
+  // 各状态计数(chip 角标)—— 按「策略组的最新 run 状态」计,与卡片一一对应。
   const counts = useMemo(() => {
     const c = { all: 0, running: 0, stopped: 0, errored: 0 };
-    if (data) {
-      c.all = data.runs.length;
-      for (const r of data.runs) c[r.status] += 1;
-    }
+    c.all = groups.length;
+    for (const g of groups) c[g.latest.status] += 1;
     return c;
-  }, [data]);
+  }, [groups]);
 
   const filtered = useMemo(
     () =>
-      data
-        ? filter === "all"
-          ? data.runs
-          : data.runs.filter((r) => r.status === filter)
-        : [],
-    [data, filter],
+      filter === "all"
+        ? groups
+        : groups.filter((g) => g.latest.status === filter),
+    [groups, filter],
   );
 
   if (isLoading && !data) {
@@ -118,8 +140,8 @@ export function RunnersClient() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((run) => (
-            <RunnerCard key={run.id} run={run} />
+          {filtered.map((g) => (
+            <RunnerCard key={g.latest.id} run={g.latest} history={g.history} />
           ))}
         </div>
       )}

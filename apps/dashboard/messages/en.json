@@ -145,7 +145,8 @@
       "stopped": "Stopped",
       "errors": "{count} error(s)",
       "viewDecisions": "View decisions",
-      "neverRan": "no bars processed yet"
+      "neverRan": "no bars processed yet",
+      "history": "Past runs ({count})"
     },
     "detail": {
       "back": "Live Runners",

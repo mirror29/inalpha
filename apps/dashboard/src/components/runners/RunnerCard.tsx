@@ -1,23 +1,35 @@
 "use client";
 
+import { useState } from "react";
 import { useLocale, useNow, useTranslations } from "next-intl";
-import { ChevronRight, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
 
 import type { StrategyRunRecord } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
-import { fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
+import { fmtDateTime, fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
 import { RunStatusBadge } from "@/components/ui/StatusBadge";
 
 /**
- * 单个 Live Runner 卡片 —— 整卡可点进决策详情。
+ * 单个 Live Runner 卡片 —— 主区可点进决策详情。
  * cumulative_pnl 是**净盈亏**(已实现+未实现-手续费)的 mark-to-market 估算;
  * last_bar_ts 超时(running 但很久没新 bar)标黄。
+ *
+ * `history`:同一策略(candidate)更早的 run —— 重启会新建 run 记录(审计保留),
+ * 列表页按策略分组后只立最新卡,旧 run 折叠在卡底「历史运行 N 次」里,
+ * 避免一个策略重启几次就长出几张并排卡片误导成多个策略。
  */
-export function RunnerCard({ run }: { run: StrategyRunRecord }) {
+export function RunnerCard({
+  run,
+  history = [],
+}: {
+  run: StrategyRunRecord;
+  history?: StrategyRunRecord[];
+}) {
   const t = useTranslations("runners.card");
   const locale = useLocale();
   const now = useNow({ updateInterval: 10_000 });
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // 卡片角标只数 error 级(run_log 现含 info/warn 活动,全数会虚高)。
   const errorCount = run.run_log.filter((e) => e.level === "error").length;
@@ -25,13 +37,16 @@ export function RunnerCard({ run }: { run: StrategyRunRecord }) {
   const lastBarStale = isLastBarStale(run, now.getTime());
 
   return (
-    <Link
-      href={`/runners/${run.id}`}
+    <div
       className={cn(
-        "group relative flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-elev/30 p-4 backdrop-blur-sm transition-colors",
+        "group relative flex flex-col rounded-xl border border-border-subtle bg-bg-elev/30 backdrop-blur-sm transition-colors",
         "hover:border-cyan/40 hover:bg-bg-elev/50",
       )}
     >
+      <Link
+        href={`/runners/${run.id}`}
+        className="flex flex-col gap-3 p-4"
+      >
       {/* 顶部:标的 + 状态 */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -88,7 +103,62 @@ export function RunnerCard({ run }: { run: StrategyRunRecord }) {
       )}
 
       <ChevronRight className="absolute right-3 top-3 size-4 text-fg-muted/0 transition-colors group-hover:text-cyan/70" />
-    </Link>
+      </Link>
+
+      {/* 历史运行(重启留下的旧 run)—— 折叠,展开后每行可点进对应 run 详情。 */}
+      {history.length > 0 && (
+        <div className="border-t border-border-subtle/60 px-4 py-2">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((v) => !v)}
+            aria-expanded={historyOpen}
+            className="flex w-full items-center gap-1.5 font-mono text-[11px] text-fg-muted/70 transition-colors hover:text-fg"
+          >
+            <ChevronDown
+              className={cn(
+                "size-3 transition-transform",
+                historyOpen ? "rotate-0" : "-rotate-90",
+              )}
+              strokeWidth={2}
+            />
+            {t("history", { count: history.length })}
+          </button>
+          {historyOpen && (
+            <ul className="mt-1.5 flex flex-col">
+              {history.map((h) => (
+                <li key={h.id}>
+                  <Link
+                    href={`/runners/${h.id}`}
+                    className="flex items-center gap-2 rounded px-1.5 py-1 font-mono text-[11px] text-fg-muted transition-colors hover:bg-bg/50 hover:text-fg"
+                  >
+                    <span
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        h.status === "errored" ? "bg-fox-red" : "bg-fg-muted/50",
+                      )}
+                    />
+                    <span className="tnum truncate">
+                      {fmtDateTime(h.started_at, locale)}
+                      {h.stopped_at
+                        ? ` → ${fmtDateTime(h.stopped_at, locale)}`
+                        : ""}
+                    </span>
+                    <span
+                      className={cn(
+                        "tnum ml-auto shrink-0",
+                        pnlColor(h.cumulative_pnl),
+                      )}
+                    >
+                      {fmtSigned(h.cumulative_pnl, null, locale)}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
