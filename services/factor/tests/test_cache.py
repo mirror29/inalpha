@@ -93,3 +93,20 @@ async def test_different_params_different_keys() -> None:
     await eng.score(**_score_kwargs(symbol="ETH/USDT"))  # type: ignore[arg-type]
     await eng.score(**_score_kwargs(lookback_bars=500))  # type: ignore[arg-type]
     assert eng.fetch_count == 3
+
+
+async def test_macro_series_cache_hit_returns_close() -> None:
+    """macro 缓存**命中路径**返回 df["close"] —— 回归:此前命中时取错下标
+    (cached[1] 是恒空的 series dict)KeyError 被上层兜底吃掉,宏观因子自
+    第二次请求起静默消失(PR #70 review round2 major)。"""
+    eng = _CountingEngine(make_ohlcv(60))
+    now = datetime.now(UTC)
+    kwargs: dict[str, object] = {
+        "from_ts": now - timedelta(days=30),
+        "to_ts": now,
+        "fresh": True,
+    }
+    s1 = await eng._fetch_macro_series("DGS10", **kwargs)  # type: ignore[arg-type]
+    s2 = await eng._fetch_macro_series("DGS10", **kwargs)  # type: ignore[arg-type]
+    assert eng.fetch_count == 1  # 第二次必须走缓存,不再打 data-service
+    pd.testing.assert_series_equal(s1, s2)
