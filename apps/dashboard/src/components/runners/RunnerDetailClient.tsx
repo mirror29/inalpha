@@ -17,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
+import { PositionsTable } from "@/components/overview/PositionsTable";
 import { LiveStrip } from "@/components/ui/LiveStrip";
 import { Pager, usePager } from "@/components/ui/Pager";
 import { Panel } from "@/components/ui/Panel";
@@ -105,6 +106,12 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
 
           {/* 当前模拟盘指标条(置于 K 线上方)。 */}
           <RunnerStats run={run} decisions={data.decisions} />
+
+          {/* 该标的的账户当前持仓(账户级,同标的多 run 共享);空仓时面板显示空态。 */}
+          <PositionsTable
+            positions={data.position ? [data.position] : []}
+            baseCcy={data.baseCurrency ?? ""}
+          />
 
           {/* K 线置顶 —— 决策点叠在蜡烛上,先看价格走势。 */}
           <RunnerChart
