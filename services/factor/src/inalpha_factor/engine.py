@@ -226,7 +226,10 @@ class FactorEngine:
         if fresh:
             cached = _panel_cache_get(key, _MACRO_CACHE_TTL_S)
             if cached is not None:
-                return cached[1]["close"]
+                # cached = (df, series);macro 条目 series 恒存 {},df 才有 close。
+                # 取错下标会 KeyError → 被 _compute_macro 的兜底吃掉,宏观因子
+                # 在缓存命中后全部静默消失(review #70 round2 major)。
+                return cached[0]["close"]
         df = await self._fetch_df(
             venue="fred", symbol=series_id, timeframe="1d",
             from_ts=from_ts, to_ts=to_ts, fresh=fresh,
