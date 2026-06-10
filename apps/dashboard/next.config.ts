@@ -50,6 +50,9 @@ loadRootEnv();
  */
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  /* Next 16 dev 默认只认 localhost 为同源,从 127.0.0.1 打开会拦掉 /_next/* dev
+     资源(HMR/RSC),页面永远卡在骨架屏。本机两种写法都常用,显式放行。 */
+  allowedDevOrigins: ["127.0.0.1"],
 };
 
 export default withNextIntl(nextConfig);
