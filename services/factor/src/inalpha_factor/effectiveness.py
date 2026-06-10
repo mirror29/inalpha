@@ -103,12 +103,18 @@ def _recent_rank_ic(factor: pd.Series, fwd: pd.Series) -> float:
 
 
 def _turnover(factor: pd.Series) -> float:
-    """因子 rank 自相关的补：1 - spearman(f_t, f_{t-1})，截到 [0, 1]。"""
-    f = factor.replace([np.inf, -np.inf], np.nan).dropna()
-    if len(f) < 3:
+    """因子 rank 自相关的补：1 - spearman(f_t, f_{t-1})，截到 [0, 1]。
+
+    配对必须**先 shift 再 dropna**:序列带内洞(macro 因子超 staleness 上限的
+    NaN 段)时,先 dropna 会把缺口折叠,shift(1) 把跨缺口的两个值当相邻时间步,
+    换手被错算。先按原索引取 t-1,再只保留 (f_t, f_{t-1}) 都有值的真相邻对——
+    价量因子(只有 warmup 前缀 NaN)结果不变,带洞序列跨缺口对被剔除。
+    """
+    f = factor.replace([np.inf, -np.inf], np.nan)
+    pair = pd.concat([f.rename("cur"), f.shift(1).rename("prev")], axis=1).dropna()
+    if len(pair) < 3:
         return 0.0
-    cur, prev = f.iloc[1:], f.shift(1).iloc[1:]
-    fr, pr = cur.rank(), prev.rank()
+    fr, pr = pair["cur"].rank(), pair["prev"].rank()
     if fr.std(ddof=0) == 0 or pr.std(ddof=0) == 0:
         return 0.0
     ac = fr.corr(pr)
