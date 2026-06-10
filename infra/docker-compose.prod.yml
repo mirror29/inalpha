@@ -51,12 +51,16 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    # requirepass:同 Docker 网络内的容器被横向入侵时,Redis 不再是免认证跳板。
+    # 客户端连接串同步用 redis://:password@redis:6379/0(见 .env.prod.example)。
+    command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:?required}"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
 
   # 一次性：跑 DB 迁移到最新，app 服务依赖它 completed_successfully
   migrate:
