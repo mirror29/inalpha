@@ -23,7 +23,8 @@ export default async function HomePage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  // server-side fetch；1h ISR；失败时 GlobalCoverage 自己走兜底
+  // build 时抓真实数字随 HTML 出厂（静态导出：更新频率 = 部署频率）；
+  // 拉取失败返 null，CTAFooter 整组隐藏，不放假数字
   const githubStats = await getGithubStats({
     owner: REPO_COORDS.owner,
     repo: REPO_COORDS.name,
