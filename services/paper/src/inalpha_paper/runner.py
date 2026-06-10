@@ -278,6 +278,8 @@ async def run_backtest(
                         "total_return_pct": report.total_return_pct,
                         "num_trades": report.num_trades,
                         "num_bars_processed": report.num_bars_processed,
+                        "initial_cash": report.initial_cash,
+                        "final_equity": report.final_equity,
                         "calmar": calmar,
                         # 专业级扩展指标（与 _persist_run 的 metrics 同源,可 None）
                         "annualized_return_pct": report.annualized_return_pct,
@@ -363,6 +365,7 @@ async def _persist_run(
         "num_trades": report.num_trades,
         "total_fees": report.total_fees,
         "num_bars_processed": report.num_bars_processed,
+        "initial_cash": report.initial_cash,
         "final_equity": report.final_equity,
         "fitness": fitness,
         # 专业级扩展指标（D-11+,engine/metrics.py;可 None）
