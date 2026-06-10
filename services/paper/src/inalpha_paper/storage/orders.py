@@ -82,12 +82,22 @@ async def set_realized_pnl(
     订单行在 fill 之前已插入（closed_trades 外键依赖其先在），盈亏要等 fill 落账后
     才算得出 —— 故 fill 之后单独 UPDATE 这一列。开仓/加仓单写 0，平/减仓单写该笔实现盈亏。
     与 insert 在同一事务里调用。
+
+    Raises:
+        RuntimeError: 没改到恰好一行。id 对不上属于程序 bug——UPDATE 0 行 psycopg
+            不报错,放过会让 realized_pnl 全量静默 NULL;同事务内抛出连 fill 一起
+            回滚,保持一致并立即暴露。
     """
     async with conn.cursor() as cur:
         await cur.execute(
             "UPDATE orders SET realized_pnl = %s WHERE client_order_id = %s",
             (realized_pnl, client_order_id),
         )
+        if cur.rowcount != 1:
+            raise RuntimeError(
+                f"set_realized_pnl matched {cur.rowcount} rows "
+                f"for client_order_id={client_order_id!r} (expected 1)"
+            )
 
 
 async def list_by_account(
