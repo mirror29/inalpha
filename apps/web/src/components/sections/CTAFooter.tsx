@@ -8,6 +8,7 @@ import { useTranslations } from "next-intl";
 import { CopyableCommand } from "@/components/primitives/CopyableCommand";
 import { LiveBadge } from "@/components/primitives/LiveBadge";
 import { StatCounter } from "@/components/primitives/StatCounter";
+import type { GithubStats } from "@/lib/github";
 import { LINKS } from "@/lib/links";
 import { fadeUp } from "@/lib/motion";
 import { releaseFootline } from "@/lib/release-meta";
@@ -15,8 +16,8 @@ import { releaseFootline } from "@/lib/release-meta";
 const TOTAL_MARKETS = 12;
 
 interface CTAFooterProps {
-  /** Server-side fetched GitHub stats; null 时退回保守兜底。 */
-  stats?: { stars: number; contributors: number; commits: number } | null;
+  /** build 时抓的真实快照；null（拉取失败）时整组隐藏，不放假数字。 */
+  stats?: GithubStats | null;
 }
 
 /**
@@ -24,11 +25,10 @@ interface CTAFooterProps {
  * Get started 下展示仓库的 star / contributor / commit / markets + alpha 标，
  * 与「star it · read it」的号召自然成对。
  */
-export function CTAFooter({ stats }: CTAFooterProps = {}) {
+export function CTAFooter({ stats = null }: CTAFooterProps = {}) {
   const t = useTranslations("cta");
   const tf = useTranslations("footer");
   const tc = useTranslations("coverage");
-  const safeStats = stats ?? { stars: 1, contributors: 1, commits: 287 };
 
   return (
     <section className="group relative isolate overflow-hidden border-t border-fg/12">
@@ -111,9 +111,13 @@ export function CTAFooter({ stats }: CTAFooterProps = {}) {
             variants={fadeUp}
             className="mt-12 flex flex-wrap items-end gap-x-12 gap-y-6 border-t border-fg/12 pt-10"
           >
-            <Stat target={safeStats.stars} suffix={tc("stats.starsSuffix")} accent="text-cyan" />
-            <Stat target={safeStats.contributors} suffix={tc("stats.contributorsSuffix")} />
-            <Stat target={safeStats.commits} suffix={tc("stats.commitsSuffix")} />
+            {stats ? (
+              <>
+                <Stat target={stats.stars} suffix={tc("stats.starsSuffix")} accent="text-cyan" />
+                <Stat target={stats.contributors} suffix={tc("stats.contributorsSuffix")} />
+                <Stat target={stats.commits} suffix={tc("stats.commitsSuffix")} />
+              </>
+            ) : null}
             <Stat target={TOTAL_MARKETS} suffix="markets" accent="text-gold" />
             <div className="ml-auto">
               <LiveBadge label={tc("stats.qualityLabel")} tint="fox" />

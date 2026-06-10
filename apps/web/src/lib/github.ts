@@ -1,16 +1,22 @@
 /**
- * GitHub repo stats fetcher（server-only）。
+ * GitHub repo stats fetcher（server-only，build 时执行）。
  *
- * 用法：
+ * 用法（server component）：
  *   const stats = await getGithubStats({ owner: "mirror29", repo: "inalpha" });
+ *
+ * 站点 `output: "export"` 静态导出 —— 本 fetch 只在 `next build` 时跑一次，
+ * 数字随 HTML 冻结到下次部署。「更新频率 = 部署频率」是有意为之：
+ * 浏览器直连 GitHub API 的方案试过，未鉴权 60 req/h/IP 在共享出口 IP 下
+ * 极易 403，体验反而更差。
  *
  * 设计：
  * - stars：`/repos/:o/:r` 一次拿；
- * - contributors / commits：用 `per_page=1` + 解析 `Link: ...; rel=\"last\"` 拿总数，
+ * - contributors / commits：`per_page=1` + 解析 `Link: ...; rel="last"` 拿总数，
  *   避免拉完整分页（仓库 commit 可能上千，全拉是浪费）；
- * - 缓存 1h（`next.revalidate`），失败兜底返 `null`，调用方各自决定 fallback 文案 / 数值。
- * - 未鉴权状态下 GitHub 给 IP 60 req/h，1h cache 足以承接 build + 偶发刷新；
- *   生产可注入 `GITHUB_TOKEN` 走 5000 req/h。
+ * - `GITHUB_TOKEN`（CI secret / 本地环境变量）有则带上，5000 req/h，
+ *   build 稳定出数；没有则未鉴权裸跑；
+ * - 任一指标拿不到即整体返 `null` —— 调用方直接不展示该组数字，
+ *   没有编造的兜底假数据。
  */
 
 export interface GithubStats {
@@ -22,8 +28,6 @@ export interface GithubStats {
 interface GetStatsOptions {
   owner: string;
   repo: string;
-  /** ISR 秒数，默认 3600。 */
-  revalidate?: number;
 }
 
 const HEADERS_BASE: HeadersInit = {
@@ -36,6 +40,10 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function headers(): HeadersInit {
+  return { ...HEADERS_BASE, ...authHeaders() };
+}
+
 /**
  * 从 `Link: <…&page=N>; rel="last"` 头里解析 last page 号；
  * 当总数 <= per_page 时 GitHub 不返 Link，此时计 body 长度即可。
@@ -46,14 +54,8 @@ function parseLastPage(linkHeader: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
-async function countWithPagination(
-  url: string,
-  revalidate: number,
-): Promise<number | null> {
-  const res = await fetch(url, {
-    headers: { ...HEADERS_BASE, ...authHeaders() },
-    next: { revalidate },
-  });
+async function countWithPagination(url: string): Promise<number | null> {
+  const res = await fetch(url, { headers: headers() });
   if (!res.ok) return null;
   const last = parseLastPage(res.headers.get("link"));
   if (last !== null) return last;
@@ -64,31 +66,21 @@ async function countWithPagination(
 export async function getGithubStats({
   owner,
   repo,
-  revalidate = 3600,
 }: GetStatsOptions): Promise<GithubStats | null> {
   try {
     const base = `https://api.github.com/repos/${owner}/${repo}`;
 
     const [repoRes, contributors, commits] = await Promise.all([
-      fetch(base, {
-        headers: { ...HEADERS_BASE, ...authHeaders() },
-        next: { revalidate },
-      }),
-      countWithPagination(
-        `${base}/contributors?per_page=1&anon=true`,
-        revalidate,
-      ),
-      countWithPagination(`${base}/commits?per_page=1`, revalidate),
+      fetch(base, { headers: headers() }),
+      countWithPagination(`${base}/contributors?per_page=1&anon=true`),
+      countWithPagination(`${base}/commits?per_page=1`),
     ]);
 
-    if (!repoRes.ok) return null;
+    if (!repoRes.ok || contributors === null || commits === null) return null;
     const repoJson = (await repoRes.json()) as { stargazers_count?: number };
+    if (typeof repoJson.stargazers_count !== "number") return null;
 
-    return {
-      stars: repoJson.stargazers_count ?? 0,
-      contributors: contributors ?? 0,
-      commits: commits ?? 0,
-    };
+    return { stars: repoJson.stargazers_count, contributors, commits };
   } catch {
     return null;
   }
