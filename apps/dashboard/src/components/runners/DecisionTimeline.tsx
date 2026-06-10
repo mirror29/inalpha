@@ -5,9 +5,13 @@ import { useLocale, useTranslations } from "next-intl";
 import type { StrategyRunDecisionRecord } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { fmtNum, fmtQty } from "@/lib/format";
+import { Pager, usePager } from "@/components/ui/Pager";
 import { Panel } from "@/components/ui/Panel";
 import { DecisionOutcomeBadge } from "@/components/ui/StatusBadge";
 import { Td, TableEmpty, TableHeadRow, Th } from "@/components/ui/Table";
+
+/** 决策一页 25 行 —— 一屏内看全,200 条上限时 8 页。 */
+const PAGE_SIZE = 25;
 
 /**
  * 决策复盘时间线 —— 每根产生下单意图的 bar 一行。
@@ -23,6 +27,7 @@ export function DecisionTimeline({
   const tIntent = useTranslations("runners.intent");
   const tOutcome = useTranslations("runners.outcome");
   const locale = useLocale();
+  const { page, setPage, pageCount, pageItems } = usePager(decisions, PAGE_SIZE);
 
   return (
     <Panel
@@ -52,7 +57,7 @@ export function DecisionTimeline({
               </TableHeadRow>
             </thead>
             <tbody>
-              {decisions.map((d) => {
+              {pageItems.map((d) => {
                 const blocked = d.outcome === "risk_rejected";
                 // reason 回退:拒单有真实 reason;成交(reason 为空)退到策略 tag,
                 // 再退到「策略信号成交」——让该列对正常成交行也有信息,不再一片「—」。
@@ -135,6 +140,7 @@ export function DecisionTimeline({
               })}
             </tbody>
           </table>
+          <Pager page={page} pageCount={pageCount} onChange={setPage} />
         </div>
       )}
     </Panel>
