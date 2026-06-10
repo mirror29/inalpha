@@ -63,12 +63,31 @@ def test_qlib_disabled_returns_empty(ohlcv: pd.DataFrame) -> None:
     assert len(a.specs()) > 0
 
 
-def test_qlib_enabled_computes_when_lib_present(ohlcv: pd.DataFrame) -> None:
-    a = QlibAlphaAdapter(enabled=True)
-    if not a.available():  # 未 uv sync --extra qlib，跳过
-        import pytest
-
-        pytest.skip("qlib not installed")
+def test_qlib_pure_pandas_always_computes(ohlcv: pd.DataFrame) -> None:
+    """ADR-0043 D1：纯 pandas 实现，不依赖 pyqlib，启用即可算全部因子。"""
+    a = QlibAlphaAdapter()
+    assert a.available() is True
     series = a.compute(ohlcv)
-    assert "qlib.kmid" in series
-    assert _finite_tail(series["qlib.kmid"])
+    spec_ids = {s.factor_id for s in a.specs()}
+    assert len(spec_ids) >= 30
+    # spec 与实现一一对应（漏实现/漏 spec 都挂）
+    assert set(series.keys()) == spec_ids
+    for fid, s in series.items():
+        assert _finite_tail(s), f"{fid} tail all-NaN"
+
+
+def test_qlib_bounded_factors_in_range(ohlcv: pd.DataFrame) -> None:
+    """RSV/CNTP/CNTN/SUMP 数学上落在 [0,1]。"""
+    a = QlibAlphaAdapter()
+    series = a.compute(
+        ohlcv, ["qlib.rsv_20", "qlib.cntp_20", "qlib.cntn_20", "qlib.sump_20"]
+    )
+    for fid, s in series.items():
+        vals = s.dropna()
+        assert ((vals >= 0) & (vals <= 1)).all(), f"{fid} out of [0,1]"
+
+
+def test_qlib_filter_factor_ids(ohlcv: pd.DataFrame) -> None:
+    a = QlibAlphaAdapter()
+    series = a.compute(ohlcv, ["qlib.roc_20"])
+    assert set(series.keys()) == {"qlib.roc_20"}

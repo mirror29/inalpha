@@ -20,7 +20,9 @@ class EffResult:
 
     value: float | None
     rank_ic: float
+    rank_ic_recent: float  # 近 1/3 样本窗的 Rank IC：与全样本同号≈稳定，反号/趋零≈衰减
     icir: float
+    turnover: float  # 1 - spearman(rank(f_t), rank(f_{t-1}))：0≈信号不动，1≈每根 bar 重排
     sample_size: int
     quantile_returns: list[tuple[int, float, int]]  # (q, mean_return, n)
     long_short_return: float
@@ -33,6 +35,8 @@ class EffResult:
 _IC_DIRECTION_THRESHOLD = 0.02
 _IC_FULL_STRENGTH = 0.05
 _ICIR_SEGMENTS = 5
+# rank_ic_recent 的"近期"窗口 = 样本的尾部 1/3（ADR-0043 D4，衰减信号用）
+_RECENT_FRACTION = 3
 
 
 def _forward_return(close: pd.Series, horizon: int) -> pd.Series:
@@ -83,6 +87,36 @@ def _icir(factor: pd.Series, fwd: pd.Series, segments: int) -> float:
     return float(arr.mean() / sd)
 
 
+def _recent_rank_ic(factor: pd.Series, fwd: pd.Series) -> float:
+    """尾部 1/3 样本窗的 Rank IC（先对齐去 NaN 再切尾，保证窗内样本量）。"""
+    pair = pd.concat([factor, fwd], axis=1).replace([np.inf, -np.inf], np.nan).dropna()
+    tail = len(pair) // _RECENT_FRACTION
+    if tail < 3:
+        return 0.0
+    ch = pair.iloc[-tail:]
+    fr = ch.iloc[:, 0].rank()
+    rr = ch.iloc[:, 1].rank()
+    if fr.std(ddof=0) == 0 or rr.std(ddof=0) == 0:
+        return 0.0
+    ic = float(fr.corr(rr))
+    return 0.0 if np.isnan(ic) else ic
+
+
+def _turnover(factor: pd.Series) -> float:
+    """因子 rank 自相关的补：1 - spearman(f_t, f_{t-1})，截到 [0, 1]。"""
+    f = factor.replace([np.inf, -np.inf], np.nan).dropna()
+    if len(f) < 3:
+        return 0.0
+    cur, prev = f.iloc[1:], f.shift(1).iloc[1:]
+    fr, pr = cur.rank(), prev.rank()
+    if fr.std(ddof=0) == 0 or pr.std(ddof=0) == 0:
+        return 0.0
+    ac = fr.corr(pr)
+    if np.isnan(ac):
+        return 0.0
+    return float(min(1.0, max(0.0, 1.0 - ac)))
+
+
 def _quantile_returns(
     factor: pd.Series, fwd: pd.Series, quantiles: int
 ) -> tuple[list[tuple[int, float, int]], float]:
@@ -126,7 +160,9 @@ def score_factor(
     """
     fwd = _forward_return(close, horizon)
     rank_ic, n = _rank_ic(factor, fwd)
+    rank_ic_recent = _recent_rank_ic(factor, fwd)
     icir = _icir(factor, fwd, _ICIR_SEGMENTS)
+    turnover = _turnover(factor)
     qstats, long_short = _quantile_returns(factor, fwd, quantiles)
 
     low_conf = n < min_samples
@@ -142,7 +178,9 @@ def score_factor(
     return EffResult(
         value=value,
         rank_ic=rank_ic,
+        rank_ic_recent=rank_ic_recent,
         icir=icir,
+        turnover=turnover,
         sample_size=n,
         quantile_returns=qstats,
         long_short_return=long_short,
