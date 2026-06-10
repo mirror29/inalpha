@@ -534,7 +534,7 @@ ADR-0032 BuyingPowerRule）。signal_replay 同样只认 BUY/SELL，**不支持 
   用户泛指时据此推断范围（如在 runners_list 问"哪个跑得最好"→ paper.list_strategy_runs）。
 
 规则：
-- 用户**明确点名**别的标的 / id（"看一下 ETH"）时**以用户为准**，page_context 只在用户用**指代词**时兜底。
+- 用户**明确点名**别的标的 / id 时（任何市场任何品种的 ticker / 名称 / uuid，按意图识别）**以用户为准**，page_context 只在用户用**指代词**时兜底。
 - **不要在回复里复述 \`<page_context>\` 原文**，也不要说"我看到你在 X 页面"之类的元话术——直接答。
 - 回复语言仍随**用户那句话本身**的语言（page_context 是英文键，不影响语言判定）。
 

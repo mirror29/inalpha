@@ -125,13 +125,18 @@ export const factorScoreTool = createTool({
 
     何时用：
     - factor.timing 看到某因子有戏，想看它的分位收益结构 / 跨段稳定性
-    - 用户点名某类因子（"RSI 现在有用吗""动量因子在这个币上灵不灵"）
+    - 用户点名某类因子（按意图识别：问某指标/因子在某标的上是否有效，
+      任何市场任何品种均适用，不限示例里的写法）
 
     何时不用：
     - 只想要"当下该看哪些因子" → factor.timing（已自动排序取 top-N）
     - 不知道有哪些因子可选 → 先 factor.catalog
 
-    factorIds 省略 = 算全部可时序计算因子（较慢）。建议先 catalog 选，再指定。
+    坑：
+    - factorIds 省略 = 算全部可时序计算因子（720 bar × 53 因子,显著慢）。
+      建议先 catalog 选，再指定
+    - low_confidence=true 的因子读数不可据此择时（样本不足）
+    - asOf 是"真现在"或用户指定的评估时点，不要用训练记忆里的行情推断
   `.trim(),
   inputSchema: z.object({
     venue: z.string().default("binance"),
@@ -182,6 +187,11 @@ export const factorCatalogTool = createTool({
     qlib_alpha158（Alpha158 风格公式因子，纯 pandas 本地算，默认启用）/
     macro（FRED 宏观：利率/期限利差/美元/VIX，**仅 1d/1wk timeframe 计算**——intraday 请求会被
     跳过，见 extras.timeframes；data 服务缺 FRED key 时自动缺席）。
+
+    坑：
+    - 目录是静态定义,**不含有效性**——"列出来"≠"现在灵",灵不灵要 factor.timing/score
+    - needs_universe=true 的因子单标的时序模式只是近似,解读时要打折
+    - available=false 的源(如 qlib 关闭)因子仍会列出但算不了
   `.trim(),
   inputSchema: z.object({}),
   execute: async (_inputData, ctx) => {
