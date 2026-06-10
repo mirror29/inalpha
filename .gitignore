@@ -48,6 +48,7 @@ Cargo.lock
 .env
 .env.local
 .env.*.local
+.env.prod
 *.pem
 *.key
 

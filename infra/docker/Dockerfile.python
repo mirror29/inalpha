@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+#
+# Inalpha Python 服务统一 Dockerfile（参数化）
+#
+# 适用：data / paper / research / factor —— 四个 FastAPI + uvicorn 服务。
+# 包命名约定：服务目录 <svc> → Python 包 inalpha_<svc>（main:app）。
+#
+# 构建上下文必须是 services/（不是各服务目录），因为各服务通过
+#   [tool.uv.sources] inalpha-shared = { path = "../_shared" }
+# 依赖 services/_shared —— 镜像里要保持 /app/_shared 与 /app/<svc> 的相对关系。
+#
+# 用法（见 docker-compose.prod.yml 的 build.args）：
+#   docker build -f infra/docker/Dockerfile.python \
+#     --build-arg SERVICE=paper -t inalpha-paper services/
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+ARG SERVICE
+ENV SERVICE=${SERVICE}
+
+# 注：经本地构建验证（arm64），factor 的 qlib / pandas-ta 等均有预编译 wheel，
+# uv sync --frozen 无需编译器，故不装 build-essential（更小更快，且不依赖 apt）。
+# 若未来引入需现场编译的依赖，再补一行：
+#   RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+# 健康检查用镜像自带的 python（见 compose），不依赖 curl。
+
+WORKDIR /app
+
+# 先拷依赖清单做层缓存：_shared 与目标服务的 pyproject/lock
+COPY _shared/pyproject.toml _shared/uv.lock ./_shared/
+COPY ${SERVICE}/pyproject.toml ${SERVICE}/uv.lock ./${SERVICE}/
+
+# _shared 源码（editable 路径依赖需要真实源码在场）
+COPY _shared ./_shared
+# 目标服务源码
+COPY ${SERVICE} ./${SERVICE}
+
+WORKDIR /app/${SERVICE}
+# --frozen：按 per-service uv.lock 复现；--no-dev：不装测试/lint 组
+RUN uv sync --frozen --no-dev
+
+ENV PYTHONUNBUFFERED=1
+# ARG 在构建期插值进 ENV，运行期 CMD 再引用 ${MODULE}
+ENV MODULE=inalpha_${SERVICE}.main:app
+
+# PORT / WORKERS 由 compose 按服务注入（paper 必须 WORKERS=1）
+# 健康检查端点统一 /health（见 scripts/dev.sh 约定）
+CMD ["sh", "-c", "uv run uvicorn ${MODULE} --host 0.0.0.0 --port ${PORT:-8000} --workers ${WORKERS:-1}"]
