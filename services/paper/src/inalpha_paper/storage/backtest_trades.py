@@ -8,21 +8,21 @@
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
+
+from ..kernel.clock import ns_to_datetime
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from ..engine.report import FillRecord
 
-
-def _ns_to_dt(ts_ns: int) -> datetime:
-    """纳秒整数 → tz-aware datetime（落 TIMESTAMPTZ 用）。"""
-    return datetime.fromtimestamp(ts_ns / 1_000_000_000, tz=UTC)
+# ns → datetime 统一走 kernel.clock 的整数路径(float 除法对 2026 时间戳丢
+# ~100ns,同一 ts_ns 存取不能轮转)。
+_ns_to_dt = ns_to_datetime
 
 
 async def insert_fills(
