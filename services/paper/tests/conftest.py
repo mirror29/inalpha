@@ -28,6 +28,58 @@ def make_test_token(sub: str = "test-user", email: str = "t@e.st") -> str:
     )
 
 
+def _guard_and_provision_test_db(url: str) -> None:
+    """守门 + 自动建测试库。
+
+    1. 库名必须以 ``_test`` 结尾(防 TRUNCATE 类 fixture 打到开发/生产库);
+    2. 测试库不存在则 CREATE DATABASE(连同 URL 的 postgres 管理库);
+    3. 对测试库跑 ``alembic upgrade head``(infra/migrations,幂等)。
+    """
+    import subprocess
+    from pathlib import Path
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url.replace("postgresql+psycopg://", "postgresql://"))
+    dbname = (parts.path or "/").lstrip("/")
+    if not dbname.endswith("_test"):
+        if os.environ.get("INALPHA_TESTS_ALLOW_NON_TEST_DB") == "1":
+            return  # CI 一次性容器显式越过 —— 不建库不迁移,直接用现库
+        pytest.exit(
+            f"拒绝对非测试库 {dbname!r} 跑测试(本套件含 TRUNCATE 类 fixture,"
+            "曾清空开发库 risk_locks)。请用 *_test 库,或确属一次性容器时设 "
+            "INALPHA_TESTS_ALLOW_NON_TEST_DB=1。",
+            returncode=2,
+        )
+
+    import psycopg
+
+    admin_dsn = parts._replace(path="/postgres").geturl()
+    try:
+        with psycopg.connect(admin_dsn, autocommit=True) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s", (dbname,)
+            ).fetchone()
+            if not exists:
+                conn.execute(f'CREATE DATABASE "{dbname}"')
+    except psycopg.OperationalError as exc:  # pragma: no cover - 环境问题直说
+        pytest.exit(f"无法连接 Postgres 创建测试库 {dbname!r}: {exc}", returncode=2)
+
+    migrations_dir = Path(__file__).resolve().parents[3] / "infra" / "migrations"
+    res = subprocess.run(
+        ["uv", "run", "alembic", "upgrade", "head"],
+        cwd=migrations_dir,
+        env={**os.environ, "DATABASE_URL": url},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if res.returncode != 0:  # pragma: no cover - 环境问题直说
+        pytest.exit(
+            f"测试库迁移失败(alembic upgrade head):\n{res.stdout}\n{res.stderr}",
+            returncode=2,
+        )
+
+
 @pytest.fixture
 def auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {make_test_token()}"}
@@ -35,10 +87,15 @@ def auth_headers() -> dict[str, str]:
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_env() -> None:
+    # ⚠️ 测试默认连 **独立测试库 inalpha_test**,绝不能默认连开发库:本套件有
+    # autouse 的 TRUNCATE risk_locks(及大量写路径),曾把开发库的风控锁历史清空。
+    # 显式给 DATABASE_URL 时要求库名以 _test 结尾,否则 fail-fast(可用
+    # INALPHA_TESTS_ALLOW_NON_TEST_DB=1 显式越过 —— 仅 CI 一次性容器可用)。
     os.environ.setdefault(
         "DATABASE_URL",
-        "postgresql+psycopg://quant:devpass@localhost:5433/inalpha",
+        "postgresql+psycopg://quant:devpass@localhost:5433/inalpha_test",
     )
+    _guard_and_provision_test_db(os.environ["DATABASE_URL"])
     os.environ.setdefault("JWT_SECRET", TEST_JWT_SECRET)
     os.environ.setdefault("DATA_SERVICE_URL", "http://data-mock.test")
     # Swarm S1：默认关 backtest ProcessPool。每个 TestClient lifespan 都 spawn 6
