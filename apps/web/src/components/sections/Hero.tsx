@@ -6,81 +6,132 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 
 import { CopyableCommand } from "@/components/primitives/CopyableCommand";
-import { HeroBackdrop } from "@/components/primitives/HeroBackdrop";
+import { HeroAtmosphere } from "@/components/primitives/HeroAtmosphere";
+import { HeroScene } from "@/components/primitives/HeroScene";
 import { LocaleSwitcher } from "@/components/primitives/LocaleSwitcher";
 import { ThemeToggle } from "@/components/primitives/ThemeToggle";
 import { LINKS } from "@/lib/links";
 import { fadeUp } from "@/lib/motion";
-import { releaseTag } from "@/lib/release-meta";
+
+const EASE = [0.22, 0.7, 0.22, 1] as const;
+
+/** 标题遮罩上升 —— 父级 overflow-hidden，标题从下方升入。 */
+const riseMask = {
+  hidden: { y: "115%" },
+  visible: { y: "0%", transition: { duration: 0.8, ease: EASE } },
+};
+
+/** 朱红线条横向展开（origin-left 由 className 给）。 */
+const drawRule = {
+  hidden: { scaleX: 0, opacity: 0 },
+  visible: { scaleX: 1, opacity: 1, transition: { duration: 0.6, ease: EASE } },
+};
 
 /**
- * Page hero — broadsheet aesthetic, refined.
+ * Page hero — 「神社官報 / Shrine Gazette」。
  *
- * Single column. The tagline owns the page. No competing engineering
- * title block on the right (that metadata lives in the ticker strip and
- * footer colophon). Wordmark sits at the very top in mono, small.
+ * 背景 = 呼吸雾光（HeroAtmosphere）+ canvas 主场景「関所の帳簿」（HeroScene）：
+ * 行情线从左流入 → 穿过朱红鸟居（审批关门）→ 落朱印出回执 → 过门转 bull 绿。
+ * 左侧雾气留白上叠诗性 tagline 领衔，工程主张作支撑句。氛围层做美，
+ * 数据区（下方各 section）仍临床（DESIGN.md §3.4）。
  */
 export function Hero() {
   const t = useTranslations("hero");
   const tCta = useTranslations("cta");
 
   return (
-    <header className="relative overflow-hidden border-b border-fg/12">
-      <HeroBackdrop />
+    <header className="relative isolate overflow-hidden border-b border-fg/12">
+      {/* 纯氛围底 —— 呼吸雾光 + 偶尔光线掠过，叠在 dot-grid/grain 纹理上 */}
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+        <HeroAtmosphere className="absolute inset-0" />
+        {/* 极淡点阵作底纹，呼应 broadsheet 图纸感 */}
+        <div className="dot-grid absolute inset-0 opacity-[0.3]" aria-hidden />
+        {/* 主场景：行情线穿鸟居落印（canvas） */}
+        <HeroScene className="absolute inset-0" />
+        {/* 底部羽化融入页面 */}
+        <div
+          className="absolute inset-x-0 bottom-0 h-24"
+          style={{
+            background: "linear-gradient(to bottom, transparent, var(--surface))",
+          }}
+        />
+      </div>
 
       <div className="absolute right-6 top-6 z-50 flex items-center gap-2">
         <ThemeToggle />
         <LocaleSwitcher />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-6xl px-6 pt-16 pb-24 md:px-12 md:pt-24 md:pb-32">
+      <div className="relative z-10 mx-auto flex min-h-160 max-w-[88rem] flex-col justify-center px-4 py-24 md:min-h-[86vh] md:px-14">
         <motion.div
+          className="w-full max-w-132 md:max-w-180"
           initial="hidden"
           animate="visible"
           variants={{
             hidden: {},
-            visible: {
-              transition: { staggerChildren: 0.09, delayChildren: 0.08 },
-            },
+            visible: { transition: { staggerChildren: 0.11, delayChildren: 0.08 } },
           }}
         >
+          {/* 名字故事 eyebrow —— 暖调，不用工程 mono 大写 */}
           <motion.div
             variants={fadeUp}
-            className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.32em] text-fg-muted/80"
+            className="flex items-center gap-3 text-[13px] text-fg-muted"
           >
-            <span className="text-fg">Inalpha</span>
-            <span className="text-fg-muted/50">/</span>
-            <span>open-source quant framework</span>
-            <span className="ml-3 hidden h-px w-12 bg-fg/20 sm:inline-block" />
-            <span className="hidden text-fg-muted/60 sm:inline">{releaseTag}</span>
+            <span className="font-mono uppercase tracking-[0.28em] text-fg">
+              Inalpha
+            </span>
+            <motion.span
+              variants={drawRule}
+              className="h-px w-8 origin-left bg-seal/50"
+            />
+            <span className="italic">Inari × alpha</span>
           </motion.div>
 
-          <motion.h1
+          {/* 诗性 tagline 领衔（匾額一道朱红线条展开 + 标题遮罩上升） */}
+          <div className="mt-7 md:mt-9">
+            <motion.span
+              variants={drawRule}
+              className="block h-px w-14 origin-left bg-seal/60"
+            />
+            <div className="mt-5 overflow-hidden pb-[0.12em]">
+              <motion.h1
+                variants={riseMask}
+                className="display text-fg"
+                style={{
+                  fontSize: "clamp(2.5rem, 6.4vw, 5rem)",
+                  lineHeight: 1.04,
+                  fontWeight: 360,
+                }}
+              >
+                {t("tagline")}
+              </motion.h1>
+            </div>
+          </div>
+
+          {/* 工程主张作支撑句 */}
+          <motion.p
             variants={fadeUp}
-            className="display-italic mt-12 text-fg leading-[0.92] md:mt-16"
-            style={{ fontSize: "clamp(3rem, 9.5vw, 9rem)", fontWeight: 300 }}
+            className="mt-6 font-mono text-[13px] uppercase tracking-[0.16em] text-seal/90"
           >
-            {t("title")}
-            <br />
-            <span className="text-cyan">{t("titleAlt")}</span>
-          </motion.h1>
+            {t("title")} {t("titleAlt")}
+          </motion.p>
 
           <motion.p
             variants={fadeUp}
-            className="mt-10 max-w-[60ch] text-[17px] leading-relaxed text-fg-muted sm:text-[18px]"
+            className="mt-6 max-w-[52ch] text-[16.5px] leading-relaxed text-fg-muted sm:text-[17px]"
           >
             {t("sub")}
           </motion.p>
 
           <motion.div
             variants={fadeUp}
-            className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-4"
+            className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4"
           >
             <CopyableCommand
               command={tCta("commands.git")}
               copyLabel={tCta("copy")}
               copiedLabel={tCta("copied")}
-              className="min-w-[22rem] max-w-md"
+              className="min-w-[19rem] max-w-md"
             />
             <Link
               href={LINKS.github}

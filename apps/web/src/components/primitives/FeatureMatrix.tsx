@@ -24,7 +24,7 @@ interface FeatureMatrixProps {
   className?: string;
 }
 
-/** See DESIGN.md §10.6 — used by EngineeringHarness + tech-highlight grids. */
+/** See DESIGN.md §10.6 — tech-highlight grid primitive (kit demo). */
 const accentMap: Record<
   Accent,
   {

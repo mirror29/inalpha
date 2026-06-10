@@ -1,103 +1,109 @@
 "use client";
 
-import { motion } from "motion/react";
+import * as React from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { useTranslations } from "next-intl";
+import { ArrowRight } from "lucide-react";
 
 import { BroadsheetSection } from "@/components/primitives/BroadsheetSection";
-import { LiveBadge } from "@/components/primitives/LiveBadge";
-import { StatCounter } from "@/components/primitives/StatCounter";
 import { fadeUp, stagger } from "@/lib/motion";
 
-const TAG_GROUPS = {
-  crypto: ["crypto"] as const,
-  equities: ["us", "cn", "hk", "jp", "kr", "au", "in", "uk", "de"] as const,
-  macro: ["indices", "macro"] as const,
-};
-
-const TOTAL_MARKETS = Object.values(TAG_GROUPS).reduce(
-  (acc, group) => acc + group.length,
-  0,
-);
-
-interface GlobalCoverageProps {
-  /** Server-side fetched GitHub stats; `null` 时退回静态兜底（仓库当前真实数值）。 */
-  stats?: { stars: number; contributors: number; commits: number } | null;
-}
+const MARKETS = [
+  "crypto", "us", "cn", "hk", "jp", "kr",
+  "au", "in", "uk", "de", "indices", "macro",
+] as const;
+const AGENTS = ["research", "factor", "risk", "execution"] as const;
 
 /**
- * 06 — Global coverage + current state (transparency).
- * Markets grouped + animated stat row + alpha-quality LiveBadges.
+ * 07 — Coverage。把「同一 orchestrator 路由全市场，加一个 venue 全 agent 即用」
+ * 做成路由演示：venue 自动轮转点亮（也可 hover）→ orchestrator → 所有 agent 跟着亮。
+ * 下方现状透明块为 D2 临床面。GitHub 数字已挪到 CTAFooter（Get started 下）。
  */
-export function GlobalCoverage({ stats }: GlobalCoverageProps = {}) {
+export function GlobalCoverage() {
   const t = useTranslations("coverage");
+  const reduce = useReducedMotion();
   const items = t.raw("currentState.items") as string[];
 
-  // 拿不到 GitHub API（rate-limit / 离线 build）时用一个真实但保守的兜底
-  const safeStats = stats ?? { stars: 1, contributors: 1, commits: 170 };
+  const [active, setActive] = React.useState(0);
+  const [pinned, setPinned] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (reduce || pinned !== null) return;
+    const id = setInterval(() => setActive((a) => (a + 1) % MARKETS.length), 1600);
+    return () => clearInterval(id);
+  }, [reduce, pinned]);
+  const live = pinned ?? active;
 
   return (
     <BroadsheetSection
-      index="06"
+      index="07"
       eyebrow="Coverage · twelve markets, one kernel"
       title={t("title")}
       intro={t("sub")}
     >
-      <div className="space-y-12">
-        {/* Tag groups */}
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
-          variants={stagger}
-          className="grid gap-px bg-fg/10 md:grid-cols-3"
-        >
-          {(Object.entries(TAG_GROUPS) as [keyof typeof TAG_GROUPS, readonly string[]][]).map(
-            ([group, tags]) => (
-              <motion.div
-                key={group}
-                variants={fadeUp}
-                className="group/coverage relative bg-bg p-6 transition-colors duration-300 hover:bg-bg-deep/60"
-              >
-                <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-fg-muted/60 transition-colors group-hover/coverage:text-cyan/85">
-                  ── {t(`groups.${group}`)} / {tags.length}
-                </p>
-                <ul className="mt-5 flex flex-wrap gap-2">
-                  {tags.map((tag) => (
-                    <li
-                      key={tag}
-                      className="cursor-default border border-fg/15 bg-transparent px-3 py-1 font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.04] hover:border-cyan hover:bg-cyan/10 hover:text-cyan hover:shadow-[0_0_14px_-4px_rgba(95,179,255,0.5)]"
-                    >
-                      {t(`tags.${tag}`)}
-                    </li>
-                  ))}
-                </ul>
-              </motion.div>
-            ),
-          )}
-        </motion.div>
-
-        {/* Stat row */}
+      <div className="space-y-14">
+        {/* 路由演示：venue → orchestrator → agents */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
-          transition={{ duration: 0.55 }}
-          className="flex flex-wrap items-end gap-x-12 gap-y-6 border-y border-fg/12 py-10"
+          transition={{ duration: 0.5 }}
+          className="grid items-center gap-6 md:grid-cols-[1fr_auto_auto_auto_1fr]"
         >
-          <Stat
-            target={safeStats.stars}
-            suffix={t("stats.starsSuffix")}
-            accent="text-cyan"
-          />
-          <Stat
-            target={safeStats.contributors}
-            suffix={t("stats.contributorsSuffix")}
-          />
-          <Stat target={safeStats.commits} suffix={t("stats.commitsSuffix")} />
-          <Stat target={TOTAL_MARKETS} suffix="markets" accent="text-gold" />
-          <div className="ml-auto">
-            <LiveBadge label={t("stats.qualityLabel")} tint="fox" />
+          {/* venues */}
+          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-3">
+            {MARKETS.map((m, i) => {
+              const on = i === live;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onMouseEnter={() => setPinned(i)}
+                  onMouseLeave={() => setPinned(null)}
+                  className={
+                    "rounded-sm border px-2 py-1.5 text-center font-mono text-[11px] uppercase tracking-[0.12em] transition-all duration-200 " +
+                    (on
+                      ? "border-cyan bg-cyan/15 text-cyan"
+                      : "border-fg/15 text-fg-muted/70 hover:border-cyan/40 hover:text-fg")
+                  }
+                >
+                  {t(`tags.${m}`)}
+                </button>
+              );
+            })}
           </div>
+
+          {/* arrow */}
+          <ArrowRight className="mx-auto hidden size-4 text-seal/70 md:block" aria-hidden />
+
+          {/* orchestrator */}
+          <div className="mx-auto flex items-center justify-center rounded-md border border-seal/40 bg-seal/[0.06] px-4 py-6 text-center">
+            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-seal [writing-mode:vertical-rl] md:[writing-mode:horizontal-tb]">
+              orchestrator
+            </span>
+          </div>
+
+          {/* arrow */}
+          <ArrowRight className="mx-auto hidden size-4 text-seal/70 md:block" aria-hidden />
+
+          {/* agents — venue 一变，全部闪一下（每个 agent 都拿到新 venue） */}
+          <div className="space-y-1.5">
+            {AGENTS.map((a) => (
+              <motion.div
+                key={`${a}-${live}`}
+                initial={{ backgroundColor: "color-mix(in oklab, var(--accent) 16%, transparent)" }}
+                animate={{ backgroundColor: "color-mix(in oklab, var(--accent) 0%, transparent)" }}
+                transition={{ duration: 1.1, ease: "easeOut" }}
+                className="flex items-center gap-2 rounded-sm border border-border-subtle px-3 py-1.5"
+              >
+                <span className="inline-block size-1.5 rounded-full bg-cyan" aria-hidden />
+                <span className="font-mono text-[12px] text-fg">{a}</span>
+              </motion.div>
+            ))}
+          </div>
+
+          <p className="col-span-full mt-2 text-center font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted/60 md:col-span-full">
+            add a venue — every agent gets it for free
+          </p>
         </motion.div>
 
         {/* Current state — transparency callout */}
@@ -131,27 +137,5 @@ export function GlobalCoverage({ stats }: GlobalCoverageProps = {}) {
         </motion.div>
       </div>
     </BroadsheetSection>
-  );
-}
-
-function Stat({
-  target,
-  suffix,
-  accent = "text-fg",
-}: {
-  target: number;
-  suffix: string;
-  accent?: string;
-}) {
-  return (
-    <div className="group/stat flex cursor-default flex-col gap-1.5 transition-transform duration-200 hover:-translate-y-0.5">
-      <StatCounter
-        target={target}
-        className={`font-mono leading-none tabular-nums text-[clamp(2.25rem,4.4vw,3.75rem)] tracking-tight transition-[text-shadow,filter] duration-300 group-hover/stat:[text-shadow:0_0_22px_rgba(95,179,255,0.45)] ${accent}`}
-      />
-      <span className="font-mono text-[10px] uppercase tracking-[0.26em] text-fg-muted/70 transition-colors group-hover/stat:text-fg/90">
-        ── {suffix}
-      </span>
-    </div>
   );
 }

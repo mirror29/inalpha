@@ -17,7 +17,7 @@ const JSON_LD = {
       "name": "Inalpha",
       "url": "https://inalpha.dev",
       "description":
-        "Open-source quant agent framework — factor lab, risk engine, strategy evolution, plan-exec audit trail. Engineering discipline from Claude Code, unified kernel from NautilusTrader.",
+        "Open-source quant agent framework — an oracle that keeps a ledger. Agents pick the factors that work now (time-series Rank IC), convene a panel of investing legends, write and evolve strategy code, and route every order through machine approval. One strategy codebase across backtest, paper, and the live runner, multi-market routing, Claude Code-style hooks/permissions/plan-exec.",
       "sameAs": [
         "https://github.com/mirror29/inalpha",
         "https://inalpha.substack.com",
@@ -29,7 +29,7 @@ const JSON_LD = {
       "name": "Inalpha",
       "url": "https://inalpha.dev",
       "description":
-        "Open-source quant agent framework — factor lab, risk engine, strategy evolution, plan-exec audit trail.",
+        "Open-source quant agent framework — an oracle that keeps a ledger. Factor timing by Rank IC, a panel of investing legends, LLM-written self-evolving strategies, and machine-approved orders.",
       "potentialAction": {
         "@type": "SearchAction",
         "target": {
@@ -44,19 +44,19 @@ const JSON_LD = {
       "@type": "SoftwareSourceCode",
       name: "Inalpha",
       description:
-        "Open-source quant agent framework: factor lab, risk engine, strategy evolution, audit-grade plan/exec. Engineering discipline borrowed from Claude Code.",
+        "Open-source quant agent framework. Agents pick the factors that work now via time-series Rank IC (factor.timing), convene a panel of investing legends for opposing research, write and evolve strategy code, and route every order through machine approval — the LLM has no direct path to the order book. Audit-grade plan/exec, borrowed from Claude Code.",
       codeRepository: "https://github.com/mirror29/inalpha",
       programmingLanguage: ["TypeScript", "Python"],
       license: "https://www.gnu.org/licenses/agpl-3.0.en.html",
       applicationCategory: "Finance",
       keywords:
-        "quantitative trading, agent framework, LLM orchestration, factor research, backtesting, algorithmic trading, hooks, permissions, plan-exec, audit trail, Claude Code, NautilusTrader",
+        "quant agent framework, factor timing, time-series Rank IC, factor research, multi-agent research, investing legends panel, LLM strategy generation, strategy evolution, machine-approved orders, plan-exec, audit trail, backtesting, algorithmic trading, Claude Code, NautilusTrader",
       author: { "@type": "Person", "name": "Miro" },
       about: {
         "@type": "Thing",
-        name: "Audit-grade LLM agent infrastructure for quantitative finance",
+        name: "Agent-driven quantitative research, governed by engineering discipline",
         description:
-          "Hooks, scoped permissions, plan-exec approval tokens, and signed audit trails — Claude Code engineering patterns applied to trading, with NautilusTrader's unified backtest=paper=live kernel.",
+          "Agents rank factors by time-series Rank IC to time entries (factor.timing), convene a panel of investing legends for opposing research, write and evolve strategy code in a sandbox, and route every order through plan-exec machine approval — the LLM has no direct path to the order book. One strategy codebase across backtest, paper, and the live runner.",
       },
     },
     {
@@ -103,6 +103,14 @@ const JSON_LD = {
             text: "Inalpha is AGPL-3.0 licensed: free for personal, academic, and commercial in-house use. Network service providers must release modifications. Dual licensing available for proprietary use.",
           },
         },
+        {
+          "@type": "Question",
+          name: "Is there really a fox-spirit fortune draw?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Yes — Inari Omikuji, a playful easter egg for a vantage outside the data. It is entertainment only and hard-walled from decisions: it cannot touch risk, orders, factors, or backtests, never predicts prices, and never emits a buy or sell signal.",
+          },
+        },
       ],
     },
   ],
@@ -113,7 +121,7 @@ const JSON_LD = {
       "name": "Inalpha",
       "url": "https://inalpha.dev",
       "description":
-        "开源量化 agent 框架——因子实验室、风控引擎、策略进化、审计级 plan/exec。工程纪律借鉴 Claude Code，统一内核继承 NautilusTrader。",
+        "开源量化 agent 框架——一个会记账的神谕。Agent 自己挑当前有效的因子来择时（按时序 Rank IC），叫上投资大师团做对立研究，写策略、自进化；每笔下单都经机器审批。回测=模拟盘共用一份代码，全球多市场自动路由，外加 Claude Code 式 hooks/permissions/plan-exec。",
       "sameAs": [
         "https://github.com/mirror29/inalpha",
         "https://inalpha.substack.com",
@@ -125,7 +133,7 @@ const JSON_LD = {
       "name": "Inalpha",
       "url": "https://inalpha.dev",
       "description":
-        "开源量化 agent 框架——因子实验室、风控引擎、策略进化、审计级 plan/exec。",
+        "开源量化 agent 框架——一个会记账的神谕。按 Rank IC 因子择时、投资大师团对立研究、LLM 写策略并自进化、每笔下单经机器审批。",
       "potentialAction": {
         "@type": "SearchAction",
         "target": {
@@ -140,19 +148,19 @@ const JSON_LD = {
       "@type": "SoftwareSourceCode",
       name: "Inalpha",
       description:
-        "开源专业量化 agent 框架：因子实验室、风控引擎、策略进化、审计级 plan/exec。借鉴 Claude Code 的 hooks/permissions 模式和 NautilusTrader 的 backtest=paper=live 内核。",
+        "开源量化 agent 框架。Agent 按时序 Rank IC 选当前有效因子来择时（factor.timing），叫上投资大师团做对立研究，写策略、自进化；每笔下单经机器审批，LLM 没有直连下单路径。审计级 plan/exec，借鉴 Claude Code。",
       codeRepository: "https://github.com/mirror29/inalpha",
       programmingLanguage: ["TypeScript", "Python"],
       license: "https://www.gnu.org/licenses/agpl-3.0.en.html",
       applicationCategory: "Finance",
       keywords:
-        "量化交易, agent 框架, LLM 编排, 因子研究, 回测, 算法交易, hooks, permissions, plan-exec, 审计链路, Claude Code, NautilusTrader",
+        "量化 agent 框架, 因子择时, 时序 Rank IC, 因子研究, 多 agent 研究, 投资大师团, LLM 写策略, 策略自进化, 机器审批下单, plan-exec, 审计链路, 回测, 算法交易, Claude Code, NautilusTrader",
       author: { "@type": "Person", "name": "Miro" },
       about: {
         "@type": "Thing",
-        name: "面向专业量化的审计级 LLM agent 基础设施",
+        name: "agent 驱动、工程纪律护栏的量化研究框架",
         description:
-          "借鉴 Claude Code 的 hooks、scoped permissions、plan-exec 审批 token 和签名审计链，叠加 NautilusTrader 的 backtest=paper=live 统一内核，构建可审计的量化 agent 框架。",
+          "Agent 按时序 Rank IC 给因子排名来择时（factor.timing），叫上投资大师团做对立研究，在沙盒里写策略、自进化；每笔下单都过 plan-exec 机器审批——LLM 没有直连下单的路径。回测=模拟盘共用一份代码。",
       },
     },
     {
@@ -197,6 +205,14 @@ const JSON_LD = {
           acceptedAnswer: {
             "@type": "Answer",
             text: "Inalpha 采用 AGPL-3.0 许可证：个人研究、学术用途和商业内部使用均免费。以网络服务形式提供时必须公开修改。专有或闭源商业使用可提 issue 讨论双重许可。",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "真的有个狐神签功能？",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "有——稻荷狐神签，一个好玩的彩蛋，给你一个数据之外的参照视角。纯属娱乐、硬隔离于决策：碰不到风控、下单、因子、回测，不预测价格，也绝不给买卖信号。",
           },
         },
       ],

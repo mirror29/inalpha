@@ -18,7 +18,20 @@ export function TickerStrip({
   separator = "◆",
   className,
 }: TickerStripProps) {
-  const line = items.join(`   ${separator}   `);
+  const Line = ({ hidden = false }: { hidden?: boolean }) => (
+    <span className="flex shrink-0 items-center" aria-hidden={hidden || undefined}>
+      {items.map((it, i) => (
+        <span key={i} className="flex items-center">
+          {i > 0 ? (
+            <span className="mx-5 text-seal/70" aria-hidden>
+              {separator}
+            </span>
+          ) : null}
+          <span>{it}</span>
+        </span>
+      ))}
+    </span>
+  );
   return (
     <div
       className={cn(
@@ -28,8 +41,8 @@ export function TickerStrip({
     >
       <div className="flex whitespace-nowrap font-mono text-[11px] uppercase tracking-[0.26em] text-fg-muted">
         <div className="ticker-scroll flex shrink-0 gap-12 px-6 py-2.5">
-          <span>{line}</span>
-          <span aria-hidden>{line}</span>
+          <Line />
+          <Line hidden />
         </div>
       </div>
       <div

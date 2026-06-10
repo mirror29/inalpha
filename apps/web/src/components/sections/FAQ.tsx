@@ -21,10 +21,10 @@ function FAQItem({ question, answer, isOpen, onToggle }: FAQItemProps) {
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-4 py-5 text-left"
+        className="flex w-full cursor-pointer items-center justify-between gap-4 py-5 text-left"
         aria-expanded={isOpen}
       >
-        <span className="text-[15px] font-medium text-fg leading-snug pr-8">
+        <span className="text-[15px] text-fg leading-snug pr-8">
           {question}
         </span>
         <span
@@ -76,8 +76,9 @@ export function FAQ() {
       title={t("title")}
       intro={t("intro")}
       specRef="SEO.md §FAQ"
+      align="right"
     >
-      <div className="max-w-2xl">
+      <div className="w-full max-w-2xl">
         {items.map((item, i) => (
           <FAQItem
             key={i}

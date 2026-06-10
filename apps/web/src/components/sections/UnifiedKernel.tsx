@@ -1,20 +1,40 @@
 "use client";
 
+import * as React from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { useTranslations } from "next-intl";
 
 import { BroadsheetSection } from "@/components/primitives/BroadsheetSection";
-import { CodeDiff } from "@/components/primitives/CodeDiff";
 
 /**
- * 04 — Unified kernel. The "backtest = paper = live" promise made concrete
- * via a one-line CodeDiff: swap engines, not behavior.
+ * 05 — Unified kernel。把「同一份策略代码，三种模式」做成可切换器物：
+ * 切 backtest / paper / live 时，策略代码恒定，只有 Clock + Gateway 两行变并高亮。
+ * 自动轮转，也可点 tab。代码是 D2 临床面 → 等宽精确。
  */
+const MODES = [
+  { id: "backtest", clock: "SimClock(bars_2024)", gateway: "SimGateway()" },
+  { id: "paper", clock: "LiveClock()", gateway: "PaperGateway()" },
+  { id: "live-runner", clock: "LiveClock()", gateway: "CaptureGateway()" },
+] as const;
+
 export function UnifiedKernel() {
   const t = useTranslations("kernel");
+  const reduce = useReducedMotion();
+  const [i, setI] = React.useState(0);
+  const [pinned, setPinned] = React.useState(false);
+
+  React.useEffect(() => {
+    if (reduce || pinned) return;
+    const id = setInterval(() => setI((p) => (p + 1) % MODES.length), 2000);
+    return () => clearInterval(id);
+  }, [reduce, pinned]);
+
+  const mode = MODES[i];
 
   return (
     <BroadsheetSection
-      index="04"
+      index="05"
+      align="right"
       eyebrow="Unified kernel · same code, three modes"
       title=""
       titleNode={
@@ -27,47 +47,64 @@ export function UnifiedKernel() {
       intro={t("sub")}
     >
       <div className="space-y-8">
-        <CodeDiff
-          beforeLabel={t("diff.beforeLabel")}
-          afterLabel={t("diff.afterLabel")}
-          before={[
-            "from inalpha_paper import BacktestEngine",
-            "",
-            "engine = BacktestEngine(bars=bars_2024)",
-            "strategy.run(engine)",
-          ]}
-          after={[
-            "from inalpha_paper import LiveEngine",
-            "",
-            "engine = LiveEngine(broker=ibkr)",
-            "strategy.run(engine)",
-          ]}
-        />
+        {/* 三模式切换器 */}
+        <div className="overflow-hidden rounded-md border border-border-subtle bg-bg-elev">
+          {/* tabs */}
+          <div className="flex border-b border-border-subtle font-mono text-[12px]">
+            {MODES.map((m, idx) => {
+              const on = idx === i;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    setI(idx);
+                    setPinned(true);
+                  }}
+                  className={
+                    "relative px-5 py-2.5 uppercase tracking-[0.16em] transition-colors " +
+                    (on ? "text-cyan" : "text-fg-muted/60 hover:text-fg")
+                  }
+                >
+                  {m.id}
+                  {on ? (
+                    <motion.span
+                      layoutId="kernel-tab"
+                      className="absolute inset-x-0 bottom-0 h-[2px] bg-cyan"
+                    />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* code —— strategy 恒定，clock/gateway 随 mode 变并闪 */}
+          <div className="space-y-1 p-5 font-mono text-[13.5px] leading-relaxed">
+            <div className="text-fg-muted/50">strategy = MomentumStrategy(params)</div>
+            <CodeRow flashKey={`clock-${i}`} label="clock  " value={mode.clock} />
+            <CodeRow flashKey={`gw-${i}`} label="gateway" value={mode.gateway} />
+            <div className="text-fg-muted/50">engine.run(strategy, clock, gateway)</div>
+          </div>
+
+          <div className="border-t border-border-subtle px-5 py-3 font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted/60">
+            only clock + gateway change · your strategy never does
+          </div>
+        </div>
 
         {/* Three service plates */}
         <div className="grid gap-px bg-fg/10 md:grid-cols-3">
-          {(["data", "paper", "research"] as const).map((id, i) => (
+          {(["data", "paper", "research"] as const).map((id, idx) => (
             <article
               key={id}
               className="group relative flex flex-col gap-3 overflow-hidden bg-bg p-6 transition-colors duration-300 hover:bg-bg-deep"
             >
-              {/* 左 accent 竖线：rest 0px slide in 到 2px */}
               <span
                 aria-hidden
                 className="absolute left-0 top-0 h-full w-0 bg-cyan transition-all duration-300 group-hover:w-[2px]"
               />
-              {/* cyan radial glow，hover 淡入 */}
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                style={{
-                  background:
-                    "radial-gradient(ellipse at 0% 100%, rgba(95,179,255,0.10), transparent 60%)",
-                }}
-              />
               <header className="relative flex items-baseline justify-between">
                 <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-fg-muted/70 transition-colors group-hover:text-cyan/80">
-                  {String(i + 1).padStart(2, "0")} / kernel
+                  {String(idx + 1).padStart(2, "0")} / kernel
                 </span>
                 <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-fg-muted/60">
                   {t(`services.${id}.version`)}
@@ -82,7 +119,7 @@ export function UnifiedKernel() {
               <p className="relative text-[14px] leading-relaxed text-fg-muted transition-colors group-hover:text-fg/80">
                 {t(`services.${id}.desc`)}
               </p>
-              <code className="relative mt-auto border-l-2 border-cyan/40 bg-bg-deep/60 px-3 py-2 font-mono text-[12px] text-cyan/90 transition-all duration-300 group-hover:border-cyan group-hover:text-cyan group-hover:shadow-[0_0_18px_-6px_rgba(95,179,255,0.45)]">
+              <code className="relative mt-auto border-l-2 border-cyan/40 bg-bg-deep/60 px-3 py-2 font-mono text-[12px] text-cyan/90 transition-all duration-300 group-hover:border-cyan group-hover:text-cyan">
                 {t(`services.${id}.code`)}
               </code>
             </article>
@@ -90,5 +127,30 @@ export function UnifiedKernel() {
         </div>
       </div>
     </BroadsheetSection>
+  );
+}
+
+function CodeRow({
+  flashKey,
+  label,
+  value,
+}: {
+  flashKey: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-fg-muted/50">{label} =</span>
+      <motion.span
+        key={flashKey}
+        initial={{ backgroundColor: "color-mix(in oklab, var(--accent) 22%, transparent)" }}
+        animate={{ backgroundColor: "color-mix(in oklab, var(--accent) 0%, transparent)" }}
+        transition={{ duration: 1 }}
+        className="rounded-sm px-1 text-cyan"
+      >
+        {value}
+      </motion.span>
+    </div>
   );
 }
