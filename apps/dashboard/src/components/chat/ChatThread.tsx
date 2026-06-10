@@ -456,10 +456,13 @@ export function ChatThread({
         <span className="h-5 w-1 shrink-0 rounded-full bg-seal" />
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <h2 className="font-display text-lg text-fg">{t("title")}</h2>
-          <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-bull">
-            <span className="size-1.5 rounded-full bg-current caret-blink" />
-            {t("online")}
-          </span>
+          {/* 在线状态只留呼吸点,文字降级为 title/aria(视觉上多余)。 */}
+          <span
+            role="status"
+            aria-label={t("online")}
+            title={t("online")}
+            className="size-1.5 shrink-0 self-center rounded-full bg-bull caret-blink"
+          />
         </div>
         {/* 页面上下文胶囊 —— 透明地告诉用户「agent 此刻看到了哪个页面」,✕ 可临时摘掉。 */}
         {contextAttached && (
