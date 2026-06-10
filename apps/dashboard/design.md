@@ -87,12 +87,14 @@ mono / display 语境下中文同族同粗细。两个坑：
    （`monospace`/`sans-serif`）收尾的回退链，通用族必命中，接在后面的 CJK 永远
    不可达（mono 中文会掉进浏览器默认等宽宋体）。直接写 @font-face 字族名
    `GeistSans` / `GeistMono`，见 `globals.css` `@theme inline`。
-2. **PingFang 鸳鸯体**：macOS Chromium 直接用系统族名 `"PingFang SC"` 时，
-   `font-weight: 500/600` 的中文段落会在 shaping run 边界丢字重——同一段前几行
-   Medium、后几行 Regular（前粗后细）。修法是 `"PingFang Pinned"` @font-face：
-   用 `local()` 按 weight 区间钉死具体字面（Light/Regular/Medium/Semibold），
-   绕过系统族的字重匹配；非 macOS 不命中自动跳过。**不要**把它从 `--font-cjk`
-   栈首移走，也不要在组件里直接写 `"PingFang SC"`。
+2. **PingFang 鸳鸯体**：macOS Chromium 走系统回退渲染中文时，`font-weight:
+   500/600` 的段落会在 shaping run 边界丢字重——同一段前几行 Medium、后几行
+   Regular（前粗后细）。修法是 `"PingFang Pinned"` @font-face：用 `local()`
+   按 weight 区间钉死具体字面（Light/Regular/Medium/Semibold）。**钉面必须排在
+   Latin 主字体紧后、`ui-sans-serif`/`system-ui` 之前**——macOS 的 system-ui
+   （San Francisco）会内部级联接管 CJK 字形，排在它后面的 CJK 族永远轮不到，
+   bug 照旧（曾在此栽过：钉面放 `--font-cjk` 里被 system-ui 截胡）。验证一律用
+   本机真 Chrome `--headless=new` 截图，Playwright Chromium 行为不可信。
 
 ---
 
