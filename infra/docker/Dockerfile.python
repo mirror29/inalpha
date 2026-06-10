@@ -26,14 +26,18 @@ ENV SERVICE=${SERVICE}
 
 WORKDIR /app
 
+# 非 root 运行,缩小容器逃逸面(uv sync 也以 app 身份跑,.venv 归属一致)
+RUN useradd --create-home --uid 10001 app && chown app:app /app
+USER app
+
 # 先拷依赖清单做层缓存：_shared 与目标服务的 pyproject/lock
-COPY _shared/pyproject.toml _shared/uv.lock ./_shared/
-COPY ${SERVICE}/pyproject.toml ${SERVICE}/uv.lock ./${SERVICE}/
+COPY --chown=app:app _shared/pyproject.toml _shared/uv.lock ./_shared/
+COPY --chown=app:app ${SERVICE}/pyproject.toml ${SERVICE}/uv.lock ./${SERVICE}/
 
 # _shared 源码（editable 路径依赖需要真实源码在场）
-COPY _shared ./_shared
+COPY --chown=app:app _shared ./_shared
 # 目标服务源码
-COPY ${SERVICE} ./${SERVICE}
+COPY --chown=app:app ${SERVICE} ./${SERVICE}
 
 WORKDIR /app/${SERVICE}
 # --frozen：按 per-service uv.lock 复现；--no-dev：不装测试/lint 组
