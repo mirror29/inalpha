@@ -45,9 +45,12 @@ export async function GET(
 
     // 该候选派生的 live runner —— 后端无「按 candidate 查 run」端点,拉列表本地过滤
     // (best-effort,失败降级空,不阻塞详情)。最近一个 run 再拉决策给 K 线叠加 + 历史交易。
+    // limit 显式取后端硬上限 1000:默认 200 时老候选的 run 可能全被挤出窗口,
+    // 详情页假装"没跑过"。全局 run 超 1000 后仍可能丢,根治等 ?candidate_id= 过滤端点。
     const allRuns = await backendFetch<StrategyRunRecord[]>(
       "paper",
       "/strategy_runs",
+      { query: { limit: 1000 } },
     ).catch(() => [] as StrategyRunRecord[]);
     const runs = allRuns
       .filter((r) => r.candidate_id === id)

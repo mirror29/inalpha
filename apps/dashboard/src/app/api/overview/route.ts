@@ -43,8 +43,14 @@ export async function GET() {
       backendFetch<OrderRecord[]>("paper", "/orders", {
         query: { limit: ORDERS_SHOWN + 1 },
       }),
-      backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs"),
-      backendFetch<StrategyCandidateSummary[]>("paper", "/strategy_candidates"),
+      // 显式取后端硬上限:默认 limit(runs=200/candidates=50)会让 KPI 计数在
+      // 数量超限后系统性偏小(E2 演化积累候选很快触发),且无任何提示。
+      backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs", {
+        query: { limit: 1000 },
+      }),
+      backendFetch<StrategyCandidateSummary[]>("paper", "/strategy_candidates", {
+        query: { limit: 200 },
+      }),
     ]);
 
   const positions = settledOr(positionsRes, []);
