@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 const LEGENDS = ["Buffett", "Lynch", "Wood", "Burry", "Druckenmiller", "Marks"];
 
 type Side = "bull" | "bear" | "legend" | "risk";
-type Turn = { speaker: string; side: Side; text: string };
+type Turn = { speaker: string; side: Side; text: string; re?: string };
 
 /** side → 颜色（看多绿 / 看空红 / 大师朱 / 风控金）。 */
 const TONE: Record<Side, string> = {
@@ -17,10 +17,20 @@ const TONE: Record<Side, string> = {
   risk: "text-gold",
 };
 
+/** side → 发言标记（多▲ / 空▼ / 大师◆ / 风控■），与左右站位一起构成对垒感。 */
+const MARK: Record<Side, string> = {
+  bull: "▲",
+  bear: "▼",
+  legend: "◆",
+  risk: "■",
+};
+
 /**
  * 03 — 研究地基。序号 + 终端辩论框在左，标题 / 大师团在右。
- * 辩论框做成终端：deep_dive 里技术 / 情绪 / 多位投资大师 + 风控逐条交锋（多空分歧），
- * 最后综合成 decision_record，循环播放。reduced-motion 下静态全显。示例，非投资建议。
+ * 辩论框做成终端里的对垒：多头靠左（▲绿）、空头靠右缩进（▼红）逐条互相反驳（↩ re:），
+ * 标题栏下一条多空力量条随发言此消彼长；大师 / 风控以分隔线收束，
+ * 最后综合成 decision_record，循环播放（结尾多停 2 拍便于读结论）。
+ * reduced-motion 下静态全显。示例，非投资建议。
  */
 export function ResearchFloor() {
   const t = useTranslations("research");
@@ -34,13 +44,18 @@ export function ResearchFloor() {
       setStep(TOTAL);
       return;
     }
-    const id = setInterval(() => setStep((s) => (s >= TOTAL ? 0 : s + 1)), 1050);
+    const id = setInterval(() => setStep((s) => (s >= TOTAL + 2 ? 0 : s + 1)), 1050);
     return () => clearInterval(id);
   }, [reduce, TOTAL]);
 
   const shown = Math.min(step, debate.length);
   const verdictOn = step > debate.length;
   const playing = step < TOTAL;
+
+  const visible = debate.slice(0, shown);
+  const bulls = visible.filter((m) => m.side === "bull").length;
+  const bears = visible.filter((m) => m.side === "bear").length;
+  const bullPct = bulls + bears === 0 ? 50 : (bulls / (bulls + bears)) * 100;
 
   return (
     <section className="group relative isolate overflow-hidden">
@@ -80,27 +95,65 @@ export function ResearchFloor() {
               <span className="ml-auto text-fg-muted/40">{t("transcriptHint")}</span>
             </div>
 
-            {/* 终端正文 */}
-            <div className="min-h-[19rem] space-y-1.5 p-4 text-[12.5px] leading-relaxed sm:min-h-[20rem]">
+            {/* 多空力量条：随发言此消彼长 */}
+            <div className="flex items-center gap-3 border-b border-border-subtle px-4 py-2 text-[9.5px] uppercase tracking-[0.18em]">
+              <span className="tabular-nums text-bull">
+                {MARK.bull} {t("tallyBull")} {bulls}
+              </span>
+              <div className="flex h-[3px] flex-1 overflow-hidden rounded-full bg-fg/10" aria-hidden>
+                <span
+                  className="bg-bull/80 transition-[width] duration-500 ease-out"
+                  style={{ width: `${bullPct}%` }}
+                />
+                <span
+                  className="flex-1 bg-fox-red/80 transition-[width] duration-500 ease-out"
+                  style={{ width: `${100 - bullPct}%` }}
+                />
+              </div>
+              <span className="tabular-nums text-fox-red">
+                {bears} {t("tallyBear")} {MARK.bear}
+              </span>
+            </div>
+
+            {/* 终端正文：多头靠左、空头靠右缩进，逐条互相反驳 */}
+            <div className="flex min-h-[21rem] flex-col gap-y-2 p-4 text-[12.5px] leading-relaxed sm:min-h-[22rem]">
               <AnimatePresence mode="popLayout">
-                {debate.slice(0, shown).map((m, i) => (
-                  <motion.div
-                    key={`${i}-${m.speaker}`}
-                    layout
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.28 }}
-                    className="flex flex-wrap items-baseline gap-x-2"
-                  >
-                    <span className="text-seal/60">&gt;</span>
-                    <span className={TONE[m.side]}>{m.speaker}</span>
-                    <span className={"text-[9px] uppercase tracking-[0.12em] opacity-70 " + TONE[m.side]}>
-                      [{m.side}]
-                    </span>
-                    <span className="text-fg-muted">{m.text}</span>
-                  </motion.div>
-                ))}
+                {visible.map((m, i) => {
+                  const bear = m.side === "bear";
+                  const panel = m.side === "legend" || m.side === "risk";
+                  return (
+                    <motion.div
+                      key={`${i}-${m.speaker}`}
+                      layout
+                      initial={{ opacity: 0, x: bear ? 12 : panel ? 0 : -12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.28 }}
+                      className={
+                        panel
+                          ? "mt-1 flex w-full flex-wrap items-baseline gap-x-2 border-t border-dashed border-border-subtle pt-2.5"
+                          : "flex max-w-[88%] flex-wrap items-baseline gap-x-2 " +
+                            (bear ? "self-end justify-end text-right" : "self-start")
+                      }
+                    >
+                      {!bear ? <span className={panel ? "text-seal/60" : "text-bull/60"}>&gt;</span> : null}
+                      <span className={TONE[m.side]}>
+                        {MARK[m.side]} {m.speaker}
+                      </span>
+                      {m.re ? (
+                        <span className="text-[9px] uppercase tracking-[0.12em] text-fg-muted/50">
+                          ↩ {m.re}
+                        </span>
+                      ) : (
+                        <span className={"text-[9px] uppercase tracking-[0.12em] opacity-70 " + TONE[m.side]}>
+                          [{m.side}]
+                        </span>
+                      )}
+                      <span className="text-fg-muted">{m.text}</span>
+                      {bear ? <span className="text-fox-red/60">&lt;</span> : null}
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
 
               <AnimatePresence>
@@ -120,7 +173,13 @@ export function ResearchFloor() {
               </AnimatePresence>
 
               {playing ? (
-                <span className="caret-blink inline-block text-cyan" aria-hidden>
+                <span
+                  className={
+                    "caret-blink inline-block text-cyan " +
+                    (debate[shown]?.side === "bear" ? "self-end" : "self-start")
+                  }
+                  aria-hidden
+                >
                   ▋
                 </span>
               ) : null}

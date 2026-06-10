@@ -129,15 +129,17 @@
     "transcriptHint": "示例",
     "debate": [
       { "speaker": "技术面", "side": "bull", "text": "NVDA 创新高，量能在确认这一波。" },
-      { "speaker": "情绪面", "side": "bear", "text": "NVDA 大家都已经在多头，太拥挤了。" },
-      { "speaker": "巴菲特", "side": "bear", "text": "价格是你付的——这个估值，价值在哪？" },
-      { "speaker": "伍德", "side": "bull", "text": "AI 算力需求会复利，TAM 被低估了。" },
-      { "speaker": "伯里", "side": "bear", "text": "去读库存那一行，还有中国区营收的脚注。" },
-      { "speaker": "林奇", "side": "bull", "text": "我懂他们卖什么，订单簿仍然成立。" },
-      { "speaker": "德鲁肯米勒", "side": "bull", "text": "别跟资本开支周期对着干，流动性站它这边。" },
-      { "speaker": "Marks", "side": "legend", "text": "问题不是 NVDA 好不好，而是好有没有被 price in。" },
-      { "speaker": "风控", "side": "risk", "text": "按你择不了时的回撤来定仓位。" }
+      { "speaker": "情绪面", "side": "bear", "re": "技术面", "text": "这么拥挤的突破最容易失败——所有人已经在多头了。" },
+      { "speaker": "伍德", "side": "bull", "re": "情绪面", "text": "拥挤不等于错。AI 算力需求在复利，TAM 仍被低估。" },
+      { "speaker": "巴菲特", "side": "bear", "re": "伍德", "text": "TAM 再大，价格是你付出的。这个估值，价值在哪？" },
+      { "speaker": "林奇", "side": "bull", "re": "巴菲特", "text": "估值要配着增速看。我懂他们卖什么，订单簿撑得住。" },
+      { "speaker": "伯里", "side": "bear", "re": "林奇", "text": "订单簿？先去读库存那一行，和中国区营收的脚注。" },
+      { "speaker": "德鲁肯米勒", "side": "bull", "re": "伯里", "text": "脚注挡不住资本开支周期，流动性站在多头这边。" },
+      { "speaker": "Marks", "side": "legend", "text": "两边各对一半：问题不是 NVDA 好不好，而是好有没有被 price in。" },
+      { "speaker": "风控", "side": "risk", "text": "辩论收到。仓位按你择不了时的回撤来定。" }
     ],
+    "tallyBull": "多方",
+    "tallyBear": "空方",
     "verdict": "decision_record",
     "verdictText": "做多 NVDA · 信念 0.41 · 每个立场都留底",
     "legendsLabel": "可选 · 一桌投资大师团"

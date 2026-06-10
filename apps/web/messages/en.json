@@ -129,15 +129,17 @@
     "transcriptHint": "illustrative",
     "debate": [
       { "speaker": "technical", "side": "bull", "text": "NVDA broke to new highs — volume is confirming the move." },
-      { "speaker": "sentiment", "side": "bear", "text": "Everyone is already long NVDA. The trade is crowded." },
-      { "speaker": "Buffett", "side": "bear", "text": "Price is what you pay. At this multiple, where's the value?" },
-      { "speaker": "Wood", "side": "bull", "text": "AI compute demand compounds — the TAM is underpriced." },
-      { "speaker": "Burry", "side": "bear", "text": "Read the inventory line and the China-revenue footnotes." },
-      { "speaker": "Lynch", "side": "bull", "text": "I know what they sell, and the order book still checks out." },
-      { "speaker": "Druckenmiller", "side": "bull", "text": "Don't fight the capex cycle — liquidity favors it." },
-      { "speaker": "Marks", "side": "legend", "text": "It's not whether NVDA is great. It's whether great is priced in." },
-      { "speaker": "risk", "side": "risk", "text": "Size it for a drawdown you can't time." }
+      { "speaker": "sentiment", "side": "bear", "re": "technical", "text": "Breakouts fail when the trade is this crowded — everyone is already long." },
+      { "speaker": "Wood", "side": "bull", "re": "sentiment", "text": "Crowded isn't wrong. AI compute demand compounds — the TAM is still underpriced." },
+      { "speaker": "Buffett", "side": "bear", "re": "Wood", "text": "However big the TAM, price is what you pay. At this multiple, where's the value?" },
+      { "speaker": "Lynch", "side": "bull", "re": "Buffett", "text": "Value follows growth here. I know what they sell — the order book holds up." },
+      { "speaker": "Burry", "side": "bear", "re": "Lynch", "text": "The order book? Read the inventory line and the China-revenue footnotes first." },
+      { "speaker": "Druckenmiller", "side": "bull", "re": "Burry", "text": "Footnotes don't stop a capex cycle — liquidity is with the bulls." },
+      { "speaker": "Marks", "side": "legend", "text": "Both sides are half right. It's not whether NVDA is great — it's whether great is priced in." },
+      { "speaker": "risk", "side": "risk", "text": "Debate noted. Size it for the drawdown you can't time." }
     ],
+    "tallyBull": "bulls",
+    "tallyBear": "bears",
     "verdict": "decision_record",
     "verdictText": "long NVDA · conviction 0.41 · every stance logged",
     "legendsLabel": "Optional · a panel of investing legends"
