@@ -211,8 +211,18 @@ class FactorEngine:
         self, series_id: str, *, from_ts: datetime, to_ts: datetime, fresh: bool
     ) -> pd.Series:
         """单条 FRED 序列（venue="fred"，值在 close）。live 走专属缓存（daily 序列
-        一天一变，TTL 放宽到 1 小时，不占面板缓存的半根 bar 约束）。"""
-        key = ("__macro__", series_id, from_ts.date().isoformat())
+        一天一变，TTL 放宽到 1 小时，不占面板缓存的半根 bar 约束）。
+
+        坑:缓存 key 含 to_ts.date() —— 此缓存只对 T+1 发布的 daily 序列正确;
+        若后续加日内更新的 macro 源(如 VIX spot),必须改用面板缓存的
+        半根 bar TTL,否则当日内会静默返回 stale 值。
+        """
+        key = (
+            "__macro__",
+            series_id,
+            from_ts.date().isoformat(),
+            to_ts.date().isoformat(),
+        )
         if fresh:
             cached = _panel_cache_get(key, _MACRO_CACHE_TTL_S)
             if cached is not None:
@@ -368,11 +378,24 @@ class FactorEngine:
         top = _select_decorrelated(
             confident, series, n, self._settings.snapshot_corr_threshold
         )
+        # available 语义 = "计算是否成功",**不等于"有可用信号"** —— 全部因子低置信时
+        # available=True 但 top_factors=[](research 靠这个三态区分"服务挂了" vs
+        # "样本不足",勿改成 len(top)>0)。为防 agent 把 available=True 误读成有信号,
+        # top 为空时必填 reason 说明原因,caller 不用猜。
+        if scored["bars_used"] <= 0:
+            reason: str | None = "no bars from data-service"
+        elif not top:
+            reason = (
+                "no factor passed confidence threshold "
+                f"({len(factors)} evaluated, all low-confidence or pruned)"
+            )
+        else:
+            reason = None
         return {
             "as_of": scored["as_of"],
             "bars_used": scored["bars_used"],
             "available": scored["bars_used"] > 0 and len(factors) > 0,
-            "reason": None if scored["bars_used"] > 0 else "no bars from data-service",
+            "reason": reason,
             "top_factors": top,
             "candidates_evaluated": len(factors),
             "low_confidence_count": len(factors) - len(confident),
