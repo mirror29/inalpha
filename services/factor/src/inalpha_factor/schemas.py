@@ -186,7 +186,13 @@ class SnapshotResponse(BaseModel):
     as_of: datetime
     horizon_bars: int
     bars_used: int
-    available: bool = Field(description="factor 计算是否成功（false 时 caller 应降级）")
+    available: bool = Field(
+        description=(
+            "factor 计算是否成功（false 时 caller 应降级）。"
+            "**≠ 有可用信号**：全部因子低置信时仍为 true 但 top_factors=[]，"
+            "判有无信号看 top_factors 非空，top 为空时 reason 必有原因"
+        )
+    )
     reason: str | None = None
     top_factors: list[FactorEffectiveness] = Field(default_factory=list)
     candidates_evaluated: int = Field(
