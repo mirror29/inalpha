@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from ..kernel.clock import datetime_to_ns
 from ..kernel.identifiers import InstrumentId
 from ..model.positions import Position
 from . import metrics
@@ -153,11 +154,10 @@ class BacktestReport:
         max_dd = metrics.max_drawdown_pct(equity_values)
         trade_pnls = portfolio.closed_trade_pnls
         fills = list(portfolio.fills)
-        # exposure 用回测窗口端点（datetime → ns）;缺端点时为 None。
-        start_ns = (
-            int(period_start.timestamp() * 1_000_000_000) if period_start else None
-        )
-        end_ns = int(period_end.timestamp() * 1_000_000_000) if period_end else None
+        # exposure 用回测窗口端点（datetime → ns,整数路径:float 对 2026 时间戳
+        # 丢 ~100ns,会与 fill.ts_ns 的整数路径错位）;缺端点时为 None。
+        start_ns = datetime_to_ns(period_start) if period_start else None
+        end_ns = datetime_to_ns(period_end) if period_end else None
         fill_events = [
             (f.ts_ns, f.quantity if f.side == "BUY" else -f.quantity) for f in fills
         ]

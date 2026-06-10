@@ -152,3 +152,18 @@ class LiveClock(Clock):
     def cancel_timer(self, name: str) -> None:
         # D-5 起会实现，目前 noop（保持接口对称）
         pass
+
+
+def datetime_to_ns(dt: datetime) -> int:
+    """``datetime`` → 纳秒整数，**不走 float**。
+
+    ``int(dt.timestamp() * 1_000_000_000)`` 对 2026 年的时间戳精度不够：
+    ts_ns ≈ 1.7e18 超 float64 mantissa，可能丢 ~100ns，导致 ns 级 ``==`` 比较
+    误判（D-8b' review 高风险 #5）。分两步：先取整秒，再补 microsecond × 1000，
+    纯整数运算。naive datetime 按 UTC 处理。
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    # int(dt.timestamp()) 仍走 float，但秒数量级 < 2^53 安全
+    secs = int(dt.timestamp())
+    return secs * 1_000_000_000 + dt.microsecond * 1_000
