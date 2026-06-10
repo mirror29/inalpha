@@ -224,6 +224,7 @@
       "risk": "Risk",
       "order": "Orders",
       "backtest": "Backtests",
+      "runner": "Runners",
       "conversation": "Chats"
     },
     "empty": "No activity yet.",
