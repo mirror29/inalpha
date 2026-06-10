@@ -107,12 +107,6 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
           {/* 当前模拟盘指标条(置于 K 线上方)。 */}
           <RunnerStats run={run} decisions={data.decisions} />
 
-          {/* 该标的的账户当前持仓(账户级,同标的多 run 共享);空仓时面板显示空态。 */}
-          <PositionsTable
-            positions={data.position ? [data.position] : []}
-            baseCcy={data.baseCurrency ?? ""}
-          />
-
           {/* K 线置顶 —— 决策点叠在蜡烛上,先看价格走势。 */}
           <RunnerChart
             venue={run.venue}
@@ -121,7 +115,19 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
             decisions={data.decisions}
           />
 
-          <DecisionTimeline decisions={data.decisions} />
+          {/* 持仓(账户级,同标的多 run 共享;空仓显示空态)与决策时间线并排,
+              省纵向空间;min-w-0 防表格内容把 fr 轨道撑爆。 */}
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+            <div className="min-w-0">
+              <PositionsTable
+                positions={data.position ? [data.position] : []}
+                baseCcy={data.baseCurrency ?? ""}
+              />
+            </div>
+            <div className="min-w-0">
+              <DecisionTimeline decisions={data.decisions} />
+            </div>
+          </div>
 
           {/* 标的当前的有效因子 + 衰减状态(近期 IC vs 全样本 IC),按 run 的标的实时算。 */}
           <RunnerFactors
