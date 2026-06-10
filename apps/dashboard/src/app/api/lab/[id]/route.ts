@@ -80,10 +80,14 @@ export async function GET(
           venue: strOrNull(latestBacktest.config.venue),
           symbol: strOrNull(latestBacktest.config.symbol),
           timeframe: strOrNull(latestBacktest.config.timeframe),
-          metrics: (latestBacktest.metrics ?? null) as Record<
-            string,
-            number | null
-          > | null,
+          // 老 run 的 metrics 没有 initial_cash(新键),从 config 兜底补齐。
+          metrics: withInitialCash(
+            (latestBacktest.metrics ?? null) as Record<
+              string,
+              number | null
+            > | null,
+            latestBacktest.config,
+          ),
         }
       : null;
     const backtestTrades = backtestRun
@@ -134,4 +138,15 @@ export async function GET(
 /** config 里的字段可能缺失/非字符串 —— 取字符串否则 null。 */
 function strOrNull(v: unknown): string | null {
   return typeof v === "string" && v ? v : null;
+}
+
+/** metrics 缺 initial_cash(2026-06-10 前的老 run)时从 config.initial_cash 兜底。 */
+function withInitialCash(
+  metrics: Record<string, number | null> | null,
+  config: Record<string, unknown>,
+): Record<string, number | null> | null {
+  if (metrics && typeof metrics.initial_cash === "number") return metrics;
+  const fromConfig = config.initial_cash;
+  if (typeof fromConfig !== "number") return metrics;
+  return { ...(metrics ?? {}), initial_cash: fromConfig };
 }

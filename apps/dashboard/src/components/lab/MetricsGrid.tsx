@@ -35,6 +35,8 @@ const SPEC: Array<{ key: string; label: string; fmt: Fmt }> = [
   // ── 执行 / 规模 ──
   { key: "exposure_pct", label: "EXPOSURE", fmt: "pct" },
   { key: "num_trades", label: "TRADES", fmt: "int" },
+  { key: "initial_cash", label: "INITIAL CASH", fmt: "num" },
+  { key: "final_equity", label: "FINAL EQUITY", fmt: "num" },
   { key: "total_fees", label: "FEES", fmt: "num" },
   { key: "num_bars_processed", label: "BARS", fmt: "int" },
 ];
