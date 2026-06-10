@@ -4,7 +4,14 @@ import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { Check, X } from "lucide-react";
 
-import { fadeUp, gridStagger } from "@/lib/motion";
+import { EASE_OUT_QUART, fadeUp, gridStagger } from "@/lib/motion";
+
+/** 大卡片 hover 只抬升不缩放 —— 卡片横向占满栅格，scale 放大会让
+ *  左右边框越界被 section 的 overflow-hidden 裁掉。 */
+const cardLift = {
+  y: -4,
+  transition: { duration: 0.2, ease: EASE_OUT_QUART },
+} as const;
 
 /**
  * 01 — 核心楔子。门面第一屏：把差异化做成可见的对位器物——
@@ -59,11 +66,12 @@ export function CoreWedge() {
           whileInView="visible"
           viewport={{ once: true, margin: "-80px" }}
           variants={gridStagger}
-          className="relative overflow-hidden rounded-md border border-fox-red/20 bg-bg-deep p-6 md:p-8"
+          whileHover={cardLift}
+          className="group/card relative overflow-hidden rounded-md border border-fox-red/20 bg-bg-deep p-6 transition-[border-color,box-shadow] duration-300 hover:border-fox-red/45 hover:shadow-[0_10px_44px_-14px_color-mix(in_oklab,var(--down)_30%,transparent)] md:p-8"
         >
           <span
             aria-hidden
-            className="pointer-events-none absolute -right-3 -top-8 select-none font-display italic leading-none text-fox-red/[0.07]"
+            className="pointer-events-none absolute -right-3 -top-8 select-none font-display italic leading-none text-fox-red/[0.07] transition-colors duration-500 group-hover/card:text-fox-red/[0.14]"
             style={{ fontSize: "clamp(6rem, 14vw, 11rem)" }}
           >
             ?
@@ -92,7 +100,8 @@ export function CoreWedge() {
           whileInView="visible"
           viewport={{ once: true, margin: "-80px" }}
           variants={gridStagger}
-          className="relative overflow-hidden rounded-md border border-cyan/30 bg-bg-elev p-6 md:p-8"
+          whileHover={cardLift}
+          className="group/card relative overflow-hidden rounded-md border border-cyan/30 bg-bg-elev p-6 transition-[border-color,box-shadow] duration-300 hover:border-cyan/60 hover:shadow-[0_10px_44px_-14px_color-mix(in_oklab,var(--accent)_35%,transparent)] md:p-8"
         >
           <div className="relative mb-5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-cyan">
             <Check className="size-3.5" strokeWidth={2.5} />
@@ -105,7 +114,7 @@ export function CoreWedge() {
                 variants={fadeUp}
                 className="flex gap-4 py-4 first:pt-0 last:pb-0"
               >
-                <span className="mt-0.5 shrink-0 font-mono text-[11px] tabular-nums text-cyan/50">
+                <span className="mt-0.5 shrink-0 font-mono text-[11px] tabular-nums text-cyan/50 transition-colors duration-300 group-hover/card:text-cyan/85">
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <div className="min-w-0">
