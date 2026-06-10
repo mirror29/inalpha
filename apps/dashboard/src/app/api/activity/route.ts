@@ -16,6 +16,8 @@ export const dynamic = "force-dynamic";
 
 /** 聚合时的上限,避免跨服务 fan-out 失控。 */
 const MAX_EVENTS = 120;
+/** 公平截断:每类事件保底保留的最近条数(防高频源把低频源整类挤出窗口)。 */
+const PER_KIND_KEEP = 10;
 const DECISIONS_PER_RUN = 50;
 const MAX_RUNS_FOR_DECISIONS = 8;
 const ORDERS_LIMIT = 40;
@@ -307,9 +309,28 @@ export async function GET() {
     sources.conversations = false;
   }
 
-  // 按时间倒序合并 + 截断。
+  // 按时间倒序合并 + **公平截断**:纯按时间截前 N 条时,高频源(回测批跑/决策)
+  // 会把低频但重要的源(风控锁/审批)整类挤出窗口 —— "风控日志不见了"。
+  // 先保每类最近 PER_KIND_KEEP 条,再按时间补满到 MAX_EVENTS。
   events.sort((a, b) => +new Date(b.ts) - +new Date(a.ts));
-  const trimmed = events.slice(0, MAX_EVENTS);
+  const kindKept = new Map<ActivityKind, number>();
+  const guaranteed = new Set<string>();
+  for (const e of events) {
+    const n = kindKept.get(e.kind) ?? 0;
+    if (n < PER_KIND_KEEP) {
+      kindKept.set(e.kind, n + 1);
+      guaranteed.add(e.id);
+    }
+  }
+  const trimmed: ActivityEvent[] = [];
+  let fillBudget = Math.max(0, MAX_EVENTS - guaranteed.size);
+  for (const e of events) {
+    if (guaranteed.has(e.id)) trimmed.push(e);
+    else if (fillBudget > 0) {
+      trimmed.push(e);
+      fillBudget -= 1;
+    }
+  }
 
   const counts = countByKind(trimmed);
 
