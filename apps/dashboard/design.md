@@ -80,11 +80,19 @@
 字距 `tracking-[0.16em]`；标题用 Fraunces 斜体序号 + 正体标题。
 
 **CJK 回退（硬性）**：三个角色全是纯拉丁字体，中文统一回退到 `--font-cjk`
-（PingFang SC → Hiragino → YaHei → Noto Sans SC），保证 sans / mono / display 语境下
-中文同族同粗细。坑：字体栈**不要**引用 `var(--font-geist-*)`——geist 包变量自带以
-通用族（`monospace`/`sans-serif`）收尾的回退链，通用族必命中，接在后面的 CJK 永远
-不可达（mono 中文会掉进浏览器默认等宽宋体，即"中文粗细不一"）。直接写 @font-face
-字族名 `GeistSans` / `GeistMono`，见 `globals.css` `@theme inline`。
+（PingFang Pinned → PingFang SC → Hiragino → YaHei → Noto Sans SC），保证 sans /
+mono / display 语境下中文同族同粗细。两个坑：
+
+1. 字体栈**不要**引用 `var(--font-geist-*)`——geist 包变量自带以通用族
+   （`monospace`/`sans-serif`）收尾的回退链，通用族必命中，接在后面的 CJK 永远
+   不可达（mono 中文会掉进浏览器默认等宽宋体）。直接写 @font-face 字族名
+   `GeistSans` / `GeistMono`，见 `globals.css` `@theme inline`。
+2. **PingFang 鸳鸯体**：macOS Chromium 直接用系统族名 `"PingFang SC"` 时，
+   `font-weight: 500/600` 的中文段落会在 shaping run 边界丢字重——同一段前几行
+   Medium、后几行 Regular（前粗后细）。修法是 `"PingFang Pinned"` @font-face：
+   用 `local()` 按 weight 区间钉死具体字面（Light/Regular/Medium/Semibold），
+   绕过系统族的字重匹配；非 macOS 不命中自动跳过。**不要**把它从 `--font-cjk`
+   栈首移走，也不要在组件里直接写 `"PingFang SC"`。
 
 ---
 

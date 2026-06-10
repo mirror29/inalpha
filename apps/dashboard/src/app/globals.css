@@ -13,6 +13,33 @@
    所有 bg-· text-· border-· 等工具类(含 opacity 透明度修饰)自动跟随。
    ════════════════════════════════════════════════════════════════════ */
 
+/* ── CJK 字面钉死(macOS 鸳鸯体修复) ────────────────────────────────
+   macOS Chromium 用系统族名 "PingFang SC" 时,weight 500/600 的中文段落会
+   在 shaping run 边界丢字重 → 同段前粗后细(鸳鸯体)。用 local() 按 weight
+   区间显式钉住 PingFang 各字面,绕过系统族的字重匹配。非 macOS 无此字体,
+   local() 不命中即透明跳过。区间覆盖项目用到的 300/400/500/600/700
+   (700 钉到 Semibold —— PingFang 无 Bold,与系统行为一致,避免合成加粗)。 */
+@font-face {
+  font-family: "PingFang Pinned";
+  src: local("PingFangSC-Light"), local("PingFang SC Light");
+  font-weight: 100 349;
+}
+@font-face {
+  font-family: "PingFang Pinned";
+  src: local("PingFangSC-Regular"), local("PingFang SC Regular");
+  font-weight: 350 449;
+}
+@font-face {
+  font-family: "PingFang Pinned";
+  src: local("PingFangSC-Medium"), local("PingFang SC Medium");
+  font-weight: 450 559;
+}
+@font-face {
+  font-family: "PingFang Pinned";
+  src: local("PingFangSC-Semibold"), local("PingFang SC Semibold");
+  font-weight: 560 900;
+}
+
 /* ── Terminal Dark(默认) ───────────────────────────────────────── */
 :root,
 [data-theme="dark"] {
@@ -85,8 +112,12 @@
      中文都落到同一族(粗细/字形一致),不再"中文粗细不一"。
      注意:不能引用 var(--font-geist-*) —— geist 包变量自带完整回退链且以通用族
      (sans-serif / monospace)收尾,通用族必命中,接在后面的 CJK 永远轮不到,
-     mono 语境中文会掉进浏览器默认中文等宽(宋体类)。直接写 @font-face 字族名。 */
-  --font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+     mono 语境中文会掉进浏览器默认中文等宽(宋体类)。直接写 @font-face 字族名。
+     栈首的 "PingFang Pinned" 见下方 @font-face:macOS Chromium 直接用系统族名
+     "PingFang SC" 时,font-weight 500/600 的段落会出现鸳鸯体(同段前粗后细,
+     字重在 shaping run 间丢失);用 local() 按字重区间钉死具体字面绕过该 bug。
+     非 macOS 上 local() 不命中,自然落到后面的 YaHei / Noto。 */
+  --font-cjk: "PingFang Pinned", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
 
   --font-sans: GeistSans, ui-sans-serif, system-ui, var(--font-cjk);
   --font-mono: GeistMono, ui-monospace, "SF Mono", var(--font-cjk);
