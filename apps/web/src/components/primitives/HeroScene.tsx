@@ -1,17 +1,21 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
+import Image from "next/image";
 import * as React from "react";
 
+import sealIcon from "@/app/icon.png";
 import { cn } from "@/lib/cn";
 
 /**
- * Hero 主场景「関所の帳簿」—— canvas 实绘，一眼读出项目在做什么：
- * 一条行情线从左侧持续流入（quant），穿过朱红鸟居 = 审批关门（机器审批），
- * 穿门瞬间落朱印 + 出一行 mono 回执（审计链），过门后线色由数据青转 bull 绿。
+ * Hero 主场景「关卡账簿」—— canvas 实绘，一眼读出项目在做什么：
+ * 一条行情线从左侧持续流入（quant），穿过朱红审批阈线 = 审计关卡（机器审批），
+ * 穿线瞬间落朱印（品牌 favicon）+ 出一行 mono 回执，右侧账簿逐条入账（审计链）。
+ * 过线后线色由本轮 verdict 决定：走高 bull 绿（approved）/ 走低 bear 红（rejected）。
+ * 阈线是行情图式的垂直虚线事件标记，不画具象鸟居——神道气质交给朱印与狐火。
  *
  * 工程约定：主题色实时读 CSS vars（监听 data-theme）；DPR 缩放；离屏 /
- * 后台标签页暂停 rAF；reduced-motion 一次性静态绘制（整线 + 鸟居 + 静态印），
+ * 后台标签页暂停 rAF；reduced-motion 一次性静态绘制（整线 + 阈线 + 静态印），
  * 不留空白（DESIGN.md §6.3）。纯装饰层 aria-hidden，永不进数据面。
  */
 
@@ -21,8 +25,10 @@ interface StampEvent {
   y: number;
   /** 周期序号，key 重触发落章动画。 */
   seq: number;
-  /** 由 seq 派生的稳定伪随机 plan id（4 位 hex）。 */
-  id: string;
+  /** 穿线时刻的展示价（与头部随行报价同公式）。 */
+  price: string;
+  /** verdict：过线后走高 = approved（朱印），走低 = rejected（墨印）。 */
+  approved: boolean;
 }
 
 interface Palette {
@@ -30,6 +36,7 @@ interface Palette {
   bull: string;
   seal: string;
   foxfire: string;
+  down: string;
 }
 
 interface Pt {
@@ -45,6 +52,8 @@ interface SceneGeom {
   gateH: number;
   openY: number;
   pts: Pt[];
+  /** 本轮 verdict：过线后线条走高 = approved，走低 = rejected。 */
+  up: boolean;
 }
 
 interface Ember {
@@ -97,19 +106,47 @@ function readPalette(): Palette {
     bull: pick("--bull", "#4ade80"),
     seal: pick("--seal", "#c8463c"),
     foxfire: pick("--foxfire", "#5fd3b0"),
+    down: pick("--down", "#c8463c"),
   };
 }
 
-function planId(seq: number): string {
-  return (((seq + 7) * 2654435761) >>> 0).toString(16).padStart(8, "0").slice(0, 4);
+/** 展示价 —— 与头部随行报价同公式，保证落章回执和线头数字一致。 */
+function priceAt(h: number, y: number, seq: number): string {
+  return (1432 + (h * 0.5 - y) * 0.9 + seq * 3.7).toFixed(1);
 }
 
-/** momentum 随机游走；接近鸟居时把线收进门洞（边界只有一个口子）。 */
+/** 账簿第一栏的 alpha 名 —— 装饰用因子名池，按 seq 轮换（不是真实持仓）。 */
+const ALPHA_NAMES = [
+  "α·momentum",
+  "α·meanrev",
+  "α·carry",
+  "α·value",
+  "α·breakout",
+  "α·volprem",
+  "α·pairs",
+  "α·macro",
+] as const;
+
+function alphaName(seq: number): string {
+  return ALPHA_NAMES[((seq % ALPHA_NAMES.length) + ALPHA_NAMES.length) % ALPHA_NAMES.length];
+}
+
+/** 本轮 verdict —— 过线后线尾均值高于关口（canvas y 更小）= approved。 */
+function walkOutcome(pts: Pt[], gateX: number): boolean {
+  const gi = pts.findIndex((p) => p.x >= gateX);
+  if (gi < 0) return true;
+  const tail = pts.slice(gi);
+  const mean = tail.reduce((s, p) => s + p.y, 0) / tail.length;
+  return mean <= pts[gi].y;
+}
+
+/** momentum 随机游走；接近审批阈线时把线收向关口（边界只有一个口子）。
+ *  行程止于 0.8w —— 过线变色后跑一小段就淡出，不穿到右侧账簿列底下。 */
 function buildWalk(w: number, h: number, gateX: number, openY: number): Pt[] {
   const pts: Pt[] = [];
   const steps = 150;
   const x0 = -w * 0.04;
-  const dx = (w * 1.06 - x0) / steps;
+  const dx = (w * 0.8 - x0) / steps;
   let y = h * (0.36 + Math.random() * 0.2);
   let v = 0;
   for (let i = 0; i <= steps; i++) {
@@ -139,45 +176,43 @@ function makeEmbers(geom: SceneGeom): Ember[] {
   }));
 }
 
-/** 鸟居剪影（明神鳥居）—— 面填充而非线稿：低饱和朱红、有分量，不是简笔画。 */
-function drawTorii(
+/**
+ * 审批阈线 —— 抽象「关卡」标记：垂直朱红虚线 + 上下端短横 + 竖排 mono 标签，
+ * 读法等同行情图上的垂直事件注记（threshold / event marker），临床而非简笔画。
+ */
+function drawGate(
   ctx: CanvasRenderingContext2D,
-  cx: number,
-  baseY: number,
-  gh: number,
-  color: string
+  x: number,
+  topY: number,
+  bottomY: number,
+  color: string,
+  labelFont: string,
+  labelColor: string
 ) {
-  const u = gh / 160;
-  const X = (x: number) => cx + (x - 100) * u;
-  const Y = (y: number) => baseY - (150 - y) * u;
   ctx.save();
-  ctx.fillStyle = color;
-  /* 笠木（顶梁，中部上拱、两端微翘） */
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash([2, 7]);
   ctx.beginPath();
-  ctx.moveTo(X(8), Y(26));
-  ctx.quadraticCurveTo(X(100), Y(10), X(192), Y(26));
-  ctx.lineTo(X(190), Y(36));
-  ctx.quadraticCurveTo(X(100), Y(22), X(10), Y(36));
-  ctx.closePath();
-  ctx.fill();
-  /* 島木（次梁） */
-  ctx.fillRect(X(22), Y(38), 156 * u, 8 * u);
-  /* 額束（中央短柱） */
-  ctx.fillRect(X(96), Y(46), 8 * u, 20 * u);
-  /* 貫（中梁，两端出头） */
-  ctx.fillRect(X(26), Y(66), 148 * u, 8 * u);
-  /* 双柱（内倾 + 微收分） */
-  const pillar = (txc: number, bxc: number) => {
-    ctx.beginPath();
-    ctx.moveTo(X(txc) - 3.6 * u, Y(36));
-    ctx.lineTo(X(txc) + 3.6 * u, Y(36));
-    ctx.lineTo(X(bxc) + 4.4 * u, Y(150));
-    ctx.lineTo(X(bxc) - 4.4 * u, Y(150));
-    ctx.closePath();
-    ctx.fill();
-  };
-  pillar(54, 60);
-  pillar(146, 140);
+  ctx.moveTo(x, topY);
+  ctx.lineTo(x, bottomY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  /* 上下端短横（量尺端点感） */
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, topY);
+  ctx.lineTo(x + 8, topY);
+  ctx.moveTo(x - 8, bottomY);
+  ctx.lineTo(x + 8, bottomY);
+  ctx.stroke();
+  /* 竖排标签，标明这是审批关卡（letterSpacing 不支持时静默退化） */
+  ctx.translate(x + 5, topY + 18);
+  ctx.rotate(Math.PI / 2);
+  ctx.font = labelFont;
+  (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0.22em";
+  ctx.fillStyle = labelColor;
+  ctx.fillText("AUDIT GATE", 0, 0);
   ctx.restore();
 }
 
@@ -186,6 +221,16 @@ export function HeroScene({ className }: { className?: string }) {
   const wrapRef = React.useRef<HTMLDivElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [stamp, setStamp] = React.useState<StampEvent | null>(null);
+  /** 过关审计回执（含 rejected），新的在上，最多 4 条 —— 右侧账簿列。
+      初始即有一条种子回执，首轮穿线前右侧不留空。 */
+  const [ledger, setLedger] = React.useState<StampEvent[]>([
+    { x: 0, y: 0, seq: -1, price: "1429.6", approved: true },
+  ]);
+
+  const pushStamp = React.useCallback((ev: StampEvent) => {
+    setStamp(ev);
+    setLedger((prev) => [ev, ...prev].slice(0, 4));
+  }, []);
 
   React.useEffect(() => {
     const wrap = wrapRef.current;
@@ -228,7 +273,8 @@ export function HeroScene({ className }: { className?: string }) {
       const gateH = Math.max(180, Math.min(h * 0.52, w * 0.3, 430));
       const gateBaseY = h * 0.78;
       const openY = gateBaseY - gateH * 0.42;
-      geom = { w, h, gateX, gateBaseY, gateH, openY, pts: buildWalk(w, h, gateX, openY) };
+      const pts = buildWalk(w, h, gateX, openY);
+      geom = { w, h, gateX, gateBaseY, gateH, openY, pts, up: walkOutcome(pts, gateX) };
       embers = makeEmbers(geom);
     }
 
@@ -241,25 +287,35 @@ export function HeroScene({ className }: { className?: string }) {
     function draw(p: number, tMs: number, animated: boolean) {
       if (!geom) return;
       const { w, h, gateX, gateBaseY, gateH, pts } = geom;
+      /* 过线后的线色由本轮 verdict 决定：走高 bull 绿，走低 bear 红 */
+      const postColor = geom.up ? palette.bull : palette.down;
       const d = dpr();
       ctx!.setTransform(d, 0, 0, d, 0, 0);
       ctx!.clearRect(0, 0, w, h);
       const fade = p > FADE_FROM ? 1 - (p - FADE_FROM) / (1 - FADE_FROM) : 1;
 
-      /* 1 · 鸟居（穿门时短暂提亮） */
+      /* 1 · 审批阈线（穿线时短暂提亮） */
       let glow = 0;
       for (const r of rings) {
         const k = (tMs - r.t) / RING_MS;
         if (k >= 0 && k < 1) glow = Math.max(glow, 1 - k);
       }
-      drawTorii(ctx!, gateX, gateBaseY, gateH, rgba(palette.seal, 0.34 + glow * 0.28));
+      drawGate(
+        ctx!,
+        gateX,
+        gateBaseY - gateH,
+        gateBaseY,
+        rgba(palette.seal, 0.38 + glow * 0.32),
+        monoFont,
+        rgba(palette.seal, 0.45 + glow * 0.25)
+      );
 
       const headI = Math.floor(Math.min(p / FADE_FROM, 1) * (pts.length - 1));
       const head = pts[Math.min(headI, pts.length - 1)];
 
       /* 3 · 幽灵 K 线柱（沿线采样，极低 alpha） */
       for (let i = 4; i < headI; i += 7) {
-        const c = pts[i].x >= gateX ? palette.bull : palette.accent;
+        const c = pts[i].x >= gateX ? postColor : palette.accent;
         const amp = Math.min(20, Math.abs(pts[i].y - pts[Math.max(0, i - 3)].y) * 1.6 + 6);
         const age = Math.max(0, (head.x - pts[i].x) / (w * 0.55));
         const alpha = Math.max(0, 1 - age) * 0.1 * fade;
@@ -279,7 +335,7 @@ export function HeroScene({ className }: { className?: string }) {
         const age = Math.max(0, (head.x - b.x) / (w * 0.55));
         const alpha = Math.max(0, 1 - age) * 0.75 * fade;
         if (alpha <= 0.01) continue;
-        ctx!.strokeStyle = rgba(b.x >= gateX ? palette.bull : palette.accent, alpha);
+        ctx!.strokeStyle = rgba(b.x >= gateX ? postColor : palette.accent, alpha);
         ctx!.lineWidth = 1.6;
         ctx!.beginPath();
         ctx!.moveTo(a.x, a.y);
@@ -289,7 +345,7 @@ export function HeroScene({ className }: { className?: string }) {
 
       /* 5 · 头部光点 + 光晕 + 随行报价 */
       if (animated && p <= FADE_FROM) {
-        const c = head.x >= gateX ? palette.bull : palette.accent;
+        const c = head.x >= gateX ? postColor : palette.accent;
         const halo = ctx!.createRadialGradient(head.x, head.y, 0, head.x, head.y, 26);
         halo.addColorStop(0, rgba(c, 0.32 * fade));
         halo.addColorStop(1, rgba(c, 0));
@@ -319,7 +375,7 @@ export function HeroScene({ className }: { className?: string }) {
       }
       rings = rings.filter((r) => tMs - r.t < RING_MS);
 
-      /* 7 · 狐火余烬（鸟居附近上飘 + 闪烁，纯装饰层用 --foxfire） */
+      /* 7 · 狐火余烬（阈线附近上飘 + 闪烁，纯装饰层用 --foxfire） */
       for (const e of embers) {
         const alpha = 0.16 + 0.2 * (0.5 + 0.5 * Math.sin(tMs / 560 + e.phase));
         ctx!.fillStyle = rgba(palette.foxfire, alpha);
@@ -353,14 +409,23 @@ export function HeroScene({ className }: { className?: string }) {
         crossed = false;
         cycleStart = elapsed;
         p = 0;
-        if (geom) geom.pts = buildWalk(geom.w, geom.h, geom.gateX, geom.openY);
+        if (geom) {
+          geom.pts = buildWalk(geom.w, geom.h, geom.gateX, geom.openY);
+          geom.up = walkOutcome(geom.pts, geom.gateX);
+        }
       }
       if (geom && !crossed) {
         const head = headAt(p);
         if (head.x >= geom.gateX) {
           crossed = true;
           rings.push({ x: geom.gateX, y: head.y, t: elapsed });
-          setStamp({ x: geom.gateX, y: head.y, seq, id: planId(seq) });
+          pushStamp({
+            x: geom.gateX,
+            y: head.y,
+            seq,
+            price: priceAt(geom.h, head.y, seq),
+            approved: geom.up,
+          });
         }
       }
       draw(p, elapsed, true);
@@ -381,7 +446,16 @@ export function HeroScene({ className }: { className?: string }) {
     function drawStatic() {
       if (!geom) return;
       draw(FADE_FROM, 0, false);
-      setStamp({ x: geom.gateX, y: geom.openY, seq: 0, id: planId(0) });
+      /* 静态呈现：一枚定格朱印 + 三条历史回执（含一条 rejected），不留空白。 */
+      const rows = [2, 1, 0].map((s) => ({
+        x: geom!.gateX,
+        y: geom!.openY,
+        seq: s,
+        price: priceAt(geom!.h, geom!.openY - s * 14, s),
+        approved: s !== 1,
+      }));
+      setStamp(rows[rows.length - 1]);
+      setLedger(rows.reverse());
     }
 
     rebuild();
@@ -435,7 +509,7 @@ export function HeroScene({ className }: { className?: string }) {
       )}
     >
       <canvas ref={canvasRef} className="absolute inset-0" />
-      {/* 穿门落章：Emblem 朱印 + mono 审计回执（D2 临床面 → 等宽精确） */}
+      {/* 穿线落章：朱印 favicon（品牌印章）+ mono 审计回执（D2 临床面 → 等宽精确） */}
       {stamp ? (
         <motion.div
           key={stamp.seq}
@@ -445,20 +519,63 @@ export function HeroScene({ className }: { className?: string }) {
             reduce ? { duration: 0 } : { duration: 2.6, times: [0, 0.1, 0.78, 1] }
           }
           className="absolute"
-          style={{ left: stamp.x, top: stamp.y - 36 }}
+          style={{ left: stamp.x, top: stamp.y - 46 }}
         >
           <div className="-translate-x-1/2 -translate-y-1/2">
-            <span
-              className="seal-stamp display-italic flex size-6 -rotate-6 items-center justify-center rounded-[3px] border-[1.5px] border-seal/80 text-[15px] leading-none text-seal/90"
-              style={{ background: "color-mix(in oklab, var(--seal) 8%, transparent)" }}
-            >
-              α
-            </span>
+            {/* 印面自带手绘倾斜，不再额外 rotate；rejected 盖墨印（去色） */}
+            <Image
+              src={sealIcon}
+              alt=""
+              width={56}
+              height={56}
+              className={cn(
+                "seal-stamp",
+                stamp.approved ? "seal-glow" : "opacity-75 grayscale"
+              )}
+            />
           </div>
-          <div className="absolute left-0 top-4 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.2em] text-seal/85">
-            plan #{stamp.id} · approved
+          <div
+            className={cn(
+              "absolute left-0 top-9 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.2em]",
+              stamp.approved ? "text-seal/85" : "text-fg-muted/80"
+            )}
+          >
+            {alphaName(stamp.seq)} · {stamp.approved ? "approved" : "rejected"}
           </div>
         </motion.div>
+      ) : null}
+      {/* 右侧「账簿」—— 每轮 verdict 逐条入账（有过有拒），呼应 tagline「keeps a ledger」 */}
+      {ledger.length ? (
+        <div className="absolute right-[3.5%] top-[24%] hidden w-60 flex-col font-mono text-[10.5px] md:flex">
+          <div className="flex items-baseline justify-between border-b border-seal/35 pb-2">
+            <span className="uppercase tracking-[0.3em] text-seal/80">Ledger</span>
+            <span className="flex items-center gap-1.5 uppercase tracking-[0.2em] text-fg-muted/60">
+              <span className="caret-blink inline-block size-1.5 rounded-full bg-seal/70" />
+              live
+            </span>
+          </div>
+          {ledger.map((r, i) => (
+            <motion.div
+              key={r.seq}
+              layout
+              initial={reduce ? false : { opacity: 0, y: -10 }}
+              animate={{ opacity: Math.max(0.3, 1 - i * 0.22), y: 0 }}
+              transition={{ duration: 0.5, ease: [0.22, 0.7, 0.22, 1] }}
+              className="flex items-baseline gap-3 border-b border-fg/8 py-2.5 tracking-[0.08em] text-fg-muted"
+            >
+              <span className="text-seal/85">{alphaName(r.seq)}</span>
+              <span className="ml-auto tabular-nums">{r.price}</span>
+              <span
+                className={cn(
+                  "uppercase tracking-[0.18em]",
+                  r.approved ? "text-bull/75" : "text-fox-red/80"
+                )}
+              >
+                {r.approved ? "approved" : "rejected"}
+              </span>
+            </motion.div>
+          ))}
+        </div>
       ) : null}
     </div>
   );
