@@ -80,7 +80,7 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
               </div>
               {/* 当前所跑策略 —— 可点进策略详情(模拟盘 → 策略可追溯)。 */}
               <div className="mt-1 flex items-center gap-1.5 text-xs">
-                <span className="font-mono uppercase tracking-[0.14em] text-fg-muted/70">
+                <span className="shrink-0 whitespace-nowrap font-mono uppercase tracking-[0.14em] text-fg-muted/70">
                   {t("strategy")}
                 </span>
                 <Link
