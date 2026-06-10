@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useLocale, useNow, useTranslations } from "next-intl";
 import { ArrowLeft, CircleAlert, Info, TriangleAlert } from "lucide-react";
 import useSWR from "swr";
@@ -17,6 +18,7 @@ import { fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip } from "@/components/ui/LiveStrip";
+import { Pager, usePager } from "@/components/ui/Pager";
 import { Panel } from "@/components/ui/Panel";
 import { RunStatusBadge } from "@/components/ui/StatusBadge";
 import { DecisionTimeline } from "./DecisionTimeline";
@@ -236,11 +238,15 @@ const LEVEL_STYLE: Record<RunLogLevel, { icon: typeof Info; cls: string }> = {
   error: { icon: CircleAlert, cls: "text-fox-red" },
 };
 
+/** 日志一页 50 行 —— 长跑 run 的日志可达数千条,分页避免一次挂上千 DOM 行。 */
+const LOG_PAGE_SIZE = 50;
+
 /** 运行日志面板 —— 全量活动按级别着色,最新在上。 */
 function RunLog({ entries }: { entries: RunLogEntry[] }) {
   const t = useTranslations("runners.detail");
   // 后端按时间序追加(最新在末尾),这里倒序展示——最近活动一眼可见。
-  const rows = [...entries].reverse();
+  const rows = useMemo(() => [...entries].reverse(), [entries]);
+  const { page, setPage, pageCount, pageItems } = usePager(rows, LOG_PAGE_SIZE);
 
   return (
     <Panel
@@ -255,12 +261,15 @@ function RunLog({ entries }: { entries: RunLogEntry[] }) {
         </p>
       ) : (
         <ul className="divide-y divide-border-subtle/60">
-          {rows.map((e, i) => {
+          {pageItems.map((e, i) => {
             const lvl: RunLogLevel =
               e.level === "warn" || e.level === "error" ? e.level : "info";
             const { icon: Icon, cls } = LEVEL_STYLE[lvl];
             return (
-              <li key={i} className="flex items-start gap-2.5 px-4 py-2 font-mono text-[11px]">
+              <li
+                key={page * LOG_PAGE_SIZE + i}
+                className="flex items-start gap-2.5 px-4 py-2 font-mono text-[11px]"
+              >
                 <Icon className={cn("mt-0.5 size-3 shrink-0", cls)} strokeWidth={2} />
                 <span className="shrink-0 text-fg-muted/60">{fmtLogTs(e.ts)}</span>
                 <span className="break-all text-fg-muted">
@@ -272,6 +281,7 @@ function RunLog({ entries }: { entries: RunLogEntry[] }) {
           })}
         </ul>
       )}
+      <Pager page={page} pageCount={pageCount} onChange={setPage} />
     </Panel>
   );
 }

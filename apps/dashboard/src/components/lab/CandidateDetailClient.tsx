@@ -20,6 +20,7 @@ import { fmtDateTime, fmtNum, fmtQty, fmtSigned, pnlColor } from "@/lib/format";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip } from "@/components/ui/LiveStrip";
+import { Pager, usePager } from "@/components/ui/Pager";
 import { Panel } from "@/components/ui/Panel";
 import { CandidateStatusBadge, RunStatusBadge } from "@/components/ui/StatusBadge";
 import { CodeViewer } from "@/components/ui/CodeViewer";
@@ -487,7 +488,12 @@ function BacktestTradesPanel({
   const t = useTranslations("lab.detail");
   const tIntent = useTranslations("runners.intent");
   // 后端按 seq 升序返回;复盘表按时间倒序展示(最新在上),与 DecisionTimeline 一致。
-  const desc = [...trades].sort((a, b) => b.seq - a.seq);
+  const desc = useMemo(
+    () => [...trades].sort((a, b) => b.seq - a.seq),
+    [trades],
+  );
+  // 回测成交上限 500 行 —— 分页渲染,一次只挂 25 行 DOM。
+  const { page, setPage, pageCount, pageItems } = usePager(desc, 25);
 
   return (
     <Panel
@@ -515,7 +521,7 @@ function BacktestTradesPanel({
               </TableHeadRow>
             </thead>
             <tbody>
-              {desc.map((d) => (
+              {pageItems.map((d) => (
                 <tr
                   key={d.seq}
                   className="border-t border-border-subtle/60 hover:bg-bg-elev/30"
@@ -568,6 +574,7 @@ function BacktestTradesPanel({
               ))}
             </tbody>
           </table>
+          <Pager page={page} pageCount={pageCount} onChange={setPage} />
         </div>
       )}
     </Panel>
