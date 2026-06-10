@@ -481,6 +481,8 @@ function BacktestTradesPanel({
 }) {
   const t = useTranslations("lab.detail");
   const tIntent = useTranslations("runners.intent");
+  // 后端按 seq 升序返回;复盘表按时间倒序展示(最新在上),与 DecisionTimeline 一致。
+  const desc = [...trades].sort((a, b) => b.seq - a.seq);
 
   return (
     <Panel
@@ -508,7 +510,7 @@ function BacktestTradesPanel({
               </TableHeadRow>
             </thead>
             <tbody>
-              {trades.map((d) => (
+              {desc.map((d) => (
                 <tr
                   key={d.seq}
                   className="border-t border-border-subtle/60 hover:bg-bg-elev/30"
