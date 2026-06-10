@@ -179,7 +179,9 @@ export const factorCatalogTool = createTool({
     - 只想知道"现在哪些因子有效" → factor.timing（直接给有效性排序，不用先 catalog）
 
     来源：pandas_ta（技术指标）/ alpha101（WorldQuant 101，部分横截面项 needs_universe=true 本期不算）/
-    qlib_alpha158（Alpha158 风格公式因子，纯 pandas 本地算，默认启用）。
+    qlib_alpha158（Alpha158 风格公式因子，纯 pandas 本地算，默认启用）/
+    macro（FRED 宏观：利率/期限利差/美元/VIX，**仅 1d/1wk timeframe 计算**——intraday 请求会被
+    跳过，见 extras.timeframes；data 服务缺 FRED key 时自动缺席）。
   `.trim(),
   inputSchema: z.object({}),
   execute: async (_inputData, ctx) => {

@@ -35,6 +35,13 @@ class FactorSettings(BaseSettings):
         "里 qlib 因子标 available=false，pandas-ta + Alpha101 仍可用。",
     )
 
+    macro_enabled: bool = Field(
+        default=True,
+        alias="FACTOR_MACRO_ENABLED",
+        description="是否启用 FRED 宏观因子源（ADR-0044）。需 data-service 配 FRED key；"
+        "key 缺失时运行期自动降级（宏观因子缺席，价量三源不受影响），此开关是整源阀门。",
+    )
+
     cache_ttl_s: int = Field(
         default=300,
         ge=0,

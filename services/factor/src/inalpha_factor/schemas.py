@@ -30,9 +30,11 @@ class FactorSpecOut(BaseModel):
     """目录里的单个因子定义。"""
 
     factor_id: str
-    source: str = Field(description="pandas_ta | alpha101 | qlib_alpha158")
+    source: str = Field(description="pandas_ta | alpha101 | qlib_alpha158 | macro")
     name: str
-    kind: str = Field(description="momentum | mean_reversion | volatility | volume | trend")
+    kind: str = Field(
+        description="momentum | mean_reversion | volatility | volume | trend | macro"
+    )
     needs_universe: bool = Field(
         default=False, description="true = 横截面因子，需多标的 universe，本期单标的不计算"
     )
@@ -40,6 +42,10 @@ class FactorSpecOut(BaseModel):
         default=0, description="先验方向 +1/-1/0；真实方向以 score 的 rank_ic 符号为准"
     )
     available: bool = Field(default=True, description="该源是否已装/启用")
+    extras: dict[str, str] = Field(
+        default_factory=dict,
+        description="附加约束，如 macro 因子的 timeframes（仅 1d/1wk 计算）与 FRED series",
+    )
 
 
 class CatalogResponse(BaseModel):

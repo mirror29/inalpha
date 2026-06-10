@@ -25,6 +25,7 @@ async def catalog(engine: EngineDep) -> CatalogResponse:
                 needs_universe=s.needs_universe,
                 direction_hint=s.direction_hint,
                 available=src_avail,
+                extras=s.extras,
             )
         )
     return CatalogResponse(factors=out, sources=sources)

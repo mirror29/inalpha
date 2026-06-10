@@ -15,6 +15,8 @@ export type FactorSpec = {
   needs_universe: boolean;
   direction_hint: number;
   available: boolean;
+  /** 附加约束，如 macro 因子的 timeframes（仅 1d/1wk）与 FRED series id */
+  extras?: Record<string, string>;
 };
 
 export type CatalogResult = {
