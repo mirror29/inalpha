@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 from inalpha_shared.errors import UnauthorizedError, ValidationError
@@ -113,6 +113,29 @@ async def get_backtest_runs(
         )
         for r in rows
     ]
+
+
+@router.get("/backtest_runs/{run_id}", response_model=BacktestRunSummary)
+async def get_backtest_run(
+    run_id: UUID,
+    db: DBConn,
+    _user: Annotated[User, Depends(get_current_user)],
+) -> BacktestRunSummary:
+    """单条回测记录 —— 控制台「回测详情页」用(活动流点击回测事件落地)。"""
+    r = await backtest_runs_store.get_by_id(db, run_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="backtest run not found")
+    return BacktestRunSummary(
+        run_id=r["id"],
+        strategy_code=r["strategy_code"] or "unknown",
+        params_hash=r["params_hash"],
+        research_id=r["research_id"],
+        config=r["config"] or {},
+        metrics=r["metrics"] or {},
+        strategy_hint=r["strategy_hint"],
+        status=r["status"],
+        created_at=r["created_at"],
+    )
 
 
 @router.get(
