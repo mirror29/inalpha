@@ -63,7 +63,7 @@
   --gold: #d4a744; /* risk gate / stars / α 高亮 */
 
   /* 品牌神道层（神秘 accent —— 绝不进 D2 数据面） */
-  --seal: #c8463c; /* 朱红印章 —— 鸟居 / 朱印 / 章节锚 */
+  --seal: #c8463c; /* 朱红印章 —— 朱印 / 审批阈线 / 章节锚 */
   --foxfire: #5fd3b0; /* 狐火 —— 仅氛围 / 彩蛋 */
   --cream: #f5f0e8; /* 月白 —— 暖中性高光 / 匾额纸 */
   --copper: #8a6b3f; /* 古铜 —— 次要描线 / 边注 */
@@ -314,6 +314,44 @@
     animation: caret 1.06s steps(1, end) infinite;
   }
 
+  /* Hero 标题 idle 微光 —— 一道朱红光带循环掠过标题（每轮 5.5s，
+     扫过占 40%，两端短暂停在画面外），其余时间渐变退化为纯 --fg
+     （静止时与实色标题不可区分）。
+     用 text-fill-color 而非 color 做镂空：cascade 上稳赢 text-fg，
+     且 @supports 不命中时自动回退到实色文字。 */
+  @keyframes text-sheen {
+    0%, 30% { background-position: 135% 0; }
+    70%, 100% { background-position: -35% 0; }
+  }
+  @supports (-webkit-background-clip: text) {
+    .text-sheen {
+      background-image: linear-gradient(
+        105deg,
+        var(--ink) 0%,
+        var(--ink) 44%,
+        color-mix(in oklab, var(--seal) 55%, var(--ink)) 50%,
+        var(--ink) 56%,
+        var(--ink) 100%
+      );
+      background-size: 240% 100%;
+      background-position: 135% 0;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: text-sheen 5.5s ease-in-out infinite;
+    }
+  }
+
+  /* 朱红短线呼吸 —— 延迟 1.6s 等入场 drawRule 画完再接管，
+     keyframe 从 1 起步避免接缝跳变。 */
+  @keyframes rule-breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+  .rule-breathe {
+    animation: rule-breathe 6s ease-in-out 1.6s infinite;
+  }
+
   /* ── Hero backdrop ───────────────────────────────────────────
      Decision-log stream: dot grid drifts slowly underneath while
      half-transparent JSONL audit lines rise from the bottom edge,
@@ -361,6 +399,8 @@
   .caret-blink,
   .seal-glow,
   .foxfire-flicker,
+  .text-sheen,
+  .rule-breathe,
   .seal-stamp {
     animation: none !important;
   }
