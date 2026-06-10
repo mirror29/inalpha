@@ -14,7 +14,8 @@ export function Th({
   return (
     <th
       className={cn(
-        "px-4 py-2 font-normal",
+        // nowrap:列挤时表头不折行(难读),宽表整体走容器的 overflow-x 滚动。
+        "whitespace-nowrap px-4 py-2 font-normal",
         right ? "text-right" : "text-left",
       )}
     >
