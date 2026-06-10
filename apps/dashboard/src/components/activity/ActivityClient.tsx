@@ -23,6 +23,7 @@ const KINDS: ActivityKind[] = [
   "decision",
   "risk",
   "order",
+  "backtest",
   "conversation",
 ];
 type Filter = ActivityKind | "all";

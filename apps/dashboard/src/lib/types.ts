@@ -340,11 +340,16 @@ export interface FactorSpec {
 /** POST /factor/snapshot 的一条有效性记录(运行时计算)。 */
 export interface FactorEffectiveness {
   factor_id: string;
+  source: string;
   name: string;
   kind: string;
   value: number | null;
   /** 时序 Rank IC(spearman(rank(factor), rank(fwd_return)))。 */
   rank_ic: number;
+  /** 近 1/3 样本窗的 Rank IC —— 与 rank_ic 同号且量级接近≈稳定,反号/趋零≈正在衰减。 */
+  rank_ic_recent: number;
+  /** 因子换手:1 - spearman(f_t, f_{t-1}),0≈信号几乎不动;高 IC + 高换手应打折。 */
+  turnover: number;
   /** IC 信息比(分段 IC 均值/标准差),稳定性。 */
   icir: number;
   /** 择时方向 +1/-1/0(sign(rank_ic),过阈才非 0)。 */
@@ -387,6 +392,7 @@ export type ActivityKind =
   | "decision"
   | "risk"
   | "order"
+  | "backtest"
   | "conversation";
 
 export type ActivityTone = "bull" | "fox" | "gold" | "cyan" | "muted";
@@ -425,6 +431,7 @@ export interface ActivityPayload {
     risk: boolean;
     runs: boolean;
     orders: boolean;
+    backtests: boolean;
     conversations: boolean;
   };
   asOf: string;
