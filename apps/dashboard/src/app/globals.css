@@ -113,15 +113,17 @@
      注意:不能引用 var(--font-geist-*) —— geist 包变量自带完整回退链且以通用族
      (sans-serif / monospace)收尾,通用族必命中,接在后面的 CJK 永远轮不到,
      mono 语境中文会掉进浏览器默认中文等宽(宋体类)。直接写 @font-face 字族名。
-     栈首的 "PingFang Pinned" 见下方 @font-face:macOS Chromium 直接用系统族名
-     "PingFang SC" 时,font-weight 500/600 的段落会出现鸳鸯体(同段前粗后细,
-     字重在 shaping run 间丢失);用 local() 按字重区间钉死具体字面绕过该 bug。
-     非 macOS 上 local() 不命中,自然落到后面的 YaHei / Noto。 */
+     "PingFang Pinned" 见下方 @font-face:macOS Chromium 走系统回退(含
+     "PingFang SC" 族名)时,font-weight 500/600 的段落会出现鸳鸯体(同段前粗
+     后细,字重在 shaping run 间丢失);用 local() 按字重区间钉死具体字面绕过。
+     **钉面必须排在 ui-sans-serif / system-ui 之前**:macOS 的 system-ui(San
+     Francisco)会内部级联接管 CJK 字形,排在它后面的 CJK 族永远轮不到,bug
+     照旧。非 macOS 上 local() 不命中,自然落到 YaHei / Noto。 */
   --font-cjk: "PingFang Pinned", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
 
-  --font-sans: GeistSans, ui-sans-serif, system-ui, var(--font-cjk);
-  --font-mono: GeistMono, ui-monospace, "SF Mono", var(--font-cjk);
-  --font-display: var(--font-display), ui-serif, "Iowan Old Style", Georgia, var(--font-cjk);
+  --font-sans: GeistSans, "PingFang Pinned", ui-sans-serif, system-ui, var(--font-cjk);
+  --font-mono: GeistMono, "PingFang Pinned", ui-monospace, "SF Mono", var(--font-cjk);
+  --font-display: var(--font-display), "PingFang Pinned", ui-serif, "Iowan Old Style", Georgia, var(--font-cjk);
 }
 
 @layer base {
