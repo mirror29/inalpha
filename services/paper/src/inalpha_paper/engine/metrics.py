@@ -178,3 +178,156 @@ def win_rate(trade_pnls: list[float]) -> float | None:
         return None
     wins = sum(1 for p in trade_pnls if p > 0)
     return wins / len(trade_pnls) * 100.0
+
+
+# ── 专业级扩展指标（D-11+ · 详情页「回测指标」扩容） ──────────────────
+# 全部纯函数无 IO；None 语义同上：样本不足 / 数学未定义时返 None,调用方自行 fallback。
+
+
+def annualized_return_pct(
+    total_return_pct: float, num_bars: int, periods_per_year_: int
+) -> float | None:
+    """年化收益率（百分比，**线性换算**）。
+
+    与 ``strategy_authoring.fitness.calmar_from_report`` 同口径（total / years,
+    ADR-0020 未指定复利,全链路统一用线性近似,避免同页两个年化口径打架）。
+    bar 数不足一根或年化系数非法返 ``None``。
+    """
+    if num_bars <= 0 or periods_per_year_ <= 0:
+        return None
+    years = num_bars / periods_per_year_
+    if years <= 0:
+        return None
+    return total_return_pct / years
+
+
+def annualized_volatility_pct(
+    returns: list[float], periods_per_year_: int
+) -> float | None:
+    """年化波动率（百分比）= 每 bar 收益率样本标准差 × sqrt(年化系数) × 100。
+
+    样本 < 2 或年化系数非法返 ``None``。
+    """
+    if len(returns) < 2 or periods_per_year_ <= 0:
+        return None
+    mean = sum(returns) / len(returns)
+    var = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+    return (var**0.5) * (periods_per_year_**0.5) * 100.0
+
+
+def calmar_ratio(
+    total_return_pct: float,
+    max_drawdown_pct_: float,
+    num_bars: int,
+    periods_per_year_: int,
+) -> float | None:
+    """Calmar = 年化收益 / 最大回撤。回撤为 0 或样本不足返 ``None``。
+
+    与 ``strategy_authoring.fitness.calmar_from_report`` 完全同式（该函数注明
+    BacktestReport 落字段后可下线）。
+    """
+    ann = annualized_return_pct(total_return_pct, num_bars, periods_per_year_)
+    if ann is None or max_drawdown_pct_ <= 0:
+        return None
+    return ann / max_drawdown_pct_
+
+
+def profit_factor(trade_pnls: list[float]) -> float | None:
+    """盈亏因子 = 毛利 / |毛损|。无亏损笔（毛损为 0）或无交易返 ``None``。"""
+    if not trade_pnls:
+        return None
+    gross_profit = sum(p for p in trade_pnls if p > 0)
+    gross_loss = -sum(p for p in trade_pnls if p < 0)
+    if gross_loss <= 0:
+        return None
+    return gross_profit / gross_loss
+
+
+def payoff_ratio(trade_pnls: list[float]) -> float | None:
+    """平均盈亏比 = 平均盈利笔 / |平均亏损笔|。盈利或亏损任一侧为空返 ``None``。"""
+    wins = [p for p in trade_pnls if p > 0]
+    losses = [p for p in trade_pnls if p < 0]
+    if not wins or not losses:
+        return None
+    avg_win = sum(wins) / len(wins)
+    avg_loss = -sum(losses) / len(losses)
+    if avg_loss <= 0:
+        return None
+    return avg_win / avg_loss
+
+
+def expectancy(trade_pnls: list[float]) -> float | None:
+    """单笔期望（货币单位）= 全部 round-trip 盈亏均值。无交易返 ``None``。"""
+    if not trade_pnls:
+        return None
+    return sum(trade_pnls) / len(trade_pnls)
+
+
+def max_consecutive_wins(trade_pnls: list[float]) -> int:
+    """最大连续盈利笔数（``pnl > 0`` 算赢,0 既不续也不断,按"非赢"处理断streak）。"""
+    best = cur = 0
+    for p in trade_pnls:
+        cur = cur + 1 if p > 0 else 0
+        best = max(best, cur)
+    return best
+
+
+def max_consecutive_losses(trade_pnls: list[float]) -> int:
+    """最大连续亏损笔数（``pnl < 0`` 算亏）。"""
+    best = cur = 0
+    for p in trade_pnls:
+        cur = cur + 1 if p < 0 else 0
+        best = max(best, cur)
+    return best
+
+
+def max_drawdown_duration_bars(equity_curve: list[float]) -> int:
+    """最长回撤持续期（bar 数）——从 equity 创新高到**收复**该高点的最长间隔。
+
+    结尾仍未收复的回撤也计入（截到序列末尾）。空 / 单调不降序列返 0。
+    """
+    if not equity_curve:
+        return 0
+    peak = equity_curve[0]
+    peak_i = 0
+    longest = 0
+    for i, v in enumerate(equity_curve):
+        if v >= peak:
+            peak = v
+            peak_i = i
+        else:
+            longest = max(longest, i - peak_i)
+    return longest
+
+
+def exposure_pct(
+    fill_events: list[tuple[int, float]],
+    period_start_ns: int | None,
+    period_end_ns: int | None,
+) -> float | None:
+    """持仓时间占比（百分比）= 净仓位 ≠ 0 的时间 / 回测总时长。
+
+    Args:
+        fill_events: ``[(ts_ns, signed_qty_delta)]``,按时间升序（BUY 为正 SELL 为负）
+        period_start_ns / period_end_ns: 回测窗口（纳秒）;缺任一返 ``None``
+
+    无成交返 ``0.0``（全程空仓）。浮点累计的 |net| < 1e-12 视为已平。
+    """
+    if period_start_ns is None or period_end_ns is None:
+        return None
+    total = period_end_ns - period_start_ns
+    if total <= 0:
+        return None
+    if not fill_events:
+        return 0.0
+    net = 0.0
+    prev_ts = period_start_ns
+    exposed = 0
+    for ts, delta in fill_events:
+        if abs(net) > 1e-12:
+            exposed += ts - prev_ts
+        prev_ts = ts
+        net += delta
+    if abs(net) > 1e-12:
+        exposed += period_end_ns - prev_ts
+    return min(max(exposed / total * 100.0, 0.0), 100.0)

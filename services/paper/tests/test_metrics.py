@@ -202,3 +202,66 @@ def test_uptrend_combined_metrics() -> None:
     s = metrics.sharpe_ratio(rets, 8_760)
     assert s is not None
     assert s > 0
+
+
+# ── 专业级扩展指标（D-11+） ───────────────────────────────────────────
+
+
+def test_annualized_return_linear() -> None:
+    # 半年(ppy=2 个 bar/年里跑 1 根 bar)赚 10% → 年化 20%
+    assert metrics.annualized_return_pct(10.0, 1, 2) == pytest.approx(20.0)
+    assert metrics.annualized_return_pct(10.0, 0, 2) is None
+    assert metrics.annualized_return_pct(10.0, 1, 0) is None
+
+
+def test_annualized_volatility() -> None:
+    out = metrics.annualized_volatility_pct([0.01, -0.01, 0.01, -0.01], 252)
+    assert out is not None and out > 0
+    assert metrics.annualized_volatility_pct([0.01], 252) is None
+
+
+def test_calmar_ratio_matches_linear_definition() -> None:
+    # 1 年(num_bars=ppy)赚 20%、最大回撤 10% → calmar 2.0
+    assert metrics.calmar_ratio(20.0, 10.0, 252, 252) == pytest.approx(2.0)
+    assert metrics.calmar_ratio(20.0, 0.0, 252, 252) is None
+
+
+def test_profit_factor_and_payoff() -> None:
+    pnls = [10.0, -5.0, 20.0, -10.0]
+    assert metrics.profit_factor(pnls) == pytest.approx(2.0)  # 30 / 15
+    assert metrics.payoff_ratio(pnls) == pytest.approx(2.0)  # 15 / 7.5
+    assert metrics.profit_factor([1.0, 2.0]) is None  # 无亏损
+    assert metrics.payoff_ratio([-1.0]) is None  # 无盈利
+    assert metrics.profit_factor([]) is None
+
+
+def test_expectancy_and_extremes() -> None:
+    pnls = [10.0, -4.0]
+    assert metrics.expectancy(pnls) == pytest.approx(3.0)
+    assert metrics.expectancy([]) is None
+
+
+def test_consecutive_streaks() -> None:
+    pnls = [1.0, 2.0, -1.0, 3.0, 4.0, 5.0, -2.0, -3.0]
+    assert metrics.max_consecutive_wins(pnls) == 3
+    assert metrics.max_consecutive_losses(pnls) == 2
+    assert metrics.max_consecutive_wins([]) == 0
+
+
+def test_max_drawdown_duration() -> None:
+    # 峰 100 @i=0,跌到 90,i=3 收复 → 最长 2 根;尾段(101 后回落未收复)也计入
+    assert metrics.max_drawdown_duration_bars([100, 90, 95, 101, 99, 98]) == 2
+    assert metrics.max_drawdown_duration_bars([100, 90, 95, 101]) == 2
+    assert metrics.max_drawdown_duration_bars([100, 90, 95]) == 2
+    assert metrics.max_drawdown_duration_bars([1, 2, 3]) == 0
+    assert metrics.max_drawdown_duration_bars([]) == 0
+
+
+def test_exposure_pct() -> None:
+    # 窗口 [0, 100ns],t=10 开仓 t=60 平 → 50%
+    events = [(10, 1.0), (60, -1.0)]
+    assert metrics.exposure_pct(events, 0, 100) == pytest.approx(50.0)
+    # 尾段未平:t=80 开仓到窗口尾 → 20%
+    assert metrics.exposure_pct([(80, 1.0)], 0, 100) == pytest.approx(20.0)
+    assert metrics.exposure_pct([], 0, 100) == 0.0
+    assert metrics.exposure_pct(events, None, 100) is None

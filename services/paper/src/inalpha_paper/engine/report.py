@@ -79,6 +79,29 @@ class BacktestReport:
     win_rate: float | None = None
     #: ``[(ts_ns, equity)]`` 序列
     equity_curve: list[tuple[int, float]] = field(default_factory=list)
+    #: ── 专业级扩展指标（D-11+,均可 None = 样本不足/未定义） ──
+    #: 年化收益（线性换算,与 fitness.calmar_from_report 同口径）
+    annualized_return_pct: float | None = None
+    #: 年化波动率
+    annualized_volatility_pct: float | None = None
+    #: Calmar = 年化收益 / 最大回撤
+    calmar: float | None = None
+    #: 盈亏因子 = 毛利 / |毛损|
+    profit_factor: float | None = None
+    #: 平均盈亏比 = 平均盈利笔 / |平均亏损笔|
+    payoff_ratio: float | None = None
+    #: 单笔期望（货币）
+    expectancy: float | None = None
+    #: 最佳 / 最差单笔（货币,round-trip 口径）
+    best_trade_pnl: float | None = None
+    worst_trade_pnl: float | None = None
+    #: 最大连胜 / 连亏笔数
+    max_consecutive_wins: int | None = None
+    max_consecutive_losses: int | None = None
+    #: 最长回撤持续期（bar 数,含未收复的尾段）
+    max_drawdown_duration_bars: int | None = None
+    #: 持仓时间占比（%）
+    exposure_pct: float | None = None
     #: 逐笔成交（含每笔实现盈亏），落 ``backtest_trades`` 表用
     fills: list[FillRecord] = field(default_factory=list)
     #: 账户是否"穿仓"——任意时点 equity 跌破 -1% × initial_cash（物理上 spot
@@ -126,10 +149,23 @@ class BacktestReport:
                 f"最终 equity 为负 ({final_equity_v:.2f})：账户实际已破产"
             )
 
+        total_return = portfolio.total_return_pct()
+        max_dd = metrics.max_drawdown_pct(equity_values)
+        trade_pnls = portfolio.closed_trade_pnls
+        fills = list(portfolio.fills)
+        # exposure 用回测窗口端点（datetime → ns）;缺端点时为 None。
+        start_ns = (
+            int(period_start.timestamp() * 1_000_000_000) if period_start else None
+        )
+        end_ns = int(period_end.timestamp() * 1_000_000_000) if period_end else None
+        fill_events = [
+            (f.ts_ns, f.quantity if f.side == "BUY" else -f.quantity) for f in fills
+        ]
+
         return cls(
             initial_cash=portfolio.initial_cash,
             final_equity=final_equity_v,
-            total_return_pct=portfolio.total_return_pct(),
+            total_return_pct=total_return,
             num_trades=portfolio.trade_count,
             total_fees=portfolio.total_fees,
             num_bars_processed=num_bars,
@@ -138,10 +174,26 @@ class BacktestReport:
             positions=portfolio.positions(),
             sharpe=metrics.sharpe_ratio(returns, ppy),
             sortino=metrics.sortino_ratio(returns, ppy),
-            max_drawdown_pct=metrics.max_drawdown_pct(equity_values),
-            win_rate=metrics.win_rate(portfolio.closed_trade_pnls),
+            max_drawdown_pct=max_dd,
+            win_rate=metrics.win_rate(trade_pnls),
             equity_curve=equity_curve,
-            fills=list(portfolio.fills),
+            fills=fills,
+            annualized_return_pct=metrics.annualized_return_pct(
+                total_return, num_bars, ppy
+            ),
+            annualized_volatility_pct=metrics.annualized_volatility_pct(returns, ppy),
+            calmar=metrics.calmar_ratio(total_return, max_dd, num_bars, ppy),
+            profit_factor=metrics.profit_factor(trade_pnls),
+            payoff_ratio=metrics.payoff_ratio(trade_pnls),
+            expectancy=metrics.expectancy(trade_pnls),
+            best_trade_pnl=max(trade_pnls) if trade_pnls else None,
+            worst_trade_pnl=min(trade_pnls) if trade_pnls else None,
+            max_consecutive_wins=metrics.max_consecutive_wins(trade_pnls),
+            max_consecutive_losses=metrics.max_consecutive_losses(trade_pnls),
+            max_drawdown_duration_bars=metrics.max_drawdown_duration_bars(
+                equity_values
+            ),
+            exposure_pct=metrics.exposure_pct(fill_events, start_ns, end_ns),
             blew_up=blew_up,
             health_warnings=warnings,
         )
