@@ -168,6 +168,13 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* Tailwind v4 preflight 把 button 默认成 cursor: default（v3 是 pointer），
+     可点元素 hover 不变手型。全站恢复 v3 行为（官方迁移建议写法）。 */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
   ::selection {
     background-color: color-mix(in oklab, var(--accent) 35%, transparent);
     color: var(--ink);
