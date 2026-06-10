@@ -43,18 +43,14 @@ export async function GET(
       `/strategy_candidates/${id}`,
     );
 
-    // 该候选派生的 live runner —— 后端无「按 candidate 查 run」端点,拉列表本地过滤
-    // (best-effort,失败降级空,不阻塞详情)。最近一个 run 再拉决策给 K 线叠加 + 历史交易。
-    // limit 显式取后端硬上限 1000:默认 200 时老候选的 run 可能全被挤出窗口,
-    // 详情页假装"没跑过"。全局 run 超 1000 后仍可能丢,根治等 ?candidate_id= 过滤端点。
-    const allRuns = await backendFetch<StrategyRunRecord[]>(
-      "paper",
-      "/strategy_runs",
-      { query: { limit: 1000 } },
-    ).catch(() => [] as StrategyRunRecord[]);
-    const runs = allRuns
-      .filter((r) => r.candidate_id === id)
-      .sort((a, b) => b.started_at.localeCompare(a.started_at));
+    // 该候选派生的 live runner —— 服务端按 candidate_id 过滤(后端已落
+    // ?candidate_id=),不再拉全量本地 filter:全局 run 超 limit 后老候选的 run
+    // 会被整批挤出窗口,详情页假装"没跑过"。best-effort,失败降级空不阻塞详情。
+    const runs = (
+      await backendFetch<StrategyRunRecord[]>("paper", "/strategy_runs", {
+        query: { candidate_id: id, limit: 200 },
+      }).catch(() => [] as StrategyRunRecord[])
+    ).sort((a, b) => b.started_at.localeCompare(a.started_at));
     const latestRunDecisions = runs[0]
       ? await backendFetch<StrategyRunDecisionRecord[]>(
           "paper",
