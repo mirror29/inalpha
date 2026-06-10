@@ -24,7 +24,9 @@ x-svc-common: &svc-common
 
 services:
   postgres:
-    image: timescale/timescaledb:latest-pg17
+    # 数据库镜像必须钉版本:latest-pg17 浮动 tag 在 pull/重建时可能拉到新版
+    # TimescaleDB,轻则起不来重则静默破坏已有 hypertable。升级走显式改版本号。
+    image: timescale/timescaledb:2.27.2-pg17
     container_name: inalpha-postgres
     restart: unless-stopped
     environment:
@@ -155,7 +157,7 @@ services:
 
   # 公网入口：Cloudflare Tunnel（无需在 VPS 开入站端口，TLS/防护走 CF）
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.6.0
     container_name: inalpha-cloudflared
     restart: unless-stopped
     command: tunnel run
