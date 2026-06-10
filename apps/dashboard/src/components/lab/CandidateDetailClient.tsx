@@ -2,13 +2,16 @@
 
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
+import { useMemo } from "react";
 import useSWR from "swr";
 
 import type {
   BacktestRunSummary,
   BacktestTradeRecord,
+  BarsPayload,
   CandidateDetailPayload,
   StrategyCandidateRecord,
+  StrategyRunDecisionRecord,
   StrategyRunRecord,
 } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
@@ -21,6 +24,7 @@ import { Panel } from "@/components/ui/Panel";
 import { CandidateStatusBadge, RunStatusBadge } from "@/components/ui/StatusBadge";
 import { CodeViewer } from "@/components/ui/CodeViewer";
 import { Td, TableEmpty, TableHeadRow, Th } from "@/components/ui/Table";
+import { CandlestickChart } from "@/components/runners/CandlestickChart";
 import { DecisionTimeline } from "@/components/runners/DecisionTimeline";
 import { RunnerChart } from "@/components/runners/RunnerChart";
 import { MetricsGrid } from "./MetricsGrid";
@@ -102,6 +106,11 @@ export function CandidateDetailClient({ id }: { id: string }) {
               <MetricsGrid metrics={c.metrics} fitness={c.fitness} />
             </div>
           </Panel>
+
+          {/* 回测区间 K 线 —— 逐笔成交叠标记;无回测记录时不渲染。 */}
+          {data.backtestRun && (
+            <BacktestChart run={data.backtestRun} trades={data.backtestTrades} />
+          )}
 
           {/* 回测逐笔成交(含每笔实现盈亏)—— 该候选最近一次回测的买卖复盘。 */}
           <BacktestTradesPanel trades={data.backtestTrades} locale={locale} />
@@ -373,6 +382,89 @@ function BacktestMeta({
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * 回测区间 K 线 —— 拉该回测 from→to 的历史 bar(/api/bars 历史区间模式),把逐笔
+ * 成交映射成 decision 形状叠在蜡烛上(复用 CandlestickChart 的 buy/sell 标记)。
+ * 历史区间固定,不轮询;缺 venue/symbol/区间(老数据)时整块不渲染。
+ */
+function BacktestChart({
+  run,
+  trades,
+}: {
+  run: BacktestRunSummary;
+  trades: BacktestTradeRecord[];
+}) {
+  const t = useTranslations("lab.detail");
+  const ready = !!(
+    run.venue &&
+    run.symbol &&
+    run.timeframe &&
+    run.periodStart &&
+    run.periodEnd
+  );
+  const key = ready
+    ? `/api/bars?venue=${encodeURIComponent(run.venue!)}&symbol=${encodeURIComponent(
+        run.symbol!,
+      )}&timeframe=${encodeURIComponent(run.timeframe!)}&from=${encodeURIComponent(
+        run.periodStart!,
+      )}&to=${encodeURIComponent(run.periodEnd!)}&limit=1000`
+    : null;
+  const { data, error, isLoading } = useSWR<BarsPayload>(key, jsonFetcher, {
+    revalidateOnFocus: false,
+  });
+  // 回测成交 → decision 形状:回测撮合无拒单,outcome 恒 filled。
+  const decisions = useMemo<StrategyRunDecisionRecord[]>(
+    () =>
+      trades.map((tr) => ({
+        id: `bt-${tr.seq}`,
+        run_id: run.runId,
+        bar_ts: tr.bar_ts,
+        bar_close: tr.bar_close,
+        side: tr.side,
+        quantity: tr.quantity,
+        order_type: tr.order_type,
+        limit_price: null,
+        tag: tr.tag,
+        intent: tr.intent,
+        outcome: "filled" as const,
+        fill_price: tr.fill_price,
+        fee: tr.fee,
+        plan_id: null,
+        order_id: null,
+        reason: null,
+        created_at: tr.bar_ts,
+      })),
+    [trades, run.runId],
+  );
+
+  if (!ready) return null;
+  const bars = data?.bars ?? [];
+  return (
+    <Panel
+      title={t("backtestChart")}
+      aside={
+        <span className="font-mono text-[10px] uppercase tracking-wider text-fg-muted/70">
+          {run.symbol} · {run.timeframe}
+        </span>
+      }
+    >
+      {bars.length === 0 ? (
+        <div className="px-4 py-12 text-center text-sm text-fg-muted/70">
+          {isLoading
+            ? t("backtestChartLoading")
+            : error
+              ? t("backtestChartError")
+              : t("backtestChartEmpty")}
+        </div>
+      ) : (
+        <div className="px-2 py-2">
+          <CandlestickChart bars={bars} decisions={decisions} />
+        </div>
+      )}
+    </Panel>
   );
 }
 

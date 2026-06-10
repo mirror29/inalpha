@@ -284,6 +284,10 @@
       "backtestPeriod": "区间",
       "backtestTrades": "回测成交",
       "backtestTradesEmpty": "最近一次回测无成交。",
+      "backtestChart": "回测 K 线",
+      "backtestChartLoading": "正在加载回测区间 K 线…",
+      "backtestChartError": "区间 K 线加载失败。",
+      "backtestChartEmpty": "该区间没有可显示的 K 线。",
       "copy": "复制",
       "copied": "已复制",
       "tradeCol": {

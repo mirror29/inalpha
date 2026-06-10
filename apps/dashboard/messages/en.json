@@ -284,6 +284,10 @@
       "backtestPeriod": "Period",
       "backtestTrades": "Backtest Fills",
       "backtestTradesEmpty": "No fills in the latest backtest.",
+      "backtestChart": "Backtest Chart",
+      "backtestChartLoading": "Loading bars for the backtest period…",
+      "backtestChartError": "Failed to load bars for this period.",
+      "backtestChartEmpty": "No bars available for this period.",
       "copy": "Copy",
       "copied": "Copied",
       "tradeCol": {

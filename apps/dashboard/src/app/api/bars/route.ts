@@ -31,10 +31,12 @@ function timeframeSeconds(tf: string): number | null {
 }
 
 /**
- * GET /api/bars?venue=&symbol=&timeframe=&limit= —— 最近 N 根 K 线。
+ * GET /api/bars?venue=&symbol=&timeframe=&limit=[&from=&to=] —— K 线。
  *
- * data /bars 是闭区间查询(from_ts/to_ts 必填),这里按 timeframe 把"最近 N 根"
- * 换算成时间窗口(to=now, from=now - N×tf)再查。给 Live Runner 详情叠图用。
+ * 默认"最近 N 根":data /bars 是闭区间查询(from_ts/to_ts 必填),按 timeframe 把
+ * "最近 N 根"换算成时间窗口(to=now, from=now - N×tf)再查,给 Live Runner 详情叠图。
+ * 传 from/to(ISO)则查**历史固定区间**(回测 K 线用):窗口不随 now 滚动,新鲜度
+ * 判定换成"窗口尾部是否齐"——历史区间补齐一次即稳定,不会每次轮询重拉外部源。
  */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
@@ -42,6 +44,8 @@ export async function GET(req: NextRequest) {
   const symbol = sp.get("symbol");
   const timeframe = sp.get("timeframe") ?? "1h";
   const limit = Math.min(Number(sp.get("limit")) || DEFAULT_LIMIT, 1000);
+  const fromParam = sp.get("from");
+  const toParam = sp.get("to");
 
   if (!venue || !symbol) {
     return NextResponse.json(
@@ -59,10 +63,21 @@ export async function GET(req: NextRequest) {
   }
 
   const nowMs = Date.now();
+  // 历史区间模式:from/to 必须成对且可解析,否则按参数错误拒绝(单传一个多半是调用方 bug)。
+  const historical = fromParam !== null || toParam !== null;
+  const fromParsed = fromParam ? Date.parse(fromParam) : NaN;
+  const toParsed = toParam ? Date.parse(toParam) : NaN;
+  if (historical && (Number.isNaN(fromParsed) || Number.isNaN(toParsed))) {
+    return NextResponse.json(
+      { error: "from/to 需成对提供且为可解析的 ISO 时间" },
+      { status: 400 },
+    );
+  }
   // 多取一点窗口(×1.5)以防非交易时段/缺口导致根数不足。
-  const fromMs = nowMs - limit * tfSec * 1500;
+  const fromMs = historical ? fromParsed : nowMs - limit * tfSec * 1500;
+  const toMs = historical ? Math.min(toParsed, nowMs) : nowMs;
   const fromTs = new Date(fromMs).toISOString();
-  const toTs = new Date(nowMs).toISOString();
+  const toTs = new Date(toMs).toISOString();
 
   const readBars = () =>
     backendFetch<BarPoint[]>("data", "/bars", {
@@ -82,11 +97,17 @@ export async function GET(req: NextRequest) {
     // 重拉外部源（1d 回填实测可达 ~36s，不能每 20s 白跑）。best-effort：venue 不支持该
     // tf 或外部源失败时不致命，仍用已有数据降级显示。
     const lastMs = sorted.length ? +new Date(sorted[sorted.length - 1].ts) : 0;
-    const stale = sorted.length === 0 || nowMs - lastMs > 2 * tfSec * 1000;
+    // 历史区间:窗口尾部缺 2×tf 以上才算不齐(补一次即稳定);滚动窗口:距 now 判旧。
+    const staleEdgeMs = historical ? toMs : nowMs;
+    const stale = sorted.length === 0 || staleEdgeMs - lastMs > 2 * tfSec * 1000;
     if (stale) {
       try {
         // 同 key 已有在途回填则复用,不再并发发第二次(见 inflightBackfill 注释)。
-        const key = `${venue}|${symbol}|${timeframe}`;
+        // 历史区间把窗口并进 key:不同回测区间互不干扰;滚动窗口仍按标的去重
+        // (from 随 now 漂移,进 key 会让去重失效)。
+        const key = historical
+          ? `${venue}|${symbol}|${timeframe}|${fromTs}|${toTs}`
+          : `${venue}|${symbol}|${timeframe}`;
         let pending = inflightBackfill.get(key);
         if (!pending) {
           pending = backendFetch("data", "/backfill/bars", {
