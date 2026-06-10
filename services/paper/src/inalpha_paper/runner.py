@@ -215,12 +215,9 @@ async def run_backtest(
     # 5. 计算 fitness（D-9 · ADR-0020 E1：多目标合成，不允许裸 Sharpe 排序候选）
     bars_per_year = float(periods_per_year(req.timeframe))
     fitness_value = _fitness_from_report(report, bars_per_year=bars_per_year)
-    calmar = calmar_from_report(
-        total_return_pct=report.total_return_pct,
-        max_drawdown_pct=report.max_drawdown_pct,
-        num_bars_processed=report.num_bars_processed,
-        bars_per_year=bars_per_year,
-    )
+    # calmar 指标落库一律取 report.calmar —— 不再走 calmar_from_report 第二条
+    # 计算路径,否则 fitness 侧公式一变,candidates 与 backtest_runs 两表的
+    # calmar 会静默分叉。
 
     # 5b. D-9 candidate 路径：组装 baseline 对照（buy_and_hold 同 symbol/timeframe/period）
     baseline_snapshot: BaselineSnapshot | None = None
@@ -271,7 +268,7 @@ async def run_backtest(
                         "num_bars_processed": report.num_bars_processed,
                         "initial_cash": report.initial_cash,
                         "final_equity": report.final_equity,
-                        "calmar": calmar,
+                        "calmar": report.calmar,
                         # 专业级扩展指标（与 _persist_run 的 metrics 同源,可 None）
                         "annualized_return_pct": report.annualized_return_pct,
                         "annualized_volatility_pct": report.annualized_volatility_pct,

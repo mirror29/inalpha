@@ -88,8 +88,10 @@ def calmar_from_report(
     Returns:
         Calmar 比率；回撤为 0 / 样本不足时返 ``None``。
 
-    Calmar 本来 BacktestReport 应该自己算，但 D-8c 还没加这个字段；MVP 在 fitness
-    模块里就地推一下，等 BacktestReport 加 calmar 字段后这函数可以下线。
+    ⚠️ 单一入口约定：BacktestReport 已自带 ``calmar``（engine/metrics.calmar_ratio,
+    与本函数同式），**指标落库一律用 report.calmar**。本函数仅作 fitness 合成的
+    内部输入保留（runner._fitness_from_report）——若要改年化口径（如换复利），
+    必须与 metrics.calmar_ratio 同步改，否则 fitness 与落库指标静默分叉。
     """
     if num_bars_processed <= 0 or bars_per_year <= 0:
         return None
