@@ -144,6 +144,13 @@ services:
     depends_on: [data, paper, research, factor]
     volumes:
       - mastra_data:/app/.mastra   # @mastra/libsql 本地存储持久化
+    healthcheck:
+      # node 镜像无 curl,用内置 fetch;任何 <500 响应都算活(只验进程就绪,不验业务)
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4111/api').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
 
   # 公网入口：Cloudflare Tunnel（无需在 VPS 开入站端口，TLS/防护走 CF）
   cloudflared:
@@ -153,7 +160,11 @@ services:
     command: tunnel run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?required}
-    depends_on: [mastra]
+    # service_healthy:mastra 初始化完成前不开始对外转发(默认 service_started
+    # 会让 Tunnel 在 mastra 还没就绪时把流量打到 502)
+    depends_on:
+      mastra:
+        condition: service_healthy
     # token 远程托管模式：在 CF 控制台配 ingress，把 api.域名 → http://mastra:4111
     # （或各 svc 单独子域）。本地 config.yml 模式则改挂 ./cloudflared:/etc/cloudflared
 
