@@ -12,6 +12,14 @@ import pandas as pd
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clear_panel_cache() -> None:
+    """每个测试前清因子面板缓存，避免跨测试串数据（缓存是模块级的）。"""
+    from inalpha_factor.engine import _panel_cache
+
+    _panel_cache.clear()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_env() -> None:
     os.environ.setdefault(

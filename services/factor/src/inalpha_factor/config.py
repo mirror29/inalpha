@@ -35,6 +35,15 @@ class FactorSettings(BaseSettings):
         "里 qlib 因子标 available=false，pandas-ta + Alpha101 仍可用。",
     )
 
+    cache_ttl_s: int = Field(
+        default=300,
+        ge=0,
+        le=3600,
+        alias="FACTOR_CACHE_TTL_S",
+        description="因子面板（bars + 因子时序）内存缓存 TTL 秒数，只作用于 live 调用；"
+        "实际 TTL = min(此值, 半根 bar)，保证最多半根 bar 的 stale。0 = 关闭缓存。",
+    )
+
     snapshot_corr_threshold: float = Field(
         default=0.85,
         ge=0.5,
