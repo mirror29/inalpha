@@ -2,13 +2,13 @@
 
 <img src="assets/mascot-avatar.png" alt="Inalpha" width="200" />
 
-<h1>Inalpha</h1>
+<h1>Inalpha 🦊</h1>
 
 <p><strong>Quant agents that evolve under audit.</strong></p>
 
 <p><em>An oracle that keeps a ledger.</em></p>
 
-<p>Factor timing &nbsp;·&nbsp; Multi-perspective research &nbsp;·&nbsp; Factor lab &nbsp;·&nbsp; Risk engine &nbsp;·&nbsp; Strategy evolution &nbsp;·&nbsp; Machine-approved orders &nbsp;·&nbsp; Backtest = paper &nbsp;·&nbsp; Omikuji</p>
+<p>Factor timing &nbsp;·&nbsp; Multi-perspective research &nbsp;·&nbsp; Factor lab &nbsp;·&nbsp; Risk engine &nbsp;·&nbsp; Strategy evolution &nbsp;·&nbsp; Machine-approved orders &nbsp;·&nbsp; Omikuji</p>
 
 <p>
   <strong>English</strong> &nbsp;|&nbsp; <a href="README.zh-CN.md">中文</a>
@@ -24,7 +24,7 @@
 
 <p><em>Every factor proposed, every strategy mutated, every order routed — logged, versioned, reviewable. Agents pick the currently-effective factors to time entries, write the strategies, and evolve them; the LLM writes the code, and the engineering harness signs every decision.</em></p>
 
-<p>Inalpha is a <strong>professional quant agent framework</strong> — an open-source system where LLM agents research (with a panel of investing legends), pick the factors that work <em>now</em>, write and evolve strategy code, and route every order through machine approval, all under an <strong>audit-grade engineering harness</strong>. A unified backtest=paper=live kernel (one strategy codebase — swap only the Clock and Gateway), multi-market routing (crypto, US equities, A-shares, global indices, macro), and a Claude Code-style hooks/permissions/plan-exec layer back it — built for teams that demand <strong>every decision be provable and every order path be unreachable by the LLM directly</strong>.</p>
+<p>Inalpha is a <strong>professional quant agent framework</strong> — an open-source system where LLM agents research (with a panel of investing legends), pick the factors that work <em>now</em>, write and evolve strategy code, and route every order through machine approval, all under an <strong>audit-grade engineering harness</strong>. A unified kernel (one strategy codebase — swap only the Clock and Gateway), multi-market routing (crypto, US equities, A-shares, global indices, macro), and a Claude Code-style hooks/permissions/plan-exec layer back it — built for teams that demand <strong>every decision be provable and every order path be unreachable by the LLM directly</strong>.</p>
 
 </div>
 
