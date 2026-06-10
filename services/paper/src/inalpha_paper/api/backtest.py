@@ -91,6 +91,10 @@ async def get_backtest_runs(
     可按 ``research_id`` 或 ``strategy_code`` 过滤（同时给 → 优先用 research_id）;
     **都不给则返回全局最近 N 条**（控制台「Agent 活动」聚合流用）。
     用途：agent 决策"是否复用上一次回测"，避免重复计算同 params 的 backtest。
+
+    坑（单租户假设）：backtest_runs 表无 owner 列,本端点不按用户隔离 ——
+    当前部署为单操作者控制台可接受;开放多用户前必须补 owner 过滤,
+    且重新评估 limit 上限(全局最近 N 条会成为跨租户数据查探面)。
     """
     if research_id is not None:
         rows = await backtest_runs_store.list_by_research(db, research_id, limit=limit)
