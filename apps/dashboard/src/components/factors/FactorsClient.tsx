@@ -202,7 +202,7 @@ function FactorRow({ f, maxIc }: { f: FactorEffectiveness; maxIc: number }) {
     <li className="flex items-center gap-3 px-4 py-2.5">
       {/* 名称 + kind */}
       <div className="w-44 shrink-0">
-        <div className="truncate text-sm font-medium text-fg" title={f.factor_id}>
+        <div className="truncate text-sm text-fg" title={f.factor_id}>
           {f.name}
         </div>
         <div className="font-mono text-[10px] uppercase tracking-wider text-fg-muted/60">
@@ -331,7 +331,7 @@ function FactorCard({ f }: { f: FactorSpec }) {
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium text-fg">{f.name}</span>
+        <span className="truncate text-sm text-fg">{f.name}</span>
         <DirectionMark dir={f.direction_hint} />
       </div>
       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-fg-muted/60">

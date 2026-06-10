@@ -50,7 +50,7 @@ export function ActivityFeed({ events }: { events: ActivityEvent[] }) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <KindTag kind={e.kind} />
-                <span className="truncate font-medium text-fg">{e.title}</span>
+                <span className="truncate text-fg">{e.title}</span>
                 {e.outcome && (
                   <span
                     className={cn(
