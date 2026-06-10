@@ -249,10 +249,14 @@ def test_consecutive_streaks() -> None:
 
 
 def test_max_drawdown_duration() -> None:
-    # 峰 100 @i=0,跌到 90,i=3 收复 → 最长 2 根;尾段(101 后回落未收复)也计入
-    assert metrics.max_drawdown_duration_bars([100, 90, 95, 101, 99, 98]) == 2
-    assert metrics.max_drawdown_duration_bars([100, 90, 95, 101]) == 2
+    # 峰 100 @i=0,跌到 90,i=3 收复 → 间隔 3 根(收复 bar 计入);
+    # 尾段(101 后回落未收复,截到末尾 = 2)不超过它
+    assert metrics.max_drawdown_duration_bars([100, 90, 95, 101, 99, 98]) == 3
+    assert metrics.max_drawdown_duration_bars([100, 90, 95, 101]) == 3
+    # 未收复:截到序列末尾
     assert metrics.max_drawdown_duration_bars([100, 90, 95]) == 2
+    # 平走 / 连创新高不算回撤
+    assert metrics.max_drawdown_duration_bars([100, 100, 110]) == 0
     assert metrics.max_drawdown_duration_bars([1, 2, 3]) == 0
     assert metrics.max_drawdown_duration_bars([]) == 0
 
