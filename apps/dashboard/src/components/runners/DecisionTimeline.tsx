@@ -20,8 +20,11 @@ const PAGE_SIZE = 25;
  */
 export function DecisionTimeline({
   decisions,
+  maxBodyHeight,
 }: {
   decisions: StrategyRunDecisionRecord[];
+  /** 可选表体最大高度(tailwind max-h-*):并排布局时限高,内部滚动 + 表头吸顶。 */
+  maxBodyHeight?: string;
 }) {
   const t = useTranslations("runners.detail");
   const tIntent = useTranslations("runners.intent");
@@ -41,9 +44,19 @@ export function DecisionTimeline({
       {decisions.length === 0 ? (
         <TableEmpty>{t("decisionsEmpty")}</TableEmpty>
       ) : (
-        <div className="overflow-x-auto">
+        <div
+          className={cn(
+            "overflow-x-auto",
+            maxBodyHeight && cn("overflow-y-auto", maxBodyHeight),
+          )}
+        >
           <table className="w-full border-collapse text-sm">
-            <thead>
+            <thead
+              className={cn(
+                // 限高滚动时表头吸顶(不透明底,行从下面滚过)。
+                maxBodyHeight && "sticky top-0 z-10 bg-bg-elev",
+              )}
+            >
               <TableHeadRow>
                 <Th>{t("col.barTs")}</Th>
                 <Th right>{t("col.barClose")}</Th>

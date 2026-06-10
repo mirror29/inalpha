@@ -125,7 +125,8 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
               />
             </div>
             <div className="min-w-0">
-              <DecisionTimeline decisions={data.decisions} />
+              {/* 限高:持仓侧通常只有一两行,时间线太长会让左栏显得空。 */}
+              <DecisionTimeline decisions={data.decisions} maxBodyHeight="max-h-72" />
             </div>
           </div>
 
