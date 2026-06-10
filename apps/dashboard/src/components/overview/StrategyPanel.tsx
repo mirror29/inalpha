@@ -84,15 +84,18 @@ export function StrategyPanel({
                     key={c.id}
                     className="border-t border-border-subtle/60 transition-colors hover:bg-bg-elev/30"
                   >
-                    <Td>
+                    {/* w-full+max-w-0:名称列吃掉剩余宽度并允许收缩 → 超出单行省略,
+                        title 悬浮看全名;其余短列 nowrap 保持单行。 */}
+                    <Td className="w-full max-w-0">
                       <Link
                         href={`/lab/${c.id}`}
-                        className="text-fg transition-colors hover:text-cyan"
+                        title={c.description?.trim() || c.code_hash}
+                        className="block truncate text-fg transition-colors hover:text-cyan"
                       >
                         {c.description?.trim() || c.code_hash}
                       </Link>
                     </Td>
-                    <Td>
+                    <Td className="whitespace-nowrap">
                       <CandidateStatusBadge
                         status={c.status}
                         label={t(`status.${c.status}`)}

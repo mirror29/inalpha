@@ -35,7 +35,7 @@
   },
   "overview": {
     "title": "Portfolio Overview",
-    "subtitle": "What you'd otherwise have to ask the agent — at a glance.",
+    "subtitle": "A live snapshot of your account, positions, orders, and strategy pool.",
     "kpi": {
       "totalEquity": "Total Equity",
       "totalReturn": "Total Return",
@@ -314,7 +314,9 @@
     "barsUsed": "{n} bars",
     "catalog": "System Factor Catalog",
     "catalogHint": "Every factor currently available in the system, grouped by source (instrument- and market-agnostic).",
-    "filter": { "all": "All" }
+    "filter": {
+      "all": "All"
+    }
   },
   "risk": {
     "title": "Risk",
