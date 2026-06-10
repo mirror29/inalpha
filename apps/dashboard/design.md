@@ -95,6 +95,11 @@ mono / display 语境下中文同族同粗细。两个坑：
    （San Francisco）会内部级联接管 CJK 字形，排在它后面的 CJK 族永远轮不到，
    bug 照旧（曾在此栽过：钉面放 `--font-cjk` 里被 system-ui 截胡）。验证一律用
    本机真 Chrome `--headless=new` 截图，Playwright Chromium 行为不可信。
+3. **中文为主的动态长文本（策略名 / 描述等）不用 `font-medium`**：即使字面
+   统一是 PingFang Medium（CDP 验证过单一字面），macOS Chrome **GPU 光栅化**
+   在 14px 中字重下仍会逐行深浅不一（软件渲染均匀 → 截图验证会漏）。这类文本
+   一律 400，强调层级用颜色（`text-fg` vs `text-fg-muted`）承担；`font-medium`
+   只用于拉丁 / 数字短标签。
 
 ---
 

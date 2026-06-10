@@ -87,7 +87,7 @@ export function StrategyPanel({
                     <Td>
                       <Link
                         href={`/lab/${c.id}`}
-                        className="font-medium text-fg transition-colors hover:text-cyan"
+                        className="text-fg transition-colors hover:text-cyan"
                       >
                         {c.description?.trim() || c.code_hash}
                       </Link>
