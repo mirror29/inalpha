@@ -88,20 +88,16 @@ async def get_backtest_runs(
 ) -> list[BacktestRunSummary]:
     """查历史回测。
 
-    至少给 ``research_id`` 或 ``strategy_code`` 之一（同时给 → 优先用 research_id）。
+    可按 ``research_id`` 或 ``strategy_code`` 过滤（同时给 → 优先用 research_id）;
+    **都不给则返回全局最近 N 条**（控制台「Agent 活动」聚合流用）。
     用途：agent 决策"是否复用上一次回测"，避免重复计算同 params 的 backtest。
     """
-    if research_id is None and strategy_code is None:
-        raise ValidationError(
-            "must provide research_id or strategy_code",
-            code="MISSING_FILTER",
-        )
-
     if research_id is not None:
         rows = await backtest_runs_store.list_by_research(db, research_id, limit=limit)
-    else:
-        assert strategy_code is not None  # narrow for mypy
+    elif strategy_code is not None:
         rows = await backtest_runs_store.list_by_strategy(db, strategy_code, limit=limit)
+    else:
+        rows = await backtest_runs_store.list_recent(db, limit=limit)
 
     return [
         BacktestRunSummary(

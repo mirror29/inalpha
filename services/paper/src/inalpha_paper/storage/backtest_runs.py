@@ -169,3 +169,23 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "created_at": row["created_at"],
         "status": row["status"],
     }
+
+async def list_recent(
+    conn: AsyncConnection,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """全局最近回测（按 created_at DESC）—— 控制台「Agent 活动」聚合流用。"""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT id, strategy_code, config, metrics, params_hash,
+                   research_id, strategy_hint, created_at, status
+            FROM backtest_runs
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        rows = await cur.fetchall()
+    return [_row_to_dict(r) for r in rows]
