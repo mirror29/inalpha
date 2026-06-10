@@ -409,9 +409,12 @@ class FactorEngine:
         if scored["bars_used"] <= 0:
             reason: str | None = "no bars from data-service"
         elif not top:
+            # 去相关(_select_decorrelated)对非空输入至少保留 1 个 → top 为空
+            # ⇔ 没有任何因子过置信阈值。reason 给明确行动方向(加 bar 数),
+            # agent 不用在"降相关阈值"与"取更多数据"之间猜。
             reason = (
-                "no factor passed confidence threshold "
-                f"({len(factors)} evaluated, all low-confidence or pruned)"
+                f"all_low_confidence: {len(factors)} factors evaluated, none "
+                "passed confidence threshold (insufficient sample, need more bars)"
             )
         else:
             reason = None
