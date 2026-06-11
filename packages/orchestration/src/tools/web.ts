@@ -107,4 +107,52 @@ export const webSearchNewsTool = createTool({
   },
 });
 
-export const webTools = [webSearchTool, webSearchNewsTool] as const;
+// ────────────────────────────────────────────────────────────────────
+// web.fetch
+// ────────────────────────────────────────────────────────────────────
+
+export const webFetchTool = createTool({
+  id: "web.fetch",
+  description: `
+    抓取一个 URL 的网页正文（trafilatura 抽正文 + 标题 + 发布日期）。
+    证据链最后一公里：web.search 只有标题 + snippet，结论级证据要用本 tool
+    读原文（财报 / 公告 / 新闻稿 / transcript 页面）。
+
+    何时用：
+    - web.search / web.search_news 找到关键来源后，引用其内容下结论前先读原文
+    - 给证据定强度等级（强 / 中 / 弱）需要确认页面实际说了什么
+    - 需要页面发布日期来标注数据截止
+
+    何时不用：
+    - 行情 / K 线 / 财务指标 → data.*（结构化数据源更准）
+    - 还没确定哪个 URL 值得读 → 先 web.search 筛选，别逐个乱抓
+
+    坑：
+    - 内网 / 私有地址被拒（SSRF 护栏）；非 HTML 文本类型被拒（PDF 读不了）
+    - 正文超长会截断（truncated=true）；published_at 抽不到时为 null，
+      此时不要编日期，按"日期待核"处理
+    - 部分站点反爬返 403/超时——错误时换一个来源，不要对同一 URL 反复重试
+  `.trim(),
+  inputSchema: z.object({
+    url: z.string().url().max(2048).describe("要抓取的 http/https URL"),
+    maxChars: z.number().int().min(100).max(200_000).optional()
+      .describe("正文字符上限（默认 4 万，受服务端钳制）"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const baseUrl = await getBaseUrl();
+    const headers = await getAuthHeaders(tc);
+    const url = new URL(`${baseUrl}/web/fetch`);
+    url.searchParams.set("url", inputData.url);
+    if (inputData.maxChars) url.searchParams.set("max_chars", String(inputData.maxChars));
+    try {
+      const r = await fetch(url.toString(), { headers });
+      if (!r.ok) return { url: inputData.url, text: "", error: `HTTP ${r.status}` };
+      return await r.json();
+    } catch (err) {
+      return { url: inputData.url, text: "", error: String(err) };
+    }
+  },
+});
+
+export const webTools = [webSearchTool, webSearchNewsTool, webFetchTool] as const;

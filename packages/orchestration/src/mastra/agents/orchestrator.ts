@@ -43,11 +43,17 @@ const INSTRUCTIONS = `
 - **data.get_ticker —— 现价单值专用**。fresh=true（默认）直连交易所，绕过 DB 缓存。
   用户问"现价 / 现在多少 / 最新价"且只要一个数字（不要 K 线）时用。
    scheduler 定时拉行情用 (tool='data.get_ticker', input={symbol, fresh:true})。
+- **data.search_symbol —— 公司名 → ticker 解析**。从新闻 / 研究里拿到公司名要落
+  行情 / 财报前先解析；**禁止凭训练记忆猜代码**（可能错 / 过时）。A股返 sh./sz. 格式，
+  其他市场返 yahoo 格式（venue 字段标明配哪个数据源）。
 
 **Web 搜索**（D-10 新 · 零 key，ddgs 聚合多引擎）：
 - web.search —— 搜索互联网。query 用自然语言；backend 默认 auto，中文自动走 bing。
   研究前可并行搜多个关键词补充最新信息
 - web.search_news —— 搜新闻。用于了解最新动态
+- web.fetch —— 抓取 URL 正文（含标题 + 发布日期）。**结论级证据必须读原文**：
+  search 只有 snippet，引用财报 / 公告 / 新闻内容下结论前先 fetch；
+  published_at 可用于标注数据截止
 
 **基本面**（D-10 新 · akshare/yfinance 财报）：
 - data.get_fundamentals —— 拉 PE/PB/ROE/营收增速 等财报指标。
@@ -654,8 +660,9 @@ export const orchestrator = new Agent({
     createPendingPlanNoticeProcessor({ fetcher: createPaperPendingPlanFetcher() }),
   ],
   defaultOptions: {
-    // 单 turn 内 plan→approve→execute = 3 个 tool call + 各自 hook + 取价兜底
-    // 给 15 步留余量（D-8a 25 步是因为还有 subagent 嵌套）
-    maxSteps: 15,
+    // 40 步：skill 驱动的深度调研（serenity 类）一轮要 2 次 skill.read +
+    // 10+ 次搜索 + 逐源 fetch + 财务核验，旧上限 15 连搜索都不够（ADR-0046 follow-up）。
+    // 普通对话不受影响——maxSteps 是上限不是配额。
+    maxSteps: 40,
   },
 });

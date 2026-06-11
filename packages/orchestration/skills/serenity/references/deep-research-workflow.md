@@ -46,7 +46,7 @@
 
 ### 6. 收集当期证据
 来源优先级与分级见 `evidence-ladder.md`；按市场选信息源路径见 `market-source-playbook.md`。
-执行手段：`web.search_news` / `web.search` 扫公告与新闻线索；`data.get_fundamentals` 验财务；`data.get_bars`（默认 fresh）看近期走势是否已计入；`factor.timing` 做技术面交叉验证；复杂主题可一次 `research.deep_dive` 拿多分析师视角。
+执行手段：`web.search_news` / `web.search` 扫公告与新闻线索；**关键来源用 `web.fetch` 读正文**（snippet 只能当线索，正文 + 发布日期才够给证据定级）；候选公司代码用 `data.search_symbol` 解析后再 `data.get_fundamentals` 验财务；`data.get_bars`（默认 fresh）看近期走势是否已计入；`factor.timing` 做技术面交叉验证；复杂主题可一次 `research.deep_dive` 拿多分析师视角。
 
 ### 7. 排序
 按 SKILL.md 的 rubric 打分。两套排序分开呈现：层级排序（系统里哪些部分先看）、公司排序（哪些公司最能代表这些层级且有证据）。
