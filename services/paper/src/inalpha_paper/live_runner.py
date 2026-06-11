@@ -163,9 +163,18 @@ class LiveRunnerManager:
                 current = await runs_store.get(conn, run_id)
                 if current is None or current["status"] != "running":
                     return
-                await runs_store.append_error_log(
-                    conn, run_id, f"run loop crashed: {exc}", code="loop_crashed"
-                )
+                # 日志写入用 savepoint 隔离（同 stop() 范式）：append 再失败（多半还是
+                # 同一场 DB 抖动）不能连带跳过 set_status，否则 run 又卡回 running——
+                # 那正是 #67 要修的问题
+                try:
+                    async with conn.transaction():
+                        await runs_store.append_error_log(
+                            conn, run_id, f"run loop crashed: {exc}", code="loop_crashed"
+                        )
+                except Exception:
+                    _logger.warning(
+                        "live run %s: loop_crashed 错误日志写入失败（已忽略）", run_id, exc_info=True
+                    )
                 await runs_store.set_status(conn, run_id, "errored")
         except Exception:
             _logger.exception(

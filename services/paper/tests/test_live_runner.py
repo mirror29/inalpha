@@ -580,6 +580,35 @@ async def test_done_callback_marks_loop_crashed(
     )
 
 
+async def test_mark_loop_crashed_sets_errored_even_if_log_write_fails(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """append_error_log **恒**失败 → set_status 仍执行，run 置 errored（PR review）。
+
+    与上一个测试的差别：上面是"第一次失败、兜底时成功"；这里日志写入永远失败
+    （持续 DB 局部故障），savepoint 隔离保证 set_status 不被连带跳过——否则 run
+    又卡回 running，与 #67 同根因。
+    """
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def always_fail_append(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise RuntimeError("db partial outage: error_log 永远写不进")
+
+    monkeypatch.setattr(
+        "inalpha_paper.live_runner.runs_store.append_error_log", always_fail_append
+    )
+
+    await manager._mark_loop_crashed(run["id"], RuntimeError("boom"))
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"  # 日志丢了，但状态没卡 running
+
+
 async def test_done_callback_ignores_cancellation(
     app_with_lifespan: Any, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
