@@ -33,6 +33,8 @@ import {
 import {
   factorCatalogTool,
   factorEvaluateCandidateTool,
+  factorListCandidatesTool,
+  factorProposeTool,
   factorScoreTool,
   factorTimingTool,
   factorTools,
@@ -91,6 +93,8 @@ export {
   executeTradePlanTool,
   factorCatalogTool,
   factorEvaluateCandidateTool,
+  factorListCandidatesTool,
+  factorProposeTool,
   factorScoreTool,
   factorTimingTool,
   getTradePlanTool,
@@ -210,8 +214,11 @@ export const orchestratorToolList = [
   factorTimingTool,
   factorScoreTool,
   factorCatalogTool,
-  // D-12 · 因子发现 L1：自定义表达式因子评估（白名单 DSL）
+  // D-12 · 因子发现 L1：自定义表达式因子评估（白名单 DSL）+ 候选池
+  // （register 门只在 dashboard——agent 物理上没有转正工具）
   factorEvaluateCandidateTool,
+  factorProposeTool,
+  factorListCandidatesTool,
   // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
   paperComposeStrategyTool,
   paperListBacktestRunsTool,

@@ -107,6 +107,36 @@ export type CustomScoreResult = {
   is_likely_redundant: boolean;
 };
 
+/** factor_candidates 一行（D-12 · 因子发现 L1）。 */
+export type FactorCandidateRecord = {
+  id: string;
+  expression: string;
+  expression_hash: string;
+  name: string | null;
+  hypothesis: string;
+  proposed_by: string;
+  venue: string | null;
+  symbol: string | null;
+  timeframe: string | null;
+  test_results: Record<string, unknown>;
+  batch_id: string | null;
+  n_tested: number;
+  status: "pending_review" | "rejected" | "registered";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProposeFactorResult = {
+  candidate_id: string;
+  expression_hash: string;
+  /** false = 撞同表达式已有候选，返老行（幂等） */
+  created: boolean;
+  status: string;
+};
+
 export class FactorClient {
   private readonly http: HttpClient;
 
@@ -197,6 +227,44 @@ export class FactorClient {
       lookback_bars: params.lookbackBars,
       horizon_bars: params.horizonBars,
       quantiles: params.quantiles,
+    });
+  }
+
+  /** D-12：把通过评估的表达式提为候选（status=pending_review，人工审核才 registered）。 */
+  async proposeCandidate(params: {
+    expression: string;
+    hypothesis: string;
+    name?: string;
+    proposedBy?: string;
+    venue?: string;
+    symbol?: string;
+    timeframe?: string;
+    testResults?: Record<string, unknown>;
+    batchId?: string;
+    nTested?: number;
+  }): Promise<ProposeFactorResult> {
+    return await this.http.post<ProposeFactorResult>("/candidates", {
+      expression: params.expression,
+      hypothesis: params.hypothesis,
+      name: params.name,
+      proposed_by: params.proposedBy,
+      venue: params.venue,
+      symbol: params.symbol,
+      timeframe: params.timeframe,
+      test_results: params.testResults ?? {},
+      batch_id: params.batchId,
+      n_tested: params.nTested,
+    });
+  }
+
+  /** D-12：列因子候选（status 过滤）。注意：没有 review 方法——register 门只在 UI。 */
+  async listCandidates(params: {
+    status?: "pending_review" | "registered" | "rejected";
+    limit?: number;
+  } = {}): Promise<FactorCandidateRecord[]> {
+    return await this.http.get<FactorCandidateRecord[]>("/candidates", {
+      status: params.status,
+      limit: params.limit,
     });
   }
 }

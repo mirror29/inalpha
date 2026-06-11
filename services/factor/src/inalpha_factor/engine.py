@@ -16,6 +16,7 @@ import pandas as pd
 
 from .adapters import (
     Alpha101Adapter,
+    CustomAdapter,
     FactorAdapter,
     FactorSpec,
     MacroAdapter,
@@ -99,6 +100,8 @@ class FactorEngine:
             Alpha101Adapter(),
             QlibAlphaAdapter(enabled=settings.qlib_enabled),
             self._macro,
+            # D-12 · 因子发现 L1：registered 自定义表达式（注册表为空 = 无因子）
+            CustomAdapter(),
         ]
 
     # ── catalog ──────────────────────────────────────────────────────

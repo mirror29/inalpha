@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -295,3 +296,76 @@ class CustomScoreResponse(BaseModel):
         default=False,
         description="max_corr ≥ 去相关阈值（默认 0.85）——大概率是已有因子换皮，别 propose",
     )
+
+
+# ── 因子候选池（D-12 · 因子发现 L1 · ADR-0019 简化执行）──────────────
+
+
+class ProposeFactorRequest(BaseModel):
+    """``POST /candidates`` —— 把通过评估的表达式提为候选（status=pending_review）。"""
+
+    expression: str = Field(..., min_length=2, max_length=2000)
+    hypothesis: str = Field(
+        ...,
+        min_length=20,
+        max_length=2000,
+        description="经济学故事门：**为什么**这个因子该有效（行为偏差/结构性约束/信息扩散…），"
+        "不收只有数字没有故事的候选",
+    )
+    name: str | None = Field(default=None, max_length=120)
+    proposed_by: str = Field(default="agent", max_length=120)
+    venue: str | None = Field(default=None, description="评估上下文（复核用）")
+    symbol: str | None = None
+    timeframe: str | None = None
+    test_results: dict[str, Any] = Field(
+        default_factory=dict,
+        description="评估快照：rank_ic / icir / decay_state / max_corr / ic_pvalue / "
+        "adjusted_p 等（/custom/score 的产物 + workflow 的 BH 校正结果）",
+    )
+    batch_id: UUID | None = Field(
+        default=None, description="L1 批次 id（多重检验审计锚点）"
+    )
+    n_tested: int = Field(
+        default=1,
+        ge=1,
+        le=10_000,
+        description="本批/本会话累计评估过多少个候选表达式（BH 校正的 m，**如实自报**）",
+    )
+
+
+class ProposeFactorResponse(BaseModel):
+    candidate_id: UUID
+    expression_hash: str
+    created: bool = Field(description="false = 撞同表达式已有候选，返老行（幂等）")
+    status: str = Field(default="pending_review")
+
+
+class FactorCandidateRecord(BaseModel):
+    """``GET /candidates`` 一行。"""
+
+    id: UUID
+    expression: str
+    expression_hash: str
+    name: str | None = None
+    hypothesis: str
+    proposed_by: str
+    venue: str | None = None
+    symbol: str | None = None
+    timeframe: str | None = None
+    test_results: dict[str, Any] = Field(default_factory=dict)
+    batch_id: UUID | None = None
+    n_tested: int = 1
+    status: Literal["pending_review", "rejected", "registered"]
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReviewFactorCandidateRequest(BaseModel):
+    """``POST /candidates/{id}/review`` —— 人工审核（**不挂任何 LLM tool**）。"""
+
+    action: Literal["register", "reject"]
+    reviewed_by: str = Field(..., min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=1000)

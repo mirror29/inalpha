@@ -387,6 +387,30 @@ export interface FactorEffectiveness {
   decay_state?: "stable" | "fading" | "decaying";
 }
 
+/** factor_candidates 一行(D-12 · 因子发现 L1,审核区块用)。 */
+export interface FactorCandidate {
+  id: string;
+  expression: string;
+  expression_hash: string;
+  name: string | null;
+  hypothesis: string;
+  proposed_by: string;
+  venue: string | null;
+  symbol: string | null;
+  timeframe: string | null;
+  /** 评估快照:rank_ic / icir / decay_state / max_corr / ic_pvalue / adjusted_p... */
+  test_results: Record<string, unknown>;
+  batch_id: string | null;
+  /** 该候选来自一批多少次尝试(BH 的 m,选择效应背景) */
+  n_tested: number;
+  status: "pending_review" | "rejected" | "registered";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** GET /api/factors —— 因子库面板:目录 + 当前标的有效性快照。 */
 export interface FactorsPayload {
   catalog: FactorSpec[];

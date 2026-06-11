@@ -12,12 +12,14 @@ from __future__ import annotations
 
 from .alpha101_adapter import Alpha101Adapter
 from .base import FactorAdapter, FactorSpec
+from .custom_adapter import CustomAdapter
 from .macro_adapter import MacroAdapter
 from .pandas_ta_adapter import PandasTAAdapter
 from .qlib_alpha_adapter import QlibAlphaAdapter
 
 __all__ = [
     "Alpha101Adapter",
+    "CustomAdapter",
     "FactorAdapter",
     "FactorSpec",
     "MacroAdapter",
