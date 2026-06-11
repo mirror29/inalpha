@@ -7,7 +7,8 @@
  * 审计规则：
  *
  * - 非阻塞（``blocking: false``）—— audit 失败不影响业务
- * - 默认 matcher：``"paper.* | live.* | factor.* | research.*"``（业务 tool）
+ * - 默认 matcher：``"paper.* | live.* | factor.* | research.* | data.backfill_bars | skill.*"``
+ *   （业务 tool + skill 触发率统计；纯读 data.get_bars / web.* 不进，避免噪音）
  * - 敏感字段脱敏 —— 凭据（apiKey / token / secret / password / approval_token）+
  *   PII（email / phone / address / wallet / ssn / credit card 等）一起 mask
  * - 字段名匹配**忽略大小写 + 下划线**（``api_key`` / ``apiKey`` / ``API_KEY`` 一视同仁）
@@ -141,7 +142,9 @@ export function defaultAuditRegistration(
   return {
     id: "audit-log",
     event: "PostToolUse",
-    matcher: "paper.* | live.* | factor.* | research.* | data.backfill_bars",
+    // skill.*：ADR-0046 Open Question 1——统计 skill.read 触发率（DeepSeek 对
+    // "清单 + 按需读"的遵从度），决定要不要把高频 skill 摘要升级进常驻 prompt 段。
+    matcher: "paper.* | live.* | factor.* | research.* | data.backfill_bars | skill.*",
     handler: createAuditLogHandler(sinkOrOpts),
     blocking: false,
   };
