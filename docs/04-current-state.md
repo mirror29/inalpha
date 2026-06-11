@@ -335,6 +335,41 @@ live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩
 - 守门：vitest 体检（frontmatter 校验 / 禁引私有路径 / 截断上限）+
   `check-consistency.sh` C7（skills/ 目录结构 + 禁引私有路径）。
 
+## D-12（2026-06-11）因子库闭环：血缘 + 衰减巡检 + monthly 宏观 + 因子发现 L1
+
+把"衰减值如何确定后期策略方向"这条断链接通，并启动因子发现 L1（四个工作流）：
+
+- **因子血缘 + 衰减巡检告警**（migration 0019）：`author_strategy` 加结构化
+  `factorContext` 入参（研究链路驱动时必传，数值禁编造）→ 落
+  `strategy_candidates.factor_snapshot`；start_strategy 起跑 best-effort 拍
+  `factor_baseline`（入场基准）；paper 新增 `FactorPatrol` 独立巡检 task（不嵌
+  交易 loop，按标的分组去重调 factor `/score`），血缘因子进入 decaying →
+  `run_log` warn（code=`factor_decay`，带入场 vs 当前 rank_ic + 累计盈亏）——
+  同 run×因子只告警一次，恢复重置。**只告警不动仓**（不自动停/调/剔，机器审批
+  边界不变）。衰减三态判定（stable/fading/decaying）下沉 factor 服务为单一权威，
+  前端徽章改读服务端 `decay_state`。
+- **monthly FRED 宏观扩容**（ADR-0044 Phase 2 执行）：CPI / 核心 CPI / 失业率 /
+  非农 / M2 共 8 因子（62→70）。per-series 静态发布滞后表（CPI 45d / 就业 40d /
+  M2 60d——统一 shift 对 M2 是 lookahead bug）；staleness 按频率分档（monthly
+  45d，发布严重延迟如实 NaN）；修 warmup 硬编码 120 天缺口（monthly YoY 需
+  ~520d）；取数按原生频率走 `1mo`。
+- **null IC 选择效应基准**：score/snapshot 加 `ic_null_benchmark`（Bailey–LdP
+  E[max|null] 近似）——N 个候选、当前样本量下纯噪声能跑出的期望最大 |IC|；
+  top1 不显著高于它 = 选择效应预警。只透出供判断，不剔除。
+- **因子发现 L1**（migration 0020）：受限 qlib 风格表达式 DSL（白名单递归解释器，
+  零 eval/exec；lookahead 三层防线——TS hook 外围 / 服务端解析期 lag·window
+  字面量强制 / 前瞻收益只在服务端算）+ `POST /custom/score` 一站式评估（有效性
+  + p 值 + 与库查重）+ `factor_candidates` 候选池（hypothesis≥20 经济学故事门、
+  expression_hash 幂等、batch_id/n_tested 多重检验审计锚点）+ `factor_discovery`
+  workflow（并发评估 → 批内 BH 校正 → 冗余/衰减/低置信门 → 自动 propose）。
+  **register 门**：review 端点不挂任何 LLM tool，转正唯一入口是 dashboard
+  /factors 候选区块人工按钮；registered 表达式经 custom adapter 自动进
+  catalog/timing/score（注册即生产，无单独生产表）。
+  新 tools：`factor.evaluate_candidate` / `factor.propose` /
+  `factor.list_candidates` / `factor.run_discovery`。
+
+---
+
 ## 未完成 / 下一步
 
 > 重心：模拟盘（paper）先于实盘（live）。
@@ -353,6 +388,10 @@ LIMIT 单不跨 bar 挂单（#47，当前即时 IOC 语义）；session 持仓 r
 
 多市场日历 follow-up（非阻塞）：盘前 / 盘后时段、指数映射表补全、深交所 XSHE /
 印度 XNSE 精确化（当前分别复用 XSHG / XBOM）。
+
+因子库 follow-up（非阻塞，D-12 显式不做）：衰减告警→自动反思回测（仍人工复盘）、
+自动衰减剔除（仅 ic_null_benchmark 透出）、活动流 factor_decay event kind 前端高亮、
+横截面因子 / Polars 迁移（ADR-0031 欠账不变）、因子发现 L2 多 agent 小组。
 
 ---
 
