@@ -36,6 +36,7 @@ from .engine.pool import shutdown_pool as shutdown_backtest_pool
 from .execution.risk_guard_factory import RiskGuardFactory
 from .execution.risk_rules import load_risk_rules_config
 from .execution.risk_rules.market_calendar import RoutingCalendar
+from .factor_patrol import FactorPatrol
 from .live_runner import LiveRunnerManager
 from .storage import strategy_runs as runs_store
 
@@ -121,6 +122,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         risk_guard_factory=app.state.risk_guard_factory,
         settings=_settings,
     )
+    # D-12 因子衰减巡检（ADR-0047）：独立 task，失败只跳过本轮、绝不影响交易循环
+    app.state.factor_patrol = FactorPatrol(settings=_settings)
+    app.state.factor_patrol.start()
     # D-11 live runner reconcile：内存 task 随重启丢失。
     if _settings.live_runner_resume_on_startup:
         # issue #46：自动 resume——重建 session（DB 持仓 + 预热指标）续跑，而非判死。
@@ -141,6 +145,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await app.state.factor_patrol.stop()
         await app.state.live_runner_manager.stop_all()
         shutdown_backtest_pool()
         await close_pool()

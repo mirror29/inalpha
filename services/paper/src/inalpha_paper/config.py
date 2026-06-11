@@ -148,6 +148,23 @@ class PaperSettings(BaseSettings):
         "无人值守长驻兜底：策略卡死 / 无限空跑也能自动收场。",
     )
 
+    # ─── D-12 · 因子衰减巡检（ADR-0047）────────────────────────────────
+
+    factor_service_url: str = Field(
+        default="http://localhost:8004",
+        alias="FACTOR_SERVICE_URL",
+        description="factor-service 的 base URL；live runner 起跑拍因子基准 + 衰减巡检走这里。",
+    )
+    factor_patrol_interval_s: int = Field(
+        default=3600,
+        alias="INALPHA_FACTOR_PATROL_INTERVAL_S",
+        ge=0,
+        le=86400,
+        description="因子衰减巡检周期（秒，ADR-0047 D3）。0 = 关闭巡检。每轮扫全部 running"
+        " run，按 (venue, symbol, timeframe) 分组去重调 factor /snapshot 对比血缘因子衰减态；"
+        "进入 decaying → run_log 告警一次（恢复 stable 重置）。巡检失败只跳过本轮，绝不影响交易循环。",
+    )
+
 
 @lru_cache(maxsize=1)
 def get_paper_settings() -> PaperSettings:

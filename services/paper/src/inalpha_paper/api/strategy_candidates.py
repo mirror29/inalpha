@@ -112,6 +112,7 @@ async def post_strategy_candidate(
         author_id=author_id,
         owner_account_id=owner_account_id,
         audit=audit_dict,
+        factor_snapshot=req.factor_snapshot,
     )
 
     return AuthorStrategyResponse(

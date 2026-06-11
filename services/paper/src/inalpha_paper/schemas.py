@@ -237,6 +237,12 @@ class AuthorStrategyRequest(BaseModel):
         max_length=2000,
         description="人话说明这个策略的逻辑 / 适用场景 / 关键参数",
     )
+    factor_snapshot: dict[str, Any] | None = Field(
+        default=None,
+        description="生成时因子血缘（ADR-0047）：{venue, symbol, timeframe, as_of, "
+        "factors: [{id, rank_ic, rank_ic_recent, direction, decay_state}], source}。"
+        "orchestration 端 factorContext 透传；缺省 = 本候选未声明因子依赖（不伪造）",
+    )
 
 
 class StrategyCandidateRecord(BaseModel):
@@ -254,6 +260,7 @@ class StrategyCandidateRecord(BaseModel):
     fitness: float | None = None
     last_backtest_run_id: UUID | None = None
     audit: dict[str, Any] | None = None
+    factor_snapshot: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -610,6 +617,15 @@ class StrategyRunRecord(BaseModel):
     run_log: list[dict[str, Any]] = Field(
         default_factory=list,
         description="运行日志（滚动窗口）：每条 {ts, level(info/warn/error), msg, code}",
+    )
+    factor_baseline: dict[str, Any] | None = Field(
+        default=None,
+        description="入场因子基准（ADR-0047）：起跑时拍的 /snapshot 快照，巡检对比锚点。"
+        "factor 服务不可用时为 null（巡检自愈补拍）",
+    )
+    factor_alerts: dict[str, Any] = Field(
+        default_factory=dict,
+        description="衰减告警状态机（ADR-0047）：{factor_id: {state, alerted_at}}",
     )
     started_at: datetime
     stopped_at: datetime | None = None

@@ -33,6 +33,7 @@ from .execution import risk_guard as risk_guard_mod
 from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
 from .execution.risk_guard_factory import RiskGuardFactory
+from .factor_patrol import capture_factor_baseline
 from .fills import apply_fill_to_positions_and_cash
 from .fx import BaseCurrencyConverter, needs_network
 from .kernel.identifiers import InstrumentId, StrategyId
@@ -306,6 +307,10 @@ class LiveRunnerManager:
                         conn, run_id, "warn", f"build retry {build_streak}: {e}", code=code
                     )
                 await asyncio.sleep(min(2 ** build_streak, 60))
+
+        # 入场因子基准（ADR-0047）：best-effort，factor 服务不可用 → 巡检自愈补拍。
+        # 放 build 成功后：candidate 已确认可跑，基准时刻≈真正起跑时刻。
+        await capture_factor_baseline(run, self._settings)
 
         # 去重边界取 DB last_bar_ts 与 warmup_ts 的**较后者**（issue M-1）：
         # resume 续跑时 warmup 已把历史喂到 warmup_ts（可能 > DB last_bar_ts），若只用 DB
