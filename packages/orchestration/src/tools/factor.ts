@@ -206,4 +206,86 @@ export const factorCatalogTool = createTool({
   },
 });
 
-export const factorTools = [factorTimingTool, factorScoreTool, factorCatalogTool] as const;
+// ────────────────────────────────────────────────────────────────────
+// factor.evaluate_candidate —— D-12 · 因子发现 L1：自定义表达式因子评估
+// ────────────────────────────────────────────────────────────────────
+
+export const factorEvaluateCandidateTool = createTool({
+  id: "factor.evaluate_candidate",
+  description: `
+    评估一个**自定义因子表达式**（受限 qlib 风格 DSL）：服务端白名单审计 → 在真实
+    bar 上求值 → 完整有效性（rank_ic / icir / decay_state / p 值）→ 与库内因子去相关
+    对比，一次调用出全套。
+
+    何时用：
+    - 用户/你提出了一个因子假设（"放量大阳后often回吐"），想把它形式化成表达式验证
+    - 因子发现流程的单次评估步（批量验证走 factor.run_discovery workflow，那里强制 BH 校正）
+
+    何时不用：
+    - 评估库里已有的因子 → factor.score（不用重新写表达式）
+    - 写交易策略（有持仓/下单逻辑）→ paper.author_strategy；表达式只是"序列→序列"的信号
+
+    表达式语法（恰好是 Python 表达式子集，但只有白名单算子可用）：
+    - 列引用：$close / $open / $high / $low / $volume
+    - 算子：Ref(s,n) 取 n 根前值 / Delta(s,n) / Mean(s,w) / Std(s,w) / Sum / Max / Min /
+      EMA / WMA / Corr(a,b,w) / Rank(s,w) / Quantile(s,w,q) / Abs / Log / Sign /
+      Greater / Less / If(cond,a,b)；四则运算与比较直接写
+    - 示例：($close - Ref($close, 5)) / Ref($close, 5)（5 根动量）；
+      If($volume > Mean($volume, 20) * 2, Sign(Delta($close, 1)), 0)（放量方向）
+
+    硬约束（违反 → 400，按 message 改写）：
+    - Ref/Delta 的 lag 必须**正整数**——负 lag = 看未来，直接拒
+    - 统计算子必须带 window 字面量（1..500）——没有全样本版，防归一化泄漏
+    - 表达式 ≤ 2KB、复杂度有上限；只能引用 OHLCV 列
+
+    返回读法：
+    - factor.rank_ic / decay_state 等与 factor.score 同口径
+    - ic_pvalue 是参考量级非严格检验；**多次尝试表达式要自报累计次数**——试 30 个
+      总有一个 p 小，这是多重检验作弊，propose 前会做批内 BH 校正
+    - is_likely_redundant=true（与库内因子 |spearman|≥0.85）= 已有因子换皮，别 propose，
+      top_correlated 告诉你撞了谁
+
+    坑：
+    - 单标的单周期的 IC 不代表普适有效；换标的/周期重测再下结论
+    - 评估不落库；想进候选池走 factor.propose（需要 hypothesis 经济学故事）
+  `.trim(),
+  inputSchema: z.object({
+    expression: z
+      .string()
+      .min(2)
+      .max(2000)
+      .describe("受限 DSL 表达式（见 description 语法段）"),
+    name: z.string().max(120).optional().describe("人话名（缺省用表达式截断）"),
+    venue: z.string().min(1).describe("数据源（按市场分类选，不预设默认市场）"),
+    symbol: SymbolSchema,
+    timeframe: TimeframeSchema.default("1h"),
+    asOf: z
+      .string()
+      .datetime({ offset: true })
+      .optional()
+      .describe("评估截止时刻（历史分析用）；缺省 = 现在"),
+    lookbackBars: z.number().int().min(120).max(10000).default(720),
+    horizonBars: z.number().int().min(1).max(60).default(5),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.customScore({
+      expression: inputData.expression,
+      name: inputData.name,
+      venue: inputData.venue,
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe ?? "1h",
+      asOf: inputData.asOf,
+      lookbackBars: inputData.lookbackBars,
+      horizonBars: inputData.horizonBars,
+    });
+  },
+});
+
+export const factorTools = [
+  factorTimingTool,
+  factorScoreTool,
+  factorCatalogTool,
+  factorEvaluateCandidateTool,
+] as const;

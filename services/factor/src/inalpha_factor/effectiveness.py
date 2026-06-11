@@ -97,6 +97,41 @@ def null_ic_benchmark(n_candidates: int, sample_size: int, horizon: int) -> floa
     return float(sigma * e_max)
 
 
+def ic_pvalue(ic: float, sample_size: int, horizon: int = 1) -> float:
+    """Rank IC 的双侧 p 值（t 近似 + 大样本正态；与 null_ic_benchmark 同款 n_eff 折算）。
+
+    ``t = ic·√((n_eff−2)/(1−ic²))``。局限同 :func:`null_ic_benchmark`：1/horizon
+    折算是启发式，p 值是参考量级不是严格检验——L1 pipeline 的 BH 校正消费它做
+    批内排序/粗筛，不做学术意义上的显著性宣称。
+    """
+    n_eff = max(4, sample_size // max(1, horizon))
+    ic = float(min(0.999999, max(-0.999999, ic)))
+    t = abs(ic) * np.sqrt((n_eff - 2) / (1.0 - ic * ic))
+    from statistics import NormalDist
+
+    return float(2.0 * (1.0 - NormalDist().cdf(t)))
+
+
+def bh_adjust(pvalues: list[float]) -> list[float]:
+    """Benjamini–Hochberg 校正（FDR），返回与输入同序的调整后 p 值。
+
+    L1 因子发现 pipeline 的批内强制步骤（ADR-0019 关键约定 4）：一批评估 m 个
+    候选表达式时，原始 p 值必须按 m 校正再做 propose 排序，挡"试 30 个总有一个
+    p<0.05"的多重检验作弊。~20 行 numpy，不引 scipy。
+    """
+    m = len(pvalues)
+    if m == 0:
+        return []
+    p = np.asarray(pvalues, dtype=float)
+    order = np.argsort(p)
+    ranked = p[order] * m / (np.arange(m) + 1)
+    # 从大到小取累计最小，保证调整后 p 值单调
+    ranked = np.minimum.accumulate(ranked[::-1])[::-1]
+    out = np.empty(m, dtype=float)
+    out[order] = np.clip(ranked, 0.0, 1.0)
+    return [float(v) for v in out]
+
+
 def _rank_ic(factor: pd.Series, fwd: pd.Series) -> tuple[float, int]:
     """时序 Rank IC = spearman(rank(factor), rank(fwd))。返回 (ic, sample_size)。"""
     pair = pd.concat([factor, fwd], axis=1).replace([np.inf, -np.inf], np.nan).dropna()

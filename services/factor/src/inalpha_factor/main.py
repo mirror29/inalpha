@@ -17,7 +17,7 @@ from inalpha_shared import (
 )
 
 from . import __version__
-from .api import catalog, compute, health, score, snapshot
+from .api import catalog, compute, custom, health, score, snapshot
 from .config import get_factor_settings
 
 _settings = get_factor_settings()
@@ -44,3 +44,4 @@ app.include_router(catalog.router)
 app.include_router(compute.router)
 app.include_router(score.router)
 app.include_router(snapshot.router)
+app.include_router(custom.router)

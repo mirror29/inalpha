@@ -39,6 +39,11 @@ export {
   defaultStrategyCodeAuditRegistration,
 } from "./handlers/strategy-code-audit.js";
 export type { StrategyCodeAuditOptions } from "./handlers/strategy-code-audit.js";
+export {
+  createFactorExpressionAuditHandler,
+  defaultFactorExpressionAuditRegistration,
+} from "./handlers/factor-expression-audit.js";
+export type { FactorExpressionAuditOptions } from "./handlers/factor-expression-audit.js";
 
 // Stop hook handlers（ADR-0010 §Stop hook 补丁）
 export { createPendingPlanCheckHandler } from "./handlers/pending-plan-check.js";

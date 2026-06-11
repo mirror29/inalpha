@@ -227,3 +227,71 @@ class ComputeErrorResponse(BaseModel):
     available: bool = False
     reason: str
     raw: dict[str, Any] | None = None
+
+
+# ── 自定义因子表达式（D-12 · 因子发现 L1）────────────────────────────
+
+
+class CustomScoreRequest(BaseModel):
+    """``POST /custom/score`` —— 一个受限 qlib 风格表达式的一站式评估。"""
+
+    expression: str = Field(
+        ...,
+        min_length=2,
+        max_length=2000,
+        description="受限 DSL 表达式，如 ($close - Ref($close, 5)) / Ref($close, 5)。"
+        "列引用 $close/$open/$high/$low/$volume；算子白名单见 expression.py（Ref/Delta "
+        "的 lag 必须正整数，统计算子必须带 1..500 的 window 字面量——防 lookahead）",
+    )
+    name: str | None = Field(
+        default=None, max_length=120, description="人话名（缺省用表达式截断）"
+    )
+    venue: str = Field(default="binance")
+    symbol: str = Field(..., examples=["BTC/USDT"])
+    timeframe: str = Field(default="1h")
+    as_of: datetime | None = Field(
+        default=None, description="评估截止时刻（只用 <= as_of 的 bar）；None = 现在"
+    )
+    lookback_bars: int = Field(default=720, ge=120, le=10000)
+    horizon_bars: int = Field(default=5, ge=1, le=60)
+    quantiles: int = Field(default=5, ge=2, le=10)
+
+    @field_validator("as_of", mode="after")
+    @classmethod
+    def _aware(cls, v: datetime | None) -> datetime | None:
+        return _assume_utc_if_naive(v) if v is not None else None
+
+
+class CorrelatedFactor(BaseModel):
+    factor_id: str
+    corr: float = Field(description="与库内因子的 |spearman|（同 df 现算时序）")
+
+
+class CustomScoreResponse(BaseModel):
+    """``POST /custom/score`` 响应：effectiveness + p 值 + 与库相关性一次出全。"""
+
+    venue: str
+    symbol: str
+    timeframe: str
+    as_of: datetime
+    horizon_bars: int
+    bars_used: int
+    available: bool = Field(description="计算是否成功（false 看 reason）")
+    reason: str | None = None
+    expression: str
+    factor: FactorEffectiveness | None = Field(
+        default=None, description="factor_id=custom.<sha16>；available=false 时为 null"
+    )
+    ic_pvalue: float | None = Field(
+        default=None,
+        description="rank_ic 的双侧 p 值（t 近似 + n_eff 按 1/horizon 折算，参考量级"
+        "非严格检验）。多次尝试表达式时自行累计次数，propose 前会做批内 BH 校正",
+    )
+    top_correlated: list[CorrelatedFactor] = Field(
+        default_factory=list, description="与库内价量因子的 |spearman| top5——查重复造轮子"
+    )
+    max_corr: float | None = None
+    is_likely_redundant: bool = Field(
+        default=False,
+        description="max_corr ≥ 去相关阈值（默认 0.85）——大概率是已有因子换皮，别 propose",
+    )
