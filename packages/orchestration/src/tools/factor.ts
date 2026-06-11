@@ -67,6 +67,9 @@ export const factorTimingTool = createTool({
     - rank_ic 是历史统计有效性，非未来保证；direction 只在 |rank_ic| 过阈值才非 0
     - candidates_evaluated 是"top-N 从多少候选里挑的"——候选几十个时最高 |IC| 天然偏乐观
       （多重检验），引用时别把 top1 的 IC 当确定性结论
+    - ic_null_benchmark 把上面这条定量化：纯噪声在同样候选数/样本量下能跑出的期望最大
+      |IC|。top1 的 |rank_ic| 没显著高于它 ⇒ 可能只是选择效应，措辞要降级（"未显著强于
+      噪声基准"）；它是地板不是检验，高于它也不等于必然有效
     - lookbackBars 太小 → low_confidence；horizonBars 决定"预测多远的收益"（默认 5 根）
   `.trim(),
   inputSchema: z.object({

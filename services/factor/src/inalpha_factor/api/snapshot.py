@@ -33,4 +33,5 @@ async def snapshot(req: SnapshotRequest, engine: EngineDep) -> SnapshotResponse:
         top_factors=[FactorEffectiveness(**f) for f in result["top_factors"]],
         candidates_evaluated=result["candidates_evaluated"],
         low_confidence_count=result["low_confidence_count"],
+        ic_null_benchmark=result["ic_null_benchmark"],
     )

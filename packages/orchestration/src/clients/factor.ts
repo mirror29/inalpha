@@ -60,6 +60,11 @@ export type ScoreResult = {
   horizon_bars: number;
   bars_used: number;
   factors: FactorEffectiveness[];
+  /**
+   * 选择效应基准：N 个候选、当前样本量下纯噪声的期望最大 |IC|。
+   * top 因子 |rank_ic| 不显著高于此值 ⇒ 可能是选择效应（地板，不是假设检验）。
+   */
+  ic_null_benchmark?: number;
 };
 
 export type SnapshotResult = {
@@ -76,6 +81,8 @@ export type SnapshotResult = {
   candidates_evaluated: number;
   /** 样本不足被排除排序的因子数 */
   low_confidence_count: number;
+  /** 选择效应基准（同 ScoreResult.ic_null_benchmark） */
+  ic_null_benchmark?: number;
 };
 
 export class FactorClient {

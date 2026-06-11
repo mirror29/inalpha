@@ -24,7 +24,7 @@ from .adapters import (
 from .adapters.macro_adapter import MACRO_TIMEFRAMES
 from .config import FactorSettings
 from .data_client import DataClient
-from .effectiveness import EffResult, score_factor
+from .effectiveness import EffResult, null_ic_benchmark, score_factor
 
 logger = logging.getLogger(__name__)
 
@@ -386,10 +386,15 @@ class FactorEngine:
                 min_samples=self._settings.min_effective_samples,
             )
             results.append(_eff_to_dict(spec, eff))
+        # 选择效应基准（ADR-0043 D4 延伸）：N 个候选、n_eff 样本下纯噪声能跑出的
+        # 期望最大 |IC|。sample_size 取本批最大值（代表性样本量，偏保守的基准）。
+        max_samples = max((r["sample_size"] for r in results), default=0)
+        benchmark = null_ic_benchmark(len(results), max_samples, horizon_bars)
         return {
             "as_of": as_of,
             "bars_used": len(df),
             "factors": results,
+            "ic_null_benchmark": benchmark,
         }, series
 
     async def snapshot(
@@ -445,6 +450,7 @@ class FactorEngine:
             "top_factors": top,
             "candidates_evaluated": len(factors),
             "low_confidence_count": len(factors) - len(confident),
+            "ic_null_benchmark": scored["ic_null_benchmark"],
         }
 
 

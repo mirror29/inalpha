@@ -30,4 +30,5 @@ async def score(req: ScoreRequest, engine: EngineDep) -> ScoreResponse:
         horizon_bars=req.horizon_bars,
         bars_used=result["bars_used"],
         factors=[FactorEffectiveness(**f) for f in result["factors"]],
+        ic_null_benchmark=result["ic_null_benchmark"],
     )

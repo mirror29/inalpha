@@ -89,8 +89,10 @@ def test_snapshot_returns_top_n() -> None:
         # ADR-0043 D4：选择透明化 + 新有效性字段
         assert body["candidates_evaluated"] >= 50  # 三源扩容后候选 ≥ 50
         assert body["low_confidence_count"] >= 0
+        # 选择效应基准（D4 延伸）：候选 ≥50、样本有限 → 噪声地板必然为正
+        assert body["ic_null_benchmark"] > 0
         for f in body["top_factors"]:
-            assert {"rank_ic_recent", "turnover", "corr_pruned"} <= set(f)
+            assert {"rank_ic_recent", "turnover", "corr_pruned", "decay_state"} <= set(f)
     finally:
         app.dependency_overrides.clear()
 
