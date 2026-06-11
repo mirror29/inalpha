@@ -232,3 +232,39 @@ class WebSearchResponse(BaseModel):
     query: str
     backend: str
     results: list[WebSearchResult] = Field(default_factory=list)
+
+
+# ────────────────────────────────────────────────────────────────────
+# Web fetch（证据链：URL → 可引用的正文文本）
+# ────────────────────────────────────────────────────────────────────
+
+
+class WebFetchResponse(BaseModel):
+    url: str
+    final_url: str | None = None
+    title: str | None = None
+    published_at: str | None = None
+    """trafilatura 从页面元数据抽的发布日期（ISO 字符串）；抽不到为 None。"""
+    text: str = ""
+    truncated: bool = False
+    fetched_at: str | None = None
+    error: str | None = None
+
+
+# ────────────────────────────────────────────────────────────────────
+# Symbol search（公司名 / 关键词 → ticker 解析）
+# ────────────────────────────────────────────────────────────────────
+
+
+class SymbolSearchResult(BaseModel):
+    symbol: str
+    """已按 venue 约定格式化：akshare → ``sh.600519``；yfinance → ``AAPL`` / ``0700.HK``。"""
+    name: str = ""
+    exchange: str = ""
+    venue: str
+    quote_type: str = ""
+
+
+class SymbolSearchResponse(BaseModel):
+    query: str
+    results: list[SymbolSearchResult] = Field(default_factory=list)

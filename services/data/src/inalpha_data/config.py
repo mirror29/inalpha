@@ -48,6 +48,22 @@ class DataSettings(BaseSettings):
     )
     """同时在飞的搜索数上限。analyst 常 ~10 个并行查询，限并发避免线程池 + GIL 把 async 事件循环饿死。"""
 
+    web_search_cache_ttl_s: int = Field(default=600, alias="WEB_SEARCH_CACHE_TTL_S")
+    """搜索结果进程内缓存 TTL（秒）。深扫一轮常复用同 query；0 = 关缓存。只缓存非空结果。"""
+
+    # --- web_fetch 网页正文抓取（证据链：把 URL 变成可引用的正文） ---
+    web_fetch_timeout_s: int = Field(default=15, alias="WEB_FETCH_TIMEOUT_S")
+    """单次 fetch 整体超时（秒，含下载 + 正文抽取）。"""
+
+    web_fetch_max_bytes: int = Field(default=2_097_152, alias="WEB_FETCH_MAX_BYTES")
+    """响应体读取上限（字节，默认 2MB）。流式读到上限即停，防大文件吃内存。"""
+
+    web_fetch_max_chars: int = Field(default=40_000, alias="WEB_FETCH_MAX_CHARS")
+    """抽取后正文字符上限（默认 4 万字符 ≈ 一篇长公告）。超出截断并标 truncated。"""
+
+    web_fetch_max_concurrency: int = Field(default=4, alias="WEB_FETCH_MAX_CONCURRENCY")
+    """同时在飞的 fetch 数上限，治理思路同 web_search。"""
+
 
 @lru_cache(maxsize=1)
 def get_data_settings() -> DataSettings:

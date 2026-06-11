@@ -20,6 +20,7 @@ dependencies = [
     "ddgs>=9.0.0",
     # FRED 全球宏观（圣路易斯联储），免费 key 注册；80 万+ 经济序列
     "fredapi>=0.5.2",
+    "trafilatura>=2.1.0",
 ]
 
 [dependency-groups]
