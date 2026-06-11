@@ -105,4 +105,23 @@ export class DataClient {
       return { available: false, reason: String(err) };
     }
   }
+
+  async searchSymbols(params: {
+    query: string;
+    venue?: string;
+    maxResults?: number;
+  }): Promise<Record<string, unknown>> {
+    try {
+      return await this.http.get<Record<string, unknown>>("/symbols/search", {
+        query: params.query,
+        venue: params.venue ?? "auto",
+        max_results: String(params.maxResults ?? 10),
+      });
+    } catch (err) {
+      if (err instanceof HttpClientError) {
+        return { query: params.query, results: [], error: `upstream ${err.status}` };
+      }
+      return { query: params.query, results: [], error: String(err) };
+    }
+  }
 }

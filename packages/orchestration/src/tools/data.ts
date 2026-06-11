@@ -312,4 +312,51 @@ export const dataGetFundamentalsTool = createTool({
   },
 });
 
-export const dataTools = [dataGetBarsTool, dataBackfillBarsTool, dataGetTickerTool, dataGetFundamentalsTool] as const;
+// ────────────────────────────────────────────────────────────────────
+// data.search_symbol —— 公司名 / 关键词 → ticker 解析
+// ────────────────────────────────────────────────────────────────────
+
+export const dataSearchSymbolTool = createTool({
+  id: "data.search_symbol",
+  description: `
+    按公司名 / 关键词 / 代码片段检索 ticker。A股走 akshare 全量代码表
+    （返回 sh.600519 格式，直接可喂 get_bars / get_fundamentals），
+    其他市场走 Yahoo 全球检索（返回 AAPL / 0700.HK 等 yahoo 格式，venue=yfinance）。
+
+    何时用：
+    - 从新闻 / 研究里拿到公司名，要落到行情 / 财报数据前先解析出 symbol
+    - 用户报了个公司名但你不确定代码——**禁止凭训练记忆猜代码**，用本 tool 核
+    - 建候选池时批量确认每家公司的可交易代码
+
+    何时不用：
+    - 用户已给出明确 symbol → 直接用
+    - 加密货币对（BTC/USDT 这类）→ 不是股票检索范围
+
+    坑：
+    - venue=auto：中文 query 先查 A股表再补 Yahoo；纯英文只走 Yahoo
+    - 北交所代码暂不支持（会被过滤）；返回空 ≠ 公司不存在，可换关键词再试
+    - 返回的 venue 字段标明该 symbol 该配哪个数据源，喂 get_fundamentals 时带上
+  `.trim(),
+  inputSchema: z.object({
+    query: z.string().min(1).max(80).describe("公司名 / 代码片段，如公司中文名或英文名"),
+    venue: z.enum(["auto", "akshare", "yfinance"]).default("auto"),
+    maxResults: z.number().int().min(1).max(20).default(10),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.searchSymbols({
+      query: inputData.query,
+      venue: inputData.venue ?? "auto",
+      maxResults: inputData.maxResults ?? 10,
+    });
+  },
+});
+
+export const dataTools = [
+  dataGetBarsTool,
+  dataBackfillBarsTool,
+  dataGetTickerTool,
+  dataGetFundamentalsTool,
+  dataSearchSymbolTool,
+] as const;

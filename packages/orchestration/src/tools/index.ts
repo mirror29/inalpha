@@ -12,6 +12,7 @@ import {
   dataGetBarsTool,
   dataGetFundamentalsTool,
   dataGetTickerTool,
+  dataSearchSymbolTool,
   dataTools,
 } from "./data.js";
 import {
@@ -66,7 +67,7 @@ import {
 } from "./strategy.js";
 import { skillReadTool, skillTools } from "./skill.js";
 import { swarmRunBacktestGridTool, swarmTools } from "./swarm.js";
-import { webSearchNewsTool, webSearchTool, webTools } from "./web.js";
+import { webFetchTool, webSearchNewsTool, webSearchTool, webTools } from "./web.js";
 import {
   approveTradePlanTool,
   createTradePlanTool,
@@ -83,6 +84,7 @@ export {
   dataGetBarsTool,
   dataGetFundamentalsTool,
   dataGetTickerTool,
+  dataSearchSymbolTool,
   divinationCastHexagramTool,
   divinationDrawTarotTool,
   executeTradePlanTool,
@@ -121,6 +123,7 @@ export {
   schedulerTriggerJobTool,
   skillReadTool,
   swarmRunBacktestGridTool,
+  webFetchTool,
   webSearchNewsTool,
   webSearchTool,
 };
@@ -188,9 +191,12 @@ export const orchestratorToolList = [
   dataBackfillBarsTool,
   dataGetTickerTool,
   dataGetFundamentalsTool,
-  // D-10：web 搜索
+  // 公司名 → ticker 解析（候选池构建，禁训练记忆猜代码）
+  dataSearchSymbolTool,
+  // D-10：web 搜索；web.fetch 读原文补证据链最后一公里
   webSearchTool,
   webSearchNewsTool,
+  webFetchTool,
   // ADR-0046：投研方法论 skill 按需读取（清单在 <skills> prompt 段）
   skillReadTool,
   paperListStrategiesTool,
