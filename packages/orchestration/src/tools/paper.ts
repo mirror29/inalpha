@@ -554,7 +554,8 @@ export const paperListStrategyRunDecisionsTool = createTool({
   `.trim(),
   inputSchema: z.object({
     runId: z.string().uuid().describe("strategy_run id"),
-    limit: z.number().int().min(1).max(500).default(200),
+    // 默认 50（复盘通常看最近几十条决策就够；200 条 ≈ 数万 token 进消息历史）
+    limit: z.number().int().min(1).max(500).default(50),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
