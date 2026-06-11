@@ -42,6 +42,17 @@ interface SchedulerJobsResp {
 interface PendingResp {
   pending: Array<{ requestId: string; toolName: string; createdAt: string }>;
 }
+/** /permissions/history 一行 —— 审批审计终态(mastra Postgres,重启不丢)。 */
+interface ApprovalHistoryResp {
+  history: Array<{
+    requestId: string;
+    toolName: string;
+    status: "pending" | "allowed" | "denied" | "expired_timeout" | "expired_restart";
+    via: "user" | "timeout" | "restart" | null;
+    createdAt: string;
+    resolvedAt: string | null;
+  }>;
+}
 /** /backtest_runs 一行(只声明活动流用到的字段)。 */
 interface BacktestRunRow {
   run_id: string;
@@ -90,8 +101,17 @@ export async function GET() {
   let activeLockCount = 0;
 
   // mastra(scheduler / permissions):dev 端不需要 JWT,auth:false。
-  const [jobsR, runsR, pendingR, locksR, strategyRunsR, ordersR, backtestsR, threadsR] =
-    await Promise.allSettled([
+  const [
+    jobsR,
+    runsR,
+    pendingR,
+    approvalHistoryR,
+    locksR,
+    strategyRunsR,
+    ordersR,
+    backtestsR,
+    threadsR,
+  ] = await Promise.allSettled([
       backendFetch<SchedulerJobsResp>("mastra", "/scheduler/jobs", {
         auth: false,
         timeoutMs: 5000,
@@ -103,6 +123,12 @@ export async function GET() {
       }),
       backendFetch<PendingResp>("mastra", "/permissions/pending", {
         auth: false,
+        timeoutMs: 5000,
+      }),
+      // 审批审计历史(终态)—— 决策/超时/重启扫尾后仍可回看,不再"决策即消失"。
+      backendFetch<ApprovalHistoryResp>("mastra", "/permissions/history", {
+        auth: false,
+        query: { limit: 20 },
         timeoutMs: 5000,
       }),
       // 历史锁(含已过期)—— 短时效锁过期后仍留在活动流,不静默消失;
@@ -165,6 +191,33 @@ export async function GET() {
         detail: "awaiting approval",
         outcome: "pending",
         tone: "gold",
+        href: null,
+      });
+    }
+  } else {
+    sources.permissions = false;
+  }
+
+  // ── permissions(审批终态历史)——
+  // 与上面"待审批"同 kind/同 id 前缀:挂起期间由内存 pending 源展示(有实时 deadline),
+  // 这里只映射终态行(status=pending 跳过,避免同一事件双条);挂起被消费后自然切换成终态。
+  if (approvalHistoryR.status === "fulfilled") {
+    const detailByStatus: Record<string, string> = {
+      allowed: "approved by user",
+      denied: "denied by user",
+      expired_timeout: "expired (timeout)",
+      expired_restart: "expired (server restart)",
+    };
+    for (const h of approvalHistoryR.value.history) {
+      if (h.status === "pending") continue;
+      events.push({
+        id: `perm:${h.requestId}`,
+        kind: "permission",
+        ts: h.resolvedAt ?? h.createdAt,
+        title: h.toolName,
+        detail: detailByStatus[h.status] ?? h.status,
+        outcome: h.status,
+        tone: h.status === "allowed" ? "bull" : h.status === "denied" ? "fox" : "cyan",
         href: null,
       });
     }
