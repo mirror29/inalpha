@@ -320,6 +320,13 @@ def _fetch_financials_sync(symbol: str) -> dict[str, Any]:
         "grossMargins": "gross_margin",
         "profitMargins": "net_margin",
         "debtToEquity": "debt_to_equity",
+        # 财务质量项（红旗检查：现金流 vs 利润、偿债能力）；info 缺字段时静默跳过
+        "operatingCashflow": "operating_cashflow",
+        "freeCashflow": "free_cashflow",
+        "totalCash": "total_cash",
+        "totalDebt": "total_debt",
+        "currentRatio": "current_ratio",
+        "quickRatio": "quick_ratio",
     }
     for yf_key, norm_key in _field_map.items():
         val = info.get(yf_key)
