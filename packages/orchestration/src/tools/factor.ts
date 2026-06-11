@@ -57,6 +57,8 @@ export const factorTimingTool = createTool({
 
     返回 top_factors[]：每个含 name / kind / value（最新读数）/ rank_ic（越大越有效，正=因子高→后市涨）/
     rank_ic_recent（近 1/3 窗 IC，与 rank_ic 反号或趋零=因子正在衰减，引用时要降权并说明）/
+    decay_state（服务端衰减三态 stable/fading/decaying，ADR-0047——设计策略时连同 rank_ic
+    一起填进 paper.author_strategy 的 factorContext 建血缘；decaying 的因子别当核心信号）/
     turnover（0-1 换手，高 IC+高换手的信号实盘打折）/ direction（+1 看多 / -1 看空 / 0 无效）/
     strength（0-1）/ low_confidence / corr_pruned（被它挤掉的同质因子，top-N 已去相关）。
     available=false 或 top 为空时说明该标的样本不足，**别硬编故事**，如实告诉用户数据不够。

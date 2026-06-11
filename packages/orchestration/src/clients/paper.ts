@@ -100,6 +100,11 @@ export type AuthorStrategyParams = {
   code: string;
   /** 人话说明策略逻辑 / 适用场景（≤ 2000 字符） */
   description?: string;
+  /**
+   * 生成时因子血缘（ADR-0047）：策略设计依据的 top 因子 + 衰减态快照。
+   * 原样落 strategy_candidates.factor_snapshot（snake_case 已由调用方转换）。
+   */
+  factorSnapshot?: Record<string, unknown>;
 };
 
 export type AuthorStrategyResult = {
@@ -401,6 +406,7 @@ export class PaperClient {
     return await this.http.post<AuthorStrategyResult>("/strategy_candidates", {
       code: params.code,
       description: params.description ?? "",
+      factor_snapshot: params.factorSnapshot,
     });
   }
 
