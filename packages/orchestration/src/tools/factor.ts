@@ -11,6 +11,10 @@ import { z } from "zod";
 import { defaultServiceSubject, mintServiceToken } from "../auth.js";
 import { FactorClient } from "../clients/factor.js";
 import { getSettings } from "../config.js";
+import {
+  DiscoveryInputSchema,
+  DiscoveryOutputSchema,
+} from "../mastra/workflows/factor-discovery.js";
 
 // 只列 factor engine 真正支持的周期（_tf_seconds）。1mo/1q/1y 引擎不识别会按 1h 误算
 // 窗口，且月/季/年线 bar 太少算不出有意义的有效性，故不暴露给 agent。
@@ -378,6 +382,63 @@ export const factorListCandidatesTool = createTool({
   },
 });
 
+// ────────────────────────────────────────────────────────────────────
+// factor.run_discovery —— L1 批量验证 workflow 入口
+// ────────────────────────────────────────────────────────────────────
+
+export const factorRunDiscoveryTool = createTool({
+  id: "factor.run_discovery",
+  description: `
+    批量验证自定义因子表达式（**L1 强制 pipeline**）：validate（fail-fast）→ 并发
+    评估（concurrency 4 打 /custom/score）→ **批内 BH 多重检验校正**（m=批大小）→
+    冗余剪枝（与库 |spearman|≥0.8 砍）+ 衰减/低置信门 → 幸存者自动 factor.propose
+    （带 batch_id + n_tested 审计锚点，仍需人工 register）。
+
+    何时用：
+    - 一次有 2-10 个因子假设要系统验证——**不要**在 loop 里逐个调
+      factor.evaluate_candidate 然后手挑 p 最小的（那正是 BH 要防的作弊）
+    - 用户说"帮我从这些想法里筛出能用的因子"
+
+    何时不用：
+    - 只有 1 个表达式 → factor.evaluate_candidate 单发（评估完自行决定是否 propose）
+    - 还没形成表达式（只有模糊想法）→ 先对话把假设形式化
+
+    输入要点：
+    - 每个 candidate 必须自带 hypothesis（≥20 字经济学故事）——过不了 propose 门的
+      表达式连评估都别浪费
+    - propose=false 可 dry-run（只打分不落候选池）
+    - maxAdjustedP 默认 0.1 / maxLibraryCorr 默认 0.8，一般不用动
+
+    输出读法：
+    - verdicts 每条带 outcome（proposed / rejected_adjusted_p / rejected_redundant /
+      rejected_decaying / rejected_low_confidence / rejected_eval_failed）+ detail 原因
+    - **rejected 不是失败**——pipeline 把不该进候选池的挡住了，向用户如实转述原因
+    - proposed 的候选去向：dashboard /factors 候选区块等人工审核；你没有转正工具
+
+    坑：
+    - 批里混一条明显 lookahead（负 lag）→ 整批 fail-fast 拒绝（修了重提）
+    - 同批重复表达式自动去重；跨批重复 propose 幂等返老行
+    - 单标的单周期验证，通过≠普适——重要候选换标的/周期再跑一批
+  `.trim(),
+  inputSchema: DiscoveryInputSchema,
+  outputSchema: DiscoveryOutputSchema,
+  execute: async (inputData, ctx) => {
+    const mastra = ctx?.mastra;
+    if (!mastra) {
+      throw new Error("factor.run_discovery: mastra ctx missing (cannot reach workflow)");
+    }
+    const wf = mastra.getWorkflow("factor_discovery");
+    const run = await wf.createRun();
+    const result = await run.start({ inputData });
+    if (result.status !== "success") {
+      throw result.status === "failed"
+        ? result.error
+        : new Error(`factor_discovery workflow status: ${result.status}`);
+    }
+    return result.result as z.infer<typeof DiscoveryOutputSchema>;
+  },
+});
+
 export const factorTools = [
   factorTimingTool,
   factorScoreTool,
@@ -385,4 +446,5 @@ export const factorTools = [
   factorEvaluateCandidateTool,
   factorProposeTool,
   factorListCandidatesTool,
+  factorRunDiscoveryTool,
 ] as const;

@@ -48,6 +48,7 @@ import { bootstrapScheduler } from "../scheduler/index.js";
 import { orchestrator } from "./agents/orchestrator.js";
 import { helloSpikeWorkflow } from "./workflows/_hello.js";
 import { backtestGridWorkflow } from "./workflows/backtest-grid.js";
+import { factorDiscoveryWorkflow } from "./workflows/factor-discovery.js";
 
 // D-9：observability storage —— traces UI tab 必需。LibSQL file DB 零运维。
 // 路径与 memory 库同目录（package 根 .data/，cwd 无关，见 paths.ts）。
@@ -79,6 +80,8 @@ export const mastra = new Mastra({
   workflows: {
     hello_spike: helloSpikeWorkflow,
     backtest_grid: backtestGridWorkflow,
+    // D-12 · 因子发现 L1：批量验证表达式（强制 BH 校正 + 冗余剪枝 + 故事门）
+    factor_discovery: factorDiscoveryWorkflow,
   },
   logger: new PinoLogger({ name: "inalpha", level: "info" }),
   observability,
