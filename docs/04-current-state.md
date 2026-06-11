@@ -313,6 +313,28 @@ live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩
 
 ---
 
+## Agent Skills（2026-06-11）投研方法论按需加载 + serenity 首个外来 skill
+
+开源社区 AgentSkills 格式（`SKILL.md` + frontmatter + `references/`）的产品内加载机制，
+让 orchestrator 能吸收外部投研方法论辅助用户研究（ADR-0046）：
+
+- **progressive disclosure**：启动扫描 `packages/orchestration/skills/` 各 skill 的
+  frontmatter，`<skills>` 清单段（每 skill 一行 name — description + 使用纪律）注入
+  dynamic instructions；正文与 references 经新 tool `skill.read` 按需进 context
+  （64KB 截断）。无 skill 时清单段为空串，机制零成本。
+- **fail-open**：单 skill frontmatter 坏 → warn + skip；目录缺失 → 空清单。skill 是
+  增强不是依赖，永不拖挂 orchestrator（同 MCP 加载语义）。
+- **信任边界**：只读 `.md/.json/.txt` 白名单 + 路径越界拒绝；外来 skill 的 `scripts/`
+  不 vendor 不执行（评分逻辑转 markdown rubric 内联）；`examples/` 不 vendor（含具体
+  标的，违反"示例不锁死预期"纪律）。
+- **首个外来 skill**：[muxuuu/serenity-skill](https://github.com/muxuuu/serenity-skill)
+  （MIT）——"热点 → 拆产业链 → 找供应链瓶颈 → 筛优先研究方向"的结构化投研方法论。
+  全文改写接入：description 意图化（去写死触发短语）、市场无关化、所有"查数据"步骤
+  映射到 `web.* / data.*(fresh) / factor.* / research.*` 并强制"禁训练记忆代答 +
+  输出标注数据截止"（金融时效性纪律）、交易动作接 `trade.create_plan` 审批链。
+- 守门：vitest 体检（frontmatter 校验 / 禁引私有路径 / 截断上限）+
+  `check-consistency.sh` C7（skills/ 目录结构 + 禁引私有路径）。
+
 ## 未完成 / 下一步
 
 > 重心：模拟盘（paper）先于实盘（live）。
