@@ -23,6 +23,10 @@ import { Agent } from "@mastra/core/agent";
 
 import { buildLLM } from "../llm/provider.js";
 import { sharedMemory } from "../memory.js";
+import {
+  createPaperPendingPlanFetcher,
+  createPendingPlanNoticeProcessor,
+} from "../../hooks/index.js";
 import { loadWiredMcpTools, wiredOrchestratorTools } from "../wired-tools.js";
 
 const INSTRUCTIONS = `
@@ -639,6 +643,13 @@ export const orchestrator = new Agent({
     );
   },
   memory: sharedMemory,
+  // issue #65 / ADR-0010 §Stop hook：chat 路径的 pending plan 残留警示。
+  // Mastra 1.36 无"turn 结束后强制续 loop"钩子位，chat 侧降级为输出警示
+  // （追加到最终回复，用户与下一 turn 的 LLM 都能看见）；真·强制续 turn
+  // 在 scheduler runner（我们自己持有 generate 循环）实现。
+  outputProcessors: [
+    createPendingPlanNoticeProcessor({ fetcher: createPaperPendingPlanFetcher() }),
+  ],
   defaultOptions: {
     // 单 turn 内 plan→approve→execute = 3 个 tool call + 各自 hook + 取价兜底
     // 给 15 步留余量（D-8a 25 步是因为还有 subagent 嵌套）
