@@ -17,12 +17,25 @@ from inalpha_shared import (
 )
 
 from . import __version__
-from .api import backfill, bars, fundamentals, fx, health, news, ticker, web_search
+from .api import (
+    backfill,
+    bars,
+    fundamentals,
+    fx,
+    health,
+    news,
+    symbols,
+    ticker,
+    web_fetch,
+    web_search,
+)
 from .config import get_data_settings
 from .connectors import akshare as akshare_conn
 from .connectors import alpaca as alpaca_conn
 from .connectors import binance as binance_conn
 from .connectors import fred as fred_conn
+from .connectors import symbol_search as symbol_search_conn
+from .connectors import web_fetch as web_fetch_conn
 from .connectors import web_search as web_search_conn
 from .connectors import yfinance_conn
 
@@ -50,9 +63,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yfinance_conn.init_connector()
     fred_conn.init_connector(api_key=_settings.fred_api_key)
     web_search_conn.init_connector()
+    web_fetch_conn.init_connector()
+    symbol_search_conn.init_connector()
     try:
         yield
     finally:
+        await symbol_search_conn.close_connector()
+        await web_fetch_conn.close_connector()
         await fred_conn.close_connector()
         await yfinance_conn.close_connector()
         await web_search_conn.close_connector()
@@ -79,3 +96,5 @@ app.include_router(news.router)
 app.include_router(fundamentals.router)
 app.include_router(fx.router)
 app.include_router(web_search.router)
+app.include_router(web_fetch.router)
+app.include_router(symbols.router)
