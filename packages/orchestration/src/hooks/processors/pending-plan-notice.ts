@@ -24,7 +24,9 @@ const PLAN_MUTATING_TOOLS = ["trade.create_plan", "trade.approve_plan"];
 const DEFAULT_NOTICE_TEMPLATE =
   "[system_notice] {count} trade plan(s) ({ids}) are still in " +
   "approved / pending_approval state — not executed yet. " +
-  "Execute them (trade.execute_plan) or reject (trade.reject_plan) explicitly.";
+  "To execute: pending_approval plans need trade.approve_plan first (returns the " +
+  "approvalToken); for approved plans fetch the approvalToken via trade.get_plan; " +
+  "then trade.execute_plan with that token — or trade.reject_plan explicitly.";
 
 export type PendingPlanNoticeOptions = {
   /** 拉 plan 的函数；不传 → processor 静默 noop（dev / 测试时友好） */
@@ -59,8 +61,10 @@ export function createPendingPlanNoticeProcessor(
       // 契约漂移留痕（PR review）：本判定依赖 Mastra 内部 steps[].toolCalls[].toolName，
       // 非公共稳定 schema。一旦结构变化，nullish guard 让这里静默 noop——护栏失效
       // 且无人察觉。"有 toolCalls 条目但一个 toolName 都解析不出" = 结构已变的信号。
+      // warn 而非 debug（PR review）：生产默认不出 debug，漂移信号等于没留；
+      // 只在结构真变了才触发，不构成常态噪音
       if (calls.length > 0 && names.every((n) => n === "")) {
-        console.debug(
+        console.warn(
           "[pending-plan-notice] steps[].toolCalls 无可解析 toolName——Mastra 结构可能已变更，pending plan 警示在静默失效",
         );
       }
