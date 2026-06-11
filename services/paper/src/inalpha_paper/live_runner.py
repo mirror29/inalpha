@@ -250,7 +250,9 @@ class LiveRunnerManager:
                         "live runner 默认 fail-closed 拒绝起跑；如确需无风控运行，"
                         "设 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false",
                     )
-                    await runs_store.set_status(conn, run_id, "errored")
+                    # only_if_status：与 stop() 竞态守卫（PR review），下同——_run_loop 全部
+                    # 离开 running 的写路径同口径，后写者不覆盖对方终态
+                    await runs_store.set_status(conn, run_id, "errored", only_if_status="running")
                 return
             # 显式放行：留一条醒目告警，让用户知道这个 run 在零风控下跑
             _logger.warning("live run %s: 风控不可用但已显式放行，零风控运行", run_id)
@@ -281,7 +283,9 @@ class LiveRunnerManager:
                         await runs_store.append_error_log(
                             conn, run_id, f"build failed: {e}", code=code
                         )
-                        await runs_store.set_status(conn, run_id, "errored")
+                        await runs_store.set_status(
+                            conn, run_id, "errored", only_if_status="running"
+                        )
                     return
                 async with get_conn() as conn:
                     await runs_store.append_log(
@@ -376,7 +380,9 @@ class LiveRunnerManager:
                 if not retryable or err_streak >= self._settings.live_max_error_streak:
                     try:
                         async with get_conn() as conn:
-                            await runs_store.set_status(conn, run_id, "errored")
+                            await runs_store.set_status(
+                                conn, run_id, "errored", only_if_status="running"
+                            )
                     except Exception:
                         _logger.exception("live run %s: 置 errored 失败", run_id)
                     return
