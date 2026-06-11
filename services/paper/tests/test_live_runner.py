@@ -609,6 +609,25 @@ async def test_mark_loop_crashed_sets_errored_even_if_log_write_fails(
     assert fresh["status"] == "errored"  # 日志丢了，但状态没卡 running
 
 
+async def test_set_status_only_if_running_guards_terminal_state(
+    app_with_lifespan: Any,
+) -> None:
+    """only_if_status 原子守卫：终态不被 read-then-write 竞态覆盖（PR review）。
+
+    模拟 stop() 与 loop_crashed 兜底穿插的危险方向：run 已 errored（crash 终态），
+    迟到的 stop() 写 stopped 必须未命中——否则 crash 被静默埋掉。
+    """
+    run = await _insert_run(uuid4())
+    async with get_conn() as conn:
+        await runs_store.set_status(conn, run["id"], "errored")
+        res = await runs_store.set_status(
+            conn, run["id"], "stopped", only_if_status="running"
+        )
+        fresh = await runs_store.get(conn, run["id"])
+    assert res is None  # 守卫未命中
+    assert fresh["status"] == "errored"  # crash 终态保住了
+
+
 async def test_done_callback_ignores_cancellation(
     app_with_lifespan: Any, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
