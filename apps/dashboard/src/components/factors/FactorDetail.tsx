@@ -14,11 +14,12 @@ import { fmtNum } from "@/lib/format";
 export type DecayState = "stable" | "fading" | "decaying";
 
 /**
- * 衰减判定 —— 近期 IC(近 1/3 样本)对全样本 IC:
- * 反号 / 趋零 = 衰减;量级保住 60% 以上 = 稳定;其间 = 走弱。
- * 阈值与 factor 服务 rank_ic_recent 的语义(schemas.FactorEffectiveness)对齐。
+ * 衰减判定 —— ADR-0047 D2 起以 factor 服务返回的 decay_state 为单一权威
+ * (effectiveness.decay_state(),前端不再自算);本地公式只作旧响应缺字段时的
+ * 回退(同阈值:反号/趋零=衰减,量级保住 60%+=稳定,其间=走弱),一个版本后删。
  */
 export function decayState(f: FactorEffectiveness): DecayState {
+  if (f.decay_state) return f.decay_state;
   const ic = f.rank_ic;
   const recent = f.rank_ic_recent ?? 0;
   if (recent === 0 || Math.sign(recent) !== Math.sign(ic)) return "decaying";

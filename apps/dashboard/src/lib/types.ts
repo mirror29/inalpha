@@ -380,6 +380,11 @@ export interface FactorEffectiveness {
   long_short_return: number;
   /** 样本不足标记。 */
   low_confidence: boolean;
+  /**
+   * 衰减三态(ADR-0047 服务端单一权威):decaying=recent 反号/趋零;
+   * stable=量级保住 60%+;fading=其间。旧响应可能缺失(本地回退判定)。
+   */
+  decay_state?: "stable" | "fading" | "decaying";
 }
 
 /** GET /api/factors —— 因子库面板:目录 + 当前标的有效性快照。 */
