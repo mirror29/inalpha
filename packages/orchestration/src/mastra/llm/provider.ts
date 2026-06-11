@@ -10,7 +10,9 @@
  *   `deepseek` / `openai` / `kimi` / `zhipu` / `ollama`
  * - **原生 SDK**：`anthropic` / `gemini`
  *
- * 调用方应在 import 列表最前面 `import "../../env.js"`，确保 dotenv 已加载。
+ * env 加载：本模块顶层显式调 `ensureEnvLoaded()`——不能依赖调用方的
+ * side-effect `import "../../env.js"`（mastra bundler 会丢纯副作用 import，
+ * 见 env.ts 注释，2026-06-11 实测）。
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -18,6 +20,10 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "@mastra/core/llm";
+
+import { ensureEnvLoaded } from "../../env.js";
+
+ensureEnvLoaded();
 
 export type LLMProvider =
   | "deepseek"

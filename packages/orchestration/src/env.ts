@@ -20,8 +20,28 @@ import { resolve } from "node:path";
 
 import { resolveOrchestrationRoot, resolveRepoRoot } from "./mastra/paths.js";
 
-// 不能用 process.cwd()（mastra server 子进程 cwd 是 src/mastra/public/），
-// 也不能用 import.meta.url（bundle 后指向 .mastra/output）—— 统一走 paths.ts。
-// override:false → 已有的 process.env 优先；本调用只填空缺
-loadDotenv({ path: resolve(resolveOrchestrationRoot(), ".env"), override: false });
-loadDotenv({ path: resolve(resolveRepoRoot(), ".env"), override: false });
+let _loaded = false;
+
+/**
+ * 显式触发 env 加载（幂等）。
+ *
+ * 为什么除了 side-effect import 还要这个函数（2026-06-11 实测）：mastra dev 的
+ * bundler 会丢掉纯 side-effect 的 `import "../../env.js"`——bundle 后本模块从未
+ * 执行、根 .env 从未被加载，此前"能跑"全靠 mastra dev 原生加载 cwd 下的
+ * `packages/orchestration/.env`。key 收敛到根 .env 后启动即裸崩
+ * （DEEPSEEK_API_KEY is missing）。函数调用无法被 tree-shake——所有读 LLM env
+ * 的模块（llm/provider.ts 等）在模块顶层调 `ensureEnvLoaded()`，不再依赖
+ * import 顺序与 bundler 行为。
+ */
+export function ensureEnvLoaded(): void {
+  if (_loaded) return;
+  _loaded = true;
+  // 不能用 process.cwd()（mastra server 子进程 cwd 是 src/mastra/public/），
+  // 也不能用 import.meta.url（bundle 后指向 .mastra/output）—— 统一走 paths.ts。
+  // override:false → 已有的 process.env 优先；本调用只填空缺
+  loadDotenv({ path: resolve(resolveOrchestrationRoot(), ".env"), override: false });
+  loadDotenv({ path: resolve(resolveRepoRoot(), ".env"), override: false });
+}
+
+// side-effect import 的旧语义保留（vitest setup / 脚本等不经 bundler 的场景）
+ensureEnvLoaded();
