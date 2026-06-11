@@ -130,7 +130,47 @@ class LiveRunnerManager:
         self._tasks[run_id] = task
         # task 退出（return / errored / cancel）后从 dict 移除，避免长跑实例里
         # errored / 已停的 task 对象无限堆积（CR）。stop() 已 pop 时这里是 no-op。
-        task.add_done_callback(lambda _t, rid=run_id: self._tasks.pop(rid, None))
+        # 同时检查 task 异常（issue #67）：_run_loop 自己的错误处理路径也要写 DB，
+        # 那一步再失败异常会逃出 loop——不查 exception 的话 run 在 DB 永卡 running。
+        task.add_done_callback(lambda t, rid=run_id: self._on_task_done(t, rid))
+
+    def _on_task_done(self, task: asyncio.Task[None], run_id: UUID) -> None:
+        """done_callback：移除 task + 检查未消化异常，兜底把 run 置 errored（issue #67）。"""
+        self._tasks.pop(run_id, None)
+        if task.cancelled():
+            return  # stop() / stop_all() 的正常取消路径
+        exc = task.exception()
+        if exc is None:
+            return
+        _logger.error("live run %s: run loop 异常退出", run_id, exc_info=exc)
+        # done_callback 是同步上下文，写 DB 必须另起 task；loop 正在关闭（服务停机）时
+        # create_task 抛 RuntimeError——放弃兜底，留给重启 resume reconcile（#46）。
+        try:
+            asyncio.get_running_loop().create_task(self._mark_loop_crashed(run_id, exc))
+        except RuntimeError:
+            _logger.warning(
+                "live run %s: event loop 已关闭，loop_crashed 兜底跳过（重启 reconcile 收尾）", run_id
+            )
+
+    async def _mark_loop_crashed(self, run_id: UUID, exc: BaseException) -> None:
+        """best-effort 把异常退出的 run 置 errored（code=loop_crashed）。
+
+        只尝试一次、失败仅 log——这里本身就是"写 DB 失败"的兜底，再重试可能同样失败，
+        循环重试反而拖住停机。仍 running 才写，避免覆盖 stop() 已写的 stopped 终态。
+        """
+        try:
+            async with get_conn() as conn:
+                current = await runs_store.get(conn, run_id)
+                if current is None or current["status"] != "running":
+                    return
+                await runs_store.append_error_log(
+                    conn, run_id, f"run loop crashed: {exc}", code="loop_crashed"
+                )
+                await runs_store.set_status(conn, run_id, "errored")
+        except Exception:
+            _logger.exception(
+                "live run %s: loop_crashed 兜底写库失败（放弃，留给重启 reconcile）", run_id
+            )
 
     async def start_async(self, run: dict[str, Any]) -> None:
         """``start`` 的 async 包装：供 FastAPI ``BackgroundTasks`` 在**响应/事务提交后**起 task。
