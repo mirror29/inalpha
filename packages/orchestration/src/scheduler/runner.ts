@@ -179,7 +179,11 @@ async function runAgentMode(
   const stopRunner = buildStopRunner(token);
   const rc = new RequestContext([["authToken", token]]);
   // 累积消息数组而非裸 prompt：force-continue 的第二轮 generate 要带上前轮上下文，
-  // 否则 LLM 只看到一句 [system_notice]，不知道 plan 是怎么来的
+  // 否则 LLM 只看到一句 [system_notice]，不知道 plan 是怎么来的。
+  // 设计意图（PR review）：这里**有意**只存纯文本 out.text，不复刻前轮 tool_use /
+  // tool_result 消息对——完整工具调用历史由 agent 的 thread-based memory 持久化，
+  // 这条数组只负责"本次 run 内的对话骨架"；notice 里已带 plan id，LLM 需要细节
+  // 可再调 trade.get_plan。
   const messages: Array<{ role: "user" | "assistant"; content: string }> = [
     { role: "user", content: payload.prompt },
   ];
