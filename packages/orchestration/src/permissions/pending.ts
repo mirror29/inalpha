@@ -12,6 +12,9 @@
  *
  * - **进程内 Map**：单 mastra runtime 实例，重启即失效；多实例部署需要换 Redis
  *   等共享存储（D-10+）。当前 dev / 单 instance prod 都够用
+ * - **审计历史落 Postgres**（D-12 / migration 0021）：每条审批全生命周期落
+ *   ``pending_approvals`` 表，dashboard 可回看终态；重启时启动 sweep 把遗留
+ *   pending 行置 ``expired_restart``。落库 fail-open —— 闸门永远是内存 Promise
  * - **明确 fail-closed**：超时 / unknown 决策都按 deny 处理；用户关页面不会让
  *   挂起任务永远卡住
  * - **审计**：respond 时 log decision；超时自动 deny 也 log
@@ -19,6 +22,8 @@
  * 引用：ADR-0018（askUserChoice）/ task D-9.1b。
  */
 import { randomUUID } from "node:crypto";
+
+import { insertPending, markResolved } from "./repo.js";
 
 export type PendingDecision = "allow" | "deny";
 
@@ -64,14 +69,43 @@ const defaultPendingTelemetrySink: PendingTelemetrySink = (r) => {
 };
 
 /**
+ * 审计持久层接口（D-12 / migration 0021）—— 实现见 ``repo.ts``。
+ *
+ * **审计面不是闸门**：两个方法都必须自吞错误（fail-open），store 侧再兜一层
+ * fire-and-forget；决策语义（fail-closed deny）完全由内存 Promise 保证。
+ */
+export interface ApprovalPersistence {
+  insertPending(view: PendingApprovalView): Promise<void>;
+  markResolved(
+    requestId: string,
+    decision: PendingDecision,
+    via: "user" | "timeout",
+  ): Promise<void>;
+}
+
+/**
  * 进程内挂起池。``mastra/index.ts`` 在 runtime 启动时共享单例；测试可 new 独立实例。
  */
 export class PendingApprovalsStore {
   private readonly pending = new Map<string, PendingApprovalRecord>();
   private readonly telemetry: PendingTelemetrySink;
+  private readonly persistence?: ApprovalPersistence;
 
-  constructor(telemetry?: PendingTelemetrySink) {
+  constructor(telemetry?: PendingTelemetrySink, persistence?: ApprovalPersistence) {
     this.telemetry = telemetry ?? defaultPendingTelemetrySink;
+    this.persistence = persistence;
+  }
+
+  /** fire-and-forget 落库 —— 审计面任何异常都不许影响审批流。 */
+  private persist(fn: (p: ApprovalPersistence) => Promise<void>): void {
+    if (!this.persistence) return;
+    try {
+      void fn(this.persistence).catch((err) => {
+        console.error("[pending] 审批审计落库失败（审批流不受影响）:", err);
+      });
+    } catch (err) {
+      console.error("[pending] 审批审计落库失败（审批流不受影响）:", err);
+    }
   }
 
   /**
@@ -109,6 +143,7 @@ export class PendingApprovalsStore {
             latency_ms: timeoutMs,
             ts: new Date().toISOString(),
           });
+          this.persist((p) => p.markResolved(requestId, "deny", "timeout"));
           resolve({ decision: "deny", requestId, via: "timeout" });
         }
       }, timeoutMs);
@@ -134,10 +169,13 @@ export class PendingApprovalsStore {
             latency_ms: Date.now() - createdAt.getTime(),
             ts: new Date().toISOString(),
           });
+          this.persist((p) => p.markResolved(requestId, decision, "user"));
           resolve({ decision, requestId, via: "user" });
         },
       };
       this.pending.set(requestId, record);
+      const { resolve: _r, timer: _t, ...view } = record;
+      this.persist((p) => p.insertPending(view));
     });
   }
 
@@ -174,5 +212,11 @@ export class PendingApprovalsStore {
   }
 }
 
-/** 进程内单例，由 ``withHooks`` 与 HTTP routes 共用。 */
-export const pendingApprovals = new PendingApprovalsStore();
+/**
+ * 进程内单例，由 ``withHooks`` 与 HTTP routes 共用。
+ * 默认接 Postgres 审计持久层（repo.ts，fail-open）；测试自建实例不传即纯内存。
+ */
+export const pendingApprovals = new PendingApprovalsStore(undefined, {
+  insertPending,
+  markResolved,
+});

@@ -11,11 +11,14 @@
  * - clearAll 全 deny + size=0
  * - API GET /permissions/pending 返列表
  * - API POST /permissions/:id/respond bad body / unknown id / 成功路径
+ * - 审计持久化（D-12）：request/respond/timeout 各落对应状态；persistence
+ *   抛错（sync / rejected promise）不影响审批流（fail-open）
  */
 import { describe, expect, it, vi } from "vitest";
 
 import { permissionsApiRoutes } from "../src/permissions/api.js";
 import {
+  type ApprovalPersistence,
   PendingApprovalsStore,
   pendingApprovals as defaultPendingApprovals,
 } from "../src/permissions/pending.js";
@@ -105,6 +108,90 @@ describe("PendingApprovalsStore misc", () => {
 
   it("module-level singleton exists and is a PendingApprovalsStore", () => {
     expect(defaultPendingApprovals).toBeInstanceOf(PendingApprovalsStore);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// 审计持久化（D-12 / migration 0020）—— mock persistence 注入
+// ────────────────────────────────────────────────────────────────────
+
+function mockPersistence(): {
+  p: ApprovalPersistence;
+  inserts: ReturnType<typeof vi.fn>;
+  resolves: ReturnType<typeof vi.fn>;
+} {
+  const inserts = vi.fn(async () => {});
+  const resolves = vi.fn(async () => {});
+  return { p: { insertPending: inserts, markResolved: resolves }, inserts, resolves };
+}
+
+describe("PendingApprovalsStore persistence (审计面)", () => {
+  it("request → insertPending 落 view;respond=allow → markResolved(allow, user)", async () => {
+    const { p, inserts, resolves } = mockPersistence();
+    const store = new PendingApprovalsStore(() => {}, p);
+    const promise = store.request({
+      toolName: "test.tool",
+      toolInput: { x: 1 },
+      timeoutMs: 5_000,
+    });
+    await vi.waitFor(() => expect(store.size()).toBe(1));
+    const view = store.list()[0]!;
+    expect(inserts).toHaveBeenCalledTimes(1);
+    expect(inserts.mock.calls[0]![0]).toMatchObject({
+      requestId: view.requestId,
+      toolName: "test.tool",
+      toolInput: { x: 1 },
+    });
+
+    store.respond(view.requestId, "allow");
+    await promise;
+    await vi.waitFor(() => expect(resolves).toHaveBeenCalledTimes(1));
+    expect(resolves).toHaveBeenCalledWith(view.requestId, "allow", "user");
+  });
+
+  it("timeout → markResolved(deny, timeout)", async () => {
+    const { p, resolves } = mockPersistence();
+    const store = new PendingApprovalsStore(() => {}, p);
+    const result = await store.request({
+      toolName: "t",
+      toolInput: null,
+      timeoutMs: 30,
+    });
+    expect(result.via).toBe("timeout");
+    await vi.waitFor(() => expect(resolves).toHaveBeenCalledTimes(1));
+    expect(resolves).toHaveBeenCalledWith(result.requestId, "deny", "timeout");
+  });
+
+  it("persistence 同步抛 / promise reject 都不影响审批流(fail-open)", async () => {
+    const throwing: ApprovalPersistence = {
+      insertPending: () => {
+        throw new Error("sync boom");
+      },
+      markResolved: async () => {
+        throw new Error("async boom");
+      },
+    };
+    const store = new PendingApprovalsStore(() => {}, throwing);
+    const promise = store.request({
+      toolName: "t",
+      toolInput: null,
+      timeoutMs: 5_000,
+    });
+    await vi.waitFor(() => expect(store.size()).toBe(1));
+    expect(store.respond(store.list()[0]!.requestId, "allow")).toBe(true);
+    const result = await promise;
+    expect(result.decision).toBe("allow");
+    expect(store.size()).toBe(0);
+  });
+
+  it("不注 persistence 的实例零落库调用(纯内存,测试默认形态)", async () => {
+    const store = new PendingApprovalsStore(() => {});
+    const result = await store.request({
+      toolName: "t",
+      toolInput: null,
+      timeoutMs: 30,
+    });
+    expect(result.decision).toBe("deny");
   });
 });
 
