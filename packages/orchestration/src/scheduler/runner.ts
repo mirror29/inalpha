@@ -45,7 +45,7 @@ import type {
   ToolJobPayload,
 } from "./types.js";
 
-/** agent mode 单次 generate 上限 5 分钟。 */
+/** agent mode **单轮** generate 上限 5 分钟（force-continue 每轮各自计时，最坏总计 (maxForceContinue+1)×5min）。 */
 const AGENT_HARD_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface RunJobArgs {
@@ -176,49 +176,51 @@ async function runAgentMode(
     throw new Error(`scheduler.runAgentMode: agent ${payload.agent} 未注册`);
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AGENT_HARD_TIMEOUT_MS);
   const stopRunner = buildStopRunner(token);
-
-  try {
-    const rc = new RequestContext([["authToken", token]]);
-    // 累积消息数组而非裸 prompt：force-continue 的第二轮 generate 要带上前轮上下文，
-    // 否则 LLM 只看到一句 [system_notice]，不知道 plan 是怎么来的
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [
-      { role: "user", content: payload.prompt },
-    ];
-    let out: { text?: string; usage?: unknown; finishReason?: string };
-    let forceCount = 0;
-    for (;;) {
+  const rc = new RequestContext([["authToken", token]]);
+  // 累积消息数组而非裸 prompt：force-continue 的第二轮 generate 要带上前轮上下文，
+  // 否则 LLM 只看到一句 [system_notice]，不知道 plan 是怎么来的
+  const messages: Array<{ role: "user" | "assistant"; content: string }> = [
+    { role: "user", content: payload.prompt },
+  ];
+  let out: { text?: string; usage?: unknown; finishReason?: string };
+  let forceCount = 0;
+  for (;;) {
+    // 超时**按单轮 generate 计**（PR review）：controller/timer 在循环内每轮新建，
+    // 否则 force-continue 轮次会被前轮挤占预算（首轮 4.8min → 第二轮只剩 12s 必 abort）。
+    // 最坏总时长 = (maxForceContinue+1) × 5min，overlap 防护挡双跑。
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AGENT_HARD_TIMEOUT_MS);
+    try {
       // Mastra agent.generate 在 1.36 支持 abortSignal + requestContext
       out = (await agent.generate(messages as never, {
         requestContext: rc,
         abortSignal: controller.signal,
       } as never)) as { text?: string; usage?: unknown; finishReason?: string };
-
-      const decision = await stopRunner.maybeForceContinue({
-        sessionId: `scheduler:${payload.agent}`,
-        metadata: { agent: payload.agent },
-      });
-      if (!decision.shouldContinue) break;
-      forceCount = decision.forceCount;
-      messages.push({ role: "assistant", content: out.text ?? "" });
-      messages.push({
-        role: "user",
-        content: formatStopNotice(decision.reason ?? "unfinished work detected"),
-      });
+    } finally {
+      clearTimeout(timer);
     }
 
-    return {
-      text: out.text ?? null,
-      usage: out.usage ?? null,
-      finishReason: out.finishReason ?? null,
-      // 审计留痕：本次 run 被 Stop hook 强制续了几轮（0 = 一把过）
-      stop_hook_force_count: forceCount,
-    };
-  } finally {
-    clearTimeout(timer);
+    const decision = await stopRunner.maybeForceContinue({
+      sessionId: `scheduler:${payload.agent}`,
+      metadata: { agent: payload.agent },
+    });
+    if (!decision.shouldContinue) break;
+    forceCount = decision.forceCount;
+    messages.push({ role: "assistant", content: out.text ?? "" });
+    messages.push({
+      role: "user",
+      content: formatStopNotice(decision.reason ?? "unfinished work detected"),
+    });
   }
+
+  return {
+    text: out.text ?? null,
+    usage: out.usage ?? null,
+    finishReason: out.finishReason ?? null,
+    // 审计留痕：本次 run 被 Stop hook 强制续了几轮（0 = 一把过）
+    stop_hook_force_count: forceCount,
+  };
 }
 
 // ============ 错误序列化 ============
