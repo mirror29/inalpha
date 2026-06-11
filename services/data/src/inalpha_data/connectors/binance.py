@@ -109,6 +109,10 @@ class BinanceConnector:
         last = raw.get("last") or raw.get("close")
         if last is None:
             raise ValueError(f"binance ticker for {symbol} has no last/close price")
+        if ts_ms is None:
+            # now() 兜底会让上层 is_stale 恒 false（issue #62）；crypto 24/7 风险低但留痕，
+            # 真发生说明 ccxt/交易所行为变了，值得被看见
+            _logger.warning("binance ticker %s: ccxt 未给 timestamp，用本地 now() 兜底", symbol)
         ts = (
             datetime.fromtimestamp(int(ts_ms) / 1000, tz=UTC)
             if ts_ms is not None
