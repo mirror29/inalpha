@@ -320,7 +320,8 @@ describe("StopHookRunner · 3 handler 注册 + 联合决策", () => {
     const d = await sr.maybeForceContinue({ sessionId: "s1" });
     expect(d.shouldContinue).toBe(true);
     expect(d.appliedHookIds).toContain("pending");
-    expect((d.reason ?? "").toLowerCase()).toContain("unexecuted");
+    // 模板已改语言中立机器状态行（§3），断言结构关键字而非英文散文
+    expect(d.reason ?? "").toContain("pending_plans");
   });
 
   it("all three clean → shouldContinue=false", async () => {

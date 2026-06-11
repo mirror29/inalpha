@@ -36,10 +36,15 @@ export type PendingPlanCheckOptions = {
   reasonTemplate?: string;
 };
 
+/**
+ * 与 chat 路径 ``pending-plan-notice`` 的 DEFAULT_NOTICE_TEMPLATE 同款**语言中立
+ * 机器状态行**（PR review · §3 口径统一）：reason 经 formatStopNotice 注入为
+ * LLM 的 user 消息，scheduler 虽无直接用户语言，但若 cron 摘要进了用户可见的
+ * scheduler_runs.result，写死的英文散文会泄漏；机器行 + tool 名则语言无关。
+ */
 const DEFAULT_REASON_TEMPLATE =
-  "you have {count} unexecuted trade plan(s) ({ids}) in approved / pending_approval state. " +
-  "complete them (trade.execute_plan with approvalToken) before ending the turn, " +
-  "or explicitly trade.reject_plan if you decided not to.";
+  "pending_plans: {count} ({ids}) → trade.execute_plan / trade.reject_plan " +
+  "(approvalToken: trade.approve_plan → token; approved: trade.get_plan)";
 
 /**
  * 创建 pending-plan-check handler。
