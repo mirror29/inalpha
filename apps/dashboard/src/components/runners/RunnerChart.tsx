@@ -21,17 +21,22 @@ const TF_CHOICES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1wk"];
  *
  * 周期可切:默认按 run 自身 timeframe,用户可临时切到其他周期看不同尺度的走势
  * (决策 marker 仍按时间吸附到最近 bar)。图是辅助信息,取不到 / 为空只显示占位。
+ *
+ * @param title 面板标题覆盖 —— lab 候选详情页同屏还有「回测 K 线」,要传
+ *   「K 线(最近 run)」区分语义;不传用 runners 详情页的通用「K 线」。
  */
 export function RunnerChart({
   venue,
   symbol,
   timeframe,
   decisions,
+  title,
 }: {
   venue: string;
   symbol: string;
   timeframe: string;
   decisions: StrategyRunDecisionRecord[];
+  title?: string;
 }) {
   const t = useTranslations("runners.detail");
   const [tf, setTf] = useState(timeframe);
@@ -60,7 +65,7 @@ export function RunnerChart({
 
   return (
     <Panel
-      title={t("chart")}
+      title={title ?? t("chart")}
       aside={
         <div className="flex items-center gap-2">
           {switching && (

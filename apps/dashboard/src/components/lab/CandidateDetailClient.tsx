@@ -139,6 +139,8 @@ export function CandidateDetailClient({ id }: { id: string }) {
                 symbol={data.runs[0].symbol}
                 timeframe={data.runs[0].timeframe}
                 decisions={data.latestRunDecisions}
+                // 同屏上方还有「回测 K 线」,标题点名这是最近 run 的实时图,避免看似重复。
+                title={t("chart")}
               />
               <DecisionTimeline decisions={data.latestRunDecisions} />
             </>
