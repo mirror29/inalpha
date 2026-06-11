@@ -143,6 +143,19 @@ describe("pending-plan-notice processor（chat 路径）", () => {
     });
     expect(messages[0]!.content.parts.length).toBe(1);
   });
+
+  it("assistant content 非 parts 数组（string content 路径）→ 不抛、消息不变", async () => {
+    const stringContentMessage = {
+      role: "assistant",
+      content: "纯字符串回复" as never,
+    } as never as LooseMessage;
+    const { messages } = await runProcessor({
+      fetcher: async () => PLANS,
+      toolNames: ["trade.create_plan"],
+      messages: [stringContentMessage],
+    });
+    expect(messages[0]!.content).toBe("纯字符串回复");
+  });
 });
 
 describe("createPaperPendingPlanFetcher（生产 fetcher）", () => {
