@@ -58,6 +58,9 @@ pnpm smoke             # 真服务 e2e：backfill → run_backtest → 打印报
    factor.* / research.*）、保留上游 LICENSE + 写 ATTRIBUTION.md
 3. 不引用仓库私有路径；`pnpm test`（tests/skills.test.ts 体检）+
    `bash ../../scripts/check-consistency.sh`（C7）必须过
+4. **新增/修改 skill 后必须重启 orchestration 进程**——清单进程内 memoize
+   （`getSkillManifestsCached`），mastra dev 只 watch 代码不 watch skills/*.md，
+   不重启的话新 skill 不会出现在 `<skills>` 清单里
 
 ## 设计原则
 
