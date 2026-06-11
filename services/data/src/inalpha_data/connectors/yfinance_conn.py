@@ -145,25 +145,25 @@ class YfinanceConnector:
         return out
 
     async def fetch_ticker(self, symbol: str) -> tuple[datetime, float]:
-        """实时拉 ``symbol`` 的最新成交价（``Ticker.fast_info``）。
+        """实时拉 ``symbol`` 的最新成交（1m history 最后一根 bar）。
 
         Returns:
-            ``(ts, last_price)``，``ts`` UTC aware。Yahoo 的 ``fast_info`` 不直接给
-            报价时间，**用 ``datetime.now(UTC)`` 兜底**（caller 看到 stale_seconds≈0）；
-            如果 ``last_price`` 缺失会抛 ``ValueError``。
+            ``(ts, last_price)``，``ts`` UTC aware——是**真实成交分钟**而非本地 now()。
+            休市时段最后一根 bar 停在上个交易时段 → 上层 stale_seconds 反映真实滞后、
+            ``is_stale=true``（issue #62：原 fast_info + now() 兜底让休市恒"新鲜"，
+            paper live runner 会按几小时前的陈价下单）。无任何 bar 抛 ``ValueError``。
 
         坑：
-        - ``fast_info`` 是 yfinance 0.2.32+ 加的轻量接口；比 ``.info`` 快 10x，
-          但仍走 Yahoo HTTP，单次 ~300-800ms，**不要**在循环里高频调
-        - 非交易时段 Yahoo 返上一交易日收盘价 + 当前时间戳（上层 is_stale 阈值 5min
-          会标 stale=true，符合预期）
-        - 部分场外 / 已退市 ticker 会返 ``last_price=None`` —— 抛 ValueError 让上层
+        - 走 Yahoo chart HTTP，单次 ~300-800ms，**不要**在循环里高频调
+        - ``prepost=True``：盘前盘后有真实成交时按延伸时段最新成交判新鲜
+        - 部分场外 / 已退市 ticker 无 1m 数据 —— 抛 ValueError 让上层
           返 5xx，不要静默 fallback DB（caller 拿到错误自己决定）
         """
-        last_price = await asyncio.to_thread(_fetch_ticker_sync, symbol)
-        if last_price is None:
-            raise ValueError(f"yfinance ticker for {symbol} has no last_price (delisted / OTC?)")
-        return datetime.now(UTC), float(last_price)
+        result = await asyncio.to_thread(_fetch_ticker_sync, symbol)
+        if result is None:
+            raise ValueError(f"yfinance ticker for {symbol} has no 1m bars (delisted / OTC?)")
+        ts, last_price = result
+        return ts, float(last_price)
 
     async def fetch_news(
         self,
@@ -390,24 +390,25 @@ def _fetch_sync(
     ]
 
 
-def _fetch_ticker_sync(symbol: str) -> float | None:
-    """同步调 ``yf.Ticker(symbol).fast_info['last_price']``。
+def _fetch_ticker_sync(symbol: str) -> tuple[datetime, float] | None:
+    """同步拉最新成交：``history(period='1d', interval='1m', prepost=True)`` 最后一根有价 bar。
 
     抽函数让 ``asyncio.to_thread`` 序列化参数 + 方便测试 monkeypatch。
-    fast_info 字段名各 yfinance 版本有差异（``last_price`` / ``lastPrice`` /
-    ``regular_market_price``），全试一遍取首个非 None。
+    不用 fast_info：它只给价不给报价时间，休市时段会把"几小时前的收盘价"伪装成
+    刚发生的（issue #62）；1m history 的 bar index 就是真实成交分钟，一次 HTTP
+    同时拿到价和时间。``period='1d'`` 休市时 Yahoo 返最近一个交易日的 bars。
     """
     import yfinance as yf
 
-    fi = yf.Ticker(symbol).fast_info
-    for key in ("last_price", "lastPrice", "regular_market_price", "regularMarketPrice"):
-        try:
-            val = fi[key] if hasattr(fi, "__getitem__") else getattr(fi, key, None)
-        except (KeyError, AttributeError):
-            val = None
-        if val is not None:
-            return float(val)
-    return None
+    df = yf.Ticker(symbol).history(
+        period="1d", interval="1m", prepost=True, auto_adjust=False, raise_errors=False
+    )
+    if df is None or len(df) == 0 or "Close" not in df:
+        return None
+    closes = df["Close"].dropna()
+    if len(closes) == 0:
+        return None
+    return _normalize_ts(closes.index[-1]), float(closes.iloc[-1])
 
 
 def _normalize_ts(ts_raw: Any) -> datetime:

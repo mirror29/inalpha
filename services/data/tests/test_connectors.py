@@ -203,6 +203,52 @@ def test_yfinance_unsupported_timeframe_raises() -> None:
         asyncio.run(_run())
 
 
+def test_yfinance_fetch_ticker_sync_returns_real_bar_ts(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """_fetch_ticker_sync 返最后一根 1m bar 的真实成交时间，不再 now() 兜底（issue #62）。"""
+    import pandas as pd
+
+    last_ts = pd.Timestamp("2026-06-11 15:59:00", tz="America/New_York")
+    df = pd.DataFrame(
+        {"Close": [101.0, 102.5]},
+        index=pd.DatetimeIndex([last_ts - pd.Timedelta(minutes=1), last_ts]),
+    )
+
+    class _FakeTicker:
+        def __init__(self, symbol: str) -> None:
+            pass
+
+        def history(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return df
+
+    monkeypatch.setattr("yfinance.Ticker", _FakeTicker)
+
+    from inalpha_data.connectors.yfinance_conn import _fetch_ticker_sync
+
+    result = _fetch_ticker_sync("AAPL")
+    assert result is not None
+    ts, price = result
+    assert price == 102.5
+    assert ts == last_ts.to_pydatetime().astimezone(UTC)
+
+
+def test_yfinance_fetch_ticker_sync_empty_history_returns_none(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """无 1m 数据（退市 / OTC）→ None，上层翻 ValueError（语义与原 last_price 缺失一致）。"""
+    import pandas as pd
+
+    class _FakeTicker:
+        def __init__(self, symbol: str) -> None:
+            pass
+
+        def history(self, **_kwargs):  # type: ignore[no-untyped-def]
+            return pd.DataFrame()
+
+    monkeypatch.setattr("yfinance.Ticker", _FakeTicker)
+
+    from inalpha_data.connectors.yfinance_conn import _fetch_ticker_sync
+
+    assert _fetch_ticker_sync("DELISTED") is None
+
+
 # ────────────────────────────────────────────────────────────────────
 # FRED connector：key 缺失跳过 + ts 归一化
 # ────────────────────────────────────────────────────────────────────
