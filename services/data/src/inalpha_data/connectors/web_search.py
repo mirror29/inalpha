@@ -8,6 +8,7 @@ pip install ddgs
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -33,6 +34,10 @@ class WebSearchConnector:
         self._engine_timeout = s.web_search_timeout_s
         self._overall_timeout = s.web_search_overall_timeout_s
         self._sem = asyncio.Semaphore(s.web_search_max_concurrency)
+        # 可靠性补丁：短 TTL 缓存（只存非空，TTL=0 关）+ auto 空结果换 backend 重试一次
+        # ——深扫一轮 10+ 次搜索会放大 429 假阴性（外观与"没证据"无法区分）
+        self._cache_ttl = s.web_search_cache_ttl_s
+        self._cache: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]]]] = {}
 
     async def fetch_search(
         self,
@@ -42,12 +47,29 @@ class WebSearchConnector:
     ) -> list[dict[str, Any]]:
         """Text web search. Returns [{title, href, body}]."""
         # Detect Chinese: use bing backend for better Chinese results
-        if backend == "auto":
+        auto_requested = backend == "auto"
+        if auto_requested:
             has_cjk = any('\u4e00' <= c <= '\u9fff' for c in query)
             backend = "bing" if has_cjk else "auto"
-        return await self._run_guarded(
+
+        key = ("search", query, backend, max_results)
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+
+        results = await self._run_guarded(
             _search_sync, kind="search", query=query, backend=backend, max_results=max_results
         )
+        if not results and auto_requested:
+            # 429 / \u5f15\u64ce\u62bd\u98ce\u7684\u7a7a\u7ed3\u679c\u6362\u4e00\u4e2a\u5f15\u64ce\u515c\u4e00\u6b21\uff08duckduckgo \u4e0e bing \u4e92\u4e3a\u5907\u4efd\uff09
+            fallback = "duckduckgo" if backend == "bing" else "bing"
+            _logger.info("web_search_empty_retry", query=query[:100], fallback=fallback)
+            results = await self._run_guarded(
+                _search_sync, kind="search", query=query, backend=fallback,
+                max_results=max_results,
+            )
+        self._cache_put(key, results)
+        return results
 
     async def fetch_news(
         self,
@@ -55,9 +77,35 @@ class WebSearchConnector:
         max_results: int = 10,
     ) -> list[dict[str, Any]]:
         """News search. Returns [{title, href, body}]."""
-        return await self._run_guarded(
+        key = ("news", query, max_results)
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+        results = await self._run_guarded(
             _news_sync, kind="news", query=query, max_results=max_results
         )
+        self._cache_put(key, results)
+        return results
+
+    def _cache_get(self, key: tuple[Any, ...]) -> list[dict[str, Any]] | None:
+        if self._cache_ttl <= 0:
+            return None
+        hit = self._cache.get(key)
+        if hit is None:
+            return None
+        expires, results = hit
+        if time.monotonic() > expires:
+            self._cache.pop(key, None)
+            return None
+        return results
+
+    def _cache_put(self, key: tuple[Any, ...], results: list[dict[str, Any]]) -> None:
+        # 只缓存非空——空结果可能是限速假阴性，缓存会把 0 结果钉死一个 TTL
+        if self._cache_ttl <= 0 or not results:
+            return
+        if len(self._cache) > 512:
+            self._cache.clear()
+        self._cache[key] = (time.monotonic() + self._cache_ttl, results)
 
     async def _run_guarded(
         self, fn: Callable[..., list[dict[str, Any]]], *, kind: str, **kwargs: Any
