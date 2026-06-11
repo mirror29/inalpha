@@ -35,6 +35,7 @@ import {
   factorEvaluateCandidateTool,
   factorListCandidatesTool,
   factorProposeTool,
+  factorRunDiscoveryTool,
   factorScoreTool,
   factorTimingTool,
   factorTools,
@@ -95,6 +96,7 @@ export {
   factorEvaluateCandidateTool,
   factorListCandidatesTool,
   factorProposeTool,
+  factorRunDiscoveryTool,
   factorScoreTool,
   factorTimingTool,
   getTradePlanTool,
@@ -219,6 +221,7 @@ export const orchestratorToolList = [
   factorEvaluateCandidateTool,
   factorProposeTool,
   factorListCandidatesTool,
+  factorRunDiscoveryTool,
   // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
