@@ -102,8 +102,10 @@ class SentimentAnalyst(Analyst):
 
             if not entries:
                 # Fallback: web search for crypto sentiment when FNG is unavailable
+                # 年份取 as_of 动态拼（issue #63）：硬编码跨年后=向搜索引擎要过时年份当现在
                 web_results = await self._data.get_web_search(
-                    f"{symbol} crypto market sentiment fear greed 2026", max_results=5
+                    f"{symbol} crypto market sentiment fear greed {as_of.year}",
+                    max_results=5,
                 )
                 return _format_user_prompt_llm_only(
                     symbol=symbol,
