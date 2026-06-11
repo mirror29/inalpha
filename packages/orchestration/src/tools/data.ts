@@ -94,7 +94,10 @@ export const dataGetBarsTool = createTool({
       .datetime()
       .optional()
       .describe("ISO 8601 结束；省略默认 = 当前"),
-    limit: z.number().int().min(1).max(50_000).default(10_000),
+    // 默认 500（旧默认 10_000 实测是 token 炸弹：1 万根 ≈ 200k+ token 直接进
+    // 消息历史）。LLM 分析几百根足够；max 保持 50_000 兼容 scheduler 存量 job，
+    // 但响应会被截到最新 BARS_RESPONSE_CAP 根（带 bars_truncated_from 标记）。
+    limit: z.number().int().min(1).max(50_000).default(500),
     fresh: z
       .boolean()
       .default(false)
@@ -108,7 +111,7 @@ export const dataGetBarsTool = createTool({
     const venue = inputData.venue ?? "binance";
     const symbol = inputData.symbol;
     const timeframe = inputData.timeframe ?? "1h";
-    const limit = inputData.limit ?? 10_000;
+    const limit = inputData.limit ?? 500;
     const now = new Date();
     const fromTs = inputData.fromTs ?? new Date(now.getTime() - 365 * 86_400_000).toISOString();
     const toTs = inputData.toTs ?? now.toISOString();
@@ -142,8 +145,7 @@ export const dataGetBarsTool = createTool({
           limit,
         });
         return {
-          bars,
-          count: bars.length,
+          ...capBars(bars),
           fresh_backfill_failed: true,
           fresh_backfill_error: message,
         };
@@ -152,9 +154,27 @@ export const dataGetBarsTool = createTool({
 
     const client = await getClient(tc);
     const bars = await client.getBars({ venue, symbol, timeframe, fromTs, toTs, limit });
-    return { bars, count: bars.length };
+    return capBars(bars);
   },
 });
+
+/** 进 LLM context 的 bars 上限；超出截到**最新** N 根（旧的被丢，K 线最新根才是判读重点）。 */
+const BARS_RESPONSE_CAP = 1_000;
+
+/**
+ * bars 响应护栏（防上下文爆炸，同 run_backtest equity_curve 降采样动机）：
+ * 上限内原样返回；超限截最新 N 根并带 ``bars_truncated_from`` 标原始根数。
+ */
+function capBars(bars: unknown[]): Record<string, unknown> {
+  if (bars.length <= BARS_RESPONSE_CAP) {
+    return { bars, count: bars.length };
+  }
+  return {
+    bars: bars.slice(-BARS_RESPONSE_CAP),
+    count: BARS_RESPONSE_CAP,
+    bars_truncated_from: bars.length,
+  };
+}
 
 /** timeframe -> 秒；fresh 路径估算回看窗口用。未识别 fallback 1h。 */
 function timeframeToSeconds(tf: string): number {

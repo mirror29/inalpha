@@ -20,6 +20,7 @@
  */
 import "../../env.js"; // side-effect: dotenv 加载根 .env（必须在 buildLLM 之前）
 import { Agent } from "@mastra/core/agent";
+import { TokenLimiterProcessor } from "@mastra/core/processors";
 
 import { buildLLM } from "../llm/provider.js";
 import { sharedMemory } from "../memory.js";
@@ -656,6 +657,14 @@ export const orchestrator = new Agent({
     );
   },
   memory: sharedMemory,
+  // 上下文 token 兜底（2026-06-11 事故：单线程消息历史滚到 1.3M token 撑爆
+  // DeepSeek 1M 上限 → INCOMPLETE_STREAM、线程报废）。tool 层已对已知大输出
+  // 降采样/截断，这里是**第二道防线**：消息历史超预算时从最旧裁起（保 system），
+  // processInputStep 在多步 tool loop 中每步修剪，防单 turn 内滚雪球。
+  // 250k ≈ 模型上限的 1/4——给 instructions/tool schema/输出留足余量。
+  inputProcessors: [
+    new TokenLimiterProcessor({ limit: 250_000, trimMode: "contiguous" }),
+  ],
   // issue #65 / ADR-0010 §Stop hook：chat 路径的 pending plan 残留警示。
   // Mastra 1.36 无"turn 结束后强制续 loop"钩子位，chat 侧降级为输出警示
   // （追加到最终回复，用户与下一 turn 的 LLM 都能看见）；真·强制续 turn

@@ -135,8 +135,10 @@ export const webFetchTool = createTool({
   `.trim(),
   inputSchema: z.object({
     url: z.string().url().max(2048).describe("要抓取的 http/https URL"),
-    maxChars: z.number().int().min(100).max(200_000).optional()
-      .describe("正文字符上限（默认 4 万，受服务端钳制）"),
+    // tool 侧默认 2 万字符（≈5k-20k token）：深扫一轮常 fetch 5+ 篇，4 万默认会快速
+    // 堆高消息历史；真需要长文显式传大值（服务端 4 万上限仍钳制）
+    maxChars: z.number().int().min(100).max(200_000).default(20_000)
+      .describe("正文字符上限（默认 2 万；需要更长显式传，受服务端上限钳制）"),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
