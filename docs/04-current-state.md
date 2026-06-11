@@ -58,11 +58,11 @@ sequenceDiagram
     H->>PS: consume token (one-shot)
     H->>Paper: POST /orders/submit
     Paper-->>H: { orderId }
-    H->>H: PostToolUse: position-reconcile + audit
+    H->>H: PostToolUse: audit log
     H->>PS: status=executed
     H-->>T: { orderId, status: submitted }
 
-    Note over T,O: Stop hook 检查 pending plan 残留
+    Note over T,O: Stop hook 检查 pending plan 残留<br/>(scheduler 路径强制再 turn；chat 路径在最终回复追加警示)
 ```
 
 ---

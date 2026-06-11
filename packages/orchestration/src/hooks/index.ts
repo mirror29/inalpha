@@ -47,6 +47,11 @@ export type {
   PendingPlanFetcher,
   PendingPlanCheckOptions,
 } from "./handlers/pending-plan-check.js";
+// issue #65：生产 fetcher（调 paper /plans）+ chat 路径残留警示 processor
+export { createPaperPendingPlanFetcher } from "./handlers/pending-plan-fetcher.js";
+export type { PaperPendingPlanFetcherOptions } from "./handlers/pending-plan-fetcher.js";
+export { createPendingPlanNoticeProcessor } from "./processors/pending-plan-notice.js";
+export type { PendingPlanNoticeOptions } from "./processors/pending-plan-notice.js";
 export { createFillReconcileCheckHandler } from "./handlers/fill-reconcile-check.js";
 export type {
   UnreconciledOrderLite,

@@ -30,6 +30,13 @@ import type { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
 
 import { defaultServiceSubject, mintServiceToken } from "../auth.js";
+import {
+  HookRunner,
+  StopHookRunner,
+  createPaperPendingPlanFetcher,
+  createPendingPlanCheckHandler,
+  formatStopNotice,
+} from "../hooks/index.js";
 import { completeRun, hasRunningRun, insertRun } from "./repo.js";
 import type {
   AgentJobPayload,
@@ -136,6 +143,29 @@ async function runToolMode(
 
 // ============ agent mode ============
 
+/**
+ * agent mode 的 Stop hook 调度器（issue #65 / ADR-0010 §Stop hook）。
+ *
+ * cron 跑 agent 是**无人值守**场景——LLM 调完 trade.create_plan 就结束 turn 的话，
+ * pending plan 会静默残留到没人看的 scheduler_runs 里。这里我们自己持有 generate
+ * 循环，可以真正实现"Stop hook 强制再 turn"：每次 generate 结束跑一遍 Stop hook，
+ * 有残留 plan 就把 [system_notice] 当下一条 user 消息续跑（StopHookRunner 限流 ≤3 次）。
+ */
+function buildStopRunner(token: string): StopHookRunner {
+  const hookRunner = new HookRunner();
+  hookRunner.register({
+    id: "pending-plan-check",
+    event: "Stop",
+    handler: createPendingPlanCheckHandler({
+      fetcher: createPaperPendingPlanFetcher({ token }),
+    }),
+    // 护栏失败（paper 抖动）不该让 cron run 整体 failed —— handler 自身已 fail-safe，
+    // blocking=false 再兜一层 runner 级异常
+    blocking: false,
+  });
+  return new StopHookRunner(hookRunner);
+}
+
 async function runAgentMode(
   payload: AgentJobPayload,
   token: string,
@@ -148,19 +178,43 @@ async function runAgentMode(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AGENT_HARD_TIMEOUT_MS);
+  const stopRunner = buildStopRunner(token);
 
   try {
     const rc = new RequestContext([["authToken", token]]);
-    // Mastra agent.generate 在 1.36 支持 abortSignal + requestContext
-    const out = (await agent.generate(payload.prompt, {
-      requestContext: rc,
-      abortSignal: controller.signal,
-    } as never)) as { text?: string; usage?: unknown; finishReason?: string };
+    // 累积消息数组而非裸 prompt：force-continue 的第二轮 generate 要带上前轮上下文，
+    // 否则 LLM 只看到一句 [system_notice]，不知道 plan 是怎么来的
+    const messages: Array<{ role: "user" | "assistant"; content: string }> = [
+      { role: "user", content: payload.prompt },
+    ];
+    let out: { text?: string; usage?: unknown; finishReason?: string };
+    let forceCount = 0;
+    for (;;) {
+      // Mastra agent.generate 在 1.36 支持 abortSignal + requestContext
+      out = (await agent.generate(messages as never, {
+        requestContext: rc,
+        abortSignal: controller.signal,
+      } as never)) as { text?: string; usage?: unknown; finishReason?: string };
+
+      const decision = await stopRunner.maybeForceContinue({
+        sessionId: `scheduler:${payload.agent}`,
+        metadata: { agent: payload.agent },
+      });
+      if (!decision.shouldContinue) break;
+      forceCount = decision.forceCount;
+      messages.push({ role: "assistant", content: out.text ?? "" });
+      messages.push({
+        role: "user",
+        content: formatStopNotice(decision.reason ?? "unfinished work detected"),
+      });
+    }
 
     return {
       text: out.text ?? null,
       usage: out.usage ?? null,
       finishReason: out.finishReason ?? null,
+      // 审计留痕：本次 run 被 Stop hook 强制续了几轮（0 = 一把过）
+      stop_hook_force_count: forceCount,
     };
   } finally {
     clearTimeout(timer);
