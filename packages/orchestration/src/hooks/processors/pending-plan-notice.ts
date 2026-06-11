@@ -21,12 +21,16 @@ import type { PendingPlanFetcher } from "../handlers/pending-plan-check.js";
 /** 命中这些 tool 才查残留（plan 状态只会被这两个动作推进到"未执行"态）。 */
 const PLAN_MUTATING_TOOLS = ["trade.create_plan", "trade.approve_plan"];
 
+/**
+ * 默认模板是**语言中立的机器风格状态行**（PR review · CLAUDE.md §3）：
+ * 用户可见文本不能写死任何自然语言（英文散文对中文/日文用户 = 中英混排 bug）。
+ * 这里只保留 key-value 结构 + tool 名 / plan id（专有名词本就不翻译），
+ * 下一 turn LLM 在 memory 里读到后会按用户语言转述与执行。
+ * 需要完整自然语言版本时通过 ``noticeTemplate`` 按 locale 注入。
+ */
 const DEFAULT_NOTICE_TEMPLATE =
-  "[system_notice] {count} trade plan(s) ({ids}) are still in " +
-  "approved / pending_approval state — not executed yet. " +
-  "To execute: pending_approval plans need trade.approve_plan first (returns the " +
-  "approvalToken); for approved plans fetch the approvalToken via trade.get_plan; " +
-  "then trade.execute_plan with that token — or trade.reject_plan explicitly.";
+  "[system_notice] pending_plans: {count} ({ids}) → trade.execute_plan / trade.reject_plan " +
+  "(approvalToken: trade.approve_plan → token; approved: trade.get_plan)";
 
 export type PendingPlanNoticeOptions = {
   /** 拉 plan 的函数；不传 → processor 静默 noop（dev / 测试时友好） */
