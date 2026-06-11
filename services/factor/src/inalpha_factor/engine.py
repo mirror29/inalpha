@@ -522,4 +522,5 @@ def _eff_to_dict(spec: FactorSpec, eff: EffResult) -> dict[str, Any]:
         "direction": eff.direction,
         "strength": eff.strength,
         "low_confidence": eff.low_confidence,
+        "decay_state": eff.decay_state,
     }
