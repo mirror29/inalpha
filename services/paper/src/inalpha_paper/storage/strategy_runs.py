@@ -123,19 +123,31 @@ async def set_status(
     conn: AsyncConnection,
     run_id: UUID,
     status: str,
+    *,
+    only_if_status: str | None = None,
 ) -> dict[str, Any] | None:
-    """切状态；离开 running（stopped/errored）时记 stopped_at。"""
+    """切状态；离开 running（stopped/errored）时记 stopped_at。
+
+    ``only_if_status``：给定时仅当**当前状态等于它**才更新（UPDATE 级原子守卫）。
+    stop() 与 loop_crashed 兜底都是 read-then-write，await 点之间可互相穿插，
+    无守卫会把对方刚写的终态覆盖掉（如 stopped 盖掉 errored → crash 被静默埋掉）。
+    未命中守卫返回 None。
+    """
+    guard_sql = " AND status = %s" if only_if_status is not None else ""
+    params: tuple[Any, ...] = (status, status, str(run_id))
+    if only_if_status is not None:
+        params += (only_if_status,)
     async with conn.cursor() as cur:
         await cur.execute(
-            """
+            f"""
             UPDATE strategy_runs
             SET status = %s,
                 stopped_at = CASE WHEN %s <> 'running' THEN NOW() ELSE stopped_at END
-            WHERE id = %s
+            WHERE id = %s{guard_sql}
             RETURNING id, candidate_id, account_id, status, venue, symbol, timeframe,
                       params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at
             """,
-            (status, status, str(run_id)),
+            params,
         )
         row = await cur.fetchone()
     return row  # type: ignore[return-value]

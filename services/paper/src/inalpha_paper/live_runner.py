@@ -175,7 +175,9 @@ class LiveRunnerManager:
                     _logger.warning(
                         "live run %s: loop_crashed 错误日志写入失败（已忽略）", run_id, exc_info=True
                     )
-                await runs_store.set_status(conn, run_id, "errored")
+                # only_if_status：与 stop() 的竞态守卫（PR review）——上面 get 之后的
+                # await 点里 stop() 可能已写 stopped，无守卫会把它盖成 errored
+                await runs_store.set_status(conn, run_id, "errored", only_if_status="running")
         except Exception:
             _logger.exception(
                 "live run %s: loop_crashed 兜底写库失败（放弃，留给重启 reconcile）", run_id
@@ -214,7 +216,9 @@ class LiveRunnerManager:
                         await runs_store.append_log(conn, run_id, "info", "用户停止运行")
                 except Exception:
                     _logger.warning("live run %s: 停止日志写入失败（已忽略）", run_id, exc_info=True)
-                await runs_store.set_status(conn, run_id, "stopped")
+                # only_if_status：反向竞态守卫（PR review）——本协程 get 之后的 await 点里
+                # loop_crashed 兜底可能已写 errored，无守卫会把 crash 终态盖成 stopped
+                await runs_store.set_status(conn, run_id, "stopped", only_if_status="running")
 
     async def stop_all(self) -> None:
         """服务停机：cancel 所有 task（不改 DB 状态，重启由 reconcile 处理）。"""
