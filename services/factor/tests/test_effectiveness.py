@@ -126,3 +126,34 @@ def test_score_factor_carries_decay_state() -> None:
 
     perfect = score_factor(fwd.fillna(0), close, horizon=5, quantiles=5, min_samples=50)
     assert perfect.decay_state == "stable"
+
+
+# ────────────────────────────────────────────────────────────────────
+# null IC 基准（选择效应地板，ADR-0043 D4 延伸）
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_null_ic_benchmark_monotonicity() -> None:
+    from inalpha_factor.effectiveness import null_ic_benchmark
+
+    # 候选越多 → 纯噪声里挑出的最大 |IC| 期望越高
+    assert null_ic_benchmark(50, 720, 5) > null_ic_benchmark(10, 720, 5)
+    # 样本越多 → σ 越小 → 基准越低
+    assert null_ic_benchmark(50, 720, 5) < null_ic_benchmark(50, 240, 5)
+    # horizon 越长 → 有效样本越少 → 基准越高
+    assert null_ic_benchmark(50, 720, 20) > null_ic_benchmark(50, 720, 5)
+    # 退化输入安全
+    assert null_ic_benchmark(0, 720, 5) == 0.0
+    assert null_ic_benchmark(50, 0, 5) == 0.0
+
+
+def test_null_ic_benchmark_sanity_value() -> None:
+    """手算 sanity：N=50, samples=720, horizon=5 → n_eff=144, σ=1/√143≈0.0836。
+
+    E[max|null] = σ·[(1−γ)Φ⁻¹(1−1/50) + γΦ⁻¹(1−1/(50e))] ≈ σ·2.215 ≈ 0.185。
+    纯噪声里 50 个候选能"跑出" 0.18 级别的 |IC|——这正是要透出的事实。
+    """
+    from inalpha_factor.effectiveness import null_ic_benchmark
+
+    v = null_ic_benchmark(50, 720, 5)
+    assert 0.15 < v < 0.22

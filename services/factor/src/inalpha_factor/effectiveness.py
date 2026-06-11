@@ -62,6 +62,41 @@ def _forward_return(close: pd.Series, horizon: int) -> pd.Series:
     return close.shift(-horizon) / close - 1.0
 
 
+# Euler–Mascheroni 常数（E[max] 渐近近似用）
+_EULER_GAMMA = 0.5772156649015329
+
+
+def null_ic_benchmark(n_candidates: int, sample_size: int, horizon: int) -> float:
+    """纯噪声下 N 个候选里期望最大 |IC|（选择效应基准，ADR-0043 D4 延伸）。
+
+    Bailey–López de Prado 的 E[max] 渐近近似：
+
+    - ``n_eff = max(4, sample_size // horizon)`` —— 前瞻收益按 horizon 重叠，
+      独立样本数保守按 1/horizon 折算（启发式，非严格）
+    - 单个零假设 IC 的标准差 ``σ ≈ 1/√(n_eff − 1)``
+    - ``E[max|null] ≈ σ·[(1−γ)·Φ⁻¹(1−1/N) + γ·Φ⁻¹(1−1/(N·e))]``，γ=Euler 常数
+
+    **读法**：top 因子 |rank_ic| 不显著高于该值 ⇒ 可能只是从 N 个候选里挑出来的
+    选择效应，不是真信号。已知局限：n_eff 折算是启发式；近似假设候选间独立
+    （实际正相关 → 真实基准略低）——它是**地板不是假设检验**。只透出供 LLM/人
+    判断，不设阈值不剔除（ADR-0043 推迟决议不变）。
+    """
+    if n_candidates < 1 or sample_size < 1:
+        return 0.0
+    n_eff = max(4, sample_size // max(1, horizon))
+    sigma = 1.0 / np.sqrt(n_eff - 1)
+    if n_candidates == 1:
+        # 单候选无选择效应：基准即单次抽样的 ~0 期望，给 σ 量级便于解读
+        return float(sigma)
+    from statistics import NormalDist
+
+    inv = NormalDist().inv_cdf
+    e_max = (1 - _EULER_GAMMA) * inv(1 - 1.0 / n_candidates) + _EULER_GAMMA * inv(
+        1 - 1.0 / (n_candidates * np.e)
+    )
+    return float(sigma * e_max)
+
+
 def _rank_ic(factor: pd.Series, fwd: pd.Series) -> tuple[float, int]:
     """时序 Rank IC = spearman(rank(factor), rank(fwd))。返回 (ic, sample_size)。"""
     pair = pd.concat([factor, fwd], axis=1).replace([np.inf, -np.inf], np.nan).dropna()

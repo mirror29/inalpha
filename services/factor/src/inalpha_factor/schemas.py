@@ -165,6 +165,14 @@ class ScoreResponse(BaseModel):
     horizon_bars: int
     bars_used: int
     factors: list[FactorEffectiveness]
+    ic_null_benchmark: float = Field(
+        default=0.0,
+        description="选择效应基准（ADR-0043 D4 延伸）：本批 N 个候选、当前样本量下"
+        "纯噪声能跑出的期望最大 |IC|（Bailey–López de Prado E[max] 近似）。"
+        "top 因子 |rank_ic| 不显著高于该值 ⇒ 可能是从 N 个里挑出来的选择效应。"
+        "局限：n_eff 按 1/horizon 折算是启发式、假设候选独立——是地板不是假设检验，"
+        "只供判断，不做自动剔除",
+    )
 
 
 class SnapshotRequest(BaseModel):
@@ -206,6 +214,12 @@ class SnapshotResponse(BaseModel):
     )
     low_confidence_count: int = Field(
         default=0, description="样本不足被排除排序的因子数（区分'没因子'和'有因子但样本不够'）"
+    )
+    ic_null_benchmark: float = Field(
+        default=0.0,
+        description="选择效应基准：candidates_evaluated 个候选、当前样本量下纯噪声的"
+        "期望最大 |IC|（读法/局限见 ScoreResponse 同名字段）。top1 的 |rank_ic| 不显著"
+        "高于此值时引用要谨慎",
     )
 
 
