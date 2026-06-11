@@ -204,15 +204,21 @@ class FactorEngine:
         if df.empty:
             logger.info("macro factors skipped: no price bars to align against")
             return {}
-        # 多拉 120 天给 daily 公式 warmup（chg_60 + 余量）
+        # warmup 窗口按请求的因子定（ADR-0044 Phase 2）：纯 daily 120 天（chg_60+余量），
+        # 含 monthly 600 天（YoY 动量 15 个月观测 + 60d 发布滞后）。旧的硬编码 120 对
+        # monthly YoY 是 bug 级缺口——窗口不够长公式全 NaN。
         from_ts = (
             df.index[0].to_pydatetime() if isinstance(df.index, pd.DatetimeIndex) else as_of
-        ) - timedelta(days=120)
+        ) - timedelta(days=self._macro.warmup_days(want))
         macro: dict[str, pd.Series] = {}
         for sid in self._macro.required_series(want):
             try:
                 macro[sid] = await self._fetch_macro_series(
-                    sid, from_ts=from_ts, to_ts=as_of, fresh=fresh
+                    sid,
+                    from_ts=from_ts,
+                    to_ts=as_of,
+                    fresh=fresh,
+                    timeframe=self._macro.series_timeframe(sid),
                 )
             except Exception as exc:  # FRED key 缺失 / data 无 fred venue → 优雅降级
                 logger.warning("macro series %s fetch failed: %r", sid, exc)
@@ -229,18 +235,27 @@ class FactorEngine:
             return {}
 
     async def _fetch_macro_series(
-        self, series_id: str, *, from_ts: datetime, to_ts: datetime, fresh: bool
+        self,
+        series_id: str,
+        *,
+        from_ts: datetime,
+        to_ts: datetime,
+        fresh: bool,
+        timeframe: str = "1d",
     ) -> pd.Series:
-        """单条 FRED 序列（venue="fred"，值在 close）。live 走专属缓存（daily 序列
-        一天一变，TTL 放宽到 1 小时，不占面板缓存的半根 bar 约束）。
+        """单条 FRED 序列（venue="fred"，值在 close；monthly 序列 timeframe="1mo"）。
+        live 走专属缓存（FRED 序列至多一天一变，TTL 放宽到 1 小时，不占面板缓存的
+        半根 bar 约束）。
 
         ⚠️ ``fresh`` 语义与 DataClient 相反,别按字面反转条件:这里 fresh=True
         = live 调用(**启用**缓存,TTL 内直接命中);fresh=False = 历史 as_of
         请求(**跳过**缓存——历史 key 难收敛,缓存只会污染)。
 
-        坑:缓存 key 含 to_ts.date() —— 此缓存只对 T+1 发布的 daily 序列正确;
-        若后续加日内更新的 macro 源(如 VIX spot),必须改用面板缓存的
-        半根 bar TTL,否则当日内会静默返回 stale 值。
+        坑:缓存 key 含 to_ts.date() —— 对 T+1 发布的 daily 序列正确;对静态滞后
+        ≥ 发布延迟的 monthly 序列同样正确(新观测的生效日 = obs+lag 落在发布日
+        之后,发布当天缓存 stale 1 小时也进不了当日因子)。警告只针对**日内更新**
+        的 macro 源(如 VIX spot)——加那种源必须改用面板缓存的半根 bar TTL,
+        否则当日内会静默返回 stale 值。
         """
         key = (
             "__macro__",
@@ -256,7 +271,7 @@ class FactorEngine:
                 # 在缓存命中后全部静默消失(review #70 round2 major)。
                 return cached[0]["close"]
         df = await self._fetch_df(
-            venue="fred", symbol=series_id, timeframe="1d",
+            venue="fred", symbol=series_id, timeframe=timeframe,
             from_ts=from_ts, to_ts=to_ts, fresh=fresh,
         )
         if df.empty:

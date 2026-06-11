@@ -230,6 +230,77 @@ export const FACTOR_INFO: Record<string, FactorInfo> = {
     zh: "VSTD(20)：20 期成交量标准差除以量均线，成交量的变异系数——量能是否稳定。",
     en: "VSTD(20): 20-period standard deviation of volume over its mean — the coefficient of variation of volume; how steady activity is.",
   },
+  // ── macro · FRED daily（ADR-0044 Phase 1，发布滞后 +1 天）──
+  "macro.dff_chg_20": {
+    zh: "联邦基金利率 20 日变化：货币政策松紧的边际方向（FRED DFF，滞后 1 天）。",
+    en: "20-day change in the federal funds rate — the marginal direction of policy tightening (FRED DFF, 1-day lag).",
+  },
+  "macro.dgs10_level": {
+    zh: "10Y 美债收益率水平：无风险利率锚（FRED DGS10，滞后 1 天）。",
+    en: "10Y Treasury yield level — the risk-free rate anchor (FRED DGS10, 1-day lag).",
+  },
+  "macro.dgs10_chg_20": {
+    zh: "10Y 美债收益率 20 日变化：利率动量，上行压估值。",
+    en: "20-day change in the 10Y Treasury yield — rate momentum; rising yields compress valuations.",
+  },
+  "macro.curve_slope": {
+    zh: "期限利差 10Y-2Y：收益率曲线斜率，倒挂（<0）为衰退前瞻信号。",
+    en: "10Y-2Y term spread — yield-curve slope; inversion (<0) is a classic recession lead.",
+  },
+  "macro.curve_slope_chg_20": {
+    zh: "期限利差 20 日变化：曲线陡峭化/平坦化的方向。",
+    en: "20-day change in the term spread — direction of curve steepening/flattening.",
+  },
+  "macro.dollar_roc_20": {
+    zh: "广义美元指数 20 日动量：美元走强压风险资产（FRED DTWEXBGS）。",
+    en: "20-day momentum of the broad dollar index — a stronger dollar pressures risk assets (FRED DTWEXBGS).",
+  },
+  "macro.dollar_roc_60": {
+    zh: "广义美元指数 60 日动量：慢速美元趋势。",
+    en: "60-day momentum of the broad dollar index — the slower dollar trend.",
+  },
+  "macro.vix_level": {
+    zh: "VIX 水平：期权隐含波动率，恐慌度读数（FRED VIXCLS）。",
+    en: "VIX level — option-implied volatility; the fear gauge (FRED VIXCLS).",
+  },
+  "macro.vix_chg_20": {
+    zh: "VIX 20 日变化：恐慌升温/降温的方向。",
+    en: "20-day change in VIX — direction of rising/cooling fear.",
+  },
+  // ── macro · FRED monthly（ADR-0044 Phase 2，per-series 发布滞后 40-60 天，
+  //    在 1d bar 上是 ~30 bar 一变的阶梯函数）──
+  "macro.cpi_yoy": {
+    zh: "CPI 同比：通胀水平（FRED CPIAUCSL，月度，发布滞后 ~45 天）。",
+    en: "CPI year-over-year — the inflation level (FRED CPIAUCSL, monthly, ~45-day publication lag).",
+  },
+  "macro.cpi_mom": {
+    zh: "CPI 环比：通胀的月度脉冲。",
+    en: "CPI month-over-month — the monthly inflation impulse.",
+  },
+  "macro.cpi_yoy_chg_3": {
+    zh: "CPI 同比 3 月动量：通胀在加速还是降温。",
+    en: "3-month change in CPI YoY — whether inflation is accelerating or cooling.",
+  },
+  "macro.core_cpi_yoy": {
+    zh: "核心 CPI 同比：剔除食品能源的底层通胀（FRED CPILFESL）。",
+    en: "Core CPI year-over-year — underlying inflation ex food & energy (FRED CPILFESL).",
+  },
+  "macro.unrate_level": {
+    zh: "失业率水平：劳动力市场松紧（FRED UNRATE，月度，滞后 ~40 天）。",
+    en: "Unemployment rate level — labor-market slack (FRED UNRATE, monthly, ~40-day lag).",
+  },
+  "macro.unrate_chg_3": {
+    zh: "失业率 3 月变动：Sahm 式恶化信号，快速上行预警衰退。",
+    en: "3-month change in unemployment — a Sahm-style deterioration signal; rapid rises warn of recession.",
+  },
+  "macro.payems_chg_1": {
+    zh: "非农就业月增（千人）：经济动能的月度读数（FRED PAYEMS）。",
+    en: "Monthly nonfarm payrolls change (thousands) — the monthly read on economic momentum (FRED PAYEMS).",
+  },
+  "macro.m2_yoy": {
+    zh: "M2 同比增速：流动性扩张/收缩（FRED M2SL，月度，发布滞后 ~60 天）。",
+    en: "M2 year-over-year growth — liquidity expansion/contraction (FRED M2SL, monthly, ~60-day lag).",
+  },
 };
 
 /** 取因子说明,缺失返回 null(面板回退通用文案)。 */
