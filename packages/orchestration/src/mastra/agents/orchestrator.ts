@@ -661,9 +661,11 @@ export const orchestrator = new Agent({
   // DeepSeek 1M 上限 → INCOMPLETE_STREAM、线程报废）。tool 层已对已知大输出
   // 降采样/截断，这里是**第二道防线**：消息历史超预算时从最旧裁起（保 system），
   // processInputStep 在多步 tool loop 中每步修剪，防单 turn 内滚雪球。
-  // 250k ≈ 模型上限的 1/4——给 instructions/tool schema/输出留足余量。
+  // 500k ≈ 模型上限（1M）的一半——历史预算给足，剩余一半留给
+  // instructions / tool schema / 召回注入 / 输出。tool 输出已限幅后，
+  // 500k ≈ 几十轮深度研究对话，正常使用几乎摸不到。
   inputProcessors: [
-    new TokenLimiterProcessor({ limit: 250_000, trimMode: "contiguous" }),
+    new TokenLimiterProcessor({ limit: 500_000, trimMode: "contiguous" }),
   ],
   // issue #65 / ADR-0010 §Stop hook：chat 路径的 pending plan 残留警示。
   // Mastra 1.36 无"turn 结束后强制续 loop"钩子位，chat 侧降级为输出警示
