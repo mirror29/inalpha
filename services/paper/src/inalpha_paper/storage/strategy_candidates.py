@@ -67,6 +67,7 @@ async def insert_candidate(
     author_id: UUID | None = None,
     owner_account_id: UUID | None = None,
     audit: dict[str, Any] | None = None,
+    factor_snapshot: dict[str, Any] | None = None,
 ) -> tuple[UUID, bool]:
     """落一行候选。
 
@@ -79,6 +80,9 @@ async def insert_candidate(
     docs/miro/11 M4：除 ``code_hash`` 精确去重，再加**结构指纹**去重——剥注释/空白后
     相同则视为同款（挡"只改注释/缩进"的伪多样性）。结构指纹存进 ``audit.structure_hash``
     JSONB（复用现有列，无需 migration），不命中精确 hash 时再按它查一次。
+
+    ``factor_snapshot``（ADR-0047）：生成时因子血缘。幂等命中已有行时**不更新**——
+    血缘记录的是"首次生成该代码时的依据"，后来者重复提交同款不改写历史。
     """
     code_hash = compute_code_hash(code)
     structure_hash = compute_structure_hash(code)
@@ -115,8 +119,8 @@ async def insert_candidate(
             """
             INSERT INTO strategy_candidates (
                 id, code, code_hash, description, author, author_id,
-                owner_account_id, audit
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                owner_account_id, audit, factor_snapshot
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (code_hash) DO NOTHING
             RETURNING id
             """,
@@ -129,6 +133,7 @@ async def insert_candidate(
                 str(author_id) if author_id else None,
                 str(owner_account_id) if owner_account_id else None,
                 audit_json,
+                json.dumps(factor_snapshot, default=str) if factor_snapshot else None,
             ),
         )
         inserted = await cur.fetchone()
@@ -156,7 +161,7 @@ async def get_candidate(
             """
             SELECT id, code, code_hash, description, author, author_id,
                    owner_account_id, status, metrics, fitness, last_backtest_run_id,
-                   audit, created_at, updated_at
+                   audit, factor_snapshot, created_at, updated_at
             FROM strategy_candidates
             WHERE id = %s
             """,
@@ -182,7 +187,7 @@ async def list_candidates(
     sql = (
         "SELECT id, code, code_hash, description, author, author_id, "
         "owner_account_id, status, metrics, fitness, last_backtest_run_id, "
-        "audit, created_at, updated_at "
+        "audit, factor_snapshot, created_at, updated_at "
         "FROM strategy_candidates WHERE 1=1"
     )
     params: list[Any] = []
@@ -303,6 +308,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "fitness": row["fitness"],
         "last_backtest_run_id": row["last_backtest_run_id"],
         "audit": row["audit"],
+        "factor_snapshot": row["factor_snapshot"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

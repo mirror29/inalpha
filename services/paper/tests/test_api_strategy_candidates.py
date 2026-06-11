@@ -162,3 +162,92 @@ async def test_promote_twice_returns_409(
     body = r2.json()
     assert body["code"] == "CANDIDATE_NOT_PROMOTABLE"
     assert body["details"]["current_status"] == "promoted"
+
+
+# ────────────────────────────────────────────────────────────────────
+# 因子血缘 factor_snapshot（ADR-0047）
+# ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_factor_snapshot_round_trip(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """POST 带 factor_snapshot → GET 原样返回（血缘落库）。"""
+    salt = uuid.uuid4().hex[:8]
+    code = _MIN_STRATEGY + f'\n"lineage salt {salt}"\n'
+    snapshot = {
+        "venue": "binance",
+        "symbol": "BTC/USDT",
+        "timeframe": "1h",
+        "as_of": "2026-06-11T00:00:00Z",
+        "factors": [
+            {
+                "id": "ta.rsi_14",
+                "rank_ic": 0.08,
+                "rank_ic_recent": 0.06,
+                "direction": 1,
+                "decay_state": "stable",
+            }
+        ],
+        "source": "author_tool",
+    }
+    r = client.post(
+        "/strategy_candidates",
+        headers=auth_headers,
+        json={"code": code, "description": f"lineage-{salt}", "factor_snapshot": snapshot},
+    )
+    assert r.status_code == 200, r.json()
+    cid = r.json()["candidate_id"]
+
+    got = client.get(f"/strategy_candidates/{cid}", headers=auth_headers)
+    assert got.status_code == 200
+    assert got.json()["factor_snapshot"] == snapshot
+
+
+@pytest.mark.asyncio
+async def test_factor_snapshot_absent_stays_null(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    candidate_id: str,
+) -> None:
+    """不传 factor_snapshot（旧调用方 / 用户手描策略）→ NULL，不伪造血缘。"""
+    got = client.get(f"/strategy_candidates/{candidate_id}", headers=auth_headers)
+    assert got.status_code == 200
+    assert got.json()["factor_snapshot"] is None
+
+
+@pytest.mark.asyncio
+async def test_factor_snapshot_idempotent_hit_keeps_original(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """同 code 二次提交带不同 snapshot → 命中幂等返老行，血缘不被改写。"""
+    salt = uuid.uuid4().hex[:8]
+    code = _MIN_STRATEGY + f'\n"idempotent lineage salt {salt}"\n'
+    first = {"venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h", "factors": []}
+    r1 = client.post(
+        "/strategy_candidates",
+        headers=auth_headers,
+        json={"code": code, "description": "v1", "factor_snapshot": first},
+    )
+    assert r1.status_code == 200 and r1.json()["created"] is True
+
+    r2 = client.post(
+        "/strategy_candidates",
+        headers=auth_headers,
+        json={
+            "code": code,
+            "description": "v2",
+            "factor_snapshot": {**first, "venue": "yfinance"},
+        },
+    )
+    assert r2.status_code == 200
+    assert r2.json()["created"] is False
+    assert r2.json()["candidate_id"] == r1.json()["candidate_id"]
+
+    got = client.get(
+        f"/strategy_candidates/{r1.json()['candidate_id']}", headers=auth_headers
+    )
+    assert got.json()["factor_snapshot"]["venue"] == "binance"

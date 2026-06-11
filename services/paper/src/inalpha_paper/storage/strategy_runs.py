@@ -69,7 +69,8 @@ async def get(conn: AsyncConnection, run_id: UUID) -> dict[str, Any] | None:
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-            "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at "
+            "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at, "
+            "factor_baseline, factor_alerts "
             "FROM strategy_runs WHERE id = %s",
             (str(run_id),),
         )
@@ -243,7 +244,8 @@ async def list_all_running(conn: AsyncConnection) -> list[dict[str, Any]]:
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-            "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at "
+            "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at, "
+            "factor_baseline, factor_alerts "
             "FROM strategy_runs WHERE status = %s ORDER BY started_at",
             (_RUNNING,),
         )
@@ -285,6 +287,36 @@ async def mark_running_as_errored(conn: AsyncConnection, *, reason: str) -> int:
             (reason, _RUN_LOG_CAP, _RUNNING),
         )
         return cur.rowcount
+
+
+# ─── 因子血缘 / 衰减巡检（D-12 · ADR-0047）───
+
+
+async def set_factor_baseline(
+    conn: AsyncConnection, run_id: UUID, baseline: dict[str, Any]
+) -> None:
+    """写入场因子基准（起跑时 best-effort 拍的 /snapshot；巡检对比的锚点）。
+
+    只在当前为 NULL 时写——baseline 语义是"入场时"，巡检自愈补拍不该覆盖
+    已有基准（那会让"入场 vs 当前"的对比失去锚点）。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "UPDATE strategy_runs SET factor_baseline = %s::jsonb "
+            "WHERE id = %s AND factor_baseline IS NULL",
+            (json.dumps(baseline, default=str), str(run_id)),
+        )
+
+
+async def set_factor_alerts(
+    conn: AsyncConnection, run_id: UUID, alerts: dict[str, Any]
+) -> None:
+    """整写告警状态机 ``{factor_id: {state, alerted_at}}``（巡检每轮对比后落）。"""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "UPDATE strategy_runs SET factor_alerts = %s::jsonb WHERE id = %s",
+            (json.dumps(alerts, default=str), str(run_id)),
+        )
 
 
 # ─── 复盘决策日志（D-11 issue #1）───

@@ -245,6 +245,8 @@ def _row_to_record(row: dict[str, Any]) -> StrategyRunRecord:
         last_bar_ts=row.get("last_bar_ts"),
         cumulative_pnl=float(row["cumulative_pnl"]),
         run_log=row.get("run_log") or [],
+        factor_baseline=row.get("factor_baseline"),
+        factor_alerts=row.get("factor_alerts") or {},
         started_at=row["started_at"],
         stopped_at=row.get("stopped_at"),
     )
