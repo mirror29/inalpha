@@ -29,7 +29,9 @@ export function OrdersTable({
   const locale = useLocale();
 
   return (
+    // h-full:总览里与策略池并排,grid stretch 下两卡等高。
     <Panel
+      className="h-full"
       title={t("title")}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">
@@ -40,9 +42,11 @@ export function OrdersTable({
       {orders.length === 0 ? (
         <TableEmpty>{t("empty")}</TableEmpty>
       ) : (
-        <div className="overflow-x-auto">
+        // 限高内滚+表头吸顶(同 DecisionTimeline 模式):订单几十行,放任自然高
+        // 会把同排的策略池卡撑出大片空白。
+        <div className="max-h-96 overflow-x-auto overflow-y-auto">
           <table className="w-full border-collapse text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-bg-elev">
               <TableHeadRow>
                 <Th>{t("col.time")}</Th>
                 <Th>{t("col.instrument")}</Th>

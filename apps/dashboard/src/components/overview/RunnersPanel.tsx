@@ -51,7 +51,9 @@ export function RunnersPanel({ runs }: { runs: StrategyRunRecord[] }) {
   const shown = sorted.slice(0, SHOWN);
 
   return (
+    // h-full:总览里与持仓并排,grid stretch 下两卡等高(父容器非 stretch 时为 no-op)。
     <Panel
+      className="h-full"
       title={t("title")}
       aside={
         <div className="flex items-center gap-3">
