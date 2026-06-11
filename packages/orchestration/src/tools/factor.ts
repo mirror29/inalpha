@@ -283,9 +283,106 @@ export const factorEvaluateCandidateTool = createTool({
   },
 });
 
+// ────────────────────────────────────────────────────────────────────
+// factor.propose / factor.list_candidates —— 候选池（register 门只在 UI）
+// ────────────────────────────────────────────────────────────────────
+
+export const factorProposeTool = createTool({
+  id: "factor.propose",
+  description: `
+    把**通过评估的**自定义因子表达式提进候选池（status=pending_review）。
+    之后由**人工**在 dashboard 审核——register 后才进 catalog 成为生产因子；
+    你没有任何把候选转正的工具（register 门，ADR-0019）。
+
+    何时用：
+    - factor.evaluate_candidate 结果像样（|rank_ic| 高于 ic_null_benchmark、
+      is_likely_redundant=false、decay_state 非 decaying）且你能讲出经济学故事
+    - factor.run_discovery workflow 的幸存者会自动走这里，单发评估后手动 propose 也行
+
+    何时不用：
+    - 评估结果平庸 / is_likely_redundant=true（已有因子换皮）——别灌垃圾进审核队列
+    - 还没评估过 → 先 factor.evaluate_candidate
+
+    硬要求：
+    - hypothesis ≥ 20 字：**为什么**该有效（行为偏差 / 结构性约束 / 信息扩散…），
+      只有数字没有故事的候选不收
+    - nTested **如实自报**本次会话累计试过多少个表达式——审核人靠它还原选择效应
+      背景（试 30 个挑 1 个的 IC 要打很大折扣）；谎报 = 污染审计链
+    - testResults 把 evaluate_candidate 的关键产物带上（rank_ic / icir / decay_state /
+      max_corr / ic_pvalue），审核人不用重跑
+
+    幂等：同表达式重复 propose 返已有候选（created=false），不重复落。
+  `.trim(),
+  inputSchema: z.object({
+    expression: z.string().min(2).max(2000),
+    hypothesis: z
+      .string()
+      .min(20)
+      .max(2000)
+      .describe("经济学故事：为什么这个因子该有效"),
+    name: z.string().max(120).optional(),
+    venue: z.string().optional().describe("评估上下文（复核用）"),
+    symbol: z.string().optional(),
+    timeframe: z.string().optional(),
+    testResults: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("evaluate_candidate 的关键产物（rank_ic/icir/decay_state/max_corr/ic_pvalue）"),
+    batchId: z.string().uuid().optional().describe("L1 批次 id（workflow 传入）"),
+    nTested: z
+      .number()
+      .int()
+      .min(1)
+      .max(10_000)
+      .default(1)
+      .describe("本批/本会话累计评估过的表达式数（BH 校正的 m，如实自报）"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.proposeCandidate({
+      expression: inputData.expression,
+      hypothesis: inputData.hypothesis,
+      name: inputData.name,
+      venue: inputData.venue,
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe,
+      testResults: inputData.testResults,
+      batchId: inputData.batchId,
+      nTested: inputData.nTested,
+    });
+  },
+});
+
+export const factorListCandidatesTool = createTool({
+  id: "factor.list_candidates",
+  description: `
+    列因子候选池（按 status 过滤：pending_review / registered / rejected）。
+
+    何时用：用户问"提过哪些因子候选 / 哪些还没审 / 哪些已注册"；propose 前查重。
+    何时不用：想把候选转正 → 没有这样的 tool，告诉用户去 dashboard /factors 审核。
+    坑：registered 因子已自动进 factor.catalog（id 形如 custom.<hash>），择时直接用
+    factor.timing/score 查它，不用再来这里。
+  `.trim(),
+  inputSchema: z.object({
+    status: z.enum(["pending_review", "registered", "rejected"]).optional(),
+    limit: z.number().int().min(1).max(200).default(50),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listCandidates({
+      status: inputData.status,
+      limit: inputData.limit,
+    });
+  },
+});
+
 export const factorTools = [
   factorTimingTool,
   factorScoreTool,
   factorCatalogTool,
   factorEvaluateCandidateTool,
+  factorProposeTool,
+  factorListCandidatesTool,
 ] as const;

@@ -12,6 +12,7 @@ import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip, Meta } from "@/components/ui/LiveStrip";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
+import { FactorCandidates } from "./FactorCandidates";
 import { FactorDetailOverlay } from "./FactorDetail";
 
 /** 纯 catalog 请求(毫秒级,无快照计算),静态目录 60s 一刷足够。 */
@@ -72,6 +73,9 @@ export function FactorsClient() {
       {!data.catalogOk && <SourceDownBanner text={t("serviceDown")} />}
 
       <CatalogPanel catalog={data.catalog} sources={data.sources} />
+
+      {/* D-12 · 因子发现 L1：候选审核(register 门的唯一人工入口) */}
+      <FactorCandidates />
     </div>
   );
 }

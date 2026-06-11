@@ -12,7 +12,11 @@ import {
   HookRunner,
   defaultFactorExpressionAuditRegistration,
 } from "../src/hooks/index.js";
-import { factorEvaluateCandidateTool } from "../src/tools/index.js";
+import {
+  factorEvaluateCandidateTool,
+  factorListCandidatesTool,
+  factorProposeTool,
+} from "../src/tools/index.js";
 
 const TEST_TOKEN = "test-token-doesnt-need-to-be-real";
 
@@ -84,6 +88,75 @@ describe("factor.evaluate_candidate", () => {
     expect(body.lookback_bars).toBe(720);
     expect(body.horizon_bars).toBe(5);
     expect((result as { ic_pvalue: number }).ic_pvalue).toBe(0.03);
+  });
+});
+
+describe("factor.propose / factor.list_candidates", () => {
+  it("propose POSTs /candidates with snake_case body", async () => {
+    let capturedUrl = "";
+    let capturedBody = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        capturedUrl = url;
+        capturedBody = (init?.body as string) ?? "";
+        return new Response(
+          JSON.stringify({
+            candidate_id: "550e8400-e29b-41d4-a716-446655440000",
+            expression_hash: "abc123",
+            created: true,
+            status: "pending_review",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+
+    const result = await factorProposeTool.execute!(
+      {
+        expression: "Rank($volume, 20) * Sign(Delta($close, 1))",
+        hypothesis: "放量伴随方向时短期动量延续：成交量确认价格信息的扩散速度",
+        nTested: 7,
+        testResults: { rank_ic: 0.06, decay_state: "stable" },
+      } as never,
+      ctx(),
+    );
+
+    expect(capturedUrl).toContain("/candidates");
+    const body = JSON.parse(capturedBody) as Record<string, unknown>;
+    expect(body.hypothesis).toContain("放量");
+    expect(body.n_tested).toBe(7);
+    expect((body.test_results as Record<string, unknown>).rank_ic).toBe(0.06);
+    expect((result as { created: boolean }).created).toBe(true);
+  });
+
+  it("propose inputSchema enforces hypothesis >= 20 chars", () => {
+    const r = factorProposeTool.inputSchema!.safeParse({
+      expression: "Mean($close, 20)",
+      hypothesis: "太短",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("list_candidates GETs /candidates with status filter", async () => {
+    let capturedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        capturedUrl = url;
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    await factorListCandidatesTool.execute!(
+      { status: "pending_review", limit: 10 } as never,
+      ctx(),
+    );
+    expect(capturedUrl).toContain("/candidates");
+    expect(capturedUrl).toContain("status=pending_review");
   });
 });
 
