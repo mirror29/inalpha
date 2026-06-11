@@ -107,8 +107,9 @@ class FundamentalAnalyst(Analyst):
         # Crypto: fills the gap when yfinance returns limited/no financials data
         web_block = ""
         ticker_name = symbol
+        # 年份取 as_of 动态拼（issue #63），不写死——跨年后硬编码年份=要陈旧财报当最新
         web_results = await self._data.get_web_search(
-            f"{ticker_name} 最新财报 营收 利润 2026", max_results=3
+            f"{ticker_name} 最新财报 营收 利润 {as_of.year}", max_results=3
         )
         if web_results:
             web_block = _render_web_results(web_results)

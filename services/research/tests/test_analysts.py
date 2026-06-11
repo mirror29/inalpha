@@ -144,6 +144,35 @@ async def test_fundamental_runs_without_data_fetch(data_client: DataClient) -> N
     # confirm no data fetch by checking we did not hit respx (no mock set)
 
 
+@respx.mock
+async def test_fundamental_web_search_year_follows_as_of(data_client: DataClient) -> None:
+    """财报查询年份随 as_of 动态拼，不写死（issue #63 回归）。"""
+    web_route = respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {
+            "fundamental": {
+                "stance": "neutral",
+                "confidence": 0.4,
+                "summary": "No data.",
+                "key_points": [],
+            }
+        }
+    )
+    analyst = FundamentalAnalyst(llm=llm, data=data_client)
+    await analyst.run(
+        venue="yfinance",
+        symbol="AAPL",
+        timeframe="1d",
+        as_of=datetime(2031, 3, 2, tzinfo=UTC),
+        lookback_days=30,
+    )
+    query = web_route.calls.last.request.url.params["query"]
+    assert "2031" in query
+    assert "2026" not in query  # 修复前的硬编码年份
+
+
 async def test_fundamental_handles_missing_fields(data_client: DataClient) -> None:
     """LLM 返简陋 dict 时也能兜底返 brief，不抛。"""
     llm = FakeLLMClient({"fundamental": {}})  # 空 dict
@@ -297,6 +326,38 @@ async def test_sentiment_propagates_fng_api_error(data_client: DataClient) -> No
         lookback_days=7,
     )
     assert brief.analyst == "sentiment"
+
+
+@respx.mock
+async def test_sentiment_web_search_year_follows_as_of(data_client: DataClient) -> None:
+    """fallback 查询年份随 as_of 动态拼，不写死（issue #63 回归）。"""
+    respx.get("https://api.alternative.me/fng/").mock(
+        return_value=Response(503, json={"error": "down"})
+    )
+    web_route = respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {
+            "you are a sentiment analyst": {
+                "stance": "neutral",
+                "confidence": 0.4,
+                "summary": "No data.",
+                "key_points": [],
+            }
+        }
+    )
+    analyst = SentimentAnalyst(llm=llm, data=data_client)
+    await analyst.run(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=datetime(2031, 3, 2, tzinfo=UTC),
+        lookback_days=7,
+    )
+    query = web_route.calls.last.request.url.params["query"]
+    assert "2031" in query
+    assert "2026" not in query  # 修复前的硬编码年份
 
 
 @respx.mock
