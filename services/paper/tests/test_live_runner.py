@@ -533,8 +533,9 @@ async def test_done_callback_marks_loop_crashed(
 ) -> None:  # type: ignore[no-untyped-def]
     """_run_loop 自己的错误处理路径写库失败 → done_callback 兜底置 errored（issue #67）。
 
-    场景：build 抛不可重试错 → loop 走"立即 errored"写库，但第一次 append_error_log
-    本身抛错（模拟 DB 抖动）→ 异常逃出 _run_loop。修复前 run 永卡 running。
+    场景：build 抛不可重试错 → loop 走"立即 errored"写库，但第一次 set_status
+    本身抛错（模拟 DB 抖动；append 已被 savepoint 隔离不会逃出，set_status 是
+    唯一未受保护的关键写）→ 异常逃出 _run_loop。修复前 run 永卡 running。
     """
     from inalpha_shared.errors import ValidationError
 
@@ -547,18 +548,18 @@ async def test_done_callback_marks_loop_crashed(
     async def fake_build(_r):  # type: ignore[no-untyped-def]
         raise ValidationError("bad candidate", code="BAD_CANDIDATE")  # 不可重试
 
-    real_append = runs_store.append_error_log
+    real_set_status = runs_store.set_status
     calls = {"n": 0}
 
-    async def flaky_append(conn, rid, error, *, code=None):  # type: ignore[no-untyped-def]
+    async def flaky_set_status(conn, rid, status, **kw):  # type: ignore[no-untyped-def]
         calls["n"] += 1
         if calls["n"] == 1:
-            raise RuntimeError("db blip: first error write failed")
-        await real_append(conn, rid, error, code=code)
+            raise RuntimeError("db blip: first set_status failed")
+        return await real_set_status(conn, rid, status, **kw)
 
     monkeypatch.setattr(manager, "_build_session", fake_build)
     monkeypatch.setattr(
-        "inalpha_paper.live_runner.runs_store.append_error_log", flaky_append
+        "inalpha_paper.live_runner.runs_store.set_status", flaky_set_status
     )
 
     manager.start(run)
@@ -578,6 +579,37 @@ async def test_done_callback_marks_loop_crashed(
     assert any(
         "run loop crashed" in e.get("msg", "") for e in (fresh["run_log"] or [])
     )
+
+
+async def test_build_errored_path_survives_log_write_failure(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """build 失败路径的 append 已 savepoint 隔离：日志写不进也第一跳直接置 errored，
+    异常不再逃出 _run_loop 绕 done_callback 兜底（PR review）。"""
+    from inalpha_shared.errors import ValidationError
+
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        raise ValidationError("bad candidate", code="BAD_CANDIDATE")  # 不可重试
+
+    async def always_fail_append(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise RuntimeError("db partial outage: error_log 永远写不进")
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(
+        "inalpha_paper.live_runner.runs_store.append_error_log", always_fail_append
+    )
+
+    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)  # 不抛 = 异常没逃出
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "errored"  # 日志丢了，状态第一跳就落了
 
 
 async def test_mark_loop_crashed_sets_errored_even_if_log_write_fails(

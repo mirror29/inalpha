@@ -244,12 +244,20 @@ class LiveRunnerManager:
             if self._settings.live_runner_require_risk_guard:
                 _logger.error("live run %s: 风控不可用（factory=None），fail-closed 拒绝起跑", run_id)
                 async with get_conn() as conn:
-                    await runs_store.append_error_log(
-                        conn, run_id,
-                        "风控不可用（risk_engine_enabled=false 或 risk_rules 加载失败），"
-                        "live runner 默认 fail-closed 拒绝起跑；如确需无风控运行，"
-                        "设 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false",
-                    )
+                    # savepoint 隔离（同 _mark_loop_crashed / stop() 范式，PR review）：
+                    # append 失败不连带跳过 set_status，否则 run 卡 running（#67 根因），下同
+                    try:
+                        async with conn.transaction():
+                            await runs_store.append_error_log(
+                                conn, run_id,
+                                "风控不可用（risk_engine_enabled=false 或 risk_rules 加载失败），"
+                                "live runner 默认 fail-closed 拒绝起跑；如确需无风控运行，"
+                                "设 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false",
+                            )
+                    except Exception:
+                        _logger.warning(
+                            "live run %s: fail-closed 日志写入失败（已忽略）", run_id, exc_info=True
+                        )
                     # only_if_status：与 stop() 竞态守卫（PR review），下同——_run_loop 全部
                     # 离开 running 的写路径同口径，后写者不覆盖对方终态
                     await runs_store.set_status(conn, run_id, "errored", only_if_status="running")
@@ -280,9 +288,15 @@ class LiveRunnerManager:
                 # 不可重试 或 攒够 streak → errored；可重试 → 指数退避后重试。
                 if not retryable or build_streak >= self._settings.live_max_error_streak:
                     async with get_conn() as conn:
-                        await runs_store.append_error_log(
-                            conn, run_id, f"build failed: {e}", code=code
-                        )
+                        try:
+                            async with conn.transaction():
+                                await runs_store.append_error_log(
+                                    conn, run_id, f"build failed: {e}", code=code
+                                )
+                        except Exception:
+                            _logger.warning(
+                                "live run %s: build 失败日志写入失败（已忽略）", run_id, exc_info=True
+                            )
                         await runs_store.set_status(
                             conn, run_id, "errored", only_if_status="running"
                         )
