@@ -1,7 +1,7 @@
 /**
  * Shared Memory —— orchestrator / trader / risk 共用一份。
  *
- * D-8a 起步形态：本地 SQLite 文件 ``.mastra/inalpha-memory.db``，gitignored。
+ * D-8a 起步形态：本地 SQLite 文件 ``.data/inalpha-memory.db``，gitignored。
  *
  * **共用一份的设计取舍**：
  *
@@ -33,15 +33,13 @@
 import { LibSQLStore } from "@mastra/libsql";
 import { Memory } from "@mastra/memory";
 
-import { existsSync, mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolveMastraDbDir } from "./paths.js";
 
-// 把 db 文件放在 package 根的 .mastra/ 下（已经在 .gitignore）
-const dbDir = resolve(process.cwd(), ".mastra");
-if (!existsSync(dbDir)) {
-  mkdirSync(dbDir, { recursive: true });
-}
-const dbUrl = `file:${dbDir}/inalpha-memory.db`;
+// 把 db 文件钉在 package 根的 .data/ 下（已经在 .gitignore）。
+// 不要用 process.cwd()：mastra dev 的 server 子进程 cwd 是 src/mastra/public/，
+// 库会漂到那里，重启/换启动方式后历史"消失"；也不要放 .mastra/ —— 那是
+// mastra build 目录，启动即整目录清空（见 paths.ts 模块头）。
+const dbUrl = `file:${resolveMastraDbDir()}/inalpha-memory.db`;
 
 export const memoryStore = new LibSQLStore({
   id: "inalpha-memory",

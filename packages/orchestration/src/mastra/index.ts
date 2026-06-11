@@ -15,8 +15,11 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 
-// dev 启动时显式加载 .env（mastra CLI 的 cwd 是 package root）
-const envPath = resolve(process.cwd(), ".env");
+import { resolveMastraDbDir, resolveOrchestrationRoot } from "./paths.js";
+
+// dev 启动时显式加载 package 根 .env。注意不能按 cwd 解析：mastra dev 的 server
+// 子进程 cwd 是 src/mastra/public/（此前靠 CLI 父进程 env 继承碰巧生效）。
+const envPath = resolve(resolveOrchestrationRoot(), ".env");
 if (existsSync(envPath)) {
   loadEnvFile(envPath);
 }
@@ -43,10 +46,10 @@ import { helloSpikeWorkflow } from "./workflows/_hello.js";
 import { backtestGridWorkflow } from "./workflows/backtest-grid.js";
 
 // D-9：observability storage —— traces UI tab 必需。LibSQL file DB 零运维。
-// `.mastra/inalpha.db` 落到 mastra build 目录，dev 启停不污染仓库。
+// 路径与 memory 库同目录（package 根 .data/，cwd 无关，见 paths.ts）。
 const observabilityStore = new LibSQLStore({
   id: "inalpha-traces",
-  url: "file:.mastra/inalpha-traces.db",
+  url: `file:${resolveMastraDbDir()}/inalpha-traces.db`,
 });
 
 // D-9：observability —— 追踪 agent / tool / workflow 全链路。

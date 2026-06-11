@@ -24,7 +24,7 @@
     "smoke:sandbox-loop": "tsx scripts/smoke-sandbox-loop.ts",
     "smoke:coingecko": "tsx scripts/smoke-coingecko-mcp.ts",
     "smoke:mcp": "tsx scripts/smoke-mcp.ts",
-    "dev": "mastra dev --dir src/mastra"
+    "dev": "INALPHA_ORCH_ROOT=$PWD mastra dev --dir src/mastra"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.35",

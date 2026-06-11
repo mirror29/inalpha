@@ -8,6 +8,8 @@ node_modules/
 .next/
 .turbo/
 .mastra/
+# orchestration 本地 SQLite 数据（memory/traces）—— 不能放 .mastra/（mastra 启动即清）
+.data/
 dist/
 build/
 out/
