@@ -91,3 +91,38 @@ def test_turnover_low_for_slow_factor_high_for_noise() -> None:
     res_noise = score_factor(noise, close, horizon=5, quantiles=5, min_samples=50)
     assert res_slow.turnover < 0.05
     assert res_noise.turnover > 0.8
+
+
+# ────────────────────────────────────────────────────────────────────
+# 衰减三态判定（ADR-0047 D2 —— 从前端 decayState() 下沉的单一权威）
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_decay_state_three_states() -> None:
+    from inalpha_factor.effectiveness import decay_state
+
+    # 与前端原 decayState() 三态边界一致
+    assert decay_state(0.10, 0.08) == "stable"  # 保住 80%
+    assert decay_state(0.10, 0.06) == "stable"  # 恰好 60% 边界归 stable
+    assert decay_state(0.10, 0.05) == "fading"  # 保住 50%
+    assert decay_state(0.10, -0.05) == "decaying"  # 反号
+    assert decay_state(0.10, 0.0) == "decaying"  # 趋零
+    assert decay_state(-0.10, -0.08) == "stable"  # 负向因子同理
+    assert decay_state(-0.10, 0.05) == "decaying"
+    assert decay_state(0.0, 0.05) == "decaying"  # 退化对：全样本 0、近期非 0
+
+
+def test_score_factor_carries_decay_state() -> None:
+    """score_factor 输出带 decay_state，且衰减构造（前 2/3 有效后 1/3 噪声）判 decaying/fading。"""
+    rng = np.random.default_rng(7)
+    n = 300
+    close = pd.Series(100 + np.cumsum(rng.normal(0, 1, n)))
+    fwd = close.shift(-5) / close - 1.0
+    factor = fwd.copy()
+    third = n // 3
+    factor.iloc[-third:] = rng.normal(0, 1, third)  # 尾段变纯噪声
+    res = score_factor(factor, close, horizon=5, quantiles=5, min_samples=50)
+    assert res.decay_state in ("decaying", "fading")
+
+    perfect = score_factor(fwd.fillna(0), close, horizon=5, quantiles=5, min_samples=50)
+    assert perfect.decay_state == "stable"

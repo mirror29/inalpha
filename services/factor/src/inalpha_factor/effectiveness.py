@@ -29,6 +29,7 @@ class EffResult:
     direction: int
     strength: float
     low_confidence: bool
+    decay_state: str  # stable / fading / decaying（见 decay_state()，ADR-0047 单一权威）
 
 
 # rank_ic 绝对值达到该阈值才给非 0 方向；归一化分母（|rank_ic|/_IC_FULL → strength）
@@ -37,6 +38,23 @@ _IC_FULL_STRENGTH = 0.05
 _ICIR_SEGMENTS = 5
 # rank_ic_recent 的"近期"窗口 = 样本的尾部 1/3（ADR-0043 D4，衰减信号用）
 _RECENT_FRACTION = 3
+# 衰减三态的 stable 保留比：|recent| ≥ 0.6·|ic| 算稳。钉死不进配置——
+# 还没有样本支撑可调性（ADR-0047 D2）；前端原 decayState() 同阈值，下沉后以此为准。
+_DECAY_STABLE_RETENTION = 0.6
+
+
+def decay_state(rank_ic: float, rank_ic_recent: float) -> str:
+    """衰减三态判定（ADR-0047 D2，单一权威——前端/巡检都读本结果不再自算）。
+
+    - ``decaying``：recent 为 0 或与全样本 IC 反号（含 ic=0 而 recent≠0 的退化对）
+    - ``stable``：量级保住 ``_DECAY_STABLE_RETENTION`` 以上
+    - ``fading``：其间（保住 0~60%，走弱中）
+    """
+    if rank_ic_recent == 0.0 or np.sign(rank_ic_recent) != np.sign(rank_ic):
+        return "decaying"
+    if abs(rank_ic_recent) >= _DECAY_STABLE_RETENTION * abs(rank_ic):
+        return "stable"
+    return "fading"
 
 
 def _forward_return(close: pd.Series, horizon: int) -> pd.Series:
@@ -193,4 +211,5 @@ def score_factor(
         direction=direction,
         strength=strength,
         low_confidence=low_conf,
+        decay_state=decay_state(rank_ic, rank_ic_recent),
     )

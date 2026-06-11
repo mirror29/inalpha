@@ -128,6 +128,11 @@ class FactorEffectiveness(BaseModel):
     direction: int = Field(description="择时方向 +1/-1/0（sign(rank_ic)，过阈值才非 0）")
     strength: float = Field(description="|rank_ic| 归一到 0-1")
     low_confidence: bool = Field(description="样本不足，不应据此择时")
+    decay_state: str = Field(
+        default="decaying",
+        description="衰减三态（ADR-0047 D2 单一权威）：decaying=recent 反号/趋零；"
+        "stable=量级保住 60%+；fading=其间。前端徽章与 live runner 巡检都以本字段为准",
+    )
 
 
 class ScoreRequest(BaseModel):
