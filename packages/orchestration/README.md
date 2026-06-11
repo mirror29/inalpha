@@ -44,6 +44,21 @@ pnpm typecheck         # tsc --noEmit
 pnpm smoke             # 真服务 e2e：backfill → run_backtest → 打印报告
 ```
 
+## Skills（投研方法论按需加载）
+
+`skills/<name>/` 下放 AgentSkills 格式的方法论包（`SKILL.md` + YAML frontmatter +
+`references/`）。frontmatter 的 `name`（必须 = 目录名，kebab-case）+ `description`
+（≤1024 字符，意图模式描述，**不写死触发短语**）会进 orchestrator system prompt 的
+`<skills>` 清单；正文经 `skill.read` tool 按需加载。
+
+新增 skill 检查单：
+
+1. 只放 `.md/.json/.txt` 文本；`scripts/` 不会被加载（信任边界）
+2. 外来 skill 全文改写：市场无关化、"查数据"步骤映射到本仓库 tool（web.* / data.* /
+   factor.* / research.*）、保留上游 LICENSE + 写 ATTRIBUTION.md
+3. 不引用仓库私有路径；`pnpm test`（tests/skills.test.ts 体检）+
+   `bash ../../scripts/check-consistency.sh`（C7）必须过
+
 ## 设计原则
 
 - **薄包装**：tool = HTTP client 调用 + Zod schema 校验，**不带业务逻辑**
