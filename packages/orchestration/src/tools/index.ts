@@ -64,6 +64,7 @@ import {
   paperListCandidatesTool,
   paperPromoteCandidateTool,
 } from "./strategy.js";
+import { skillReadTool, skillTools } from "./skill.js";
 import { swarmRunBacktestGridTool, swarmTools } from "./swarm.js";
 import { webSearchNewsTool, webSearchTool, webTools } from "./web.js";
 import {
@@ -118,6 +119,7 @@ export {
   schedulerListRunsTool,
   schedulerSetEnabledTool,
   schedulerTriggerJobTool,
+  skillReadTool,
   swarmRunBacktestGridTool,
   webSearchNewsTool,
   webSearchTool,
@@ -137,6 +139,8 @@ export const allTools = [
   ...sandboxTools,
   // D-10：web 搜索
   ...webTools,
+  // ADR-0046：投研方法论 skill 按需读取（progressive disclosure）
+  ...skillTools,
   // ADR-0006 §D6：risk.* agent 自检 + 解锁（unlock 在 permissions 层禁 LLM 直调）
   riskDescribeRulesTool,
   riskListLocksTool,
@@ -187,6 +191,8 @@ export const orchestratorToolList = [
   // D-10：web 搜索
   webSearchTool,
   webSearchNewsTool,
+  // ADR-0046：投研方法论 skill 按需读取（清单在 <skills> prompt 段）
+  skillReadTool,
   paperListStrategiesTool,
   paperRunBacktestTool,
   paperHealthTool,

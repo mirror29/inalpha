@@ -27,6 +27,7 @@ import {
   createPaperPendingPlanFetcher,
   createPendingPlanNoticeProcessor,
 } from "../../hooks/index.js";
+import { buildSkillsPromptSection } from "../../skills/index.js";
 import { loadWiredMcpTools, wiredOrchestratorTools } from "../wired-tools.js";
 
 const INSTRUCTIONS = `
@@ -624,7 +625,9 @@ function buildInstructions(): string {
     `- When the user gives an absolute date ("跑 2024 全年" / "from May 1 to today"), ` +
     `compute the range relative to ${dateStr}.\n` +
     `</runtime_facts>\n\n`;
-  return runtimeFacts + INSTRUCTIONS;
+  // ADR-0046：skill 清单段（progressive disclosure 的"目录页"）。
+  // memoize 后非首次零开销；无 skill 时为空串，prompt 不变。
+  return runtimeFacts + buildSkillsPromptSection() + INSTRUCTIONS;
 }
 
 export const orchestrator = new Agent({
