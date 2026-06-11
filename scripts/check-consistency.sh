@@ -176,6 +176,33 @@ else
     warn ".gitignore 没有 docs/miro/ 条目"
 fi
 
+# ---------- C7: skills/ 目录结构 + 禁引私有路径 ----------
+sect "C7 · orchestration skills/ 入 git 内容合规"
+
+SKILLS_DIR="packages/orchestration/skills"
+if [[ -d "$SKILLS_DIR" ]]; then
+    # skill 文档入 git 公开，禁引 docs/miro 私有路径
+    SKILL_LEAKS=$(grep -rn "docs/miro" "$SKILLS_DIR" 2>/dev/null || true)
+    if [[ -z "$SKILL_LEAKS" ]]; then
+        ok "skills/ 未引用 docs/miro 私有路径"
+    else
+        echo "$SKILL_LEAKS" | while IFS= read -r line; do
+            fail "skill 文档引用私有路径：$line"
+        done
+    fi
+    # 每个 skill 目录必有 SKILL.md（frontmatter 结构校验在 vitest tests/skills.test.ts）
+    for d in "$SKILLS_DIR"/*/; do
+        [[ -d "$d" ]] || continue
+        if [[ -f "${d}SKILL.md" ]]; then
+            ok "${d}SKILL.md 存在"
+        else
+            fail "${d} 缺 SKILL.md"
+        fi
+    done
+else
+    ok "skills/ 目录不存在（无 skill 可检）"
+fi
+
 # ---------- 总结 ----------
 echo
 echo "===================="
