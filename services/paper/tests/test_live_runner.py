@@ -528,6 +528,90 @@ async def test_run_loop_cancelled_clean_exit(
     assert fresh["status"] == "running"  # 干净退出，不标 errored
 
 
+async def test_done_callback_marks_loop_crashed(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """_run_loop 自己的错误处理路径写库失败 → done_callback 兜底置 errored（issue #67）。
+
+    场景：build 抛不可重试错 → loop 走"立即 errored"写库，但第一次 append_error_log
+    本身抛错（模拟 DB 抖动）→ 异常逃出 _run_loop。修复前 run 永卡 running。
+    """
+    from inalpha_shared.errors import ValidationError
+
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        raise ValidationError("bad candidate", code="BAD_CANDIDATE")  # 不可重试
+
+    real_append = runs_store.append_error_log
+    calls = {"n": 0}
+
+    async def flaky_append(conn, rid, error, *, code=None):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("db blip: first error write failed")
+        await real_append(conn, rid, error, code=code)
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(
+        "inalpha_paper.live_runner.runs_store.append_error_log", flaky_append
+    )
+
+    manager.start(run)
+    task = manager._tasks[run["id"]]
+    with pytest.raises(RuntimeError):  # 证明异常确实逃出了 _run_loop
+        await asyncio.wait_for(task, timeout=2.0)
+
+    # 兜底写库在 done_callback 另起的 task 里：轮询等它落库
+    fresh = None
+    for _ in range(100):
+        async with get_conn() as conn:
+            fresh = await runs_store.get(conn, run["id"])
+        if fresh is not None and fresh["status"] == "errored":
+            break
+        await asyncio.sleep(0.02)
+    assert fresh is not None and fresh["status"] == "errored"
+    assert any(
+        "run loop crashed" in e.get("msg", "") for e in (fresh["run_log"] or [])
+    )
+
+
+async def test_done_callback_ignores_cancellation(
+    app_with_lifespan: Any, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """stop() 的正常取消路径 → done_callback 不触发 loop_crashed 兜底（issue #67 回归）。"""
+    settings = get_paper_settings().model_copy(
+        update={"live_runner_require_risk_guard": False}
+    )
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
+    run = await _insert_run(uuid4())
+
+    async def fake_build(_r):  # type: ignore[no-untyped-def]
+        return _make_session(), None
+
+    async def fake_fetch(_r):  # type: ignore[no-untyped-def]
+        await asyncio.sleep(60)
+        return None
+
+    monkeypatch.setattr(manager, "_build_session", fake_build)
+    monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
+
+    manager.start(run)
+    await asyncio.sleep(0.05)  # 让 loop 跑起来
+    await manager.stop(run["id"])
+
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh["status"] == "stopped"
+    assert not any(
+        "run loop crashed" in e.get("msg", "") for e in (fresh["run_log"] or [])
+    )
+
+
 async def test_run_loop_build_session_failure_errored(app_with_lifespan: Any) -> None:
     """_build_session 失败（candidate 非法 / 未 promoted）→ run 置 errored。"""
     settings = get_paper_settings().model_copy(
