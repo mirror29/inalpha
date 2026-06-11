@@ -69,27 +69,28 @@ export function OverviewClient() {
 
       <KpiBar data={data} />
 
-      {/* 系统在做什么:运行中的 live runner + 策略池,并排成「执行 / 研究」两栏。
+      {/* 执行态一排:live runner + 持仓(在跑什么 ↔ 仓位什么样)。
           grid 子项包 min-w-0:表格内容宽默认会把 fr 轨道撑爆(min-width:auto),
-          面板溢出页面;min-w-0 后宽表在面板内部 overflow-x 滚动。 */}
+          面板溢出页面;min-w-0 后宽表在面板内部 overflow-x 滚动。
+          面板自身 h-full(grid 默认 stretch),同排两卡等高,矮侧不悬空。 */}
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
         <div className="min-w-0">
           <RunnersPanel runs={data.runs} />
         </div>
         <div className="min-w-0">
-          <StrategyPanel
-            candidates={data.candidates}
-            counts={data.candidateCounts}
+          <PositionsTable
+            positions={data.positions}
+            baseCcy={data.account.base_currency}
           />
         </div>
       </div>
 
-      {/* 持仓 / 最近订单:与上排同为 1:1 两栏,栏缝对齐(此前 1.4fr:1fr 错位)。 */}
+      {/* 研究/流水一排:策略池 + 最近订单,与上排同为 1:1 两栏,栏缝对齐。 */}
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
         <div className="min-w-0">
-          <PositionsTable
-            positions={data.positions}
-            baseCcy={data.account.base_currency}
+          <StrategyPanel
+            candidates={data.candidates}
+            counts={data.candidateCounts}
           />
         </div>
         <div className="min-w-0">

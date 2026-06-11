@@ -42,7 +42,9 @@ export function StrategyPanel({
   const locale = useLocale();
 
   return (
+    // h-full:总览里与最近订单并排,grid stretch 下两卡等高。
     <Panel
+      className="h-full"
       title={t("title")}
       aside={
         <div className="flex items-center gap-3">

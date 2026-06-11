@@ -26,7 +26,10 @@ export function PositionsTable({
   const locale = useLocale();
 
   return (
+    // h-full:总览里与 runner 面板并排,grid stretch 下两卡等高;
+    // RunnerDetail 复用处父容器 items-start(不拉伸),h-full 为 no-op,不影响。
     <Panel
+      className="h-full"
       title={t("title")}
       aside={
         <span className="tnum font-mono text-xs text-fg-muted">
@@ -37,9 +40,11 @@ export function PositionsTable({
       {positions.length === 0 ? (
         <TableEmpty>{t("empty")}</TableEmpty>
       ) : (
-        <div className="overflow-x-auto">
+        // 限高内滚+表头吸顶(同 DecisionTimeline 模式):持仓多时不撑爆同排的
+        // runner 卡;RunnerDetail 复用处只有一行,限高不触发。
+        <div className="max-h-96 overflow-x-auto overflow-y-auto">
           <table className="w-full border-collapse text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-bg-elev">
               <TableHeadRow>
                 <Th>{t("col.instrument")}</Th>
                 <Th right>{t("col.qty")}</Th>
