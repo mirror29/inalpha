@@ -16,6 +16,7 @@
 import {
   HookRunner,
   defaultAuditRegistration,
+  defaultFactorExpressionAuditRegistration,
   defaultGridSizeCapRegistration,
   defaultIdempotencyRegistrations,
   defaultInjectCurrentDateRegistration,
@@ -45,6 +46,8 @@ function buildDefaultRunner(
   runner.register(defaultInjectCurrentDateRegistration());
   // D-9 · ADR-0020 E1：自创策略源码 PreToolUse 限长 + 注入串拦截
   runner.register(defaultStrategyCodeAuditRegistration());
+  // D-12 · 因子发现 L1：自定义因子表达式外围拦截（负 lag / 未来命名 / 超长）
+  runner.register(defaultFactorExpressionAuditRegistration());
   // ADR-0025 follow-up：DeepSeek 在 Mastra agent loop 偶尔 retry 同 swarm 调用
   // 多次（同 input 同输出）；这对 hook 把重复 deny 掉并把上次结果摘要给 LLM
   const idem = defaultIdempotencyRegistrations();

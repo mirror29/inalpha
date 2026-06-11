@@ -32,6 +32,7 @@ import {
 } from "./paper.js";
 import {
   factorCatalogTool,
+  factorEvaluateCandidateTool,
   factorScoreTool,
   factorTimingTool,
   factorTools,
@@ -89,6 +90,7 @@ export {
   divinationDrawTarotTool,
   executeTradePlanTool,
   factorCatalogTool,
+  factorEvaluateCandidateTool,
   factorScoreTool,
   factorTimingTool,
   getTradePlanTool,
@@ -208,6 +210,8 @@ export const orchestratorToolList = [
   factorTimingTool,
   factorScoreTool,
   factorCatalogTool,
+  // D-12 · 因子发现 L1：自定义表达式因子评估（白名单 DSL）
+  factorEvaluateCandidateTool,
   // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
   paperComposeStrategyTool,
   paperListBacktestRunsTool,

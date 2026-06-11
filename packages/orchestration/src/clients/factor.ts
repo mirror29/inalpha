@@ -85,6 +85,28 @@ export type SnapshotResult = {
   ic_null_benchmark?: number;
 };
 
+/** POST /custom/score —— 自定义表达式因子的一站式评估结果（D-12 · 因子发现 L1）。 */
+export type CustomScoreResult = {
+  venue: string;
+  symbol: string;
+  timeframe: string;
+  as_of: string;
+  horizon_bars: number;
+  bars_used: number;
+  available: boolean;
+  reason: string | null;
+  expression: string;
+  /** factor_id=custom.<sha16>；available=false 时为 null */
+  factor: FactorEffectiveness | null;
+  /** rank_ic 双侧 p 值（t 近似，参考量级非严格检验） */
+  ic_pvalue: number | null;
+  /** 与库内价量因子的 |spearman| top5——查重复造轮子 */
+  top_correlated: { factor_id: string; corr: number }[];
+  max_corr: number | null;
+  /** max_corr ≥ 去相关阈值——大概率是已有因子换皮 */
+  is_likely_redundant: boolean;
+};
+
 export class FactorClient {
   private readonly http: HttpClient;
 
@@ -150,6 +172,31 @@ export class FactorClient {
       lookback_bars: params.lookbackBars,
       horizon_bars: params.horizonBars,
       top_n: params.topN,
+    });
+  }
+
+  /** D-12 · 因子发现 L1：评估一个自定义 DSL 表达式因子（一次出 effectiveness+p值+库相关性）。 */
+  async customScore(params: {
+    expression: string;
+    name?: string;
+    venue: string;
+    symbol: string;
+    timeframe: string;
+    asOf?: string;
+    lookbackBars?: number;
+    horizonBars?: number;
+    quantiles?: number;
+  }): Promise<CustomScoreResult> {
+    return await this.http.post<CustomScoreResult>("/custom/score", {
+      expression: params.expression,
+      name: params.name,
+      venue: params.venue,
+      symbol: params.symbol,
+      timeframe: params.timeframe,
+      as_of: params.asOf,
+      lookback_bars: params.lookbackBars,
+      horizon_bars: params.horizonBars,
+      quantiles: params.quantiles,
     });
   }
 }

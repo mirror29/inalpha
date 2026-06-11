@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from collections import OrderedDict
@@ -24,7 +25,8 @@ from .adapters import (
 from .adapters.macro_adapter import MACRO_TIMEFRAMES
 from .config import FactorSettings
 from .data_client import DataClient
-from .effectiveness import EffResult, null_ic_benchmark, score_factor
+from .effectiveness import EffResult, ic_pvalue, null_ic_benchmark, score_factor
+from .expression import evaluate, parse_expression
 
 logger = logging.getLogger(__name__)
 
@@ -396,6 +398,105 @@ class FactorEngine:
             "factors": results,
             "ic_null_benchmark": benchmark,
         }, series
+
+    # ── custom（D-12 · 因子发现 L1）──────────────────────────────────
+    async def custom_score(
+        self,
+        *,
+        expression: str,
+        name: str | None,
+        venue: str,
+        symbol: str,
+        timeframe: str,
+        as_of: datetime | None,
+        lookback_bars: int,
+        horizon_bars: int,
+        quantiles: int,
+    ) -> dict[str, Any]:
+        """自定义表达式因子的一站式评估：求值 → 有效性 → 与库去相关对比。
+
+        一次调用出全套（effectiveness + ic_pvalue + top_correlated），免 LLM 在
+        tool 间搬 series 大对象。表达式审计失败由 :class:`expression.ExpressionError`
+        冒泡（API 层转 400，message 给 LLM 改写依据）。
+
+        **不走面板缓存**：自定义表达式是任意 key，进单租户公共缓存既会被刷穿
+        又有跨用户污染面（engine 缓存注释的单租户假设）。
+        """
+        parsed = parse_expression(expression)
+        now = datetime.now(UTC)
+        is_live = as_of is None or as_of >= now - timedelta(
+            seconds=_tf_seconds(timeframe) * 2
+        )
+        as_of = as_of or now
+        span_bars = lookback_bars + horizon_bars + 60
+        from_ts = as_of - timedelta(seconds=_tf_seconds(timeframe) * span_bars)
+        df = await self._fetch_df(
+            venue=venue, symbol=symbol, timeframe=timeframe,
+            from_ts=from_ts, to_ts=as_of, fresh=is_live,
+        )
+        if not df.empty and isinstance(df.index, pd.DatetimeIndex):
+            df = df[df.index <= pd.Timestamp(as_of)]
+
+        expr_hash = hashlib.sha256(expression.encode("utf-8")).hexdigest()[:16]
+        spec = FactorSpec(
+            f"custom.{expr_hash}",
+            "custom",
+            name or (expression if len(expression) <= 60 else expression[:57] + "..."),
+            "custom",
+            extras={"expression": expression},
+        )
+        if df.empty:
+            return {
+                "as_of": as_of,
+                "bars_used": 0,
+                "available": False,
+                "reason": "no bars from data-service",
+                "expression": expression,
+                "factor": None,
+                "ic_pvalue": None,
+                "top_correlated": [],
+                "max_corr": None,
+                "is_likely_redundant": False,
+            }
+
+        series = evaluate(parsed, df)
+        close = df["close"].astype(float)
+        eff = score_factor(
+            series,
+            close,
+            horizon=horizon_bars,
+            quantiles=quantiles,
+            min_samples=self._settings.min_effective_samples,
+        )
+        pval = ic_pvalue(eff.rank_ic, eff.sample_size, horizon_bars)
+
+        # 与库内全部价量因子（同 df 现算）做 |spearman| 对比——挡换皮重复因子。
+        # macro 源不参与（需另拉 FRED，且与价量表达式天然低相关，省一次外呼）。
+        lib = self.compute_on_df(df, self._computable_ids("1h"))
+        corrs: list[tuple[str, float]] = []
+        for fid, s in lib.items():
+            c = _abs_spearman(series, s)
+            if c is not None:
+                corrs.append((fid, c))
+        corrs.sort(key=lambda t: t[1], reverse=True)
+        max_corr = corrs[0][1] if corrs else None
+        return {
+            "as_of": as_of,
+            "bars_used": len(df),
+            "available": True,
+            "reason": None,
+            "expression": expression,
+            "factor": _eff_to_dict(spec, eff),
+            "ic_pvalue": pval,
+            "top_correlated": [
+                {"factor_id": fid, "corr": c} for fid, c in corrs[:5]
+            ],
+            "max_corr": max_corr,
+            "is_likely_redundant": bool(
+                max_corr is not None
+                and max_corr >= self._settings.snapshot_corr_threshold
+            ),
+        }
 
     async def snapshot(
         self,
