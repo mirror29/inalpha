@@ -73,6 +73,8 @@ export function createPendingPlanNoticeProcessor(
         .reverse()
         .find((m) => m.role === "assistant");
       if (lastAssistant === undefined) return messages;
+      // 防御（PR review）：Mastra 部分路径允许 string content；push 崩了会拖垮整条回复
+      if (!Array.isArray(lastAssistant.content?.parts)) return messages;
 
       const ids = plans.map((p) => p.plan_id).join(", ");
       const notice = template
