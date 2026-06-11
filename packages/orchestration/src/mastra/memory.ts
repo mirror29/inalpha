@@ -48,12 +48,37 @@ export const memoryStore = new LibSQLStore({
 
 export const sharedMemory = new Memory({
   storage: memoryStore,
-  // D-8a 默认配置：保留最近 50 条 history 给 LLM；不开 semanticRecall（要 vector）
+  // D-8a 默认配置：保留最近 50 条 history 给 LLM；不开 semanticRecall
+  // （ADR-0049 决议：向量召回显式推迟，长期记忆走蒸馏策展路线）
   options: {
     lastMessages: 50,
     semanticRecall: false,
+    // ADR-0049 第 1 层 · 常驻小抄（先行试点）：跨线程按用户持久的 markdown 块，
+    // agent 经 mastra 内置 tool 自行更新，每轮自动注入 context。
+    // 只放"永远相关"的画像与活跃事项；长尾档案走第 2 层 memory.*（ADR-0049 待实施）。
+    // 聊天链路已传 resourceId（dashboard CONSOLE_SUBJECT，B11 隔离约束不变）。
     workingMemory: {
-      enabled: false,
+      enabled: true,
+      scope: "resource",
+      template: `# User Profile / 用户画像
+<!-- 纪律：内容跟随用户语言；整块 ≤2000 字符，放不下的精简或舍弃；
+     禁存裸行情数字当事实——结论必须带"截至 <日期>" -->
+
+## 偏好 / Preferences
+- **关注市场 / Markets**:
+- **风险口味 / Risk appetite**:
+- **基准货币与语言 / Base currency & language**:
+
+## 活跃论点 / Active theses
+<!-- 每条一行：标的 — 方向 — 一句话核心 — 建档日期 -->
+-
+
+## 进行中研究 / Ongoing research
+-
+
+## 其他长期相关 / Other long-lived facts
+-
+`,
     },
   },
 });
