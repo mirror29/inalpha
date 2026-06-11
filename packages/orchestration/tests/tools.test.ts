@@ -304,6 +304,51 @@ describe("paper.run_backtest", () => {
     expect((result as { num_trades: number }).num_trades).toBe(11);
   });
 
+  it("downsamples giant equity_curve before it reaches LLM context", async () => {
+    // 2026-06-11 事故回归：1 年 1h 曲线 ~8760 点原样进消息历史，几次回测
+    // 就撑爆 DeepSeek 1M 上下文（AI_APICallError: maximum context length）。
+    const bigCurve = Array.from({ length: 8760 }, (_, i) => ({
+      ts: `t${i}`,
+      equity: 10000 + i,
+    }));
+    mockFetch(async () =>
+      new Response(
+        JSON.stringify({
+          strategy_id: "sma_cross",
+          equity_curve: bigCurve,
+          baseline: { strategy_id: "buy_and_hold", equity_curve: bigCurve },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const result = (await paperRunBacktestTool.execute!(
+      {
+        strategyId: "sma_cross",
+        symbol: "BTC/USDT",
+        venue: "binance",
+        timeframe: "1h",
+        initialCash: 10000,
+        feeRate: 0.001,
+        params: {},
+      } as never,
+      ctx(),
+    )) as {
+      equity_curve: { ts: string; equity: number }[];
+      equity_curve_downsampled_from: number;
+      baseline: { equity_curve: unknown[]; equity_curve_downsampled_from: number };
+    };
+
+    expect(result.equity_curve).toHaveLength(120);
+    expect(result.equity_curve_downsampled_from).toBe(8760);
+    // 首尾点必须保留（总收益形状不能漂）
+    expect(result.equity_curve[0]!.ts).toBe("t0");
+    expect(result.equity_curve[119]!.ts).toBe("t8759");
+    // baseline 子报告同样降采样
+    expect(result.baseline.equity_curve).toHaveLength(120);
+    expect(result.baseline.equity_curve_downsampled_from).toBe(8760);
+  });
+
   it("translates upstream 400 to HttpClientError with original code", async () => {
     mockFetch(async () =>
       new Response(

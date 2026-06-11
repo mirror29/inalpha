@@ -89,7 +89,9 @@ export const paperRunBacktestTool = createTool({
     - 基础：total_return_pct / num_trades / total_fees / final_equity / num_bars_processed
     - 绩效：sharpe / sortino / max_drawdown_pct / win_rate（数据不足时为 null）
     - D-9：fitness（多目标合成，ADR-0020）—— 排序候选用这个，不要用裸 Sharpe
-    - equity_curve：[(ts, equity)] 序列，前端可直接画图
+    - equity_curve：[(ts, equity)] 序列；**超 120 点会等距降采样**（带
+      equity_curve_downsampled_from 标原始点数），看形状趋势用，精确逐点分析
+      不要从这里取（完整曲线在 paper 服务 API）
     - final_positions：结束时残留持仓（趋势策略可能持有到尾盘）
   `.trim(),
   inputSchema: z
@@ -157,7 +159,7 @@ export const paperRunBacktestTool = createTool({
     const fromTs = inputData.fromTs ?? oneYearAgo.toISOString();
     const toTs = inputData.toTs ?? now.toISOString();
 
-    return await client.runBacktest({
+    const report = await client.runBacktest({
       strategyId: inputData.strategyId,
       candidateId: inputData.candidateId,
       params: inputData.params ?? {},
@@ -171,8 +173,43 @@ export const paperRunBacktestTool = createTool({
       researchId: inputData.researchId,
       strategyHint: inputData.strategyHint,
     });
+    return downsampleEquityCurves(report);
   },
 });
+
+/** tool 输出里 equity_curve 的保留点数上限（首尾必留，中间等距抽样）。 */
+const EQUITY_CURVE_MAX_POINTS = 120;
+
+/**
+ * 把回测报告里的 equity_curve（含 baseline 的）降采样后再进 LLM context。
+ *
+ * 背景（2026-06-11 实测事故）：1 年 × 1h 回测的曲线 ~8760 点 ≈ 500KB ≈ 15 万 token，
+ * 原样进消息历史 + memory 窗口 50 条 → 几次回测就把 DeepSeek 1M 上下文撑爆
+ * （AI_APICallError: maximum context length），流中断、对话线程报废。
+ *
+ * 曲线形状对 LLM 判读 120 点足够；完整曲线前端走 paper 服务 API 拉，不走 chat。
+ */
+function downsampleEquityCurves<T>(report: T): T {
+  if (!report || typeof report !== "object") return report;
+  const r = report as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...r };
+  for (const key of ["equity_curve", "equityCurve"]) {
+    const curve = out[key];
+    if (Array.isArray(curve) && curve.length > EQUITY_CURVE_MAX_POINTS) {
+      const step = (curve.length - 1) / (EQUITY_CURVE_MAX_POINTS - 1);
+      out[key] = Array.from(
+        { length: EQUITY_CURVE_MAX_POINTS },
+        (_, i) => curve[Math.round(i * step)],
+      );
+      out[`${key}_downsampled_from`] = curve.length;
+    }
+  }
+  // baseline 子报告同样处理（candidate 回测自动并跑 buy_and_hold）
+  if (out.baseline && typeof out.baseline === "object") {
+    out.baseline = downsampleEquityCurves(out.baseline);
+  }
+  return out as T;
+}
 
 // ────────────────────────────────────────────────────────────────────
 // D-8c · paper.compose_strategy + paper.list_backtest_runs
