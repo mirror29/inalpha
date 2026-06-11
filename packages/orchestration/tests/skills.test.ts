@@ -23,6 +23,7 @@ import {
 } from "../src/skills/index.js";
 import { skillReadTool } from "../src/tools/index.js";
 import { DEFAULT_PERMISSIONS, PermissionEngine } from "../src/permissions/index.js";
+import { wireToolList } from "../src/mastra/wired-tools.js";
 
 function writeSkill(root: string, dir: string, frontmatter: string, body = "# Body\n"): void {
   const d = join(root, dir);
@@ -171,6 +172,17 @@ describe("skill.read tool", () => {
     };
     expect(out.error).toBeUndefined();
     expect(out.content).toContain("供应链瓶颈");
+  });
+
+  it("wired 后 skill.read 进 audit log（ADR-0046 触发率统计）", async () => {
+    const records: Record<string, unknown>[] = [];
+    const [wrapped] = wireToolList([skillReadTool], {
+      auditSink: (r) => records.push(r),
+    });
+    await wrapped!.execute!({ name: "serenity" });
+    expect(records).toHaveLength(1);
+    expect(records[0]!.event).toBe("PostToolUse");
+    expect(records[0]!.tool).toBe("skill.read");
   });
 });
 
