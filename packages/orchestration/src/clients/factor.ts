@@ -45,6 +45,11 @@ export type FactorEffectiveness = {
   direction: number; // +1/-1/0
   strength: number; // 0-1
   low_confidence: boolean;
+  /**
+   * 衰减三态（ADR-0047 服务端单一权威）：decaying=recent 反号/趋零；stable=量级
+   * 保住 60%+；fading=其间。设计策略时把它填进 author_strategy 的 factorContext。
+   */
+  decay_state?: "stable" | "fading" | "decaying";
 };
 
 export type ScoreResult = {

@@ -176,6 +176,15 @@ export const paperAuthorStrategyTool = createTool({
     - 不要写半成品策略——\`on_bar\` 一直 pass 会让回测 0 信号，浪费一次落库
     - 写完 author_strategy 立刻 \`paper.run_backtest({ candidateId })\` 拿 metrics + fitness
     - 回测响应自带 \`baseline\` 字段（buy_and_hold 对照）；判断 alpha 看 \`fitness > baseline.fitness\`
+
+    因子血缘（ADR-0047，**研究链路驱动时必传 factorContext**）：
+    - 若本策略来自 research.deep_dive / factor.timing 的研究产出，把当时的 top 因子
+      （含 rank_ic / rank_ic_recent / decay_state）原样填进 factorContext——这是
+      candidate 的因子血缘，promoted 上模拟盘后系统按它巡检"策略依据的因子衰减了没"
+    - 策略逻辑应引用这些因子（或在 description 里说明为何取舍）；decay_state 已是
+      decaying 的因子**不要**当核心信号——引用时要降权并说明理由
+    - 纯用户手描逻辑、没查过因子的（"帮我写个 RSI<30 买"），不传 factorContext 即可，
+      **不要编造**因子数值
   `.trim(),
   inputSchema: z.object({
     code: z
@@ -188,13 +197,67 @@ export const paperAuthorStrategyTool = createTool({
       .max(2000)
       .default("")
       .describe("策略逻辑 / 适用场景 / 关键参数的人话说明"),
+    factorContext: z
+      .object({
+        venue: z.string().describe("因子快照对应的数据源（与研究/回测同口径）"),
+        symbol: z.string().describe("标的"),
+        timeframe: z.string().describe("周期"),
+        asOf: z
+          .string()
+          .optional()
+          .describe("快照时刻（ISO8601；factor.timing 响应里的 as_of）"),
+        factors: z
+          .array(
+            z.object({
+              id: z.string().describe("因子 id（factor.timing 返回的 name/id）"),
+              rankIc: z.number().describe("快照时 rank_ic"),
+              rankIcRecent: z
+                .number()
+                .optional()
+                .describe("快照时 rank_ic_recent（近 1/3 窗 IC）"),
+              direction: z
+                .number()
+                .optional()
+                .describe("方向 +1/-1/0"),
+              decayState: z
+                .enum(["stable", "fading", "decaying"])
+                .optional()
+                .describe("快照时衰减态"),
+            }),
+          )
+          .min(1)
+          .max(20)
+          .describe("策略设计依据的因子列表（来自 factor.timing / deep_dive factors）"),
+      })
+      .optional()
+      .describe(
+        "生成时因子血缘（ADR-0047）。研究链路驱动的策略必传；数值必须来自真实工具" +
+          "返回，禁止编造。落 candidate.factor_snapshot，供 live runner 衰减巡检",
+      ),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
+    const fc = inputData.factorContext;
     return await client.authorStrategy({
       code: inputData.code,
       description: inputData.description ?? "",
+      factorSnapshot: fc
+        ? {
+            venue: fc.venue,
+            symbol: fc.symbol,
+            timeframe: fc.timeframe,
+            as_of: fc.asOf,
+            factors: fc.factors.map((f) => ({
+              id: f.id,
+              rank_ic: f.rankIc,
+              rank_ic_recent: f.rankIcRecent,
+              direction: f.direction,
+              decay_state: f.decayState,
+            })),
+            source: "author_tool",
+          }
+        : undefined,
     });
   },
 });

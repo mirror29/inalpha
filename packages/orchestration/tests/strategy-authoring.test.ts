@@ -89,6 +89,91 @@ describe("paper.author_strategy", () => {
     expect((result as { created: boolean }).created).toBe(true);
   });
 
+  it("factorContext 转 snake_case 落 factor_snapshot（ADR-0047 血缘）", async () => {
+    let capturedBody = "";
+    mockFetch(async (_url, init) => {
+      capturedBody = (init?.body as string) ?? "";
+      return new Response(
+        JSON.stringify({
+          candidate_id: "550e8400-e29b-41d4-a716-446655440000",
+          code_hash: "abc123",
+          created: true,
+          audit: { ok: true, findings: [] },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    await paperAuthorStrategyTool.execute!(
+      {
+        code: "class XStrategy(Strategy):\n    def on_bar(self, bar): pass",
+        description: "test",
+        factorContext: {
+          venue: "binance",
+          symbol: "BTC/USDT",
+          timeframe: "1h",
+          asOf: "2026-06-11T00:00:00Z",
+          factors: [
+            {
+              id: "ta.rsi_14",
+              rankIc: 0.08,
+              rankIcRecent: 0.06,
+              direction: 1,
+              decayState: "stable",
+            },
+          ],
+        },
+      } as never,
+      ctx(),
+    );
+
+    const body = JSON.parse(capturedBody) as {
+      factor_snapshot: {
+        venue: string;
+        as_of: string;
+        source: string;
+        factors: Array<Record<string, unknown>>;
+      };
+    };
+    expect(body.factor_snapshot.venue).toBe("binance");
+    expect(body.factor_snapshot.as_of).toBe("2026-06-11T00:00:00Z");
+    expect(body.factor_snapshot.source).toBe("author_tool");
+    expect(body.factor_snapshot.factors[0]).toMatchObject({
+      id: "ta.rsi_14",
+      rank_ic: 0.08,
+      rank_ic_recent: 0.06,
+      direction: 1,
+      decay_state: "stable",
+    });
+  });
+
+  it("不传 factorContext 时 body 无 factor_snapshot（不伪造血缘）", async () => {
+    let capturedBody = "";
+    mockFetch(async (_url, init) => {
+      capturedBody = (init?.body as string) ?? "";
+      return new Response(
+        JSON.stringify({
+          candidate_id: "550e8400-e29b-41d4-a716-446655440000",
+          code_hash: "abc123",
+          created: true,
+          audit: { ok: true, findings: [] },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    await paperAuthorStrategyTool.execute!(
+      {
+        code: "class XStrategy(Strategy):\n    def on_bar(self, bar): pass",
+        description: "test",
+      } as never,
+      ctx(),
+    );
+
+    const body = JSON.parse(capturedBody) as Record<string, unknown>;
+    expect(body.factor_snapshot).toBeUndefined();
+  });
+
   it("inputSchema rejects code < 20 chars", () => {
     const r = paperAuthorStrategyTool.inputSchema!.safeParse({
       code: "too short",
