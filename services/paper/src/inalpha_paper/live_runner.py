@@ -346,7 +346,10 @@ class LiveRunnerManager:
                             "复核账户状态后可重新 start。设 "
                             "INALPHA_LIVE_RUNNER_AUTO_STOP_ON_CIRCUIT_BREAK=false 维持旧行为（继续跑）",
                         )
-                        await runs_store.set_status(conn, run_id, "stopped")
+                        # only_if_status：与 stop()/_mark_loop_crashed 同口径守卫（一致性，PR review）
+                        await runs_store.set_status(
+                            conn, run_id, "stopped", only_if_status="running"
+                        )
                     return
                 await asyncio.sleep(poll_s)
             except asyncio.CancelledError:
@@ -401,7 +404,8 @@ class LiveRunnerManager:
                 f"运行时长 {elapsed:.0f}s 超过 TTL（INALPHA_LIVE_RUNNER_MAX_RUNTIME_S="
                 f"{max_runtime_s}s）→ auto-stop（防长尾僵尸 run）；复核后可重新 start。",
             )
-            await runs_store.set_status(conn, run_id, "stopped")
+            # only_if_status：与 stop()/_mark_loop_crashed 同口径守卫（一致性，PR review）
+            await runs_store.set_status(conn, run_id, "stopped", only_if_status="running")
         return True
 
     async def _build_session(
