@@ -1,9 +1,10 @@
 /**
  * Permissions HTTP API —— 挂到 Mastra ``server.apiRoutes`` 上，跟 mastra dev 共用 4111 端口。
  *
- * 端点（ADR-0018 / D-9.1b）：
+ * 端点（ADR-0018 / D-9.1b；history 为 D-12）：
  *
  * - ``GET  /permissions/pending``           —— 列出当前挂起的 ask 审批
+ * - ``GET  /permissions/history``           —— 审批审计历史（含终态，Postgres）
  * - ``POST /permissions/:id/respond``       —— 前端决策（``{decision: 'allow'|'deny'}``）
  *
  * 何时用：前端气泡（CopilotKit / Mastra Studio）轮询 list 显示 + 用户点按钮触发 respond。
@@ -15,6 +16,7 @@
 import type { Context, Handler } from "hono";
 
 import { pendingApprovals } from "./pending.js";
+import { listHistory } from "./repo.js";
 
 interface ApiRouteSpec {
   path: string;
@@ -24,6 +26,17 @@ interface ApiRouteSpec {
 
 const listPending: Handler = (c: Context) => {
   return c.json({ pending: pendingApprovals.list() });
+};
+
+const listApprovalHistory: Handler = async (c: Context) => {
+  const rawLimit = Number(c.req.query("limit") ?? "50");
+  const limit = Number.isFinite(rawLimit) ? rawLimit : 50;
+  try {
+    return c.json({ history: await listHistory(limit) });
+  } catch (err) {
+    console.error("[permissions] listHistory 失败:", err);
+    return c.json({ error: "history_unavailable" }, 503);
+  }
 };
 
 const respondPending: Handler = async (c: Context) => {
@@ -57,5 +70,6 @@ const respondPending: Handler = async (c: Context) => {
 
 export const permissionsApiRoutes: ApiRouteSpec[] = [
   { path: "/permissions/pending", method: "GET", handler: listPending },
+  { path: "/permissions/history", method: "GET", handler: listApprovalHistory },
   { path: "/permissions/:id/respond", method: "POST", handler: respondPending },
 ];
