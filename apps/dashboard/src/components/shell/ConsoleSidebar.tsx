@@ -184,6 +184,12 @@ function SidebarBody({
     null,
   );
 
+  // 侧栏因视口 resize 从折叠态自动展开时,onMouseLeave 不会触发(handler 已不绑),
+  // 残留的 tip 会以旧坐标浮在展开后的栏上 —— collapsed 转 false 即清。
+  useEffect(() => {
+    if (!collapsed) setTip(null);
+  }, [collapsed]);
+
   const tipHandlers = (label: string) =>
     collapsed
       ? {
