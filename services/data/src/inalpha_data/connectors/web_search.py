@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from inalpha_shared import get_logger
@@ -19,6 +20,58 @@ from ..config import get_data_settings
 VENUE = "web"
 _logger = get_logger(__name__)
 
+_CJK_NEWS_HINT = (
+    "ddgs.news 无中文财经源，已降级为网页搜索；"
+    "A股市场级快讯请优先用 data.get_market_news"
+)
+
+
+def _has_cjk(query: str) -> bool:
+    return any("一" <= c <= "鿿" for c in query)
+
+
+@dataclass
+class SearchOutcome:
+    """单次搜索的结果 + 失败原因。
+
+    金融 agent 的搜索"空结果"有两种完全不同的含义——"真没搜到"（可当弱证据）
+    与"引擎故障 / 限速 / 超时"（不能当证据）。修复前两者都被吞成 []，上层
+    无法区分；本类把 status 显式带回去。
+    """
+
+    results: list[dict[str, Any]] = field(default_factory=list)
+    status: str = "ok"  # ok / no_results / timeout / rate_limited / engine_error
+    error: str | None = None
+    backend_used: str = ""
+    hint: str | None = None
+
+
+def _classify_exception(exc: BaseException) -> str:
+    """按异常类型名分类（不硬依赖 ddgs.exceptions 的 import）。
+
+    坑：ddgs 空结果不是返回 []，而是抛 DDGSException("No results found.")——
+    必须按消息识别为 no_results，否则会被误判成引擎故障。
+    """
+    if "no results" in str(exc).lower():
+        return "no_results"
+    name = type(exc).__name__
+    if "Ratelimit" in name:
+        return "rate_limited"
+    if "Timeout" in name:
+        return "timeout"
+    return "engine_error"
+
+
+def _better(a: SearchOutcome, b: SearchOutcome) -> SearchOutcome:
+    """两次尝试取较好者：有结果 > no_results > 其它失败。"""
+    if b.results:
+        return b
+    if a.results:
+        return a
+    if b.status == "no_results":
+        return b
+    return a if a.status == "no_results" else b
+
 
 class WebSearchConnector:
     """ddgs metasearch wrapper — sync lib wrapped via asyncio.to_thread.
@@ -26,7 +79,7 @@ class WebSearchConnector:
     并发与超时治理（运维修复）：to_thread 本身没堵事件循环，真正的坑是
     backend="auto" 顺序试多引擎叠成 30s+ 长尾、以及一波并发（analyst 常 ~10 个
     并行查询）占满线程池后持 GIL 做 HTML 解析、把 async 事件循环饿死、/health 偶发
-    超时。这里加：(1) Semaphore 限同时在飞数；(2) 整体 wait_for 超时上限，超时返 []。
+    超时。这里加：(1) Semaphore 限同时在飞数；(2) 整体 wait_for 超时上限。
     """
 
     def __init__(self) -> None:
@@ -34,86 +87,127 @@ class WebSearchConnector:
         self._engine_timeout = s.web_search_timeout_s
         self._overall_timeout = s.web_search_overall_timeout_s
         self._sem = asyncio.Semaphore(s.web_search_max_concurrency)
-        # 可靠性补丁：短 TTL 缓存（只存非空，TTL=0 关）+ auto 空结果换 backend 重试一次
+        # 可靠性补丁：短 TTL 缓存（只存 ok 非空，TTL=0 关）+ auto 失败换 backend 重试一次
         # ——深扫一轮 10+ 次搜索会放大 429 假阴性（外观与"没证据"无法区分）
         self._cache_ttl = s.web_search_cache_ttl_s
-        self._cache: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]]]] = {}
+        self._cache: dict[tuple[Any, ...], tuple[float, SearchOutcome]] = {}
 
     async def fetch_search(
         self,
         query: str,
         backend: str = "auto",
         max_results: int = 10,
-    ) -> list[dict[str, Any]]:
-        """Text web search. Returns [{title, href, body}]."""
+    ) -> SearchOutcome:
+        """Text web search. results = [{title, href, body}]."""
         # Detect Chinese: use bing backend for better Chinese results
         auto_requested = backend == "auto"
-        if auto_requested:
-            has_cjk = any('\u4e00' <= c <= '\u9fff' for c in query)
-            backend = "bing" if has_cjk else "auto"
+        if auto_requested and _has_cjk(query):
+            backend = "bing"
 
         key = ("search", query, backend, max_results)
         cached = self._cache_get(key)
         if cached is not None:
             return cached
 
-        results = await self._run_guarded(
-            _search_sync, kind="search", query=query, backend=backend, max_results=max_results
+        outcome = await self._search_with_fallback(
+            query=query,
+            backend=backend,
+            max_results=max_results,
+            allow_fallback=auto_requested,
         )
-        if not results and auto_requested:
-            # 429 / \u5f15\u64ce\u62bd\u98ce\u7684\u7a7a\u7ed3\u679c\u6362\u4e00\u4e2a\u5f15\u64ce\u515c\u4e00\u6b21\uff08duckduckgo \u4e0e bing \u4e92\u4e3a\u5907\u4efd\uff09
-            fallback = "duckduckgo" if backend == "bing" else "bing"
-            _logger.info("web_search_empty_retry", query=query[:100], fallback=fallback)
-            results = await self._run_guarded(
-                _search_sync, kind="search", query=query, backend=fallback,
-                max_results=max_results,
-            )
-        self._cache_put(key, results)
-        return results
+        self._cache_put(key, outcome)
+        return outcome
 
     async def fetch_news(
         self,
         query: str,
         max_results: int = 10,
-    ) -> list[dict[str, Any]]:
-        """News search. Returns [{title, href, body}]."""
+    ) -> SearchOutcome:
+        """News search. results = [{title, href, body}]."""
+        # ddgs.news 的聚合源没有中文财经内容（中文 query 实测必返空），试了也是
+        # 白烧一个 overall_timeout——直接降级为网页搜索（bing 中文新闻 query 常有
+        # 可用结果），并恒带 hint 把 agent 引向市场级快讯工具。
+        if _has_cjk(query):
+            outcome = await self._search_with_fallback(
+                query=query, backend="bing", max_results=max_results, allow_fallback=True
+            )
+            outcome.backend_used = f"{outcome.backend_used}(text-fallback-for-cjk-news)"
+            outcome.hint = _CJK_NEWS_HINT
+            return outcome
+
         key = ("news", query, max_results)
         cached = self._cache_get(key)
         if cached is not None:
             return cached
-        results = await self._run_guarded(
+        outcome = await self._run_guarded(
             _news_sync, kind="news", query=query, max_results=max_results
         )
-        self._cache_put(key, results)
-        return results
+        outcome.backend_used = "news"
+        self._cache_put(key, outcome)
+        return outcome
 
-    def _cache_get(self, key: tuple[Any, ...]) -> list[dict[str, Any]] | None:
+    async def _search_with_fallback(
+        self,
+        *,
+        query: str,
+        backend: str,
+        max_results: int,
+        allow_fallback: bool,
+    ) -> SearchOutcome:
+        outcome = await self._run_guarded(
+            _search_sync, kind="search", query=query, backend=backend, max_results=max_results
+        )
+        outcome.backend_used = backend
+        # 429 / 超时 / 引擎抽风的空结果换一个引擎兜一次（duckduckgo 与 bing 互为备份）。
+        # timeout 也换：本地网络对某个引擎连不上时另一个常能救回（本次根因之一）。
+        if not outcome.results and allow_fallback:
+            fallback = "duckduckgo" if backend == "bing" else "bing"
+            _logger.info(
+                "web_search_fallback_retry",
+                query=query[:100],
+                status=outcome.status,
+                fallback=fallback,
+            )
+            retry = await self._run_guarded(
+                _search_sync, kind="search", query=query, backend=fallback,
+                max_results=max_results,
+            )
+            retry.backend_used = fallback
+            outcome = _better(outcome, retry)
+        return outcome
+
+    def _cache_get(self, key: tuple[Any, ...]) -> SearchOutcome | None:
         if self._cache_ttl <= 0:
             return None
         hit = self._cache.get(key)
         if hit is None:
             return None
-        expires, results = hit
+        expires, outcome = hit
         if time.monotonic() > expires:
             self._cache.pop(key, None)
             return None
-        return results
+        return outcome
 
-    def _cache_put(self, key: tuple[Any, ...], results: list[dict[str, Any]]) -> None:
-        # 只缓存非空——空结果可能是限速假阴性，缓存会把 0 结果钉死一个 TTL
-        if self._cache_ttl <= 0 or not results:
+    def _cache_put(self, key: tuple[Any, ...], outcome: SearchOutcome) -> None:
+        # 只缓存 ok 非空——失败可能是限速假阴性，缓存会把 0 结果钉死一个 TTL
+        if self._cache_ttl <= 0 or outcome.status != "ok" or not outcome.results:
             return
         if len(self._cache) > 512:
             self._cache.clear()
-        self._cache[key] = (time.monotonic() + self._cache_ttl, results)
+        self._cache[key] = (time.monotonic() + self._cache_ttl, outcome)
 
     async def _run_guarded(
         self, fn: Callable[..., list[dict[str, Any]]], *, kind: str, **kwargs: Any
-    ) -> list[dict[str, Any]]:
-        """限并发 + 整体超时跑同步搜索。超时/异常一律返回 []（搜索是尽力而为的增强项）。"""
+    ) -> SearchOutcome:
+        """限并发 + 整体超时跑同步搜索。
+
+        失败不上抛（搜索是尽力而为的增强项，不能穿透到上层 analyst fan-out
+        把整条链搞崩），但失败原因经 SearchOutcome.status 带回——静默吞成
+        空数组会让"引擎故障"与"真没结果"无法区分。
+        """
         async with self._sem:
             try:
-                return await asyncio.wait_for(
+                results = await asyncio.wait_for(
                     asyncio.to_thread(fn, engine_timeout=self._engine_timeout, **kwargs),
                     timeout=self._overall_timeout,
                 )
@@ -124,17 +218,23 @@ class WebSearchConnector:
                     query=str(kwargs.get("query", ""))[:100],
                     timeout_s=self._overall_timeout,
                 )
-                return []
+                return SearchOutcome(
+                    status="timeout",
+                    error=f"search timed out after {self._overall_timeout}s",
+                )
             except Exception as exc:
-                # 搜索是尽力而为的增强项:DDGS / to_thread / semaphore 等的罕见异常
-                # 不能穿透到上层 analyst fan-out 把整条链搞崩,一律吞掉返回 []。
+                status = _classify_exception(exc)
                 _logger.warning(
                     "web_search_error",
                     kind=kind,
                     query=str(kwargs.get("query", ""))[:100],
+                    status=status,
                     error=str(exc),
                 )
-                return []
+                return SearchOutcome(status=status, error=str(exc))
+        if not results:
+            return SearchOutcome(status="no_results", error="No results found.")
+        return SearchOutcome(results=results)
 
     async def close(self) -> None:
         return None
@@ -145,16 +245,10 @@ def _search_sync(
 ) -> list[dict[str, Any]]:
     try:
         from ddgs import DDGS
-    except ImportError:
-        _logger.warning("web_search_ddgs_not_installed", hint="pip install ddgs")
-        return []
-    try:
-        with DDGS(timeout=engine_timeout) as ddgs:
-            results = list(ddgs.text(query, backend=backend, max_results=max_results))
-        return results
-    except Exception as exc:
-        _logger.warning("web_search_failed", query=query[:100], error=str(exc))
-        return []
+    except ImportError as exc:
+        raise RuntimeError("ddgs not installed; pip install ddgs") from exc
+    with DDGS(timeout=engine_timeout) as ddgs:
+        return list(ddgs.text(query, backend=backend, max_results=max_results))
 
 
 def _news_sync(
@@ -162,16 +256,10 @@ def _news_sync(
 ) -> list[dict[str, Any]]:
     try:
         from ddgs import DDGS
-    except ImportError:
-        _logger.warning("web_search_ddgs_not_installed", hint="pip install ddgs")
-        return []
-    try:
-        with DDGS(timeout=engine_timeout) as ddgs:
-            results = list(ddgs.news(query, max_results=max_results))
-        return results
-    except Exception as exc:
-        _logger.warning("web_search_news_failed", query=query[:100], error=str(exc))
-        return []
+    except ImportError as exc:
+        raise RuntimeError("ddgs not installed; pip install ddgs") from exc
+    with DDGS(timeout=engine_timeout) as ddgs:
+        return list(ddgs.news(query, max_results=max_results))
 
 
 # ---------- module-level singleton ----------

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -229,8 +229,21 @@ class WebSearchResult(BaseModel):
 
 
 class WebSearchResponse(BaseModel):
+    """搜索结果 + 失败原因透传。
+
+    status 区分"真没搜到"（no_results，可当弱证据）与"引擎故障"
+    （timeout / rate_limited / engine_error，不能当"无证据"用）——
+    修复前两者都被静默吞成空数组，agent 无法降级。
+    """
+
     query: str
     backend: str
+    """实际使用的搜索引擎（含 fallback / 降级后），不一定等于请求参数。"""
+    status: Literal["ok", "no_results", "timeout", "rate_limited", "engine_error"] = "ok"
+    error: str | None = None
+    hint: str | None = None
+    """给 agent 的下一步建议（如中文 news 降级后指向市场级快讯工具）。"""
+    fetched_at: str | None = None
     results: list[WebSearchResult] = Field(default_factory=list)
 
 
