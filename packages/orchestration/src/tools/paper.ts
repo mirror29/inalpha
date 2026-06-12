@@ -186,6 +186,85 @@ export const paperRunBacktestTool = createTool({
   },
 });
 
+// ────────────────────────────────────────────────────────────────────
+// D-12 · paper.check_sensitivity
+// ────────────────────────────────────────────────────────────────────
+
+export const paperCheckSensitivityTool = createTool({
+  id: "paper.check_sensitivity",
+  description: `
+    参数邻域敏感性检查：对最终参数的每个数值参数做 one-at-a-time ±20% 扰动，
+    base + 邻域（≤16 组）各跑一次回测，返回邻域 fitness 分布 + verdict。
+
+    何时用：
+    - **promote 前必跑**——verdict=cliff（邻域最差 < 0.5×base）= 参数尖峰 =
+      这套参数恰好踩中历史，**不应 promote**
+    - 迭代中怀疑某版"好得可疑"时做体检
+
+    何时不用：
+    - 策略还没跑出 fitness > baseline（先把策略本身改及格，敏感性无意义——
+      base fitness ≤ 0 时 verdict 恒为 insufficient）
+    - 想做参数搜索/调优 → 这不是网格搜索工具，邻域结果只用来判稳健，
+      **不要**拿邻域里最好的组合当新参数（那是对着噪声调参）
+
+    坑：
+    - params 必须传**最终收敛的完整参数 dict**——源码里的默认值不在扰动范围
+    - trade_size / position_pct 不扰动（只缩放仓位不改信号）；bool/字符串跳过
+    - 邻域 run 不落 backtest_runs（不污染回测历史）；candidate 路径摘要自动写
+      candidate.metrics.sensitivity 供 promote 审计
+    - verdict=insufficient（成功邻域 < 4 组）→ 结论不可靠，看 neighbors 里的
+      error 修参数边界后重跑
+
+    解读：
+    - robust：参数面是高原，小扰动不掉崖 → 可进入 promote 流程
+    - cliff：报告里必须向用户明示"参数敏感，过拟合风险"，建议减参数/简化逻辑
+  `.trim(),
+  inputSchema: z
+    .object({
+      strategyId: z.string().optional().describe("内置策略 ID；与 candidateId 互斥"),
+      candidateId: z.string().uuid().optional().describe("候选 UUID；与 strategyId 互斥"),
+      params: z
+        .record(z.string(), z.unknown())
+        .describe("最终收敛的完整参数 dict（数值参数将被 ±20% 扰动）"),
+      venue: z.string().default("binance"),
+      symbol: SymbolSchema,
+      timeframe: TimeframeSchema.default("1h"),
+      fromTs: z.string().datetime().describe("ISO 8601 起始时间（与最终回测同窗口）"),
+      toTs: z.string().datetime().describe("ISO 8601 结束时间"),
+      initialCash: z.number().positive().default(10_000),
+      feeRate: z.number().min(0).lt(1).default(0.001),
+      pct: z.number().gt(0).lt(1).default(0.2).describe("扰动幅度（默认 ±20%）"),
+    })
+    .superRefine((data, ctx) => {
+      const hasId = typeof data.strategyId === "string" && data.strategyId.length > 0;
+      const hasCand = typeof data.candidateId === "string" && data.candidateId.length > 0;
+      if (hasId === hasCand) {
+        ctx.addIssue({
+          code: "custom",
+          message: "必须给 strategyId 或 candidateId，二选一（不能同给也不能都不给）",
+          path: ["strategyId"],
+        });
+      }
+    }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.checkSensitivity({
+      strategyId: inputData.strategyId,
+      candidateId: inputData.candidateId,
+      params: inputData.params,
+      venue: inputData.venue ?? "binance",
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe ?? "1h",
+      fromTs: inputData.fromTs,
+      toTs: inputData.toTs,
+      initialCash: inputData.initialCash ?? 10_000,
+      feeRate: inputData.feeRate ?? 0.001,
+      pct: inputData.pct ?? 0.2,
+    });
+  },
+});
+
 /** tool 输出里 equity_curve 的保留点数上限（首尾必留，中间等距抽样）。 */
 const EQUITY_CURVE_MAX_POINTS = 120;
 
@@ -576,6 +655,7 @@ export const paperListStrategyRunDecisionsTool = createTool({
 export const paperTools = [
   paperListStrategiesTool,
   paperRunBacktestTool,
+  paperCheckSensitivityTool,
   paperHealthTool,
   paperListOrdersTool,
   paperListPositionsTool,

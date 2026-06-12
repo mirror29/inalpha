@@ -99,6 +99,46 @@ export type BacktestReport = {
   final_positions: PositionSnapshot[];
 };
 
+/** D-12 · 参数敏感性检查（promote 前必跑） */
+export type SensitivityParams = {
+  strategyId?: string;
+  candidateId?: string;
+  /** 最终收敛的完整参数 dict——源码默认值不在扰动范围 */
+  params: Record<string, unknown>;
+  venue?: string;
+  symbol: string;
+  timeframe?: string;
+  fromTs: string;
+  toTs: string;
+  initialCash?: number;
+  feeRate?: number;
+  /** 扰动幅度，默认 0.2（±20%） */
+  pct?: number;
+};
+
+export type SensitivityNeighbor = {
+  params: Record<string, unknown>;
+  fitness: number | null;
+  error: string | null;
+};
+
+export type SensitivityResult = {
+  candidate_id: string | null;
+  strategy_id: string | null;
+  base_fitness: number;
+  pct: number;
+  neighbors: SensitivityNeighbor[];
+  stats: {
+    mean: number | null;
+    std: number | null;
+    worst: number | null;
+    n_ok: number;
+    n_failed: number;
+  };
+  /** cliff = 邻域最差 < 0.5×base，过拟合信号，不应 promote */
+  verdict: "robust" | "cliff" | "insufficient";
+};
+
 export type BacktestParams = {
   /** 内置策略 ID（与 candidateId 二选一） */
   strategyId?: string;
@@ -422,6 +462,26 @@ export class PaperClient {
       fee_rate: params.feeRate ?? 0.001,
       research_id: params.researchId,
       strategy_hint: params.strategyHint,
+    });
+  }
+
+  /**
+   * D-12 · 参数邻域敏感性检查：base + one-at-a-time ±pct 扰动各跑一次回测。
+   * 邻域 run 不落 backtest_runs；candidate 路径摘要写 candidate.metrics.sensitivity。
+   */
+  async checkSensitivity(params: SensitivityParams): Promise<SensitivityResult> {
+    return await this.http.post<SensitivityResult>("/backtest/sensitivity", {
+      strategy_id: params.strategyId,
+      candidate_id: params.candidateId,
+      params: params.params,
+      venue: params.venue ?? "binance",
+      symbol: params.symbol,
+      timeframe: params.timeframe ?? "1h",
+      from_ts: params.fromTs,
+      to_ts: params.toTs,
+      initial_cash: params.initialCash ?? 10_000,
+      fee_rate: params.feeRate ?? 0.001,
+      pct: params.pct ?? 0.2,
     });
   }
 

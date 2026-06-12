@@ -238,6 +238,32 @@ async def update_after_backtest(
         )
 
 
+async def update_sensitivity(
+    conn: AsyncConnection,
+    candidate_id: UUID,
+    *,
+    sensitivity: dict[str, Any],
+) -> None:
+    """敏感性摘要 **merge** 进 metrics（D-12）。
+
+    不能走 ``update_after_backtest`` 的整体覆盖——那会把最近一次回测的
+    metrics/validation 抹掉；这里只补 ``metrics.sensitivity`` 一个 key。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            UPDATE strategy_candidates
+            SET metrics = COALESCE(metrics, '{}'::jsonb) || %s::jsonb,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (
+                json.dumps({"sensitivity": sensitivity}, default=str),
+                str(candidate_id),
+            ),
+        )
+
+
 async def set_status(
     conn: AsyncConnection,
     candidate_id: UUID,

@@ -172,6 +172,83 @@ class ValidationBlock(BaseModel):
     )
 
 
+class SensitivityRequest(BaseModel):
+    """``POST /backtest/sensitivity`` 请求体（D-12 · 参数邻域敏感性检查）。
+
+    ``params`` 必须传**最终收敛的完整参数 dict**——源码里的默认值不在扰动范围。
+    """
+
+    strategy_id: str | None = Field(default=None, description="内置策略 ID；与 candidate_id 二选一")
+    candidate_id: UUID | None = Field(default=None, description="候选 UUID；与 strategy_id 二选一")
+    params: dict[str, Any] = Field(
+        ...,
+        description="最终参数 dict（每个数值参数做 one-at-a-time ±pct 扰动）",
+    )
+
+    venue: str = Field(default="binance")
+    symbol: str = Field(...)
+    timeframe: str = Field(default="1h")
+    from_ts: datetime = Field(...)
+    to_ts: datetime = Field(...)
+    initial_cash: float = Field(default=10_000.0, gt=0)
+    fee_rate: float = Field(default=0.001, ge=0, lt=1)
+
+    pct: float = Field(default=0.2, gt=0, lt=1, description="扰动幅度（±pct）")
+    max_combos: int = Field(default=16, ge=2, le=16, description="邻域组合数上限")
+
+    @field_validator("from_ts", "to_ts", mode="after")
+    @classmethod
+    def _ensure_aware(cls, v: datetime) -> datetime:
+        return _assume_utc_if_naive(v)
+
+    @model_validator(mode="after")
+    def _exactly_one_strategy_source(self) -> SensitivityRequest:
+        has_id = bool(self.strategy_id)
+        has_cand = self.candidate_id is not None
+        if has_id == has_cand:
+            raise PydanticCustomError(
+                "strategy_source",
+                "must provide exactly one of strategy_id / candidate_id, not both / neither",
+            )
+        return self
+
+
+class SensitivityNeighbor(BaseModel):
+    """单个邻域组合的结果。``fitness`` 为 null 表示该组合非法 / 运行失败。"""
+
+    params: dict[str, Any]
+    fitness: float | None = None
+    error: str | None = None
+
+
+class SensitivityStats(BaseModel):
+    """邻域 fitness 分布摘要。"""
+
+    mean: float | None
+    std: float | None
+    worst: float | None
+    n_ok: int
+    n_failed: int
+
+
+class SensitivityResponse(BaseModel):
+    """``POST /backtest/sensitivity`` 响应。
+
+    verdict 判读：
+    - ``robust``：邻域 fitness 没有断崖——参数面是高原
+    - ``cliff``：邻域最差 < 0.5 × base——单参数小扰动掉一半，过拟合信号，**不应 promote**
+    - ``insufficient``：成功邻域 < 4 组或 base fitness ≤ 0，结论不可靠
+    """
+
+    candidate_id: UUID | None
+    strategy_id: str | None
+    base_fitness: float
+    pct: float
+    neighbors: list[SensitivityNeighbor]
+    stats: SensitivityStats
+    verdict: Literal["robust", "cliff", "insufficient"]
+
+
 class BacktestResponse(BaseModel):
     """``POST /backtest`` 响应。"""
 

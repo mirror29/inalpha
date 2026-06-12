@@ -16,6 +16,7 @@ import {
   dataTools,
 } from "./data.js";
 import {
+  paperCheckSensitivityTool,
   paperComposeStrategyTool,
   paperGetAccountTool,
   paperHealthTool,
@@ -101,6 +102,7 @@ export {
   factorTimingTool,
   getTradePlanTool,
   paperAuthorStrategyTool,
+  paperCheckSensitivityTool,
   paperComposeStrategyTool,
   paperGetAccountTool,
   paperGetCandidateTool,
@@ -209,6 +211,8 @@ export const orchestratorToolList = [
   skillReadTool,
   paperListStrategiesTool,
   paperRunBacktestTool,
+  // D-12 · 参数邻域敏感性（promote 前必跑，cliff = 过拟合信号）
+  paperCheckSensitivityTool,
   paperHealthTool,
   // 研究
   researchDeepDiveTool,
