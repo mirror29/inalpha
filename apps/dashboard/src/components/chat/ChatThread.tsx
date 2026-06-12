@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -339,6 +340,22 @@ export function ChatThread({
     };
   }, [threadId, freshThreads]);
 
+  // 重载当前会话历史。用于「在历史列表里点了已经激活的那条会话」：此时父组件 setThreadId
+  // 值不变，上面的回填 effect（依赖 threadId）不会重跑 → 过去表现为「点第一条（恰是当前
+  // 会话、被高亮）没反应」。这里手动再拉一次，给出可见反馈并复原到最新持久化状态。
+  const reloadCurrentThread = useCallback(() => {
+    const id = loadedThreadRef.current;
+    if (!id) return;
+    setHistoryLoading(true);
+    fetch(`/api/chat/threads/${id}/messages`)
+      .then((r) => (r.ok ? r.json() : { messages: [] }))
+      .then((d: { messages?: { id: string; role: string; content: string }[] }) => {
+        setMessagesRef.current((d.messages ?? []) as never);
+      })
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, []);
+
   // 点开历史下拉:**保留上次列表立即展示**(不再清空回 loading 态),后台 no-store 重新拉、
   // 拿到再替换 —— 重开瞬间出内容,避免每次「思考中」白屏 +（标题持久化后）后端只剩一次
   // listMemoryThreads 调用。仅首次(threads===null)才显加载态。
@@ -556,7 +573,10 @@ export function ChatThread({
                   key={th.id}
                   type="button"
                   onClick={() => {
-                    onSwitchThread(th.id);
+                    // 点已激活的会话：threadId 不变，回填 effect 不会触发 → 手动重载;
+                    // 点别的会话：照常切 threadId，由回填 effect 拉取。
+                    if (th.id === threadId) reloadCurrentThread();
+                    else onSwitchThread(th.id);
                     setHistoryOpen(false);
                   }}
                   className={cn(
