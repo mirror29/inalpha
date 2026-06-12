@@ -274,8 +274,9 @@ class ResearchPlan(BaseModel):
     # ── research-hub #6：决策链路可观测（为什么辩了 / 为什么停 / 怎么权衡的）──
     debate_trigger: str | None = Field(
         default=None,
-        description="research-hub #6：debate 触发判定结果——contested 描述 / skipped 原因 / "
-        "always 直跑；None = max_debate_rounds=0 未启用辩论",
+        description="research-hub #6：debate 触发判定结果。前缀固定三选一——"
+        "'contested: '（分歧触发）/ 'skipped: '（同向跳过）/ 'always: '（强制直跑），"
+        "下游可安全 startswith 解析；None = max_debate_rounds=0 未启用辩论",
     )
     debate_stop_reason: str | None = Field(
         default=None,

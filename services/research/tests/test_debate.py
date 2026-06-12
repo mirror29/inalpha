@@ -376,6 +376,13 @@ async def test_run_debate_risk_speaks_last_each_round() -> None:
     risk_r1 = next(c for c in llm.calls if "risk officer" in c["system"].lower())
     assert "Bull says up" in risk_r1["user"]
     assert "Bear says down" in risk_r1["user"]
+    # PR #81 CR：风险官中立——不应收到"驳斥对手"指令（那会偏向一方），
+    # 而是对称的双向压测提示
+    assert "rebut this directly!" not in risk_r1["user"]
+    assert "challenge BOTH sides symmetrically" in risk_r1["user"]
+    # Bull/Bear 的 rebuttal 指令不受影响（round 2 串行）
+    bull_r2 = [c for c in llm.calls if "bull analyst" in c["system"].lower()][-1]
+    assert "rebut this directly!" in bull_r2["user"]
 
 
 async def test_run_debate_without_risk_keeps_two_way() -> None:
@@ -471,8 +478,8 @@ async def test_run_debate_timeout_stop_reason() -> None:
 
 
 def test_assess_disagreement_contested_on_confident_opposition() -> None:
-    """有信心的多空对立 → contested；verdict 描述双方数量。"""
-    contested, verdict = assess_disagreement(
+    """有信心的多空对立 → contested；detail 不带前缀（前缀由 runner 组装）。"""
+    contested, detail = assess_disagreement(
         [
             _brief("technical", "bullish", confidence=0.7),
             _brief("macro", "bearish", confidence=0.6),
@@ -480,8 +487,8 @@ def test_assess_disagreement_contested_on_confident_opposition() -> None:
         ]
     )
     assert contested is True
-    assert verdict.startswith("contested:")
-    assert "1 bullish vs 1 bearish" in verdict
+    assert "1 bullish vs 1 bearish" in detail
+    assert not detail.startswith("contested:")  # 扁平契约：前缀只在 runner 加一层
 
 
 def test_assess_disagreement_aligned_when_same_direction() -> None:
@@ -495,9 +502,9 @@ def test_assess_disagreement_aligned_when_same_direction() -> None:
         [_brief("technical", "neutral", 0.9), _brief("macro", "neutral", 0.9)],
     ]
     for briefs in aligned_cases:
-        contested, verdict = assess_disagreement(briefs)
+        contested, detail = assess_disagreement(briefs)
         assert contested is False
-        assert verdict.startswith("aligned:")
+        assert "no confident opposing stances" in detail
 
 
 def test_infer_asset_type_classifies_all_venues() -> None:
