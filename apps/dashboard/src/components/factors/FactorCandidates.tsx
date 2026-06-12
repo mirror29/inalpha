@@ -29,6 +29,10 @@ const STR = {
   empty: { zh: "暂无候选。", en: "No candidates yet." },
   register: { zh: "注册", en: "Register" },
   reject: { zh: "拒绝", en: "Reject" },
+  reviewFailed: {
+    zh: "操作失败：{msg}",
+    en: "Action failed: {msg}",
+  },
   pending: { zh: "待审核", en: "Pending" },
   registered: { zh: "已注册", en: "Registered" },
   rejected: { zh: "已拒绝", en: "Rejected" },
@@ -71,18 +75,30 @@ export function FactorCandidates() {
     { refreshInterval: REFRESH_MS, keepPreviousData: true },
   );
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (!data) return null;
 
   const review = async (id: string, action: "register" | "reject") => {
     setBusy(id);
+    setError(null);
     try {
-      await fetch(`/api/factors/candidates/${id}`, {
+      const resp = await fetch(`/api/factors/candidates/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
+      // fetch 不会因 4xx/5xx 抛错：register 门是唯一人工入口，静默吞掉
+      // 502（服务宕机）/ 400（UUID 非法）代价最高，必须显式提示。
+      const payload = (await resp.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!resp.ok) {
+        throw new Error(payload?.error ?? resp.statusText);
+      }
       await mutate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -92,6 +108,14 @@ export function FactorCandidates() {
     <Panel title={t("title")}>
       <div className="flex flex-col gap-3 px-4 py-3">
         <p className="text-xs text-fg-subtle">{t("hint")}</p>
+        {error && (
+          <p
+            role="alert"
+            className="rounded border border-fox-red/40 bg-fox-red/10 px-3 py-2 text-xs text-fox-red"
+          >
+            {t("reviewFailed", { msg: error })}
+          </p>
+        )}
         {!data.available ? (
           <p className="text-sm text-fg-muted">{t("unavailable")}</p>
         ) : data.candidates.length === 0 ? (
