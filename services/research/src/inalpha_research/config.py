@@ -173,7 +173,8 @@ class ResearchSettings(BaseSettings):
         alias="RESEARCH_DEBATE_CONVERGENCE_THRESHOLD",
         description="research-hub #6：软早停阈值。从第 2 轮起 Bull/Bear 论证与各自上轮"
         "的词汇 Jaccard 重合度都 ≥ 此值 = 没有新论点，提前结束。1.0 = 实际禁用"
-        "（只有逐字相同才触发）。",
+        "（只有逐字相同才触发）。注：软早停仅对 max_debate_rounds >= 3 有实际效果"
+        "——早停只在「还有下一轮可省」时检查，1~2 轮没有可省空间，本配置无作用。",
     )
 
 

@@ -5,7 +5,9 @@
 - **completed**：跑满 ``max_rounds`` 轮（每轮 = Bull + Bear（+ Risk）各一次）
 - **converged 软早停**：从第 2 轮起，若 Bull 与 Bear 本轮论证与各自上一轮的
   词汇重合度（Jaccard）都 ≥ ``convergence_threshold``，视为没有新论点，提前
-  结束省 token（阈值 1.0 = 实际禁用，只有逐字相同才触发）
+  结束省 token（阈值 1.0 = 实际禁用，只有逐字相同才触发）。
+  注：仅对 ``max_rounds >= 3`` 有实际效果——只在「还有下一轮可省」时检查
+  （``r >= 2 and r < max_rounds``），1~2 轮没有可省空间
 - **timeout**：整段超时返回**已完成**的部分 log（in-flight 那轮被取消）
 
 0 轮直接返空 outcome（runner 在 ``settings.max_debate_rounds=0`` 时不会调本函数）。
@@ -97,7 +99,8 @@ async def run_debate(
         max_tokens: 每次发言输出上限（#2）。
         timeout_seconds: 整个辩论阶段总时限（#4）；None = 不限时。超时返回部分 log。
         convergence_threshold: 软早停阈值 [0,1]；从第 2 轮起 Bull/Bear 与各自上轮
-            的 Jaccard 重合度都 ≥ 此值则提前停。1.0 = 实际禁用。
+            的 Jaccard 重合度都 ≥ 此值则提前停。1.0 = 实际禁用；
+            ``max_rounds <= 2`` 时无可省轮次，本参数无作用。
 
     Returns:
         ``DebateOutcome``——``turns`` 按发言顺序：[R1-Bull, R1-Bear, (R1-Risk),
