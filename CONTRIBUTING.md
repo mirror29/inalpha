@@ -168,6 +168,9 @@ CI workflow 改 job 名时必须同步更新 protection 的 `contexts`，否则 
     --input <protection.json>
   ```
 
+- **Local data discipline** (applies to humans *and* agents): gitignored data is still an asset — "not in git" does not mean "fine to lose". Before moving / deleting / overwriting any gitignored data file (chat history, traces, dev DB), run `bash scripts/backup-data.sh` (or `cp` a copy outside the target mechanism) first. Before writing persistent data into a directory you don't fully understand, verify its lifecycle (who creates it, who cleans it, when) — `.mastra/` is a build dir that gets wiped on every `mastra dev` start. All orchestration persistent paths must go through `src/mastra/paths.ts` (enforced by check-consistency C8).
+  **本地数据纪律**（对人也对 agent）：gitignored 数据也是资产——"不进 git"不等于"丢了活该"。移动 / 删除 / 覆盖任何 gitignored 数据文件（聊天历史、traces、dev 库）前，先跑 `bash scripts/backup-data.sh`（或 `cp` 到目标机制之外）。向语义不明的目录写持久数据前，先验证其生命周期（谁创建、谁清理、何时清理）——`.mastra/` 是 build 目录，每次 `mastra dev` 启动整目录清空。orchestration 持久化路径一律走 `src/mastra/paths.ts`（check-consistency C8 红线强制）。
+
 ## 12. Unsure? / 不确定？
 
 Open a GitHub Discussions thread, or @ the maintainer in a related issue. During the cold-start phase, first response within 48 hours.
