@@ -203,6 +203,26 @@ async def test_patrol_alerts_once_then_recovers(app_with_lifespan: Any) -> None:
     assert _log_codes(fresh).count("factor_decay") == 2
 
 
+async def test_patrol_alerts_when_rank_ic_is_none(app_with_lifespan: Any) -> None:
+    """decaying 但服务端返回 rank_ic=None：告警文案不能因 None:.4f 崩，必须照常 warn。"""
+    run = await _insert_run_with_lineage()
+    await capture_factor_baseline(run, get_paper_settings())
+    patrol = FactorPatrol(settings=get_paper_settings())
+
+    decaying_no_ic = _eff("ta.rsi_14", decay_state="decaying")
+    decaying_no_ic["rank_ic"] = None
+    decaying_no_ic["rank_ic_recent"] = None
+    _StubFactorClient.score_response = _score_resp(decaying_no_ic)
+
+    await patrol.patrol_once()
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh is not None
+    # 告警照常触发（不再死循环静默吞），文案里 None 字段降级成 n/a
+    assert _log_codes(fresh).count("factor_decay") == 1
+    assert "n/a" in str(fresh["run_log"])
+
+
 async def test_patrol_self_heals_missing_baseline(app_with_lifespan: Any) -> None:
     """起跑时没拍到基准的 run：巡检首轮补拍（本轮不对比）。"""
     run = await _insert_run_with_lineage()  # 不调 capture
