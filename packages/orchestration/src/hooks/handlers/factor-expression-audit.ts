@@ -9,7 +9,9 @@
  * - 未来语义命名（future/ahead/tomorrow/next_/will_——表达式里出现 = 意图就歪了）
  * - prompt injection 字面量
  *
- * Matcher 锁 ``factor.evaluate_candidate``，不误伤其它 tool。
+ * Matcher 锁 ``factor.evaluate_candidate | factor.propose``——两个入口都收 ``expression``，
+ * 只挡 evaluate 会让 LLM 直接 propose 绕过外围（服务端 parse_expression 仍兜底，但
+ * 三层防线本层会漏记一个入口）；不误伤其它 tool。
  */
 import type { HookHandler, HookRegistration } from "../types.js";
 
@@ -90,7 +92,7 @@ export function defaultFactorExpressionAuditRegistration(
   return {
     id: "factor-expression-audit",
     event: "PreToolUse",
-    matcher: "factor.evaluate_candidate",
+    matcher: "factor.evaluate_candidate | factor.propose",
     handler: createFactorExpressionAuditHandler(opts),
     blocking: true,
   };

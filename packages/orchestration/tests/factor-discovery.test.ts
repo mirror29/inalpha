@@ -199,6 +199,12 @@ describe("factor-expression-audit hook", () => {
     expect(r.permissionOverride).toBeUndefined();
   });
 
+  it("also guards factor.propose (绕过 evaluate 直接 propose 仍被拦)", async () => {
+    const r = await runHook("Ref($close, -5) / $volume", "factor.propose");
+    expect(r.permissionOverride).toBe("deny");
+    expect(r.message).toContain("LOOKAHEAD");
+  });
+
   it("does not match other tools", async () => {
     const r = await runHook("Ref($close, -3)", "factor.score");
     expect(r.permissionOverride).toBeUndefined();
