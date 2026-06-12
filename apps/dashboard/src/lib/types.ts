@@ -486,6 +486,7 @@ export interface ActivityPayload {
   sources: {
     scheduler: boolean;
     permissions: boolean;
+    permissionsHistory: boolean;
     risk: boolean;
     runs: boolean;
     orders: boolean;

@@ -233,6 +233,7 @@
     "source": {
       "scheduler": "定时任务",
       "permissions": "审批",
+      "permissionsHistory": "审批历史",
       "risk": "风控",
       "runs": "Runner",
       "orders": "订单",
