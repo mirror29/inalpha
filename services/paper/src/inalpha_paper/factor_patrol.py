@@ -232,45 +232,46 @@ class FactorPatrol:
         alerts: dict[str, Any] = dict(run.get("factor_alerts") or {})
         changed = False
 
-        for base in run["factor_baseline"].get("factors", []):
-            fid = base.get("id")
-            cur = current_by_id.get(fid) if fid else None
-            if cur is None:
-                continue  # 本轮没算出来（数据抖动）→ 保持状态，下轮再看
-            if _SKIP_LOW_CONFIDENCE and cur.get("low_confidence"):
-                continue  # 样本不足时的 decay_state 是噪声，不驱动状态机
-            state = cur.get("decay_state")
-            if state is None:
-                # factor 服务版本还没 decay_state 字段（滚动升级 paper 先于 factor）：
-                # 缺省成 "decaying" 会对每个因子误报一条无依据告警、升级后又收恢复 log，
-                # 给复盘添噪。宁可漏告警也不误报——本轮跳过，等服务端补上字段再判。
-                continue
-            prev = (alerts.get(fid) or {}).get("state")
+        # 单事务：本 run 的所有 append_log + 末尾 set_factor_alerts 要么全提交要么全
+        # 回滚。否则 A 告警已独立落库、但 B 的 append_log 抛错会跳过末尾 set_factor_alerts
+        # → A 的状态机不持久化 → 下轮 prev 仍旧态再次告警，违反「同 run×因子只告警一次」。
+        async with get_conn() as conn:
+            for base in run["factor_baseline"].get("factors", []):
+                fid = base.get("id")
+                cur = current_by_id.get(fid) if fid else None
+                if cur is None:
+                    continue  # 本轮没算出来（数据抖动）→ 保持状态，下轮再看
+                if _SKIP_LOW_CONFIDENCE and cur.get("low_confidence"):
+                    continue  # 样本不足时的 decay_state 是噪声，不驱动状态机
+                state = cur.get("decay_state")
+                if state is None:
+                    # factor 服务版本还没 decay_state 字段（滚动升级 paper 先于 factor）：
+                    # 缺省成 "decaying" 会对每个因子误报一条无依据告警、升级后又收恢复 log，
+                    # 给复盘添噪。宁可漏告警也不误报——本轮跳过，等服务端补上字段再判。
+                    continue
+                prev = (alerts.get(fid) or {}).get("state")
 
-            if state == "decaying" and prev != "decaying":
-                msg = self._alert_msg(run, base, cur)
-                async with get_conn() as conn:
+                if state == "decaying" and prev != "decaying":
+                    msg = self._alert_msg(run, base, cur)
                     await runs_store.append_log(
                         conn, run_id, "warn", msg, code="factor_decay"
                     )
-                alerts[fid] = {"state": "decaying", "alerted_at": _now_iso()}
-                changed = True
-            elif state != "decaying" and prev == "decaying":
-                async with get_conn() as conn:
+                    alerts[fid] = {"state": "decaying", "alerted_at": _now_iso()}
+                    changed = True
+                elif state != "decaying" and prev == "decaying":
                     await runs_store.append_log(
                         conn, run_id, "info",
                         f"因子 {fid} 已从衰减恢复（当前 {state}，"
                         f"rank_ic_recent={_fmt_ic(cur.get('rank_ic_recent'))}）",
                         code="factor_decay_recovered",
                     )
-                alerts[fid] = {"state": state, "alerted_at": None}
-                changed = True
-            elif prev is not None and prev != state:
-                alerts[fid] = {**(alerts.get(fid) or {}), "state": state}
-                changed = True
+                    alerts[fid] = {"state": state, "alerted_at": None}
+                    changed = True
+                elif prev is not None and prev != state:
+                    alerts[fid] = {**(alerts.get(fid) or {}), "state": state}
+                    changed = True
 
-        if changed:
-            async with get_conn() as conn:
+            if changed:
                 await runs_store.set_factor_alerts(conn, run_id, alerts)
 
     @staticmethod
