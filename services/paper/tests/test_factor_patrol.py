@@ -223,6 +223,24 @@ async def test_patrol_alerts_when_rank_ic_is_none(app_with_lifespan: Any) -> Non
     assert "n/a" in str(fresh["run_log"])
 
 
+async def test_patrol_skips_when_decay_state_absent(app_with_lifespan: Any) -> None:
+    """factor 服务版本还没 decay_state 字段（滚动升级）：本轮跳过，不误报告警。"""
+    run = await _insert_run_with_lineage()
+    await capture_factor_baseline(run, get_paper_settings())
+    patrol = FactorPatrol(settings=get_paper_settings())
+
+    no_state = _eff("ta.rsi_14", decay_state="stable")
+    del no_state["decay_state"]  # 模拟旧版 factor service 响应缺字段
+    _StubFactorClient.score_response = _score_resp(no_state)
+
+    await patrol.patrol_once()
+    async with get_conn() as conn:
+        fresh = await runs_store.get(conn, run["id"])
+    assert fresh is not None
+    assert _log_codes(fresh).count("factor_decay") == 0  # 缺字段 → 不误报
+    assert "ta.rsi_14" not in (fresh["factor_alerts"] or {})
+
+
 async def test_patrol_self_heals_missing_baseline(app_with_lifespan: Any) -> None:
     """起跑时没拍到基准的 run：巡检首轮补拍（本轮不对比）。"""
     run = await _insert_run_with_lineage()  # 不调 capture
