@@ -24,12 +24,15 @@ engine 走 ``compute_with_macro``。
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
 
 from .base import FactorSpec
+
+logger = logging.getLogger(__name__)
 
 #: 宏观因子允许的 timeframe（engine 守门用）
 MACRO_TIMEFRAMES: frozenset[str] = frozenset({"1d", "1wk", "1w"})
@@ -259,11 +262,19 @@ class MacroAdapter:
         for fid, fn in formulas.items():
             if not need(fid):
                 continue
-            native = fn()
-            if native is None:
-                continue
-            lag, staleness = _factor_align_params(fid)
-            out[fid] = _align_to_bars(native, df.index, lag=lag, max_staleness=staleness)
+            # 单因子隔离：formulas 与 _SPECS 漏同步会让 _factor_align_params 抛
+            # KeyError，若不隔离会被 engine 的 except 吞掉、14 个宏观因子一起静默消失
+            # 且无归因。逐 fid try/except，坏一条只丢一条并记下具体 fid。
+            try:
+                native = fn()
+                if native is None:
+                    continue
+                lag, staleness = _factor_align_params(fid)
+                out[fid] = _align_to_bars(
+                    native, df.index, lag=lag, max_staleness=staleness
+                )
+            except Exception:
+                logger.warning("macro factor %s 计算失败（已跳过）", fid, exc_info=True)
         return out
 
 
