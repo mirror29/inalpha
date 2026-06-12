@@ -26,6 +26,7 @@
  *   让 Mastra runtime 把它当 tool 报错处理（LLM 看到错误消息能下一轮决策）。
  * - 现阶段不接 permission engine，仅留 ``permissionResolver`` 参数。task #3 接入。
  */
+import { projectApprovalInput } from "../permissions/approval-identity.js";
 import {
   type AskApprovalCache,
   defaultAskCache,
@@ -232,8 +233,15 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           const timeoutMs =
             opts.askTimeoutMs && opts.askTimeoutMs > 0 ? opts.askTimeoutMs : undefined;
 
+          // 审批匹配只用"身份字段"投影，不用完整 input：promote 等 tool 的 input 里
+          // 带 LLM 自由生成的 reason，重调时措辞会变 → 用完整 input 当 key 会 cache
+          // miss → 反复弹确认。投影后只比对 candidateId 这类身份字段。
+          // store / execute 仍用完整 effectiveInput（审计 & 落库要 reason）。
+          // 详见 permissions/approval-identity.ts。
+          const approvalKey = projectApprovalInput(toolName, effectiveInput);
+
           if (
-            cache.consume(sessionId, toolName, effectiveInput, (msg) =>
+            cache.consume(sessionId, toolName, approvalKey, (msg) =>
               // stderr 走 mastra dev log，方便 user 实时看 mismatch 原因
               console.warn(`[askCache] ${msg}`),
             )
@@ -241,7 +249,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
             // 第二次 ask 命中 cache → 一次性消费 + 放行（继续往下走 execute）
           } else {
             // 第一次 ask：mark cache + 挂 store（CLI 入口可见）+ 返 requiresApproval
-            cache.mark(sessionId, toolName, effectiveInput);
+            cache.mark(sessionId, toolName, approvalKey);
             void store.request({
               toolName,
               toolInput: effectiveInput,
