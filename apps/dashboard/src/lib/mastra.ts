@@ -24,11 +24,20 @@ export interface ChatThreadSummary {
   updatedAt: string;
 }
 
-/** 历史消息(简化为可渲染纯文本)—— 切换会话时回填 UI 用。 */
+/**
+ * 历史消息 —— 切换会话时回填 UI 用,形状对齐前端 live 的 AG 消息模型
+ * （assistant 带 `toolCalls`、tool 结果是独立 `role:"tool"` + `toolCallId`），
+ * 这样从历史进入也能复原工具 chip（调用中 / 已完成 / 待确认 / 出错），
+ * 而不是过去那样把 tool part 全丢掉只剩纯文本。
+ */
 export interface ChatHistoryMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
+  /** assistant 消息上的工具调用（复原「调用中」chip + toolName 映射）。 */
+  toolCalls?: { id: string; function: { name: string; arguments: string } }[];
+  /** tool 结果消息回指的调用 id（复原「已完成 / 待确认 / 出错」chip）。 */
+  toolCallId?: string;
 }
 
 async function mastraClient(): Promise<MastraClient> {
@@ -126,7 +135,14 @@ export async function listChatThreads(
   return summaries;
 }
 
-/** 取某会话的历史消息,映射为可渲染纯文本(丢弃 tool/system,仅 user/assistant)。 */
+/**
+ * 取某会话的历史消息,展开成可渲染的 AG 消息序列。
+ *
+ * Mastra V2(AI SDK v4)把工具调用 + 结果存为 assistant 消息 `content.parts` 里的
+ * `tool-invocation` part（一条 part 同时带 args 与 result）。这里把每条 DB 消息
+ * 展开成前端 live 同构的序列：assistant（文本 + toolCalls）→ 若干 `role:"tool"`
+ * 结果消息。过去只取 text part → 历史回填后工具 chip 全没了（本次修复点）。
+ */
 export async function listChatMessages(
   threadId: string,
 ): Promise<ChatHistoryMessage[]> {
@@ -135,9 +151,7 @@ export async function listChatMessages(
     client.listThreadMessages(threadId, { agentId: AGENT_ID }),
     "listThreadMessages",
   )) as { messages?: RawMessage[] };
-  return (res.messages ?? [])
-    .map(mapDbMessage)
-    .filter((m): m is ChatHistoryMessage => m !== null);
+  return (res.messages ?? []).flatMap(expandDbMessage);
 }
 
 /**
@@ -198,17 +212,20 @@ function cleanTitle(raw: string | null | undefined): string | null {
   return cleaned || null;
 }
 
+/** 从 MastraDBMessage.content 取出 parts 数组（string / {parts} / 裸数组 三种形态容差）。 */
+function partsOf(content: unknown): unknown[] {
+  if (Array.isArray(content)) return content;
+  if (content && typeof content === "object" && "parts" in content) {
+    const p = (content as { parts?: unknown }).parts;
+    if (Array.isArray(p)) return p;
+  }
+  return [];
+}
+
 /** MastraDBMessage.content 可能是 string,或 {parts:[{type,text}]},或多模态数组。 */
 function extractText(content: unknown): string {
   if (typeof content === "string") return content;
-  const parts =
-    content && typeof content === "object" && "parts" in content
-      ? (content as { parts?: unknown[] }).parts
-      : Array.isArray(content)
-        ? content
-        : undefined;
-  if (!Array.isArray(parts)) return "";
-  return parts
+  return partsOf(content)
     .map((p) =>
       p && typeof p === "object" && "type" in p && p.type === "text"
         ? String((p as { text?: unknown }).text ?? "")
@@ -217,9 +234,145 @@ function extractText(content: unknown): string {
     .join("");
 }
 
-function mapDbMessage(m: RawMessage): ChatHistoryMessage | null {
-  if (m.role !== "user" && m.role !== "assistant") return null;
-  const content = extractText(m.content);
-  if (!content.trim()) return null;
-  return { id: m.id ?? crypto.randomUUID(), role: m.role, content };
+interface ToolPart {
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+  result: unknown;
+  hasResult: boolean;
+}
+
+/**
+ * 把单个 part 识别为工具调用,兼容两种存储形态（Mastra 跨版本容差）：
+ *  - AI SDK v4（当前 Mastra V2 schema）：`{ type:"tool-invocation", toolInvocation:{ state,
+ *    toolCallId, toolName, args, result } }`
+ *  - AI SDK v5 风格：`{ type:"dynamic-tool" | "tool-<name>", toolCallId, input, output, state }`
+ * 不是工具 part → null。
+ */
+function toolPartOf(part: Record<string, unknown>): ToolPart | null {
+  const type = typeof part.type === "string" ? part.type : "";
+
+  // v4：tool-invocation（args/result 包在 toolInvocation 里）
+  if (type === "tool-invocation") {
+    const ti = part.toolInvocation;
+    if (!ti || typeof ti !== "object") return null;
+    const inv = ti as Record<string, unknown>;
+    const toolCallId = typeof inv.toolCallId === "string" ? inv.toolCallId : undefined;
+    if (!toolCallId) return null;
+    return {
+      toolCallId,
+      toolName: typeof inv.toolName === "string" ? inv.toolName : "tool",
+      args: inv.args,
+      result: inv.result,
+      hasResult: inv.state === "result" || "result" in inv,
+    };
+  }
+
+  // v5：dynamic-tool / tool-<name>（input/output 直接在 part 上）
+  if (type === "dynamic-tool" || (type.startsWith("tool-") && type !== "tool-invocation")) {
+    const toolCallId = typeof part.toolCallId === "string" ? part.toolCallId : undefined;
+    if (!toolCallId) return null;
+    const toolName =
+      typeof part.toolName === "string"
+        ? part.toolName
+        : type.startsWith("tool-")
+          ? type.slice("tool-".length)
+          : "tool";
+    const hasOutput =
+      "output" in part || (typeof part.state === "string" && part.state.includes("output"));
+    return {
+      toolCallId,
+      toolName,
+      args: part.input,
+      result: part.output,
+      hasResult: hasOutput,
+    };
+  }
+
+  return null;
+}
+
+/** 工具 args / result 序列化为可展开展示的字符串（已是 string 则原样）。 */
+function stringifyToolPayload(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (v === undefined || v === null) return "";
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
+}
+
+/**
+ * 把一条 DB 消息展开成 0..N 条 AG 消息，**严格保留 parts 原始顺序**。
+ *
+ * Mastra V2 把一轮 assistant 的「工具调用 + 结果」与「最终文字答复」存在同一条消息的
+ * content.parts 里，真实顺序是 tool-call → tool-result → … → 最终文字。若把文字全拼
+ * 成一条先发、工具结果再尾随，历史里工具 chip 会全堆到答复下方（= 会话最末，错位）。
+ * 这里按 part 顺序走：
+ *  - 连续文本累积成一个气泡，遇到工具 / 收尾即 flush（落在它本来的位置）
+ *  - 每个工具 part → assistant(toolCalls) 占位（有结果时前端隐藏「调用中」chip）
+ *    + 有 result 再补一条 role:"tool" 结果消息（渲染「已完成 / 待确认 / 出错」chip）
+ */
+function expandDbMessage(m: RawMessage): ChatHistoryMessage[] {
+  if (m.role !== "user" && m.role !== "assistant") return [];
+  const role = m.role;
+  const baseId = m.id ?? crypto.randomUUID();
+  const out: ChatHistoryMessage[] = [];
+  const parts = partsOf(m.content);
+
+  // 无 parts（content 是纯字符串）→ 单条文本消息。
+  if (parts.length === 0) {
+    const text = extractText(m.content);
+    if (text.trim()) out.push({ id: baseId, role, content: text });
+    return out;
+  }
+
+  let textBuf = "";
+  let seg = 0;
+  const flushText = () => {
+    if (textBuf.trim()) {
+      out.push({ id: `${baseId}:t${seg}`, role, content: textBuf });
+      seg += 1;
+    }
+    textBuf = "";
+  };
+
+  for (const p of parts) {
+    if (!p || typeof p !== "object") continue;
+    const part = p as Record<string, unknown>;
+
+    if (part.type === "text") {
+      textBuf += String((part as { text?: unknown }).text ?? "");
+      continue;
+    }
+
+    // 工具 part 只在 assistant 上有意义；其它 part（step-start / reasoning 等）跳过。
+    const tp = role === "assistant" ? toolPartOf(part) : null;
+    if (!tp) continue;
+
+    flushText(); // 工具前的文字先落位
+    out.push({
+      id: `${baseId}:call:${tp.toolCallId}`,
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: tp.toolCallId,
+          function: { name: tp.toolName, arguments: stringifyToolPayload(tp.args) },
+        },
+      ],
+    });
+    if (tp.hasResult) {
+      out.push({
+        id: `${baseId}:tool:${tp.toolCallId}`,
+        role: "tool",
+        content: stringifyToolPayload(tp.result),
+        toolCallId: tp.toolCallId,
+      });
+    }
+  }
+  flushText(); // 收尾文字（通常是最终答复）
+
+  return out;
 }
