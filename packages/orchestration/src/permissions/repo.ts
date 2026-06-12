@@ -146,30 +146,39 @@ export async function sweepStalePending(): Promise<number> {
   }
 }
 
-/** 审批历史（含终态），按创建时间倒序。DB 不可用返回空数组。 */
+/**
+ * 审批历史（含终态），按创建时间倒序。DB 不可用 / 查询中途断连均返回空数组
+ * （与 insertPending / markResolved / sweepStalePending 同 fail-open 约定：repo 层
+ *  自吞错误，不把异常抛给 handler，保证调用路径返回形态稳定）。
+ */
 export async function listHistory(limit = 50): Promise<ApprovalHistoryRow[]> {
-  const pool = getPoolOrNull();
-  if (!pool) return [];
-  const capped = Math.min(Math.max(1, limit), 200);
-  const { rows } = await pool.query(
-    `SELECT request_id, tool_name, tool_input, session_id, status, via,
-            created_at, deadline, resolved_at
-       FROM pending_approvals
-      ORDER BY created_at DESC
-      LIMIT $1`,
-    [capped],
-  );
-  return rows.map((r) => ({
-    requestId: String(r.request_id),
-    toolName: String(r.tool_name),
-    toolInput: r.tool_input,
-    sessionId: r.session_id === null ? null : String(r.session_id),
-    status: r.status as ApprovalStatus,
-    via: (r.via ?? null) as ApprovalHistoryRow["via"],
-    createdAt: toIso(r.created_at),
-    deadline: toIso(r.deadline),
-    resolvedAt: r.resolved_at === null ? null : toIso(r.resolved_at),
-  }));
+  try {
+    const pool = getPoolOrNull();
+    if (!pool) return [];
+    const capped = Math.min(Math.max(1, limit), 200);
+    const { rows } = await pool.query(
+      `SELECT request_id, tool_name, tool_input, session_id, status, via,
+              created_at, deadline, resolved_at
+         FROM pending_approvals
+        ORDER BY created_at DESC
+        LIMIT $1`,
+      [capped],
+    );
+    return rows.map((r) => ({
+      requestId: String(r.request_id),
+      toolName: String(r.tool_name),
+      toolInput: r.tool_input,
+      sessionId: r.session_id === null ? null : String(r.session_id),
+      status: r.status as ApprovalStatus,
+      via: (r.via ?? null) as ApprovalHistoryRow["via"],
+      createdAt: toIso(r.created_at),
+      deadline: toIso(r.deadline),
+      resolvedAt: r.resolved_at === null ? null : toIso(r.resolved_at),
+    }));
+  } catch (err) {
+    console.error("[approvals-repo] listHistory 失败（活动流不受影响）:", err);
+    return [];
+  }
 }
 
 function toIso(v: unknown): string {
