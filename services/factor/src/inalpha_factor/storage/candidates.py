@@ -73,7 +73,13 @@ async def insert_candidate(
         row = await cur.fetchone()
         if row is not None:
             return row["id"], False
-    return candidate_id, True  # 理论不可达（DO NOTHING 未插却查不到）
+    # 并发 race（READ COMMITTED）：winner 未提交前 loser 的 INSERT 被 ON CONFLICT
+    # 压掉、随后 SELECT 又看不到 winner 那行 → 两路皆 None。绝不能返回这个从未落库
+    # 的 candidate_id：调用方会以 200 回 dashboard，用户审核时 /candidates/{id} 404。
+    # 抛错让调用方转 5xx（agent 可重试，幂等键保证不重复落库）。
+    raise RuntimeError(
+        f"insert_candidate race: expression_hash={expr_hash} 既没插入也没查到（并发未提交）"
+    )
 
 
 async def get_candidate(conn: AsyncConnection, candidate_id: UUID) -> dict[str, Any] | None:
