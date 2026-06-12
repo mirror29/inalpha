@@ -4,7 +4,8 @@
 # 何时用：对 gitignored 数据做任何迁移 / 删除 / 目录整理**之前**先跑一次
 # （2026-06-11 事故教训：mv 前没备份，30MB 聊天历史不可恢复）。
 #
-# 产出：packages/orchestration/.data/backups/manual-<YYYYMMDD-HHMMSS>/
+# 产出：packages/orchestration/.data-backups/manual-<YYYYMMDD-HHMMSS>/
+#（备份与 .data/ 是兄弟目录——误删 .data/ 不连坐备份）
 # manual-* 目录不参与启动时 7 天自动轮转清理，不需要了手动删。
 #
 # 用法：
@@ -15,6 +16,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 DATA_DIR="packages/orchestration/.data"
+BACKUPS_DIR="packages/orchestration/.data-backups"
 
 if [[ ! -d "$DATA_DIR" ]]; then
     echo "✗ $DATA_DIR 不存在，无可备份数据" >&2
@@ -28,7 +30,7 @@ if [[ ${#files[@]} -eq 0 ]]; then
     exit 1
 fi
 
-dest="$DATA_DIR/backups/manual-$(date +%Y%m%d-%H%M%S)"
+dest="$BACKUPS_DIR/manual-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$dest"
 cp "${files[@]}" "$dest/"
 
