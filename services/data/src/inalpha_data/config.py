@@ -39,9 +39,11 @@ class DataSettings(BaseSettings):
     """ddgs 单引擎 HTTP 超时（秒）。原默认 15s，叠多引擎可到 30s+，收紧到 8s 砍长尾。"""
 
     web_search_overall_timeout_s: int = Field(
-        default=12, alias="WEB_SEARCH_OVERALL_TIMEOUT_S"
+        default=20, alias="WEB_SEARCH_OVERALL_TIMEOUT_S"
     )
-    """单次搜索整体超时（秒）。超过即返回 []，避免 backend="auto" 顺序试 8 个引擎把调用方拖死。"""
+    """单次搜索整体超时（秒），避免 backend="auto" 顺序试 8 个引擎把调用方拖死。
+    12s 对 bing 中文查询偏紧（本地网络实测常恰好掐死）；auto 失败会换引擎再兜一次，
+    最坏耗时 = 2 × 本值。"""
 
     web_search_max_concurrency: int = Field(
         default=4, alias="WEB_SEARCH_MAX_CONCURRENCY"
@@ -63,6 +65,18 @@ class DataSettings(BaseSettings):
 
     web_fetch_max_concurrency: int = Field(default=4, alias="WEB_FETCH_MAX_CONCURRENCY")
     """同时在飞的 fetch 数上限，治理思路同 web_search。"""
+
+    # --- cn_market A股市场级归因数据（直连东财/同花顺，配方源自 a-stock-data） ---
+    cn_market_timeout_s: int = Field(default=15, alias="CN_MARKET_TIMEOUT_S")
+    """单请求超时（秒）。实测各端点正常 <5s，超时多半是源站反爬/网络问题。"""
+
+    cn_market_min_interval_s: float = Field(default=1.0, alias="CN_MARKET_MIN_INTERVAL_S")
+    """同 host 两次请求最小间隔（秒），外加 0.1~0.5s 随机抖动——防封铁律，
+    源站触发阈值约 >5 次/秒（参考 a-stock-data 实测）。"""
+
+    cn_market_cache_ttl_s: int = Field(default=60, alias="CN_MARKET_CACHE_TTL_S")
+    """进程内缓存 TTL（秒）。快讯/板块榜分钟级更新，60s 挡住 analyst fan-out
+    同一轮重复打源站；响应带 fetched_at，fresh 语义不破。"""
 
 
 @lru_cache(maxsize=1)

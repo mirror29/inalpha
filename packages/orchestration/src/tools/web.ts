@@ -44,7 +44,8 @@ export const webSearchTool = createTool({
     - 历史 K 线 → data.get_bars
 
     坑：
-    - ddgs 偶发限速，失败时返回空结果（静默降级）
+    - 返回带 status 字段：no_results=真没搜到（可当弱证据）；timeout / rate_limited /
+      engine_error=引擎故障，**不能当"无证据"用**——按 hint 换数据源，不要重试同 query
     - 搜索结果质量因 engine 而异；中文自动走 bing 后端
     - 不要在循环里高频调用
   `.trim(),
@@ -64,10 +65,10 @@ export const webSearchTool = createTool({
     url.searchParams.set("max_results", String(inputData.maxResults ?? 10));
     try {
       const r = await fetch(url.toString(), { headers });
-      if (!r.ok) return { results: [], error: `HTTP ${r.status}` };
+      if (!r.ok) return { results: [], status: "engine_error", error: `HTTP ${r.status}` };
       return await r.json();
     } catch (err) {
-      return { results: [], error: String(err) };
+      return { results: [], status: "engine_error", error: String(err) };
     }
   },
 });
@@ -82,9 +83,15 @@ export const webSearchNewsTool = createTool({
     搜索新闻。后端用 ddgs 的 news 模式，返回最近新闻头条。
 
     何时用：用户问"最近有什么新闻" / 研究前了解最新动态
-    何时不用：已有专用数据源（如 sentiment analyst 会自动调用）
+    何时不用：
+    - 已有专用数据源（如 sentiment analyst 会自动调用）
+    - A股市场级"今天为什么涨跌"类快讯 → data.get_market_news（专业财经源，免引擎噪声）
 
-    坑：ddgs 新闻覆盖不如专业新闻 API 广；中文财经新闻有限
+    坑：
+    - ddgs 新闻源无中文财经内容：中文 query 服务端自动降级为网页搜索（backend 会标
+      text-fallback），并经 hint 字段建议改用市场级快讯工具
+    - 返回带 status 字段：timeout / rate_limited / engine_error 是引擎故障，
+      **不能当"无新闻"解读**；no_results 才是真没搜到
   `.trim(),
   inputSchema: z.object({
     query: z.string().min(1).max(500).describe("新闻搜索关键词"),
@@ -99,10 +106,10 @@ export const webSearchNewsTool = createTool({
     url.searchParams.set("max_results", String(inputData.maxResults ?? 10));
     try {
       const r = await fetch(url.toString(), { headers });
-      if (!r.ok) return { results: [], error: `HTTP ${r.status}` };
+      if (!r.ok) return { results: [], status: "engine_error", error: `HTTP ${r.status}` };
       return await r.json();
     } catch (err) {
-      return { results: [], error: String(err) };
+      return { results: [], status: "engine_error", error: String(err) };
     }
   },
 });
