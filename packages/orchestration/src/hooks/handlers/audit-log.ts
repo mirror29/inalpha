@@ -13,81 +13,8 @@
  *   PII（email / phone / address / wallet / ssn / credit card 等）一起 mask
  * - 字段名匹配**忽略大小写 + 下划线**（``api_key`` / ``apiKey`` / ``API_KEY`` 一视同仁）
  */
+import { maskSensitive, normalizeKey } from "../../redact.js";
 import type { HookHandler, HookRegistration } from "../types.js";
-
-/**
- * 默认脱敏键集合 —— 凭据 + 常见 PII。
- *
- * 全部小写、去下划线后存入；运行时同样 normalize 后比对。这样
- * ``apiKey`` / ``api_key`` / ``API_KEY`` / ``API-KEY`` 都命中同一条规则。
- */
-const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
-  // 凭据
-  "apikey",
-  "secret",
-  "token",
-  "password",
-  "passwd",
-  "passphrase",
-  "approvaltoken",
-  "privatekey",
-  "private_key",
-  "accesskey",
-  "refreshtoken",
-  "sessionsecret",
-  // 个人 PII
-  "email",
-  "phone",
-  "phonenumber",
-  "mobile",
-  "address",
-  "homeaddress",
-  "walletaddress",
-  "wallet",
-  "ssn",
-  "socialsecurity",
-  "passport",
-  "idnumber",
-  // 支付
-  "creditcard",
-  "cardnumber",
-  "cvv",
-  "cvc",
-  "iban",
-  "swift",
-];
-
-const DEFAULT_NORMALIZED = new Set<string>(
-  DEFAULT_SENSITIVE_KEYS.map((k) => normalizeKey(k)),
-);
-
-/** 大小写 + 下划线 / 短横线无关的字段名 normalize（``API_KEY`` → ``apikey``）。 */
-function normalizeKey(s: string): string {
-  return s.replace(/[_\-]/g, "").toLowerCase();
-}
-
-/**
- * 检查字段名是否被 normalized 集合覆盖。
- */
-function isSensitive(key: string, extra: Set<string>): boolean {
-  const norm = normalizeKey(key);
-  return DEFAULT_NORMALIZED.has(norm) || extra.has(norm);
-}
-
-function maskSensitive(value: unknown, extra: Set<string>): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map((v) => maskSensitive(v, extra));
-
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value)) {
-    if (isSensitive(k, extra)) {
-      out[k] = "[REDACTED]";
-    } else {
-      out[k] = maskSensitive(v, extra);
-    }
-  }
-  return out;
-}
 
 export type AuditLogOptions = {
   /** 自定义 sink（默认 console.log JSON 行）。 */

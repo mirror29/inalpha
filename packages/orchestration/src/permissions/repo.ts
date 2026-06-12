@@ -22,6 +22,7 @@
 import { Pool, type PoolConfig } from "pg";
 
 import { getSettings } from "../config.js";
+import { maskSensitive } from "../redact.js";
 import type { PendingApprovalView, PendingDecision } from "./pending.js";
 
 /** 终态：决策 / 超时 / 重启扫尾。 */
@@ -93,7 +94,9 @@ export async function insertPending(view: PendingApprovalView): Promise<void> {
       [
         view.requestId,
         view.toolName,
-        JSON.stringify(view.toolInput ?? null),
+        // 入库前脱敏：与 audit-log 同一套字段名 mask（apiKey/token/secret/PII），
+        // 两条持久化路径处理对称，凭据/PII 不以明文落 pending_approvals。
+        JSON.stringify(maskSensitive(view.toolInput ?? null)),
         view.sessionId ?? null,
         view.createdAt,
         view.deadline,
