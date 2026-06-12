@@ -120,13 +120,21 @@ class FactorEngine:
     def _spec_index(self) -> dict[str, FactorSpec]:
         return {s.factor_id: s for s in self.catalog()}
 
-    def _computable_ids(self, timeframe: str | None = None) -> list[str]:
+    def _computable_ids(
+        self, timeframe: str | None = None, *, exclude_macro: bool = False
+    ) -> list[str]:
         """所有可时序计算（非横截面、源可用）的因子 id。
 
         宏观因子只在 1d/1wk timeframe 进入（ADR-0044 D3：intraday ffill 会造
         rank-tie 伪样本，IC 虚高）；timeframe=None 表示不过滤（catalog 视角）。
+
+        exclude_macro=True：无论 timeframe 一律排除 macro 源——给 custom_score 的
+        冗余对比用（macro 需另拉 FRED 且与价量天然低相关）。别再借 timeframe="1h"
+        当"非 macro"代理，否则 1d/1wk 自定义因子会连同 daily 价量因子一起漏掉。
         """
-        macro_ok = timeframe is None or timeframe in MACRO_TIMEFRAMES
+        macro_ok = not exclude_macro and (
+            timeframe is None or timeframe in MACRO_TIMEFRAMES
+        )
         ids: list[str] = []
         for a in self._adapters:
             if not a.available():
@@ -474,8 +482,9 @@ class FactorEngine:
         pval = ic_pvalue(eff.rank_ic, eff.sample_size, horizon_bars)
 
         # 与库内全部价量因子（同 df 现算）做 |spearman| 对比——挡换皮重复因子。
-        # macro 源不参与（需另拉 FRED，且与价量表达式天然低相关，省一次外呼）。
-        lib = self.compute_on_df(df, self._computable_ids("1h"))
+        # macro 源不参与（需另拉 FRED，且与价量表达式天然低相关，省一次外呼）；
+        # 按实际 timeframe 取因子，仅显式排除 macro，1d/1wk 的 daily 价量因子照样进库。
+        lib = self.compute_on_df(df, self._computable_ids(timeframe, exclude_macro=True))
         corrs: list[tuple[str, float]] = []
         for fid, s in lib.items():
             c = _abs_spearman(series, s)
