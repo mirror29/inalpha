@@ -38,6 +38,12 @@ def _is_private_host(host: str) -> bool:
     """主机名解析后任一地址是回环 / 私网 / 链路本地 / 保留地址 → True。
 
     解析失败按"非私网"放行——连接阶段自然会失败，错误语义更准确。
+
+    已知局限·DNS rebinding（TOCTOU）：这里解析一次、httpx 建连时再解析一次，
+    攻击者控 NS + 短 TTL 可在两次之间把公网 IP 换成内网 IP 绕过本检查。当前缓解：
+    data 服务不对外暴露（调用方须持 JWT）+ 逐跳重定向校验 + content-type 白名单，
+    实际风险低。若将来 data 对外暴露，应升级为 httpx custom transport 在 TCP 连接
+    层（拿到实际 socket peer IP）拦截，彻底消除 TOCTOU。
     """
     try:
         infos = socket.getaddrinfo(host, None)
