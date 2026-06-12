@@ -248,6 +248,80 @@ class WebSearchResponse(BaseModel):
 
 
 # ────────────────────────────────────────────────────────────────────
+# CN market（D-12+ 行情归因：A股市场级快讯/板块/资金/强势股，无需 symbol）
+# ────────────────────────────────────────────────────────────────────
+
+
+class MarketNewsItem(BaseModel):
+    title: str
+    summary: str = ""
+    published_at: str | None = None
+    """UTC ISO 字符串（源站北京时间已转换）。"""
+    related_codes: list[str] = Field(default_factory=list)
+
+
+class MarketNewsResponse(BaseModel):
+    market: str
+    source: str = "eastmoney"
+    fetched_at: datetime
+    items: list[MarketNewsItem] = Field(default_factory=list)
+
+
+class SectorBoardItem(BaseModel):
+    name: str
+    code: str
+    pct_chg: float | None = None
+    """当日涨跌幅（百分数，如 3.5 表示 +3.5%）。"""
+    up_count: int | None = None
+    down_count: int | None = None
+    leader: str = ""
+    leader_code: str = ""
+    leader_pct_chg: float | None = None
+
+
+class SectorBoardResponse(BaseModel):
+    market: str
+    fetched_at: datetime
+    total_boards: int = 0
+    top: list[SectorBoardItem] = Field(default_factory=list)
+    bottom: list[SectorBoardItem] = Field(default_factory=list)
+
+
+class MoneyflowPoint(BaseModel):
+    time: str
+    """北京时间 HH:MM。"""
+    hgt: float | None = None
+    sgt: float | None = None
+
+
+class MoneyflowResponse(BaseModel):
+    market: str
+    fetched_at: datetime
+    as_of_time: str | None = None
+    """最后一个有数的分钟点（北京时间 HH:MM）。"""
+    hgt_net_yi_cny: float | None = None
+    sgt_net_yi_cny: float | None = None
+    north_net_yi_cny: float | None = None
+    series_sample: list[MoneyflowPoint] = Field(default_factory=list)
+    note: str = ""
+
+
+class StrongStockItem(BaseModel):
+    code: str
+    name: str
+    reason: str = ""
+    """人工题材标签原文（"+"分隔多个题材）。"""
+    tags: list[str] = Field(default_factory=list)
+    date: str = ""
+
+
+class StrongStocksResponse(BaseModel):
+    market: str
+    fetched_at: datetime
+    items: list[StrongStockItem] = Field(default_factory=list)
+
+
+# ────────────────────────────────────────────────────────────────────
 # Web fetch（证据链：URL → 可引用的正文文本）
 # ────────────────────────────────────────────────────────────────────
 
