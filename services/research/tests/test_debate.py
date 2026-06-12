@@ -436,9 +436,26 @@ async def test_run_debate_converges_early_when_arguments_repeat() -> None:
 
 async def test_run_debate_three_way_converges_despite_risk_turns() -> None:
     """三方制 × 软早停组合（PR #81 CR follow-up）：收敛判定只看 Bull/Bear，
-    Risk 轮（每轮压测对象不同、内容天然多变）不得干扰早停——这是 _converged
-    role 过滤的回归锚点，过滤被改坏会导致三方制下几乎永不收敛。"""
+    Risk 轮不得干扰早停——这是 _converged role 过滤的回归锚点。
+
+    锚点成立的关键：Risk **每轮返回完全不同的文本**（词集不相交，Jaccard≈0）。
+    若 role 过滤被改坏（把 risk 也纳入判定），round 2 的 Risk 相似度过不了阈，
+    收敛永不触发 → 本测试 turns 变 12 条 / stop_reason 变 completed 而失败。"""
     llm = _three_way_llm()
+    risk_texts = iter(
+        [
+            "Risk flags crowded positioning and thin liquidity beneath spot",
+            "Tail scenario: correlated unwind invalidates either thesis overnight",
+            "Sizing discipline caps exposure regardless of directional conviction",
+            "Regime dependence makes both arguments fragile to a vol spike",
+        ]
+    )
+
+    async def _rotate_risk(*, system: str, user: str) -> None:
+        if "risk officer" in system.lower():
+            llm.set_response("you are a risk officer", {"argument": next(risk_texts)})
+
+    llm._on_call = _rotate_risk  # on_call 在响应匹配前触发（client.py），每轮换词
 
     outcome = await run_debate(
         bull=BullResearcher(llm=llm),
