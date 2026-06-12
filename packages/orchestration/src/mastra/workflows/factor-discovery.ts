@@ -121,6 +121,8 @@ const DiscoveryOutputSchema = z.object({
   summary: z.object({
     total: z.number().int(),
     proposed: z.number().int(),
+    /** dry-run（propose=false）下过了全部门限但未落库的候选——不是被拒。 */
+    evaluated_only: z.number().int(),
     rejected: z.number().int(),
     errored: z.number().int(),
   }),
@@ -375,6 +377,9 @@ const gateStep = createStep({
 
     const proposed = verdicts.filter((v) => v.outcome === "proposed").length;
     const errored = verdicts.filter((v) => v.outcome === "rejected_eval_failed").length;
+    // dry-run（propose=false）下过门候选是 evaluated_only，不能算进 rejected——
+    // 否则 orchestrator 读到"全被拒"给用户错误反馈（实际真跑都会 propose）。
+    const evaluatedOnly = verdicts.filter((v) => v.outcome === "evaluated_only").length;
     return {
       batch_id: batchId,
       n_tested: nTested,
@@ -382,7 +387,8 @@ const gateStep = createStep({
       summary: {
         total: nTested,
         proposed,
-        rejected: nTested - proposed - errored,
+        evaluated_only: evaluatedOnly,
+        rejected: nTested - proposed - evaluatedOnly - errored,
         errored,
       },
     };

@@ -274,8 +274,19 @@ describe("factor_discovery workflow", () => {
       propose: false,
     });
     expect(result.status).toBe("success");
-    const out = (result as { result: { verdicts: { outcome: string }[] } }).result;
+    const out = (
+      result as {
+        result: {
+          verdicts: { outcome: string }[];
+          summary: { proposed: number; evaluated_only: number; rejected: number };
+        };
+      }
+    ).result;
     expect(out.verdicts[0].outcome).toBe("evaluated_only");
     expect(proposeBodies).toHaveLength(0);
+    // dry-run 过门候选必须算 evaluated_only，不能误计为 rejected
+    expect(out.summary.evaluated_only).toBe(1);
+    expect(out.summary.proposed).toBe(0);
+    expect(out.summary.rejected).toBe(0);
   });
 });
