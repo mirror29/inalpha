@@ -161,6 +161,78 @@ export const paperAuthorStrategyTool = createTool({
             self.submit_order(order)
     \`\`\`
 
+    **非技术 thesis 的参数化范式**（D-12）：策略代码运行时只能看到 OHLCV，宏观 /
+    基本面 / 估值结论要进策略，就把它**编码为静态参数**（risk_scale / position_pct /
+    单向门），并在 description 写明依据 + 研究 as_of（"risk_scale=0.5：FRED 曲线倒挂
+    + VIX 高位，risk-off，as_of 2026-XX-XX"）。regime 变了就 re-author 一版新参数。
+    第二个模板演示"波动率目标仓位 × 宏观 risk_scale 油门"：
+
+    \`\`\`python
+    import statistics
+
+    class VolTargetRegimeStrategy(Strategy):
+        # risk_scale：宏观/基本面 regime 油门（risk-on 1.0 / 中性 0.7 / risk-off 0.4）
+        # —— 取值依据写进 description，不要拍脑袋
+        def __init__(
+            self, name, clock, msgbus, instrument_id,
+            timeframe="1h", sma_period=50, vol_period=20,
+            target_vol=0.02, risk_scale=0.7, base_size=0.05,
+        ):
+            super().__init__(name, clock, msgbus)
+            self._instrument_id = instrument_id
+            self._timeframe = timeframe
+            self._closes = deque(maxlen=max(sma_period, vol_period) + 1)
+            self._sma_period = sma_period
+            self._vol_period = vol_period
+            self._target_vol = target_vol
+            self._risk_scale = risk_scale
+            self._base_size = base_size
+            self._is_long = False
+            self._held = 0.0
+
+        def on_start(self):
+            self.subscribe_bars(self._instrument_id, self._timeframe)
+
+        def on_bar(self, bar):
+            if bar.instrument_id != self._instrument_id:
+                return
+            self._closes.append(bar.close)
+            if len(self._closes) <= self._sma_period:
+                return
+            closes = list(self._closes)
+            sma = sum(closes[-self._sma_period:]) / self._sma_period
+            rets = [closes[i] / closes[i - 1] - 1 for i in range(-self._vol_period, 0)]
+            realized_vol = statistics.stdev(rets) or 1e-9
+            # 波动率目标仓位 × 宏观油门：高波动自动缩仓，risk-off 再压一档
+            size = self._base_size * min(2.0, self._target_vol / realized_vol) * self._risk_scale
+            if bar.close > sma and not self._is_long:
+                self._submit(OrderSide.BUY, size)
+            elif bar.close < sma and self._is_long and self._held > 0:
+                self._submit(OrderSide.SELL, self._held)  # 平仓卖实际持仓量，不是重算的 size
+
+        def on_position_opened(self, event):
+            self._is_long = event.quantity > 0
+            self._held = event.quantity
+
+        def on_position_changed(self, event):
+            self._held = event.quantity
+
+        def on_position_closed(self, event):
+            self._is_long = False
+            self._held = 0.0
+
+        def _submit(self, side, qty):
+            order = Order(
+                client_order_id=ClientOrderId("x-" + uuid4().hex[:8]),
+                instrument_id=self._instrument_id, side=side,
+                type=OrderType.MARKET, quantity=qty,
+            )
+            self.submit_order(order)
+    \`\`\`
+
+    另一常用范式（不给完整代码）：**regime 单向门**——risk-off 时只允许减仓 / 禁止新开多
+    （\`if not self._allow_new_longs: return\`），门的开关同样是静态参数 + description 写依据。
+
     返回字段：
     - candidate_id（UUID）——后续 paper.run_backtest({ candidateId }) 用
     - created（bool）——false 表示撞到现有同 hash 候选，返回老 ID（幂等，可直接复用）
