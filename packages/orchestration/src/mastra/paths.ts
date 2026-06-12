@@ -29,6 +29,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -116,15 +117,24 @@ function localDateStamp(d: Date): string {
  * 何时用：``resolveMastraDbDir()`` 首次调用时自动触发——LibSQLStore 尚未打开
  * 库文件，是文件级拷贝最安全的时点。测试可直接调用并注入 ``now``。
  *
- * 行为：拷贝 ``dbDir`` 顶层 SQLite 文件到 ``backups/<YYYY-MM-DD>/``，当日已有
- * 则跳过；随后清除超过 {@link BACKUP_RETENTION_DAYS} 天的日期目录
+ * 行为：拷贝 ``dbDir`` 顶层 SQLite 文件到 ``backupsRoot/<YYYY-MM-DD>/``，当日
+ * 已有则跳过；随后清除超过 {@link BACKUP_RETENTION_DAYS} 天的日期目录
  * （``manual-*`` 手动备份不参与轮转）。
  *
- * 坑：**任何失败只 warn 不抛**——备份是保险不是闸门，不许拖挂启动。
+ * 坑：
+ *
+ * - **任何失败只 warn 不抛**——备份是保险不是闸门，不许拖挂启动
+ * - ``backupsRoot`` 必须在 ``dbDir`` 树**之外**（PR #77 review major）：同根则
+ *   一次 ``rm -rf .data`` 源数据与备份共亡，"不再单副本"不成立
+ * - 先写 ``<stamp>.tmp`` 再 rename 原子提交：中途 crash 不会留下"当日已有"
+ *   假象的不完整备份；遗留 ``*.tmp`` 在 prune 阶段清除
  */
-export function rotateDataBackups(dbDir: string, now: Date = new Date()): void {
+export function rotateDataBackups(
+  dbDir: string,
+  backupsRoot: string,
+  now: Date = new Date(),
+): void {
   try {
-    const backupsRoot = join(dbDir, "backups");
     const stamp = localDateStamp(now);
     const todayDir = join(backupsRoot, stamp);
     const dbFiles = readdirSync(dbDir).filter((f) => DB_FILE_RE.test(f));
@@ -134,10 +144,13 @@ export function rotateDataBackups(dbDir: string, now: Date = new Date()): void {
     } else if (existsSync(todayDir)) {
       console.log(`[paths] data backup skip: ${stamp} 当日已有`);
     } else {
-      mkdirSync(todayDir, { recursive: true });
+      const tmpDir = join(backupsRoot, `${stamp}.tmp`);
+      rmSync(tmpDir, { recursive: true, force: true });
+      mkdirSync(tmpDir, { recursive: true });
       for (const f of dbFiles) {
-        copyFileSync(join(dbDir, f), join(todayDir, f));
+        copyFileSync(join(dbDir, f), join(tmpDir, f));
       }
+      renameSync(tmpDir, todayDir);
       console.log(`[paths] data backup ok: ${todayDir}（${dbFiles.length} 个文件）`);
     }
 
@@ -145,6 +158,11 @@ export function rotateDataBackups(dbDir: string, now: Date = new Date()): void {
       const cutoffMs = now.getTime() - BACKUP_RETENTION_DAYS * 86_400_000;
       let pruned = 0;
       for (const name of readdirSync(backupsRoot)) {
+        // 本进程刚 rename 走了自己的 .tmp，此刻还在的都是 crash 遗留物
+        if (name.endsWith(".tmp") && BACKUP_DIR_RE.test(name.slice(0, -4))) {
+          rmSync(join(backupsRoot, name), { recursive: true, force: true });
+          continue;
+        }
         if (!BACKUP_DIR_RE.test(name)) continue;
         const dirMs = new Date(`${name}T00:00:00`).getTime();
         if (Number.isNaN(dirMs) || dirMs >= cutoffMs) continue;
@@ -165,6 +183,7 @@ export function rotateDataBackups(dbDir: string, now: Date = new Date()): void {
  * 不能用 ``.mastra/``（mastra build 目录，启动即清，见模块头注释）。
  * 首次调用 log 实际路径 —— "历史去哪了"类排查的第一证据；
  * 并触发一次 {@link rotateDataBackups}（库文件被本进程打开之前）。
+ * 备份落 ``.data`` 的兄弟目录 ``.data-backups``——误删 ``.data/`` 不连坐备份。
  */
 export function resolveMastraDbDir(): string {
   const dbDir = resolve(resolveOrchestrationRoot(), ".data");
@@ -173,7 +192,7 @@ export function resolveMastraDbDir(): string {
   }
   if (!backupAttempted) {
     backupAttempted = true;
-    rotateDataBackups(dbDir);
+    rotateDataBackups(dbDir, resolve(resolveOrchestrationRoot(), ".data-backups"));
   }
   if (!dbDirLogged) {
     dbDirLogged = true;
