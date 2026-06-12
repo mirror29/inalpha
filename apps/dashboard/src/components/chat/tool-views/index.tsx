@@ -25,6 +25,14 @@ import {
   isStrategyRunList,
 } from "./PaperViews";
 import { SearchView, isSearch } from "./SearchView";
+import {
+  CustomFactorView,
+  FactorScoreView,
+  isCustomFactor,
+  isFactorScore,
+} from "./FactorViews";
+import { ResearchView, isResearch } from "./ResearchView";
+import { TradePlanView, isPlan } from "./TradeViews";
 
 /**
  * 工具名 → 专属可视化视图的注册分发。
@@ -72,12 +80,27 @@ export function resolveToolView(toolName: string, v: unknown): ReactNode | null 
     case "web_search":
     case "web_search_news":
       return isSearch(v) ? <SearchView s={v} /> : null;
+    case "research_deep_dive":
+      return isResearch(v) ? <ResearchView r={v} /> : null;
+    case "trade_create_plan":
+    case "trade_get_plan":
+      return isPlan(v) ? <TradePlanView p={v} /> : null;
+    case "factor_timing":
+    case "factor_score":
+      return isFactorScore(v) ? <FactorScoreView s={v} /> : null;
+    case "factor_evaluate_candidate":
+    case "factor_custom_score":
+      return isCustomFactor(v) ? <CustomFactorView c={v} /> : null;
   }
 
   // 名字没命中 → 形态嗅探(特征从强到弱,避免误判)。
   if (isBars(v)) return <BarsView d={v} />;
   if (isBacktest(v)) return <BacktestView b={v} />;
+  if (isCustomFactor(v)) return <CustomFactorView c={v} />;
+  if (isFactorScore(v)) return <FactorScoreView s={v} />;
+  if (isResearch(v)) return <ResearchView r={v} />;
   if (isSearch(v)) return <SearchView s={v} />;
+  if (isPlan(v)) return <TradePlanView p={v} />;
   if (isCandidate(v)) return <CandidateView c={v} />;
   if (isStrategyRun(v)) return <StrategyRunView r={v} />;
   if (isCandidateList(body)) return <CandidateListView list={body} />;
