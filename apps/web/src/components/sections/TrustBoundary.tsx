@@ -112,12 +112,22 @@ export function TrustBoundary() {
         className="mt-16"
       >
         <div className="relative">
-          {/* 轨道基线（暗）—— 点亮交给下面的行进轨迹 */}
+          {/* 轨道基线（暗）—— 点亮交给下面的行进轨迹；移动端管道转纵向，横轨隐藏 */}
           <div
-            className="absolute left-0 right-0 top-[7px] h-px"
+            className="absolute left-0 right-0 top-[7px] hidden h-px md:block"
             style={{
               background:
                 "linear-gradient(to right, color-mix(in oklab, var(--ink-muted) 35%, transparent), var(--accent), color-mix(in oklab, var(--bull) 70%, transparent))",
+              opacity: 0.35,
+            }}
+            aria-hidden
+          />
+          {/* 移动端纵向轨道：沿节点圆点中心垂落 */}
+          <div
+            className="absolute bottom-2 left-[6px] top-2 w-px md:hidden"
+            style={{
+              background:
+                "linear-gradient(to bottom, color-mix(in oklab, var(--ink-muted) 35%, transparent), var(--accent), color-mix(in oklab, var(--bull) 70%, transparent))",
               opacity: 0.35,
             }}
             aria-hidden
@@ -202,17 +212,17 @@ export function TrustBoundary() {
             </span>
           )}
 
-          {/* 节点 + 标签 */}
-          <div className="relative flex items-start justify-between gap-3">
+          {/* 节点 + 标签：移动端纵排（圆点在左、文字在右），md 起恢复横向等距 */}
+          <div className="relative flex flex-col gap-7 md:flex-row md:items-start md:justify-between md:gap-3">
             {FLOW.map((n) => (
               <motion.div
                 key={n.key}
                 variants={fadeUp}
-                className="flex max-w-[10rem] flex-col items-center text-center"
+                className="flex items-start gap-4 md:max-w-[10rem] md:flex-col md:items-center md:gap-0 md:text-center"
               >
                 <span
                   className={
-                    "size-3.5 rounded-full ring-4 ring-bg " +
+                    "mt-0.5 size-3.5 shrink-0 rounded-full ring-4 ring-bg md:mt-0 " +
                     (n.tone === "bull"
                       ? "bg-bull"
                       : n.tone === "muted"
@@ -220,23 +230,26 @@ export function TrustBoundary() {
                         : "bg-cyan")
                   }
                 />
-                <span
-                  className={
-                    "mt-4 font-mono text-[12px] " +
-                    (n.tone === "bull"
-                      ? "text-bull"
-                      : n.tone === "muted"
-                        ? "text-fg-muted"
-                        : "text-cyan")
-                  }
-                >
-                  {n.tool}
-                </span>
-                {n.desc ? (
-                  <span className="mt-1.5 text-[12.5px] leading-snug text-fg-muted/80">
-                    {n.desc}
+                {/* md:contents —— 桌面端解散包裹层，让标签/描述直接成为纵列 flex 子项 */}
+                <div className="md:contents">
+                  <span
+                    className={
+                      "font-mono text-[12px] md:mt-4 " +
+                      (n.tone === "bull"
+                        ? "text-bull"
+                        : n.tone === "muted"
+                          ? "text-fg-muted"
+                          : "text-cyan")
+                    }
+                  >
+                    {n.tool}
                   </span>
-                ) : null}
+                  {n.desc ? (
+                    <span className="mt-1 block text-[12.5px] leading-snug text-fg-muted/80 md:mt-1.5">
+                      {n.desc}
+                    </span>
+                  ) : null}
+                </div>
               </motion.div>
             ))}
           </div>
@@ -277,19 +290,28 @@ export function TrustBoundary() {
           )}
         </motion.div>
 
-        {/* LLM 直连被 deny 拦截：红点加速撞墙、✕ 闪烁抖动、弹回 */}
-        <motion.div variants={fadeUp} className="mt-12 flex items-center gap-4">
-          <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted">
-            {t("agentLabel")}
-          </span>
-          <div className="relative h-5 flex-1">
+        {/* LLM 直连被 deny 拦截：红点加速撞墙、✕ 闪烁抖动、弹回
+            移动端两段式（标签一行 + 拦截线一行），md 起恢复 agent—✕—order 单行 */}
+        <motion.div
+          variants={fadeUp}
+          className="mt-12 flex flex-col gap-3 md:flex-row md:items-center md:gap-4"
+        >
+          <div className="flex items-center justify-between gap-4 md:contents">
+            <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted">
+              {t("agentLabel")}
+            </span>
+            <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted/40 line-through md:order-last">
+              {t("orderLabel")}
+            </span>
+          </div>
+          <div className="relative h-5 md:flex-1">
             <div
               className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 border-t border-dashed border-fox-red/35"
               aria-hidden
             />
             {/* ✕ 拦截点：撞击瞬间放大闪烁 + 标签微抖 */}
             <motion.span
-              className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 bg-bg px-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fox-red/85"
+              className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 whitespace-nowrap bg-bg px-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fox-red/85"
               animate={reduce ? undefined : { x: [0, 0, -1.5, 1.5, 0, 0] }}
               transition={
                 reduce
@@ -339,9 +361,6 @@ export function TrustBoundary() {
               />
             ) : null}
           </div>
-          <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.16em] text-fg-muted/40 line-through">
-            {t("orderLabel")}
-          </span>
         </motion.div>
       </motion.div>
     </section>
