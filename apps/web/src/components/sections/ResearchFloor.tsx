@@ -127,7 +127,9 @@ export function ResearchFloor() {
                       layout
                       initial={{ opacity: 0, x: bear ? 12 : panel ? 0 : -12 }}
                       animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0 }}
+                      /* exit 只发生在循环重置（全部消息同时退出），popLayout 会把退出项
+                         绝对定位叠在新一轮消息上 —— 必须瞬时移除，否则整框文字重影 */
+                      exit={{ opacity: 0, transition: { duration: 0 } }}
                       transition={{ duration: 0.28 }}
                       className={
                         panel
