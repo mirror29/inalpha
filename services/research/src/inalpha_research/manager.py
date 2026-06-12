@@ -43,18 +43,22 @@ Bull/Bear debate into a final research plan.
 
 You receive 1+ analyst briefs. Each brief has stance / confidence / summary /
 key_points and may include structured "factors" (kind / value / strength / explanation).
-You may also receive a debate_log (Bull/Bear turns) — if present, the Bull and Bear
-researchers have already argued over the same briefs; weight the side whose argument
-better withstood the rebuttals.
+You may also receive a debate_log (Bull/Bear turns, possibly with a third "risk"
+voice stress-testing both sides) — if present, the researchers have already argued
+over the same briefs; weight the side whose argument better withstood the rebuttals,
+and treat the risk officer's unanswered challenges as live risks.
 
 Your job is to:
 1. Reconcile disagreements between analysts (favor the one with more concrete evidence)
-2. Judge the Bull/Bear debate (when present) — note which side conceded points or
-   handled rebuttals better; reflect that in rating + confidence
+2. Judge the debate (when present) — note which side conceded points or
+   handled rebuttals better; reflect that in rating + confidence. Risk-officer
+   challenges that neither side answered belong in "risks"
 3. Output a final rating, thesis, risks, and a suggested action for the trader
 4. **Synthesize factors and pick a strategy family** —— machine-readable hand-off to the
    downstream `paper.compose_strategy` engine
 5. Stay **grounded in the briefs / debate** — do not invent factors that no analyst raised
+6. **Show your weighing** in "reasoning": which analysts you trusted and why, who won
+   the debate and on what point — this is the audit trail for "why this rating"
 
 Return ONLY a JSON object with this exact shape:
 
@@ -62,6 +66,7 @@ Return ONLY a JSON object with this exact shape:
   "rating": "overweight" | "neutral" | "underweight",
   "confidence": float in [0, 1],
   "thesis": "3-5 sentences of core conclusion",
+  "reasoning": "2-4 sentences: how you weighed the analysts and judged the debate",
   "risks": ["risk 1", "risk 2", ...],
   "suggested_action": "open_long 0.X | open_short 0.X | hold | reduce | wait",
   "horizon": "intraday" | "swing" | "position",
@@ -136,7 +141,14 @@ class ResearchManager:
         briefs: list[AnalystBrief],
         debate_log: list[DebateTurn] | None = None,
         user_question: str | None = None,
+        debate_trigger: str | None = None,
+        debate_stop_reason: str | None = None,
     ) -> ResearchPlan:
+        """综合 briefs(+debate) 出 plan。
+
+        ``debate_trigger`` / ``debate_stop_reason`` 由 runner 传入、原样落进
+        plan（research-hub #6 决策链路可观测）——manager 不消费它们。
+        """
         user_prompt = _format_user_prompt(
             venue=venue,
             symbol=symbol,
@@ -164,6 +176,8 @@ class ResearchManager:
             as_of=as_of,
             briefs=briefs,
             debate_log=debate_log or [],
+            debate_trigger=debate_trigger,
+            debate_stop_reason=debate_stop_reason,
         )
 
 
@@ -248,6 +262,10 @@ def _fallback_raw(error: str) -> dict[str, Any]:
             "solely on the individual analyst briefs below — judge accordingly. "
             f"detail: {error[:200]}"
         ),
+        "reasoning": (
+            "no weighing performed: the synthesis LLM call failed, so neither analyst "
+            "reconciliation nor debate adjudication happened"
+        ),
         "risks": [
             "Manager synthesis failed — no cross-analyst reconciliation / debate "
             "adjudication was performed"
@@ -269,6 +287,8 @@ def _build_plan(
     as_of: datetime,
     briefs: list[AnalystBrief],
     debate_log: list[DebateTurn] | None = None,
+    debate_trigger: str | None = None,
+    debate_stop_reason: str | None = None,
 ) -> ResearchPlan:
     """LLM JSON → ResearchPlan，缺字段兜底。``debate_log`` 原样落进 plan 字段。"""
     rating = str(raw.get("rating", "neutral")).lower()
@@ -308,6 +328,10 @@ def _build_plan(
         "briefs": briefs,
         "debate_log": [t.model_dump(mode="json") for t in (debate_log or [])],
         "horizon": horizon,
+        # research-hub #6 决策链路：trigger/stop 来自 runner，reasoning 来自 LLM 自述
+        "debate_trigger": debate_trigger,
+        "debate_stop_reason": debate_stop_reason,
+        "synthesis_reasoning": str(raw.get("reasoning") or "").strip() or None,
     }
     # 用 model_validate 而不是构造器，让 Pydantic 把 dict→model 一次校验
     return ResearchPlan.model_validate(payload)
@@ -439,6 +463,8 @@ def build_plan_from_raw(
     as_of: datetime,
     briefs: list[AnalystBrief],
     debate_log: list[DebateTurn] | None = None,
+    debate_trigger: str | None = None,
+    debate_stop_reason: str | None = None,
 ) -> ResearchPlan:
     """测试 entrypoint。生产代码走 ``ResearchManager.synthesize``。"""
     return _build_plan(
@@ -449,6 +475,8 @@ def build_plan_from_raw(
         as_of=as_of,
         briefs=briefs,
         debate_log=debate_log,
+        debate_trigger=debate_trigger,
+        debate_stop_reason=debate_stop_reason,
     )
 
 

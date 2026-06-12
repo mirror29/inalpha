@@ -146,16 +146,19 @@ class StrategyHint(BaseModel):
 
 
 class DebateTurn(BaseModel):
-    """Bull 或 Bear 一轮发言。
+    """Bull / Bear / Risk 一轮发言。
 
-    辩论协调器轮换调用 Bull/Bear；每次发言追加一条 ``DebateTurn`` 到
+    辩论协调器轮换调用各 researcher；每次发言追加一条 ``DebateTurn`` 到
     ``ResearchPlan.debate_log``，按时间顺序组成完整辩论史。
     """
 
-    role: Literal["bull", "bear"] = Field(
-        ..., description="发言角色：bull 看多 / bear 看空"
+    role: Literal["bull", "bear", "risk"] = Field(
+        ...,
+        description="发言角色：bull 看多 / bear 看空 / risk 风险官（research-hub #6 三方制）",
     )
-    round: int = Field(..., ge=1, description="第几轮（1-based）；同轮内 bull 先 bear 后")
+    round: int = Field(
+        ..., ge=1, description="第几轮（1-based）；同轮内 bull → bear → risk 固定顺序"
+    )
     content: str = Field(..., min_length=1, description="LLM 该轮发言原文")
 
 
@@ -260,12 +263,29 @@ class ResearchPlan(BaseModel):
     )
     debate_log: list[DebateTurn] = Field(
         default_factory=list,
-        description="D-9 起：Bull/Bear 辩论日志（每轮 2 条），manager 综合时已读过；"
+        description="D-9 起：Bull/Bear(/Risk) 辩论日志，manager 综合时已读过；"
         "下游 trader / UI 可重现辩论过程",
     )
     horizon: Horizon = Field(
         default="swing",
         description="建议持仓周期：日内 / 波段（几天-2周）/ 中长线",
+    )
+
+    # ── research-hub #6：决策链路可观测（为什么辩了 / 为什么停 / 怎么权衡的）──
+    debate_trigger: str | None = Field(
+        default=None,
+        description="research-hub #6：debate 触发判定结果——contested 描述 / skipped 原因 / "
+        "always 直跑；None = max_debate_rounds=0 未启用辩论",
+    )
+    debate_stop_reason: str | None = Field(
+        default=None,
+        description="research-hub #6：辩论终止原因（completed / converged 软早停 / timeout）；"
+        "None = 本次没跑辩论",
+    )
+    synthesis_reasoning: str | None = Field(
+        default=None,
+        description="research-hub #6：manager 综合的权衡自述（怎么调和分歧、辩论谁占上风），"
+        "复盘「为什么是这个 rating」的第一证据；LLM 没给则为 None",
     )
 
 
