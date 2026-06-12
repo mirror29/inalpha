@@ -32,14 +32,15 @@ export function CTAFooter({ stats = null }: CTAFooterProps = {}) {
 
   return (
     <section className="group relative isolate overflow-hidden border-t border-fg/12">
-      <span
-        aria-hidden
-        className="pointer-events-none absolute right-2 top-2 -z-10 select-none font-display italic leading-none text-fg/[0.04] transition-colors duration-500 group-hover:text-gold/25"
-        style={{ fontSize: "clamp(7rem, 20vw, 18rem)" }}
-      >
-        09
-      </span>
-      <div className="mx-auto max-w-[88rem] px-6 pt-16 pb-20 md:px-12 md:pt-20 md:pb-24">
+      <div className="relative mx-auto max-w-[96rem] px-6 pt-16 pb-20 md:px-14 md:pt-20 md:pb-24">
+        {/* 序号锚定内容区右缘（right = 容器 padding − 0.5rem），与 main 内各 section 的 -right-2 -top-16 同基准 */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-16 right-4 -z-10 select-none font-display italic leading-none text-fg/[0.04] transition-colors duration-500 group-hover:text-gold/25 md:right-12"
+          style={{ fontSize: "clamp(8rem, 24vw, 22rem)" }}
+        >
+          09
+        </span>
         {/* Bracketed header */}
         <div className="border-y border-fg/15">
           <div className="flex items-center justify-between gap-6 py-3 font-mono text-[11px] uppercase tracking-[0.22em] text-fg-muted">
@@ -128,7 +129,7 @@ export function CTAFooter({ stats = null }: CTAFooterProps = {}) {
 
       {/* Footer colophon */}
       <footer className="border-t border-fg/12">
-        <div className="mx-auto grid max-w-[88rem] grid-cols-12 gap-x-6 gap-y-4 px-6 py-10 font-mono text-[10px] uppercase tracking-[0.26em] text-fg-muted/70 md:px-12">
+        <div className="mx-auto grid max-w-[96rem] grid-cols-12 gap-x-6 gap-y-4 px-6 py-10 font-mono text-[10px] uppercase tracking-[0.26em] text-fg-muted/70 md:px-14">
           <div className="col-span-6 md:col-span-3">
             <p className="text-fg/40">file</p>
             <p className="mt-1.5 text-fg-muted">inalpha.dev</p>
