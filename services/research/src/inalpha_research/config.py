@@ -166,6 +166,16 @@ class ResearchSettings(BaseSettings):
         description="research-hub #6：辩论是否加入 Risk 风险官第三方（每轮在 Bull/Bear "
         "之后压测双方论点）。关掉退回 Bull/Bear 两方制，省 1/3 辩论 LLM 开销。",
     )
+    debate_min_confidence: float = Field(
+        default=0.35,
+        ge=0.0,
+        le=1.0,
+        alias="RESEARCH_DEBATE_MIN_CONFIDENCE",
+        description="research-hub #6：争议判定的立场置信门槛——bullish/bearish brief 的 "
+        "confidence ≥ 此值才算「有信心的对立方」（assess_disagreement）。失败 brief "
+        "恒为 0.0 天然被排除；数据质量差 / 失败 brief 多的环境可调低。"
+        "（PR #81 CR follow-up：与其余辩论旋钮一样走 env，不再内嵌代码。）",
+    )
     debate_convergence_threshold: float = Field(
         default=0.6,
         ge=0.0,

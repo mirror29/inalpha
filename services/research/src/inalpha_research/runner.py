@@ -93,7 +93,9 @@ async def run_deep_dive(
     debate_trigger: str | None = None
     debate_stop_reason: str | None = None
     if settings.max_debate_rounds > 0:
-        contested, detail = assess_disagreement(briefs)
+        contested, detail = assess_disagreement(
+            briefs, min_confidence=settings.debate_min_confidence
+        )
         should_debate = settings.debate_trigger == "always" or contested
         # 前缀固定三选一（contested:/skipped:/always:），扁平结构供下游 startswith 解析
         debate_trigger = (
