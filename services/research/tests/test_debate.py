@@ -441,7 +441,6 @@ async def test_run_debate_three_way_converges_despite_risk_turns() -> None:
     锚点成立的关键：Risk **每轮返回完全不同的文本**（词集不相交，Jaccard≈0）。
     若 role 过滤被改坏（把 risk 也纳入判定），round 2 的 Risk 相似度过不了阈，
     收敛永不触发 → 本测试 turns 变 12 条 / stop_reason 变 completed 而失败。"""
-    llm = _three_way_llm()
     risk_texts = iter(
         [
             "Risk flags crowded positioning and thin liquidity beneath spot",
@@ -451,11 +450,19 @@ async def test_run_debate_three_way_converges_despite_risk_turns() -> None:
         ]
     )
 
+    # 闭包晚绑定 llm：on_call 经构造器传入（公共 API），在响应匹配前触发，
+    # 每次 risk 发言前 set_response 换词
     async def _rotate_risk(*, system: str, user: str) -> None:
         if "risk officer" in system.lower():
             llm.set_response("you are a risk officer", {"argument": next(risk_texts)})
 
-    llm._on_call = _rotate_risk  # on_call 在响应匹配前触发（client.py），每轮换词
+    llm = FakeLLMClient(
+        {
+            "you are a bull analyst": {"argument": "Bull says up"},
+            "you are a bear analyst": {"argument": "Bear says down"},
+        },
+        on_call=_rotate_risk,
+    )
 
     outcome = await run_debate(
         bull=BullResearcher(llm=llm),
