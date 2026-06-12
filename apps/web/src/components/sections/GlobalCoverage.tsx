@@ -47,7 +47,7 @@ export function GlobalCoverage() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.5 }}
-          className="grid items-center gap-6 md:grid-cols-[1fr_auto_auto_auto_1fr]"
+          className="grid items-center gap-4 md:grid-cols-[1fr_auto_auto_auto_1fr] md:gap-6"
         >
           {/* venues */}
           <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-3">
@@ -72,21 +72,22 @@ export function GlobalCoverage() {
             })}
           </div>
 
-          {/* arrow */}
-          <ArrowRight className="mx-auto hidden size-4 text-seal/70 md:block" aria-hidden />
+          {/* arrow —— 移动端纵向流转 90° 朝下，保住 venue → orchestrator 的路由叙事 */}
+          <ArrowRight className="mx-auto size-4 rotate-90 text-seal/70 md:rotate-0" aria-hidden />
 
-          {/* orchestrator */}
-          <div className="mx-auto flex items-center justify-center rounded-md border border-seal/40 bg-seal/[0.06] px-4 py-6 text-center">
-            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-seal [writing-mode:vertical-rl] md:[writing-mode:horizontal-tb]">
+          {/* orchestrator —— 移动端横排紧凑药丸，md 起恢复立柱比例 */}
+          <div className="mx-auto flex items-center justify-center rounded-md border border-seal/40 bg-seal/[0.06] px-6 py-2.5 text-center md:px-4 md:py-6">
+            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-seal">
               orchestrator
             </span>
           </div>
 
           {/* arrow */}
-          <ArrowRight className="mx-auto hidden size-4 text-seal/70 md:block" aria-hidden />
+          <ArrowRight className="mx-auto size-4 rotate-90 text-seal/70 md:rotate-0" aria-hidden />
 
-          {/* agents — venue 一变，全部闪一下（每个 agent 都拿到新 venue） */}
-          <div className="space-y-1.5">
+          {/* agents — venue 一变，全部闪一下（每个 agent 都拿到新 venue）
+              移动端 2×2 收紧纵向空间，md 起恢复右列纵排 */}
+          <div className="grid grid-cols-2 gap-1.5 md:grid-cols-1">
             {AGENTS.map((a) => (
               <motion.div
                 key={`${a}-${live}`}
