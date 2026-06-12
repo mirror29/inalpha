@@ -47,6 +47,15 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _fmt_ic(v: Any) -> str:
+    """rank_ic 类数值格式化，容 None/非数值——原始 JSON dict 字段可能缺失，
+    告警文案绝不能因 None:.4f 抛 TypeError 把整条巡检带崩。"""
+    try:
+        return f"{float(v):.4f}" if v is not None else "n/a"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
 def _mint_service_token(settings: PaperSettings, sub: str) -> str:
     """自签短期 service JWT（与 live_runner 同款）；factor 服务只验签不挑身份。"""
     payload = {"sub": sub, "exp": int(time.time()) + settings.live_runner_token_ttl_s}
@@ -246,7 +255,7 @@ class FactorPatrol:
                     await runs_store.append_log(
                         conn, run_id, "info",
                         f"因子 {fid} 已从衰减恢复（当前 {state}，"
-                        f"rank_ic_recent={cur.get('rank_ic_recent'):.4f}）",
+                        f"rank_ic_recent={_fmt_ic(cur.get('rank_ic_recent'))}）",
                         code="factor_decay_recovered",
                     )
                 alerts[fid] = {"state": state, "alerted_at": None}
@@ -266,11 +275,14 @@ class FactorPatrol:
         """告警文案 = 结构化复盘上下文：一条日志看清"依据因子衰减到什么程度 + 现在亏赚"。"""
         pnl = run.get("cumulative_pnl")
         pnl_part = f"，run 累计盈亏 {float(pnl):.2f}" if pnl is not None else ""
-        base_ic = base.get("rank_ic")
-        base_part = f"{float(base_ic):.4f}" if base_ic is not None else "n/a"
+        # cur 是 FactorClient.score() 的原始 JSON dict（未做 Pydantic 反序列化校验）：
+        # 服务端过渡期格式 / 部分字段缺失时 rank_ic 可能为 None，None:.4f 会抛 TypeError
+        # → 一路上溯到 patrol_once 的 except，alerts 永不更新、每轮在同因子上 crash、
+        # 告警永远不触发（死循环静默吞）。统一走 _fmt_ic 容 None。
         return (
             f"⚠ 依据因子 {base.get('id')} 进入衰减（decaying）："
-            f"入场 rank_ic={base_part} → 当前 rank_ic={cur.get('rank_ic'):.4f} / "
-            f"rank_ic_recent={cur.get('rank_ic_recent'):.4f}{pnl_part}。"
+            f"入场 rank_ic={_fmt_ic(base.get('rank_ic'))} → "
+            f"当前 rank_ic={_fmt_ic(cur.get('rank_ic'))} / "
+            f"rank_ic_recent={_fmt_ic(cur.get('rank_ic_recent'))}{pnl_part}。"
             "建议复盘该策略是否仍该跑（系统只告警不动仓，ADR-0047）"
         )
