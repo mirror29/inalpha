@@ -39,9 +39,11 @@ class DataSettings(BaseSettings):
     """ddgs 单引擎 HTTP 超时（秒）。原默认 15s，叠多引擎可到 30s+，收紧到 8s 砍长尾。"""
 
     web_search_overall_timeout_s: int = Field(
-        default=12, alias="WEB_SEARCH_OVERALL_TIMEOUT_S"
+        default=20, alias="WEB_SEARCH_OVERALL_TIMEOUT_S"
     )
-    """单次搜索整体超时（秒）。超过即返回 []，避免 backend="auto" 顺序试 8 个引擎把调用方拖死。"""
+    """单次搜索整体超时（秒），避免 backend="auto" 顺序试 8 个引擎把调用方拖死。
+    12s 对 bing 中文查询偏紧（本地网络实测常恰好掐死）；auto 失败会换引擎再兜一次，
+    最坏耗时 = 2 × 本值。"""
 
     web_search_max_concurrency: int = Field(
         default=4, alias="WEB_SEARCH_MAX_CONCURRENCY"
