@@ -12,6 +12,9 @@ D-9 起：
 - alternative.me 只覆盖 crypto；非 crypto 的等价（CNN FNG / VIX 反向）需要 FRED key
   或网页抓取，复杂度跳级；D-10 真要接的话挂在这层升级
 - LLM-only sentiment 比"硬抛错回 neutral"叙事强得多——dev/demo 足够
+- D-12+ TODO：data 服务已落 /market/moneyflow（沪深港通资金，同花顺估算口径），
+  cn_stock 的 sentiment 锚点可接资金真数据（对应 orchestrator 的
+  data.get_market_moneyflow）——挂在这层升级
 """
 from __future__ import annotations
 
