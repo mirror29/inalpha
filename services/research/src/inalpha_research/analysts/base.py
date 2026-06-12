@@ -41,6 +41,10 @@ class Analyst(ABC):
         # 接现成因子库（docs/miro/11）：technical analyst 用它取有效因子快照；
         # None 或服务不可用时降级回各 analyst 自带的指标计算。
         self._factor = factor
+        # confidence 硬上限（D-12 双档纪律）：子类在 build_user_prompt 里按"本次
+        # 拿到 live 数据与否"设值（如 fundamental 0.75/0.55、macro 0.7/0.5），
+        # run() 在 parse 后代码级 clamp——prompt 里写 cap 只是软约束，LLM 不一定守。
+        self._confidence_cap: float | None = None
 
     # ─── 公共入口 ───
 
@@ -63,7 +67,11 @@ class Analyst(ABC):
             lookback_days=lookback_days,
         )
         raw = await self._llm.complete_json(system=system, user=user)
-        return self._parse(raw)
+        brief = self._parse(raw)
+        # 注意顺序：cap 由 build_user_prompt 按数据可得性设置，必须在其之后读
+        if self._confidence_cap is not None:
+            brief.confidence = min(brief.confidence, self._confidence_cap)
+        return brief
 
     # ─── 子类 hook ───
 

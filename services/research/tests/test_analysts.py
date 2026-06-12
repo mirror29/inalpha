@@ -119,8 +119,15 @@ async def test_technical_propagates_data_service_error(data_client: DataClient) 
 # ────────────────────────────────────────────────────────────────────
 
 
-async def test_fundamental_runs_without_data_fetch(data_client: DataClient) -> None:
-    """D-8b 基本面 LLM-only —— 不应该调 data-service。"""
+@respx.mock
+async def test_fundamental_crypto_skips_fundamentals_fetch(data_client: DataClient) -> None:
+    """D-12 路由：crypto 无财报 → 不打 /fundamentals（省 round-trip），prompt 显式说明。"""
+    fund_route = respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={"available": True, "indicators": {}})
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
     llm = FakeLLMClient(
         {
             "fundamental": {
@@ -141,7 +148,9 @@ async def test_fundamental_runs_without_data_fetch(data_client: DataClient) -> N
     )
     assert brief.analyst == "fundamental"
     assert brief.stance == "neutral"
-    # confirm no data fetch by checking we did not hit respx (no mock set)
+    assert not fund_route.called
+    user_prompt = llm.calls[0]["user"]
+    assert "crypto has no financial statements" in user_prompt
 
 
 @respx.mock
@@ -194,8 +203,8 @@ async def test_fundamental_invalid_stance_falls_back_to_neutral(data_client: Dat
     """LLM 返不在 enum 里的 stance / 越界 confidence 走兜底，不抛（review B2 fix）。
 
     旧行为：pydantic 抛 ValidationError → 整条 deep_dive 链路 500。
-    新行为：stance fallback 到 'neutral'、confidence clamp 到 [0, 1]，brief
-    正常返。
+    新行为：stance fallback 到 'neutral'、confidence clamp 到 [0, 1]；D-12 起
+    crypto（无 live 财报）再被双档 cap 压到 0.55。
     """
     llm = FakeLLMClient(
         {
@@ -214,8 +223,8 @@ async def test_fundamental_invalid_stance_falls_back_to_neutral(data_client: Dat
         as_of=_as_of(),
         lookback_days=30,
     )
-    assert brief.stance == "neutral"  # fallback
-    assert brief.confidence == 1.0    # clamp 到上限
+    assert brief.stance == "neutral"   # fallback
+    assert brief.confidence == 0.55    # clamp 1.0 后再吃无数据档 cap
 
 
 async def test_fundamental_negative_confidence_clamps_to_zero(data_client: DataClient) -> None:
@@ -634,6 +643,105 @@ async def test_fundamental_financials_unavailable(data_client: DataClient) -> No
 
 
 @respx.mock
+async def test_fundamental_confidence_capped_at_075_with_live_data(
+    data_client: DataClient,
+) -> None:
+    """D-12 双档：有 live 财报时 LLM 给 0.9 也被代码级 clamp 到 0.75。"""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(
+            200,
+            json={
+                "venue": "yfinance",
+                "symbol": "AAPL",
+                "available": True,
+                "as_of": "2026-05-20T00:00:00Z",
+                "indicators": {"pe_ratio": 30.1, "roe": 0.45},
+            },
+        )
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {
+            "fundamental": {
+                "stance": "bullish",
+                "confidence": 0.9,  # LLM 不守 prompt cap 的情形
+                "summary": "Great numbers.",
+            }
+        }
+    )
+    analyst = FundamentalAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="alpaca",  # 路由 → yfinance
+        symbol="AAPL",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+    assert brief.confidence == 0.75
+    # 财报快照的 as_of 渲染进块头（时效性红线）
+    user_prompt = llm.calls[0]["user"]
+    assert "data as_of 2026-05-20" in user_prompt
+
+
+@respx.mock
+async def test_fundamental_confidence_capped_at_055_without_live_data(
+    data_client: DataClient,
+) -> None:
+    """D-12 双档：财报 unavailable 时 LLM 给 0.9 被 clamp 到 0.55。"""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={"available": False, "reason": "no data"})
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {"fundamental": {"stance": "bullish", "confidence": 0.9, "summary": "vibes"}}
+    )
+    analyst = FundamentalAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="yfinance",
+        symbol="AAPL",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+    assert brief.confidence == 0.55
+
+
+@respx.mock
+async def test_valuation_confidence_two_tier_cap(data_client: DataClient) -> None:
+    """valuation 同享双档 cap：有指标 0.75 / 无指标 0.55（代码级）。"""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(
+            200, json={"available": True, "indicators": {"pe_ratio": 12.0}}
+        )
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {
+            "you are a relative valuation analyst": {
+                "stance": "bullish",
+                "confidence": 0.95,
+                "summary": "cheap",
+            }
+        }
+    )
+    analyst = ValuationAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="alpaca",
+        symbol="AAPL",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+    assert brief.confidence == 0.75
+
+
+@respx.mock
 async def test_sentiment_non_crypto_uses_web_search(data_client: DataClient) -> None:
     """D-10: for A-share (non-crypto), sentiment calls get_news AND get_web_search."""
     # Mock GET /news (get_news defaults venue=yfinance)
@@ -741,9 +849,12 @@ async def test_valuation_anchors_on_real_fundamentals(data_client: DataClient) -
 
     user_prompt = llm.calls[0]["user"]
     assert "valuation_inputs" in user_prompt
-    assert "市盈率 PE" in user_prompt
+    assert "PE ratio" in user_prompt
     # 关键纪律：prompt 显式要求"只做相对估值、不做 DCF"
     assert "relative valuation only" in user_prompt.lower()
+    # venue 路由（D-12）：alpaca 研究 → fundamentals 走 yfinance，不再 422
+    fund_route = respx.get("http://data-mock.test/fundamentals")
+    assert fund_route.calls.last.request.url.params["venue"] == "yfinance"
 
 
 @respx.mock

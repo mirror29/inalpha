@@ -127,7 +127,7 @@ async def test_persona_anchors_on_real_fundamentals(data_client: DataClient) -> 
 
     user_prompt = llm.calls[0]["user"]
     assert "fundamentals" in user_prompt
-    assert "市盈率 PE" in user_prompt
+    assert "PE ratio" in user_prompt
     assert "market_type: us_stock" in user_prompt
 
 
