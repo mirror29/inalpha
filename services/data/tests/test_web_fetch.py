@@ -52,6 +52,39 @@ async def test_rejects_missing_host() -> None:
     assert "error" in out
 
 
+async def test_redirect_to_private_host_rejected_before_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """302 跳内网：必须在向内网建连**前**拒绝（手工逐跳校验，非连完再查）。"""
+    import httpx
+
+    from inalpha_data.connectors import web_fetch as wf
+
+    # 用受控分类替代 DNS：pub 视为公网，127.0.0.1 视为私网（避免测试打 DNS）。
+    monkeypatch.setattr(wf, "_is_private_host", lambda h: h == "127.0.0.1")
+
+    reached_internal = {"hit": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "127.0.0.1":
+            reached_internal["hit"] = True  # 走到这里就说明 SSRF 防线失效
+            return httpx.Response(200, text="internal secrets")
+        return httpx.Response(302, headers={"location": "http://127.0.0.1:8002/internal"})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda *a, **k: real_client(*a, **{**k, "transport": httpx.MockTransport(handler)}),
+    )
+
+    conn = WebFetchConnector()
+    out = await conn.fetch_page("http://pub.example.com/page")
+    assert "error" in out
+    assert "private" in out["error"]
+    assert reached_internal["hit"] is False  # 内网请求从未发出
+
+
 # ────────────────────────────────────────────────────────────────────
 # 正文抽取（trafilatura → bs4 fallback）
 # ────────────────────────────────────────────────────────────────────
