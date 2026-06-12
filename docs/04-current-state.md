@@ -4,7 +4,7 @@
 > live runner（promoted 候选按行情自动跑 + 决策复盘日志），在 D-10（web 搜索 +
 > 财报基本面 + 多市场数据）/ D-9（Plan/Exec 闭环 + LLM 自创策略 + 风控引擎）/
 > D-9.1a 收口基础上落地。
-> 下一里程碑：research-hub（issue #6）/ E2 多代演化（issue #7）。
+> 下一里程碑：E2 多代演化（issue #7）；research-hub（issue #6）已于 2026-06-12 收口（见下）。
 >
 > 本文回答的问题：**clone 仓库后，"现在到底做到哪里、决策链路长什么样"。**
 > 详细架构与设计取舍见 [`docs/03-kernel-design.md`](./03-kernel-design.md)；
@@ -368,13 +368,34 @@ live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩
   新 tools：`factor.evaluate_candidate` / `factor.propose` /
   `factor.list_candidates` / `factor.run_discovery`。
 
+## research-hub（2026-06-12）辩论三方制 + 争议触发 + 决策链路落盘（issue #6 收口）
+
+issue #6 启动前复核发现其大部分提议已被 D-9/D-10 顺手实现（6 analyst 并行 /
+LLM manager 综合 / bull-bear 多轮辩论 / 限时限轮）；本次落收敛后的真实增量：
+
+- **三方制**：辩论加入 `RiskResearcher` 风险官（`researchers/risk.py`）——不站
+  多空，每轮在 Bull/Bear 之后压测双方最薄弱假设 + 失效条件 + 仓位纪律；
+  `RESEARCH_DEBATE_RISK_ENABLED`（默认开）可退回两方制。
+- **争议触发**：`RESEARCH_DEBATE_TRIGGER` 默认 `contested`——briefs 同时存在
+  有信心（confidence ≥ 0.35）的多空对立才辩，全员同向跳过省 token
+  （`debate.assess_disagreement`，确定性规则不走 LLM）；`always` 保留旧行为。
+- **软早停**：从第 2 轮起 Bull/Bear 论证与各自上轮词汇 Jaccard 重合度都过阈
+  （`RESEARCH_DEBATE_CONVERGENCE_THRESHOLD` 默认 0.6）= 没有新论点，提前结束；
+  与硬超时并存。
+- **决策链路落盘**（ResearchPlan 三个新字段，复盘"为什么是这个 rating"）：
+  `debate_trigger`（为什么辩/为什么跳过）、`debate_stop_reason`（completed /
+  converged / timeout）、`synthesis_reasoning`（manager 权衡自述，LLM 输出新增
+  `reasoning` 键）。`run_debate` 返回值升级 `DebateOutcome`（turns + stop_reason）。
+
+不在范围（issue #6 余项后续单独评估）：supervisor 显式编排（当前隐式并行 +
+manager 综合已覆盖）、debate 轮内并行化、reasoning 进活动流前端高亮。
+
 ---
 
 ## 未完成 / 下一步
 
 > 重心：模拟盘（paper）先于实盘（live）。
 
-- **research-hub** 嵌套 supervisor（4 analyst + bull/bear/risk debate，issue #6）尚未落地
 - **E2 多代演化**（issue #7 · ADR-0020）：MAP-Elites / Island Model（E1 MVP 已上）
 - **delegation hop**（issue #5 · ADR-0012 补丁）：sub-strategy 派生计划的转授权链
 
