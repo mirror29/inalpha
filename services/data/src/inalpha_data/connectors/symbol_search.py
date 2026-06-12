@@ -11,7 +11,10 @@ get_fundamentals 必须先有 symbol——靠 LLM 训练记忆猜代码会撞时
 - yfinance ``Search``：Yahoo 全球检索（美 / 港 / 日韩欧等），输出原生 yahoo
   symbol（``AAPL`` / ``0700.HK``），与 yfinance connector 直接可用。
 
-venue="auto"：query 含 CJK → 先 A股表再 yahoo；纯 ASCII → 只走 yahoo。
+venue="auto"：query 含 CJK → A股表与 yahoo **并行都查、轮替合并**；纯 ASCII →
+只走 yahoo。语言只决定"是否多查一路 A股"，**不决定市场**——中文用户问美股 /
+港股公司（中文名）极常见，串行补位会让 A股结果挤掉 yahoo 候选、跨市场同名
+歧义时单边呈现（§3 不预设语言/市场）。
 失败语义：尽力而为，异常一律返 []。
 """
 
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from itertools import zip_longest
 from typing import Any
 
 from inalpha_shared import get_logger
@@ -50,6 +54,19 @@ def _load_a_share_table_sync() -> list[dict[str, str]]:
     return raw.to_dict(orient="records")  # type: ignore[no-any-return]
 
 
+def _merge_round_robin(
+    a: list[dict[str, Any]], b: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """两来源轮替合并（a1, b1, a2, b2, ...），保留各自内部相关性排序。"""
+    out: list[dict[str, Any]] = []
+    for x, y in zip_longest(a, b):
+        if x is not None:
+            out.append(x)
+        if y is not None:
+            out.append(y)
+    return out
+
+
 def _yahoo_search_sync(query: str, max_results: int) -> list[dict[str, Any]]:
     import yfinance as yf
 
@@ -78,12 +95,19 @@ class SymbolSearchConnector:
 
         results: list[dict[str, Any]] = []
         try:
-            if venue in ("akshare", "auto") and (venue == "akshare" or has_cjk):
-                results.extend(await self._search_a_share(query, max_results))
-            if venue in ("yfinance", "auto") and len(results) < max_results:
-                results.extend(
-                    await self._search_yahoo(query, max_results - len(results))
+            if venue == "akshare":
+                results = await self._search_a_share(query, max_results)
+            elif venue == "yfinance" or not has_cjk:
+                results = await self._search_yahoo(query, max_results)
+            else:
+                # auto + CJK：两路并行都查、轮替合并。A股表是本地缓存、yahoo 有
+                # 5s 超时，并行无额外延迟；轮替保证任一来源不会把另一来源挤出
+                # max_results（跨市场同名歧义时两边都呈现，由 agent 按 venue 选）
+                a_share, yahoo = await asyncio.gather(
+                    self._search_a_share(query, max_results),
+                    self._search_yahoo(query, max_results),
                 )
+                results = _merge_round_robin(a_share, yahoo)
         except Exception as exc:
             _logger.warning("symbol_search_error", query=query[:80], error=str(exc))
         return results[:max_results]
