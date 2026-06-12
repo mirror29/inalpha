@@ -47,7 +47,10 @@ export function SearchView({ s }: { s: SearchShape }) {
         </div>
       )}
       {list.map((it, i) => {
-        const href = it.url ?? it.link ?? "";
+        // 仅放行 http(s):后端返回可能被搜索投毒注入 javascript: 等危险协议,
+        // React 不做 href 白名单、rel 也拦不住当前页执行,非 http(s) 一律降级为纯文本。
+        const raw = it.url ?? it.link ?? "";
+        const href = /^https?:\/\//i.test(raw) ? raw : "";
         const desc = it.snippet ?? it.summary ?? "";
         return (
           <div key={`${href}-${i}`} className="min-w-0">
