@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { backendFetch } from "@/lib/backend";
+import { CONSOLE_SUBJECT, backendFetch } from "@/lib/backend";
 import type { FactorCandidate } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -35,8 +35,11 @@ export async function POST(
         auth: false,
         method: "POST",
         body: {
+          // 审计可追溯：从控制台账户身份派生,别硬编码占位符——否则所有审核记录
+          // 都标同一 "console:dev",事后复盘分不清谁批的。单租户 dev 下 = CONSOLE_SUBJECT;
+          // 接 session 鉴权后改为从 JWT 派生(同 backend.ts CONSOLE_SUBJECT 约定)。
           action: body.action,
-          reviewed_by: "console:dev",
+          reviewed_by: CONSOLE_SUBJECT,
           note: body.note ?? null,
         },
         timeoutMs: 8000,
