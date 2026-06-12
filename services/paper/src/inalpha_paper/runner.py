@@ -23,8 +23,14 @@ from psycopg import AsyncConnection
 
 from .data_client import DataClient
 from .engine.backtest import BacktestEngine
-from .engine.metrics import periods_per_year
+from .engine.metrics import (
+    bar_returns,
+    max_drawdown_pct,
+    periods_per_year,
+    sharpe_ratio,
+)
 from .engine.pool import get_pool
+from .engine.robustness import bootstrap_sharpe_ci
 from .kernel.clock import datetime_to_ns
 from .kernel.identifiers import InstrumentId
 from .model.data import Bar
@@ -34,6 +40,8 @@ from .schemas import (
     BaselineSnapshot,
     EquityPoint,
     PositionSnapshot,
+    ValidationBlock,
+    ValidationSegment,
 )
 from .storage import backtest_runs as backtest_runs_store
 from .storage import backtest_trades as backtest_trades_store
@@ -219,6 +227,14 @@ async def run_backtest(
     # 计算路径,否则 fitness 侧公式一变,candidates 与 backtest_runs 两表的
     # calmar 会静默分叉。
 
+    # 5a'. D-12：holdout 时间切分验证（单次运行按曲线切段，不二次跑引擎）。
+    # baseline 不切段——alpha 对照仍看全窗。
+    validation: ValidationBlock | None = None
+    if req.validation_split > 0:
+        validation = _validation_from_report(
+            report, split=req.validation_split, bars_per_year=bars_per_year
+        )
+
     # 5b. D-9 candidate 路径：组装 baseline 对照（buy_and_hold 同 symbol/timeframe/period）
     baseline_snapshot: BaselineSnapshot | None = None
     if baseline_report is not None:
@@ -251,6 +267,7 @@ async def run_backtest(
             report=report,
             started_at=started_at,
             finished_at=finished_at,
+            validation=validation,
         )
         # 6a. candidate 路径：回写 candidates 表（最近一次 metrics / fitness）
         if req.candidate_id is not None:
@@ -281,6 +298,10 @@ async def run_backtest(
                         "max_consecutive_losses": report.max_consecutive_losses,
                         "max_drawdown_duration_bars": report.max_drawdown_duration_bars,
                         "exposure_pct": report.exposure_pct,
+                        # D-12：holdout 验证摘要随 metrics 落 candidate（promote 门槛读）
+                        "validation": validation.model_dump(mode="json")
+                        if validation is not None
+                        else None,
                     },
                     fitness=fitness_value,
                     backtest_run_id=run_id,
@@ -319,6 +340,87 @@ async def run_backtest(
         blew_up=report.blew_up,
         health_warnings=list(report.health_warnings),
         final_positions=final_positions,
+        validation=validation,
+    )
+
+
+def _validation_from_report(
+    report: Any,
+    *,
+    split: float,
+    bars_per_year: float,
+) -> ValidationBlock | None:
+    """单次回测结果按时间切 train/holdout 两段算指标（D-12 · 纯函数）。
+
+    切的是 ``report.equity_curve``（全量，未降采样）——不二次跑引擎、不重拉数据、
+    不改变 run 记录语义。holdout 段衰减比 = holdout_sharpe / train_sharpe，是
+    "这套参数是不是只在前半窗有效"的最便宜信号。
+
+    **不是盲 OOS**：调用方（agent）看得到 holdout 指标，反复对着它调参会间接
+    过拟合；纪律约束在 orchestrator prompt（调参看 train，holdout 只作裁判）。
+
+    Returns:
+        曲线 < 10 点或任一段 < 2 点（切不出有意义的段）时返 ``None``。
+    """
+    curve: list[tuple[int, float]] = report.equity_curve
+    if len(curve) < 10:
+        return None
+    split_idx = int(len(curve) * split)
+    if split_idx < 2 or len(curve) - split_idx < 2:
+        return None
+
+    cut_ts_ns = curve[split_idx][0]
+    values = [eq for _ts, eq in curve]
+    train_vals = values[:split_idx]
+    # holdout 段带上切点前一根作收益率基准（首根 holdout return 需要前值）
+    holdout_vals = values[split_idx - 1 :]
+
+    fills = list(getattr(report, "fills", []) or [])
+    train_fills = sum(1 for f in fills if f.ts_ns < cut_ts_ns)
+    holdout_fills = len(fills) - train_fills
+
+    def _segment(vals: list[float], num_trades: int) -> ValidationSegment:
+        rets = bar_returns(vals)
+        return ValidationSegment(
+            sharpe=sharpe_ratio(rets, int(bars_per_year)),
+            total_return_pct=(vals[-1] / vals[0] - 1.0) * 100.0 if vals[0] > 0 else 0.0,
+            max_drawdown_pct=max_drawdown_pct(vals),
+            num_trades=num_trades,
+            num_bars=len(vals),
+        )
+
+    train_seg = _segment(train_vals, train_fills)
+    holdout_seg = _segment(holdout_vals, holdout_fills)
+
+    flags: list[str] = []
+    if holdout_seg.num_bars < 30 or report.num_trades < 5:
+        flags.append("insufficient_sample")
+
+    decay_ratio: float | None = None
+    if train_seg.sharpe is None or holdout_seg.sharpe is None:
+        flags.append("sharpe_undefined")
+    elif train_seg.sharpe <= 0:
+        # train 段本身就不赚：衰减比无意义（负除负会假装"没衰减"）
+        flags.append("train_sharpe_nonpositive")
+    else:
+        decay_ratio = holdout_seg.sharpe / train_seg.sharpe
+
+    ci_includes_zero: bool | None = None
+    holdout_rets = bar_returns(holdout_vals)
+    if len(holdout_rets) >= 30:
+        try:
+            ci = bootstrap_sharpe_ci(holdout_rets, n_samples=1000)
+            ci_includes_zero = ci.ci_includes_zero
+        except Exception:
+            logger.warning("bootstrap_sharpe_ci failed", exc_info=True)
+
+    return ValidationBlock(
+        split_ratio=split,
+        train=train_seg,
+        holdout=holdout_seg,
+        decay_ratio=decay_ratio,
+        holdout_sharpe_ci_includes_zero=ci_includes_zero,
+        flags=flags,
     )
 
 
@@ -331,6 +433,7 @@ async def _persist_run(
     report: Any,
     started_at: datetime,
     finished_at: datetime,
+    validation: ValidationBlock | None = None,
 ) -> UUID | None:
     """写一行 backtest_runs + 逐笔成交(同一事务)。失败 log warning 后返 None，不阻断回测响应。
 
@@ -373,6 +476,8 @@ async def _persist_run(
         "max_consecutive_losses": report.max_consecutive_losses,
         "max_drawdown_duration_bars": report.max_drawdown_duration_bars,
         "exposure_pct": report.exposure_pct,
+        # D-12：holdout 验证摘要（与响应同源，None = 曲线太短/显式关闭）
+        "validation": validation.model_dump(mode="json") if validation is not None else None,
     }
     try:
         async with conn.transaction():

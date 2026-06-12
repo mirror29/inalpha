@@ -93,6 +93,15 @@ export const paperRunBacktestTool = createTool({
       equity_curve_downsampled_from 标原始点数），看形状趋势用，精确逐点分析
       不要从这里取（完整曲线在 paper 服务 API）
     - final_positions：结束时残留持仓（趋势策略可能持有到尾盘）
+    - **D-12 validation（holdout 验证，默认开）**：前 70% train + 后 30% holdout
+      各自的 sharpe/return/mdd/num_trades + decay_ratio（holdout_sharpe/train_sharpe）。
+      **解读纪律**：
+      · decay_ratio < 0.5 或 holdout.sharpe < 0 → 过拟合信号，下一版**减参数/简化逻辑**
+        而不是加逻辑
+      · holdout_sharpe_ci_includes_zero=true → holdout 收益统计上不显著为正
+      · flags 含 insufficient_sample → 衰减比不可靠，扩窗口再跑
+      · **调参看 train 段，holdout 只作裁判**——反复对着 holdout 调参 = 间接过拟合 holdout
+      · 报给用户的结论必须引用 holdout（别只报全窗 Sharpe 当"历史表现"）
   `.trim(),
   inputSchema: z
     .object({

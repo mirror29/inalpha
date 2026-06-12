@@ -57,6 +57,14 @@ class BacktestRequest(BaseModel):
     initial_cash: float = Field(default=10_000.0, gt=0)
     fee_rate: float = Field(default=0.001, ge=0, lt=1)
 
+    validation_split: float = Field(
+        default=0.7,
+        ge=0.0,
+        lt=1.0,
+        description="D-12 · train/holdout 时间切分比例（按 bar 数）；默认 0.7 = 前 70% "
+        "train + 后 30% holdout，响应带 validation 块。传 0 关闭（如刻意全窗回测）",
+    )
+
     # D-8c 起：可选血缘 —— 把这次回测和上游 research 产物链上
     research_id: UUID | None = Field(
         default=None,
@@ -125,6 +133,45 @@ class EquityPoint(BaseModel):
     equity: float
 
 
+class ValidationSegment(BaseModel):
+    """holdout 验证的单个时间段（train 或 holdout）指标。"""
+
+    sharpe: float | None = Field(
+        default=None, description="该段年化 Sharpe；样本不足 / 零波动时 null"
+    )
+    total_return_pct: float
+    max_drawdown_pct: float
+    num_trades: int = Field(..., description="该段成交笔数（fills 口径）")
+    num_bars: int
+
+
+class ValidationBlock(BaseModel):
+    """D-12 · holdout 时间切分验证（单次引擎运行，按 equity_curve 切段，零额外 CPU）。
+
+    **语义边界**：这是"窗口内一致性检验"，不是盲样本外——agent 看得到 holdout
+    指标，反复对着它调参就会间接过拟合 holdout。纪律：调参看 train 段，holdout
+    只作裁判（orchestrator prompt 同步约束）。
+    """
+
+    split_ratio: float = Field(..., description="train 段占比（按 bar 数切）")
+    train: ValidationSegment
+    holdout: ValidationSegment
+    decay_ratio: float | None = Field(
+        default=None,
+        description="holdout_sharpe / train_sharpe；< 0.5 或 holdout_sharpe < 0 = "
+        "过拟合信号。train_sharpe ≤ 0 或任一段 Sharpe 无定义时为 null（看 flags）",
+    )
+    holdout_sharpe_ci_includes_zero: bool | None = Field(
+        default=None,
+        description="holdout 段 bootstrap Sharpe 95% CI 是否横跨 0；true = 统计上"
+        "不显著为正。样本不足时 null",
+    )
+    flags: list[str] = Field(
+        default_factory=list,
+        description="insufficient_sample / train_sharpe_nonpositive / sharpe_undefined",
+    )
+
+
 class BacktestResponse(BaseModel):
     """``POST /backtest`` 响应。"""
 
@@ -154,6 +201,11 @@ class BacktestResponse(BaseModel):
         default=None,
         description="D-9 起：candidate 路径下自动并跑的 buy_and_hold 对照；"
         "内置路径下为 null（内置本身就是基线，无需重复）",
+    )
+    validation: ValidationBlock | None = Field(
+        default=None,
+        description="D-12 起：holdout 时间切分验证（validation_split > 0 时带）；"
+        "decay_ratio < 0.5 或 holdout.sharpe < 0 = 过拟合信号。曲线太短切不动时 null",
     )
     venue: str
     symbol: str

@@ -24,6 +24,31 @@ export type BaselineSnapshot = {
   blew_up?: boolean;
 };
 
+/** D-12 · holdout 验证的单段（train / holdout）指标 */
+export type ValidationSegment = {
+  sharpe: number | null;
+  total_return_pct: number;
+  max_drawdown_pct: number;
+  num_trades: number;
+  num_bars: number;
+};
+
+/**
+ * D-12 · holdout 时间切分验证（单次引擎运行按 equity_curve 切段）。
+ * decay_ratio < 0.5 或 holdout.sharpe < 0 = 过拟合信号。
+ * 注意这是"窗口内一致性检验"非盲 OOS：调参看 train，holdout 只作裁判。
+ */
+export type ValidationBlock = {
+  split_ratio: number;
+  train: ValidationSegment;
+  holdout: ValidationSegment;
+  /** holdout_sharpe / train_sharpe；train ≤ 0 或 Sharpe 无定义时 null（看 flags） */
+  decay_ratio: number | null;
+  /** holdout bootstrap Sharpe 95% CI 是否横跨 0；true = 统计上不显著为正 */
+  holdout_sharpe_ci_includes_zero: boolean | null;
+  flags: string[];
+};
+
 export type BacktestReport = {
   /** D-8c 起：落库后 run_id，可作血缘锚点供 trade.create_plan 引用 */
   run_id: string | null;
@@ -43,6 +68,8 @@ export type BacktestReport = {
    * alpha 判定 = fitness 显著高于 baseline.fitness。
    */
   baseline: BaselineSnapshot | null;
+  /** D-12 起：holdout 时间切分验证；曲线太短或显式关闭时 null */
+  validation?: ValidationBlock | null;
   venue: string;
   symbol: string;
   timeframe: string;
