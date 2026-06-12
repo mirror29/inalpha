@@ -90,7 +90,7 @@ export function Hero() {
         <LocaleSwitcher />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-160 max-w-[88rem] flex-col justify-center px-4 py-24 md:min-h-[86vh] md:px-14">
+      <div className="relative z-10 mx-auto flex min-h-160 max-w-[96rem] flex-col justify-center px-6 py-24 md:min-h-[86vh] md:px-14">
         <motion.div
           className="w-full max-w-132 md:max-w-180"
           initial="hidden"
