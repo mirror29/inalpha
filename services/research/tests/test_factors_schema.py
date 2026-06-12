@@ -159,6 +159,11 @@ def test_strategy_hint_falls_back_to_mean_reversion() -> None:
 
 
 def test_strategy_hint_falls_back_to_buy_hold_for_macro() -> None:
+    """D-12 收紧：纯 macro 兜底 buy_hold 需要 overweight + **position** 长线论点。
+
+    raw 不带 horizon（默认 swing）时不再 buy_hold（见 test_manager 的
+    test_pure_macro_swing_horizon_routes_to_none）。
+    """
     macro_factor = Factor(
         name="halving_phase",
         kind="macro",
@@ -171,6 +176,7 @@ def test_strategy_hint_falls_back_to_buy_hold_for_macro() -> None:
         "confidence": 0.7,
         "thesis": "T",
         "suggested_action": "open_long",
+        "horizon": "position",
     }
     plan = build_plan_from_raw(
         raw,
