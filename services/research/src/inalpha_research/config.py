@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from inalpha_shared.config import Settings as BaseSettings
 from pydantic import Field
@@ -150,6 +151,29 @@ class ResearchSettings(BaseSettings):
         alias="RESEARCH_DEBATE_TIMEOUT_SECONDS",
         description="整个辩论阶段的总时限（#4 韧性）。超时返回**已完成**的部分 debate_log，"
         "不抛错、不拖满下游 tool 预算；配合 manager 兜底保证 deep_dive 端到端不挂。",
+    )
+    debate_trigger: Literal["contested", "always"] = Field(
+        default="contested",
+        alias="RESEARCH_DEBATE_TRIGGER",
+        description="research-hub #6：debate 触发策略。contested = analyst briefs 出现"
+        "有信心的多空对立才辩（一致则跳过省 token，判定见 debate.assess_disagreement）；"
+        "always = 只要 max_debate_rounds>0 就辩（保留旧 D-9 行为）。"
+        "判定结果原样落 ResearchPlan.debate_trigger 供复盘。",
+    )
+    debate_risk_enabled: bool = Field(
+        default=True,
+        alias="RESEARCH_DEBATE_RISK_ENABLED",
+        description="research-hub #6：辩论是否加入 Risk 风险官第三方（每轮在 Bull/Bear "
+        "之后压测双方论点）。关掉退回 Bull/Bear 两方制，省 1/3 辩论 LLM 开销。",
+    )
+    debate_convergence_threshold: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        alias="RESEARCH_DEBATE_CONVERGENCE_THRESHOLD",
+        description="research-hub #6：软早停阈值。从第 2 轮起 Bull/Bear 论证与各自上轮"
+        "的词汇 Jaccard 重合度都 ≥ 此值 = 没有新论点，提前结束。1.0 = 实际禁用"
+        "（只有逐字相同才触发）。",
     )
 
 

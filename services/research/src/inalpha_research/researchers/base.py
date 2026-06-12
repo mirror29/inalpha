@@ -24,10 +24,10 @@ AssetType = Literal["crypto", "us_stock", "cn_stock", "hk_stock", "global_stock"
 
 
 class Researcher(ABC):
-    """Bull / Bear researcher 共同接口。"""
+    """Bull / Bear / Risk researcher 共同接口。"""
 
     #: 角色字符串，落进 ``DebateTurn.role``。子类必须 override。
-    role: Literal["bull", "bear"] = "bull"
+    role: Literal["bull", "bear", "risk"] = "bull"
 
     def __init__(self, *, llm: LLMClient) -> None:
         self._llm = llm
@@ -183,7 +183,7 @@ def fundamental_note_for(asset_type: AssetType) -> str:
 
 def _format_user_prompt(
     *,
-    role: Literal["bull", "bear"],
+    role: Literal["bull", "bear", "risk"],
     venue: str,
     symbol: str,
     timeframe: str,

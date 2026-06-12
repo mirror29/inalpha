@@ -169,6 +169,10 @@ def fake_llm() -> FakeLLMClient:
                     "Technicals show clean upcross + room before overbought; "
                     "macro is neutral but with a halving tailwind. Net positive bias."
                 ),
+                "reasoning": (
+                    "Weighted the technical analyst highest (concrete SMA/RSI readings); "
+                    "the bear's macro-uncertainty case did not survive the bull's rebuttal."
+                ),
                 "risks": [
                     "If RSI > 70 quickly, mean reversion likely",
                     "Macro risk if rate cuts get postponed further",
@@ -193,6 +197,16 @@ def fake_llm() -> FakeLLMClient:
                     "fundamental brief admits halving tailwind is already priced; without "
                     "fresh catalyst, vol z-score can flip negative quickly. RSI 58 is closer "
                     "to overbought than to the buy-the-dip zone bulls pretend."
+                ),
+            },
+            # 三方制风险官（research-hub #6）—— 仅在 RESEARCH_DEBATE_RISK_ENABLED 时被消费
+            "you are a risk officer": {
+                "argument": (
+                    "The bull leans on a single technical brief whose RSI headroom evaporates "
+                    "on one strong candle; invalidation is a close back below SMA50. The bear's "
+                    "macro-uncertainty case cites no dated catalyst from the briefs — it is "
+                    "unfalsifiable as argued. Risk brief shows normal vol, so sizing beyond "
+                    "0.02 is unjustified either way."
                 ),
             },
         }

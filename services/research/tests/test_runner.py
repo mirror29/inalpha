@@ -264,37 +264,47 @@ async def test_deep_dive_continues_when_some_analysts_fail() -> None:
         assert b.summary.startswith("(analyst failed)")
 
 
+def _mock_bars_and_fng() -> None:
+    """辩论类用例共用的数据源 mock：60 根缓涨 bar + FNG 极恐（喂出 fixture 预设 briefs）。"""
+    bars = [
+        make_bar_row((_as_of() - timedelta(hours=60 - i)).isoformat(), close=100 + i * 0.1)
+        for i in range(60)
+    ]
+    respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=bars))
+    respx.get("https://api.alternative.me/fng/").mock(
+        return_value=Response(
+            200,
+            json={
+                "data": [
+                    {"value": "22", "value_classification": "Extreme Fear", "timestamp": "1716163200"},
+                    *[
+                        {"value": str(30 + i % 10), "value_classification": "Fear", "timestamp": str(1716163200 - i * 86400)}
+                        for i in range(1, 30)
+                    ],
+                ]
+            },
+        )
+    )
+
+
 @respx.mock
 async def test_deep_dive_with_debate_includes_bull_bear_log(
     fake_llm: FakeLLMClient,
     monkeypatch: Any,
 ) -> None:
-    """开启 1 轮辩论：6 analyst + Bull + Bear + manager = 9 次 LLM 调用，
-    且 ``plan.debate_log`` 落 2 条 turn。"""
+    """trigger=always + 两方制（旧 D-9 行为保留档）：6 analyst + Bull + Bear +
+    manager = 9 次 LLM 调用，且 ``plan.debate_log`` 落 2 条 turn。
+
+    fixture briefs 全员 bullish/neutral（aligned），默认 contested 触发会跳过辩论——
+    本用例显式 always 验证旧行为开关仍可用；新默认路径见下两个用例。"""
     from inalpha_research.config import get_research_settings
 
     monkeypatch.setenv("RESEARCH_MAX_DEBATE_ROUNDS", "1")
+    monkeypatch.setenv("RESEARCH_DEBATE_TRIGGER", "always")
+    monkeypatch.setenv("RESEARCH_DEBATE_RISK_ENABLED", "false")
     get_research_settings.cache_clear()
     try:
-        bars = [
-            make_bar_row((_as_of() - timedelta(hours=60 - i)).isoformat(), close=100 + i * 0.1)
-            for i in range(60)
-        ]
-        respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=bars))
-        respx.get("https://api.alternative.me/fng/").mock(
-            return_value=Response(
-                200,
-                json={
-                    "data": [
-                        {"value": "22", "value_classification": "Extreme Fear", "timestamp": "1716163200"},
-                        *[
-                            {"value": str(30 + i % 10), "value_classification": "Fear", "timestamp": str(1716163200 - i * 86400)}
-                            for i in range(1, 30)
-                        ],
-                    ]
-                },
-            )
-        )
+        _mock_bars_and_fng()
 
         req = DeepDiveRequest(
             venue="binance",
@@ -322,8 +332,93 @@ async def test_deep_dive_with_debate_includes_bull_bear_log(
         assert "debate_log" in manager_call["user"]
         assert "Round 1 BULL" in manager_call["user"]
         assert "Round 1 BEAR" in manager_call["user"]
+        # 决策链路字段（#6）：always 模式如实落盘
+        assert plan.debate_trigger is not None and plan.debate_trigger.startswith("always:")
+        assert plan.debate_stop_reason == "completed 1 round(s)"
     finally:
         # 还原 env 避免污染后续测试
+        get_research_settings.cache_clear()
+
+
+@respx.mock
+async def test_deep_dive_contested_triggers_three_way_debate(
+    fake_llm: FakeLLMClient,
+    monkeypatch: Any,
+) -> None:
+    """research-hub #6 默认路径：briefs 出现多空对立（persona burry 提供 bearish）
+    → 触发三方辩论（Bull/Bear/Risk），决策链路字段全落盘。"""
+    from inalpha_research.config import get_research_settings
+
+    monkeypatch.setenv("RESEARCH_MAX_DEBATE_ROUNDS", "1")
+    get_research_settings.cache_clear()
+    try:
+        _mock_bars_and_fng()
+
+        req = DeepDiveRequest(
+            venue="binance",
+            symbol="BTC/USDT",
+            timeframe="1h",
+            as_of=_as_of(),
+            lookback_days=7,
+            personas=["burry"],  # bearish 0.55 ↔ technical bullish 0.7 → contested
+        )
+
+        async with DataClient("http://data-mock.test", "t") as data:
+            plan = await run_deep_dive(req, llm=fake_llm, data=data)
+
+        # 11 = 6 analyst + 1 persona + Bull + Bear + Risk + manager
+        assert len(fake_llm.calls) == 11
+        assert [(t.role, t.round) for t in plan.debate_log] == [
+            ("bull", 1),
+            ("bear", 1),
+            ("risk", 1),
+        ]
+        # 决策链路（#6）：为什么辩了 / 为什么停 / manager 怎么权衡
+        assert plan.debate_trigger is not None and plan.debate_trigger.startswith("contested:")
+        assert plan.debate_stop_reason == "completed 1 round(s)"
+        assert plan.synthesis_reasoning is not None
+        assert "technical analyst" in plan.synthesis_reasoning
+        # manager 能读到 Risk 的发言
+        manager_call = next(
+            c for c in fake_llm.calls if "research manager" in c["system"].lower()
+        )
+        assert "Round 1 RISK" in manager_call["user"]
+    finally:
+        get_research_settings.cache_clear()
+
+
+@respx.mock
+async def test_deep_dive_aligned_briefs_skip_debate(
+    fake_llm: FakeLLMClient,
+    monkeypatch: Any,
+) -> None:
+    """research-hub #6：fixture briefs 全员 bullish/neutral（aligned）→ 默认
+    contested 触发下跳过辩论省 token，跳过原因落 ``plan.debate_trigger``。"""
+    from inalpha_research.config import get_research_settings
+
+    monkeypatch.setenv("RESEARCH_MAX_DEBATE_ROUNDS", "1")
+    get_research_settings.cache_clear()
+    try:
+        _mock_bars_and_fng()
+
+        req = DeepDiveRequest(
+            venue="binance",
+            symbol="BTC/USDT",
+            timeframe="1h",
+            as_of=_as_of(),
+            lookback_days=7,
+        )
+
+        async with DataClient("http://data-mock.test", "t") as data:
+            plan = await run_deep_dive(req, llm=fake_llm, data=data)
+
+        # 7 = 6 analyst + manager（Bull/Bear/Risk 都没起跑）
+        assert len(fake_llm.calls) == 7
+        assert plan.debate_log == []
+        assert plan.debate_trigger is not None
+        assert plan.debate_trigger.startswith("skipped: aligned")
+        assert plan.debate_stop_reason is None
+    finally:
         get_research_settings.cache_clear()
 
 
