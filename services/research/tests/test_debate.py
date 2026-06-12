@@ -380,9 +380,13 @@ async def test_run_debate_risk_speaks_last_each_round() -> None:
     # 而是对称的双向压测提示
     assert "rebut this directly!" not in risk_r1["user"]
     assert "challenge BOTH sides symmetrically" in risk_r1["user"]
-    # Bull/Bear 的 rebuttal 指令不受影响（round 2 串行）
+    # PR #81 CR major：Risk 殿后导致 history 末尾是 Risk——Round 2 Bull 的
+    # rebuttal 对象必须仍是 Bear 的论据，不能错指到 Risk 的中立压测内容
     bull_r2 = [c for c in llm.calls if "bull analyst" in c["system"].lower()][-1]
-    assert "rebut this directly!" in bull_r2["user"]
+    assert "opponent_last_turn (rebut this directly!): Bear says down" in bull_r2["user"]
+    assert "rebut this directly!): Risk challenges both" not in bull_r2["user"]
+    bear_r2 = [c for c in llm.calls if "bear analyst" in c["system"].lower()][-1]
+    assert "opponent_last_turn (rebut this directly!): Bull says up" in bear_r2["user"]
 
 
 async def test_run_debate_without_risk_keeps_two_way() -> None:

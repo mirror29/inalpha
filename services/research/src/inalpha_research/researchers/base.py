@@ -242,8 +242,12 @@ def _format_user_prompt(
             if latest_bear is not None:
                 parts.append(f"  BEAR latest: {latest_bear.content}")
         else:
+            # 对手 = 多空直接对立方（显式指名）。不能用 t.role != role：Risk 每轮
+            # 殿后，第 2 轮起 history 末尾必是 Risk，Bull 会被要求驳斥中立压测
+            # 内容而不是 Bear 的看空论据（PR #81 CR major）
+            opponent_role = "bear" if role == "bull" else "bull"
             last_opponent = next(
-                (t for t in reversed(history) if t.role != role),
+                (t for t in reversed(history) if t.role == opponent_role),
                 None,
             )
             if last_opponent is not None:
