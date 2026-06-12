@@ -89,6 +89,9 @@ export async function GET() {
   const sources = {
     scheduler: true,
     permissions: true,
+    // 审批历史是独立后端端点(/permissions/history):它挂了不该把实时 pending
+    // 源也标坏 —— 两个 key 分开,避免后写覆盖前写(pending 成功仍被静默标 false)。
+    permissionsHistory: true,
     risk: true,
     runs: true,
     orders: true,
@@ -222,7 +225,7 @@ export async function GET() {
       });
     }
   } else {
-    sources.permissions = false;
+    sources.permissionsHistory = false;
   }
 
   // ── 风控锁(历史:含已过期/已解锁,事件不随过期消失)──

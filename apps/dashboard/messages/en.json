@@ -233,6 +233,7 @@
     "source": {
       "scheduler": "Scheduler",
       "permissions": "Approvals",
+      "permissionsHistory": "Approval history",
       "risk": "Risk",
       "runs": "Runners",
       "orders": "Orders",
