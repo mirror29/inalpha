@@ -37,6 +37,7 @@ import {
   createPendingPlanCheckHandler,
   formatStopNotice,
 } from "../hooks/index.js";
+import { assertScopedRequest } from "../mastra/memory.js";
 import { completeRun, hasRunningRun, insertRun } from "./repo.js";
 import type {
   AgentJobPayload,
@@ -96,7 +97,7 @@ export async function runJob(args: RunJobArgs): Promise<RunJobResult> {
     if (job.mode === "tool") {
       result = await runToolMode(job.payload, token, mastra);
     } else {
-      result = await runAgentMode(job.payload, token, mastra);
+      result = await runAgentMode(job.payload, job.jobId, token, mastra);
     }
     await completeRun(runId, { status: "success", result });
     return { runId, status: "success", result };
@@ -168,6 +169,7 @@ function buildStopRunner(token: string): StopHookRunner {
 
 async function runAgentMode(
   payload: AgentJobPayload,
+  jobId: string,
   token: string,
   mastra: Mastra,
 ): Promise<unknown> {
@@ -178,6 +180,12 @@ async function runAgentMode(
 
   const stopRunner = buildStopRunner(token);
   const rc = new RequestContext([["authToken", token]]);
+  // workingMemory enabled(scope:"resource")后 generate 必须带 scope：
+  // - resource = 控制台账户(= token.sub = CONSOLE_SUBJECT)→ cron 与交互式会话
+  //   共用同一份用户画像(ADR-0049 跨会话持久的本意);漏传则落空串桶 → 读/写错位。
+  // - thread 固定到 job → 每个 job 一条稳定线程,会话骨架彼此隔离、跨触发可续。
+  const scope = { resource: defaultServiceSubject(), thread: `scheduler:${jobId}` };
+  assertScopedRequest({ resourceId: scope.resource, threadId: scope.thread });
   // 累积消息数组而非裸 prompt：force-continue 的第二轮 generate 要带上前轮上下文，
   // 否则 LLM 只看到一句 [system_notice]，不知道 plan 是怎么来的。
   // 设计意图（PR review）：这里**有意**只存纯文本 out.text，不复刻前轮 tool_use /
@@ -200,6 +208,7 @@ async function runAgentMode(
       out = (await agent.generate(messages as never, {
         requestContext: rc,
         abortSignal: controller.signal,
+        memory: { resource: scope.resource, thread: scope.thread },
       } as never)) as { text?: string; usage?: unknown; finishReason?: string };
     } finally {
       clearTimeout(timer);

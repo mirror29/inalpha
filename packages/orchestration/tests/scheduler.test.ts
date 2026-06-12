@@ -126,6 +126,9 @@ beforeEach(() => {
     jwtAlgorithm: "HS256",
     schedulerEnabled: false,
     databaseUrl: undefined,
+    // agent mode 起跑要把 working memory scope 钉到控制台账户（resourceId）——
+    // 生产由 zod 默认 "console:dev" 兜底，测试显式注入对齐。
+    consoleSubject: "console:dev",
   });
   vi.mocked(insertRun).mockClear();
   vi.mocked(completeRun).mockClear();
