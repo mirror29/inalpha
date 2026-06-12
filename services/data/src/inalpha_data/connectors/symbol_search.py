@@ -27,6 +27,9 @@ VENUE = "symbols"
 _logger = get_logger(__name__)
 
 _A_SHARE_TABLE_TTL_S = 86_400
+# Yahoo Search 内部是同步 HTTP 且无 timeout：用 wait_for 包 to_thread，慢响应时
+# 返空而不是长期占住 ThreadPoolExecutor 工作线程（对齐 web_fetch 的超时防线）。
+_YAHOO_SEARCH_TIMEOUT_S = 5.0
 
 
 def _a_share_prefix(code: str) -> str | None:
@@ -112,7 +115,16 @@ class SymbolSearchConnector:
     async def _search_yahoo(self, query: str, max_results: int) -> list[dict[str, Any]]:
         if max_results <= 0:
             return []
-        quotes = await asyncio.to_thread(_yahoo_search_sync, query, max_results)
+        try:
+            quotes = await asyncio.wait_for(
+                asyncio.to_thread(_yahoo_search_sync, query, max_results),
+                timeout=_YAHOO_SEARCH_TIMEOUT_S,
+            )
+        except TimeoutError:
+            _logger.warning(
+                "symbol_search_yahoo_timeout", query=query[:80], timeout_s=_YAHOO_SEARCH_TIMEOUT_S
+            )
+            return []
         out: list[dict[str, Any]] = []
         for q in quotes:
             symbol = q.get("symbol")
