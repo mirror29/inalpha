@@ -416,7 +416,7 @@ async def test_deep_dive_aligned_briefs_skip_debate(
         assert len(fake_llm.calls) == 7
         assert plan.debate_log == []
         assert plan.debate_trigger is not None
-        assert plan.debate_trigger.startswith("skipped: aligned")
+        assert plan.debate_trigger.startswith("skipped: no confident opposing stances")
         assert plan.debate_stop_reason is None
     finally:
         get_research_settings.cache_clear()

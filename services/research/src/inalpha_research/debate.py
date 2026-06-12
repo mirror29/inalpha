@@ -57,19 +57,21 @@ def assess_disagreement(
     反方都没信心 → aligned，跳过辩论。
 
     Returns:
-        ``(contested, verdict)``——verdict 是人读得懂的判定描述（英文，机器/
-        日志语境；面向用户的语言由 orchestrator 按用户语言呈现），原样落进
-        ``ResearchPlan.debate_trigger``。
+        ``(contested, detail)``——detail 是**不带前缀**的判定描述（英文，机器/
+        日志语境；面向用户的语言由 orchestrator 按用户语言呈现）。runner 据此
+        组装 ``ResearchPlan.debate_trigger``，前缀固定三选一
+        ``contested: / skipped: / always:``（PR #81 CR：扁平契约，下游可安全
+        ``startswith`` 解析）。
     """
     bulls = [b for b in briefs if b.stance == "bullish" and b.confidence >= min_confidence]
     bears = [b for b in briefs if b.stance == "bearish" and b.confidence >= min_confidence]
     if bulls and bears:
         return True, (
-            f"contested: {len(bulls)} bullish vs {len(bears)} bearish analysts "
+            f"{len(bulls)} bullish vs {len(bears)} bearish analysts "
             f"(confidence >= {min_confidence:.2f})"
         )
     stance_mix = dict(Counter(b.stance for b in briefs))
-    return False, f"aligned: no confident opposing stances (stance mix: {stance_mix})"
+    return False, f"no confident opposing stances (stance mix: {stance_mix})"
 
 
 async def run_debate(

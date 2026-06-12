@@ -227,15 +227,30 @@ def _format_user_prompt(
         parts.append("debate_history (oldest first):")
         for turn in history:
             parts.append(f"  Round {turn.round} {turn.role.upper()}: {turn.content}")
-        last_opponent = next(
-            (t for t in reversed(history) if t.role != role),
-            None,
-        )
-        if last_opponent is not None:
+        if role == "risk":
+            # 风险官中立：不给"驳斥对手"指令（那会让它偏向某一方），改为对称
+            # 列出双方最新论点，明确两边都要压测（PR #81 CR）
+            latest_bull = next((t for t in reversed(history) if t.role == "bull"), None)
+            latest_bear = next((t for t in reversed(history) if t.role == "bear"), None)
             parts.append("")
             parts.append(
-                f"opponent_last_turn (rebut this directly!): {last_opponent.content}"
+                "latest arguments to stress-test (challenge BOTH sides symmetrically, "
+                "do not take either side):"
             )
+            if latest_bull is not None:
+                parts.append(f"  BULL latest: {latest_bull.content}")
+            if latest_bear is not None:
+                parts.append(f"  BEAR latest: {latest_bear.content}")
+        else:
+            last_opponent = next(
+                (t for t in reversed(history) if t.role != role),
+                None,
+            )
+            if last_opponent is not None:
+                parts.append("")
+                parts.append(
+                    f"opponent_last_turn (rebut this directly!): {last_opponent.content}"
+                )
     else:
         parts.append("")
         parts.append("debate_history: (this is the first turn — make your opening case)")
