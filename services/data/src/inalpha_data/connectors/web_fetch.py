@@ -31,6 +31,7 @@ VENUE = "web"
 _logger = get_logger(__name__)
 
 _ALLOWED_CONTENT_PREFIXES = ("text/html", "text/plain", "application/xhtml", "application/xml", "text/xml")
+_MAX_REDIRECTS = 5
 
 
 def _is_private_host(host: str) -> bool:
@@ -134,29 +135,48 @@ class WebFetchConnector:
             ),
             "Accept-Language": "en,zh;q=0.8",
         }
-        async with httpx.AsyncClient(
-            follow_redirects=True, max_redirects=5, headers=headers
-        ) as client:
-            async with client.stream("GET", url) as resp:
-                if resp.status_code >= 400:
-                    return {"url": url, "error": f"HTTP {resp.status_code}"}
-                ctype = resp.headers.get("content-type", "").lower()
-                if ctype and not any(ctype.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
-                    return {"url": url, "error": f"unsupported content-type: {ctype}"}
-                # 重定向落点二次校验（防 302 跳内网）
-                final_host = resp.url.host or ""
-                if await asyncio.to_thread(_is_private_host, final_host):
+        # SSRF：必须**手工逐跳**跟随重定向。httpx follow_redirects=True 会在内部
+        # 直接连到 302 终点，等我们拿到 resp 再校验时 TCP 连接已建立、GET 已发出
+        # （evil.com → 302 → http://172.17.0.2:8002 这类内网探测已经打到目标）。
+        # 改为 follow_redirects=False，每一跳在 stream() 建连**前**校验目标主机。
+        async with httpx.AsyncClient(follow_redirects=False, headers=headers) as client:
+            current = httpx.URL(url)
+            html = ""
+            final_url = url
+            for _ in range(_MAX_REDIRECTS + 1):
+                host = current.host
+                if not host:
+                    return {"url": url, "error": "redirect URL missing host"}
+                if current.scheme not in ("http", "https"):
+                    return {"url": url, "error": "redirect to non-http(s) scheme"}
+                if await asyncio.to_thread(_is_private_host, host):
                     return {"url": url, "error": "redirect target is a private host"}
 
-                chunks: list[bytes] = []
-                read = 0
-                async for chunk in resp.aiter_bytes():
-                    chunks.append(chunk)
-                    read += len(chunk)
-                    if read >= self._max_bytes:
-                        break
-                html = b"".join(chunks).decode(resp.encoding or "utf-8", errors="replace")
-                final_url = str(resp.url)
+                async with client.stream("GET", current) as resp:
+                    if resp.is_redirect:
+                        loc = resp.headers.get("location")
+                        if not loc:
+                            return {"url": url, "error": "redirect without Location header"}
+                        current = current.join(loc)  # 解析相对跳转，进入下一跳前再校验
+                        continue
+                    if resp.status_code >= 400:
+                        return {"url": url, "error": f"HTTP {resp.status_code}"}
+                    ctype = resp.headers.get("content-type", "").lower()
+                    if ctype and not any(ctype.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
+                        return {"url": url, "error": f"unsupported content-type: {ctype}"}
+
+                    chunks: list[bytes] = []
+                    read = 0
+                    async for chunk in resp.aiter_bytes():
+                        chunks.append(chunk)
+                        read += len(chunk)
+                        if read >= self._max_bytes:
+                            break
+                    html = b"".join(chunks).decode(resp.encoding or "utf-8", errors="replace")
+                    final_url = str(resp.url)
+                    break
+            else:
+                return {"url": url, "error": f"too many redirects (>{_MAX_REDIRECTS})"}
 
         data = await asyncio.to_thread(_extract_sync, html, final_url)
         text = data.get("text") or ""
