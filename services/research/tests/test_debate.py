@@ -434,6 +434,50 @@ async def test_run_debate_converges_early_when_arguments_repeat() -> None:
     assert outcome.stop_reason.startswith("converged: round 2")
 
 
+async def test_run_debate_three_way_converges_despite_risk_turns() -> None:
+    """三方制 × 软早停组合（PR #81 CR follow-up）：收敛判定只看 Bull/Bear，
+    Risk 轮（每轮压测对象不同、内容天然多变）不得干扰早停——这是 _converged
+    role 过滤的回归锚点，过滤被改坏会导致三方制下几乎永不收敛。"""
+    llm = _three_way_llm()
+
+    outcome = await run_debate(
+        bull=BullResearcher(llm=llm),
+        bear=BearResearcher(llm=llm),
+        risk=RiskResearcher(llm=llm),
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=4,
+        convergence_threshold=0.6,
+    )
+
+    # Bull/Bear 第 2 轮复读 → 收敛停；Risk 两轮都殿后发言、不阻止早停
+    assert [(t.role, t.round) for t in outcome.turns] == [
+        ("bull", 1),
+        ("bear", 1),
+        ("risk", 1),
+        ("bull", 2),
+        ("bear", 2),
+        ("risk", 2),
+    ]
+    assert outcome.stop_reason.startswith("converged: round 2")
+
+
+def test_assess_disagreement_min_confidence_configurable() -> None:
+    """门槛可调（PR #81 CR follow-up）：同一组 briefs，调高 min_confidence
+    会把弱对立判成 aligned——runner 从 settings.debate_min_confidence 透传。"""
+    briefs = [
+        _brief("technical", "bullish", confidence=0.7),
+        _brief("macro", "bearish", confidence=0.5),
+    ]
+    contested_default, _ = assess_disagreement(briefs, min_confidence=0.35)
+    contested_strict, _ = assess_disagreement(briefs, min_confidence=0.6)
+    assert contested_default is True
+    assert contested_strict is False  # bearish 0.5 低于 0.6 门槛 → 无有信心对立方
+
+
 async def test_run_debate_convergence_disabled_at_threshold_one() -> None:
     """阈值 1.0 = 实际禁用：即使逐字复读也跑满轮数（保留旧行为）。"""
     llm = _three_way_llm()
