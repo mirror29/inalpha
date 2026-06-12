@@ -239,7 +239,12 @@ class FactorPatrol:
                 continue  # 本轮没算出来（数据抖动）→ 保持状态，下轮再看
             if _SKIP_LOW_CONFIDENCE and cur.get("low_confidence"):
                 continue  # 样本不足时的 decay_state 是噪声，不驱动状态机
-            state = cur.get("decay_state", "decaying")
+            state = cur.get("decay_state")
+            if state is None:
+                # factor 服务版本还没 decay_state 字段（滚动升级 paper 先于 factor）：
+                # 缺省成 "decaying" 会对每个因子误报一条无依据告警、升级后又收恢复 log，
+                # 给复盘添噪。宁可漏告警也不误报——本轮跳过，等服务端补上字段再判。
+                continue
             prev = (alerts.get(fid) or {}).get("state")
 
             if state == "decaying" and prev != "decaying":
