@@ -54,7 +54,7 @@ export default async function HomePage({
 
       <Hero />
 
-      <main className="mx-auto max-w-[88rem] space-y-28 px-6 py-24 md:space-y-40 md:px-14 md:py-28">
+      <main className="mx-auto max-w-[96rem] space-y-28 px-6 py-24 md:space-y-40 md:px-14 md:py-28">
         <CoreWedge />
         <AgentIntelligence />
         <ResearchFloor />
