@@ -71,6 +71,40 @@ def test_timing_score_catalog_unaffected_without_db(client_no_db: TestClient) ->
     assert r.status_code == 200
 
 
+async def test_insert_candidate_raises_on_race_instead_of_ghost_uuid() -> None:
+    """并发 race：INSERT 被 ON CONFLICT 压掉 + SELECT 未命中 → 抛错，绝不返幽灵 UUID。
+
+    返回从未落库的 candidate_id 会让调用方以 200 回 dashboard，用户审核时 404。
+    """
+    from inalpha_factor.storage import candidates as candidates_store
+
+    class _NoneCursor:
+        async def __aenter__(self) -> _NoneCursor:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+        async def execute(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def fetchone(self) -> None:
+            return None  # INSERT…RETURNING 与回查 SELECT 都返 None（模拟未提交的 winner）
+
+    class _RaceConn:
+        def cursor(self, *args: object, **kwargs: object) -> _NoneCursor:
+            return _NoneCursor()
+
+    with pytest.raises(RuntimeError, match="race"):
+        await candidates_store.insert_candidate(
+            _RaceConn(),  # type: ignore[arg-type]
+            expression="Mean($close, 20)",
+            name=None,
+            hypothesis="动量效应：近期上涨的标的短期内倾向继续上涨，做多近端动量",
+            proposed_by="test",
+        )
+
+
 # ── 注册表 → adapter → engine catalog 链路（monkeypatch DB 层）──────────
 
 
