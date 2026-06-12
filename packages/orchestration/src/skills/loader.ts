@@ -22,7 +22,7 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import {
@@ -203,8 +203,11 @@ export function readSkillFile(
       availableFiles: manifest.files,
     };
   }
+  // 用 relative() 判穿越，别靠字符串前缀：manifest.dir 若带尾 sep（如 env
+  // INALPHA_SKILLS_DIR 指向带尾斜杠的路径）`dir + sep` 会双斜杠误拒合法文件。
   const abs = resolve(manifest.dir, file);
-  if (!abs.startsWith(manifest.dir + sep)) {
+  const rel = relative(manifest.dir, abs);
+  if (rel === "" || rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) {
     return { error: `path escapes skill directory`, availableFiles: manifest.files };
   }
   if (!existsSync(abs) || !statSync(abs).isFile()) {
