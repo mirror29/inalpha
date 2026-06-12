@@ -21,6 +21,7 @@ import {
   paperGetAccountTool,
   paperHealthTool,
   paperListBacktestRunsTool,
+  paperListBacktestTradesTool,
   paperListOrdersTool,
   paperListPositionsTool,
   paperListStrategiesTool,
@@ -108,6 +109,7 @@ export {
   paperGetCandidateTool,
   paperHealthTool,
   paperListBacktestRunsTool,
+  paperListBacktestTradesTool,
   paperListCandidatesTool,
   paperListOrdersTool,
   paperListPositionsTool,
@@ -229,6 +231,8 @@ export const orchestratorToolList = [
   // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
+  // D-12 · 逐笔成交明细（迭代诊断"亏在哪几笔"）
+  paperListBacktestTradesTool,
   // D-9 · ADR-0020 E1 MVP：LLM 自创策略候选（compose 不够用时走这条）
   paperAuthorStrategyTool,
   paperListCandidatesTool,

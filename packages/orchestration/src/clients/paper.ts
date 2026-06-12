@@ -180,6 +180,11 @@ export type AuthorStrategyResult = {
   /** true=新落库；false=撞到同 code_hash，返已有 ID（幂等） */
   created: boolean;
   audit: Record<string, unknown>;
+  /**
+   * D-12 · 非阻断告警（如血缘里的因子 author 时已在衰减）。非空时 agent 必须
+   * 转告用户，衰减因子不作核心信号。
+   */
+  warnings?: string[];
 };
 
 export type StrategyCandidateSummary = {
@@ -249,6 +254,22 @@ export type BacktestRunSummary = {
   strategy_hint: Record<string, unknown> | null;
   status: string;
   created_at: string;
+};
+
+/** D-12 · 回测逐笔成交（GET /backtest_runs/{id}/trades 的一行）。 */
+export type BacktestTradeRecord = {
+  seq: number;
+  bar_ts: string;
+  bar_close: number;
+  side: string;
+  quantity: number;
+  order_type: string;
+  fill_price: number | null;
+  fee: number | null;
+  /** 本笔引起的 realized_pnl 增量（开仓笔=0，平仓/反手笔=价差盈亏，不含手续费） */
+  realized_pnl: number | null;
+  intent: string | null;
+  tag: string | null;
 };
 
 export type SubmitOrderParams = {
@@ -560,6 +581,17 @@ export class PaperClient {
       strategy_code: filter.strategyCode,
       limit: filter.limit,
     });
+  }
+
+  /** D-12 · 一次回测的逐笔成交（按成交先后），诊断"亏在哪几笔"用。 */
+  async listBacktestTrades(
+    runId: string,
+    limit = 50,
+  ): Promise<BacktestTradeRecord[]> {
+    return await this.http.get<BacktestTradeRecord[]>(
+      `/backtest_runs/${runId}/trades`,
+      { limit },
+    );
   }
 
   async submitOrder(params: SubmitOrderParams): Promise<SubmitOrderResult> {

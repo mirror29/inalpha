@@ -237,6 +237,9 @@ export const paperAuthorStrategyTool = createTool({
     - candidate_id（UUID）——后续 paper.run_backtest({ candidateId }) 用
     - created（bool）——false 表示撞到现有同 hash 候选，返回老 ID（幂等，可直接复用）
     - audit ——审计摘要（通过路径里 ok=true）
+    - warnings（D-12）——非阻断告警；**非空必须原样转告用户**。典型：factorContext
+      里的因子 author 时 decay_state 已是 fading/decaying——策略依据在衰减，
+      该因子不得作核心信号；坚持引用要降权并向用户说明理由
 
     失败模式：
     - 422 STRATEGY_AUDIT_FAILED：源码含禁止 import / 名字 / dunder 访问；按 findings 改

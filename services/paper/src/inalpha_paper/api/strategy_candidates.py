@@ -99,11 +99,19 @@ async def post_strategy_candidate(
     #    供 live runner 起跑时做归属校验（issue #36.1）——非 UUID sub 也有稳定 owner。
     author_id = _try_uuid(user.user_id)
     owner_account_id = account_id_from_user(user)
+
+    # D-12 · 因子衰减前馈：血缘里 decay_state 已是 fading/decaying 的因子在
+    # author 时就告警（而不是等 promote 后 FactorPatrol 巡检才发现）。只 warning
+    # 不拒绝——策略可以引用衰减因子（如刻意做衰减对冲），但必须是知情决策。
+    warnings = _decay_warnings(req.factor_snapshot)
+
     audit_dict = {
         "ok": True,
         "findings": [],
         "class_name": cls.__name__,
     }
+    if warnings:
+        audit_dict["authoring_warnings"] = warnings  # 可追溯：告警当时就给过
     candidate_id, created = await candidates_store.insert_candidate(
         db,
         code=code,
@@ -120,7 +128,30 @@ async def post_strategy_candidate(
         code_hash=candidates_store.compute_code_hash(code),
         created=created,
         audit=audit_dict,
+        warnings=warnings,
     )
+
+
+def _decay_warnings(factor_snapshot: dict | None) -> list[str]:
+    """factor_snapshot 里衰减中因子 → 告警文案列表（缺血缘 / 格式不对返空）。"""
+    if not isinstance(factor_snapshot, dict):
+        return []
+    factors = factor_snapshot.get("factors")
+    if not isinstance(factors, list):
+        return []
+    out: list[str] = []
+    for f in factors:
+        if not isinstance(f, dict):
+            continue
+        state = f.get("decay_state")
+        if state in ("fading", "decaying"):
+            fid = f.get("id") or f.get("name") or "(unnamed factor)"
+            out.append(
+                f"factor {fid!r} is already {state} at authoring time "
+                f"(rank_ic_recent={f.get('rank_ic_recent')}) — do not use it as a "
+                "core signal; if kept, downweight and state why"
+            )
+    return out
 
 
 @router.get(

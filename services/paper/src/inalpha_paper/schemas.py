@@ -423,6 +423,12 @@ class AuthorStrategyResponse(BaseModel):
         description="审计摘要：通过时 {ok: true, findings: []}；失败由 422 走，"
         "本字段只在通过路径出现",
     )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="D-12 · 非阻断告警：如 factor_snapshot 里有 decay_state 已是 "
+        "fading/decaying 的因子（策略设计时就该知道依据在衰减，而不是等 promote "
+        "后巡检才发现）。落库照常，agent 必须把告警转告用户",
+    )
 
 
 class PromoteCandidateRequest(BaseModel):

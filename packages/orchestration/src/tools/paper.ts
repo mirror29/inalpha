@@ -430,6 +430,42 @@ export const paperListBacktestRunsTool = createTool({
 });
 
 // ────────────────────────────────────────────────────────────────────
+// D-12 · paper.list_backtest_trades
+// ────────────────────────────────────────────────────────────────────
+
+export const paperListBacktestTradesTool = createTool({
+  id: "paper.list_backtest_trades",
+  description: `
+    一次回测的**逐笔成交明细**（按成交先后），含每笔实现盈亏 / 手续费 / intent。
+
+    何时用：
+    - 迭代诊断"策略到底亏在哪几笔"——总 metrics 说不出原因时看逐笔：
+      是连续小止损磨掉的（手续费/换手问题），还是几笔大亏（止损没生效/逆势扛单）
+    - 验证止损/出场逻辑是否真的触发（找 intent=close 的笔看 realized_pnl 分布）
+    - 用户问"这次回测都做了哪些交易"
+
+    何时不用：
+    - 只要总览指标 → run_backtest 响应里已有（sharpe/win_rate/profit_factor）
+    - 看权益曲线形状 → run_backtest 的 equity_curve
+
+    坑：
+    - runId 来自 run_backtest 响应的 run_id（或 list_backtest_runs）
+    - realized_pnl：开仓笔=0，平仓/反手笔=价差盈亏（**不含手续费**）；
+      算净盈亏要自己减 fee
+    - 默认 limit=50 控 context；交易多时按需加大（≤500），别无脑拉满
+  `.trim(),
+  inputSchema: z.object({
+    runId: z.string().uuid().describe("回测 run_id（run_backtest 响应 / list_backtest_runs）"),
+    limit: z.number().int().min(1).max(500).default(50),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listBacktestTrades(inputData.runId, inputData.limit ?? 50);
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────
 // paper.health
 // ────────────────────────────────────────────────────────────────────
 
@@ -662,6 +698,7 @@ export const paperTools = [
   paperGetAccountTool,
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
+  paperListBacktestTradesTool,
   paperStartStrategyTool,
   paperStopStrategyTool,
   paperListStrategyRunsTool,

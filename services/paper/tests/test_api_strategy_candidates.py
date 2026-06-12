@@ -251,3 +251,66 @@ async def test_factor_snapshot_idempotent_hit_keeps_original(
         f"/strategy_candidates/{r1.json()['candidate_id']}", headers=auth_headers
     )
     assert got.json()["factor_snapshot"]["venue"] == "binance"
+
+
+# ────────────────────────────────────────────────────────────────────
+# D-12 · 因子衰减前馈：author 时 warnings
+# ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_decaying_factor_snapshot_yields_warnings(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """血缘里 decay_state=decaying/fading → 响应带 warnings + audit 留痕，落库照常。"""
+    salt = uuid.uuid4().hex[:8]
+    code = _MIN_STRATEGY + f'\n"decay warning salt {salt}"\n'
+    snapshot = {
+        "venue": "binance",
+        "symbol": "BTC/USDT",
+        "timeframe": "1h",
+        "factors": [
+            {"id": "ta.rsi_14", "rank_ic": 0.08, "rank_ic_recent": 0.01, "decay_state": "decaying"},
+            {"id": "ta.macd", "rank_ic": 0.05, "rank_ic_recent": 0.03, "decay_state": "fading"},
+            {"id": "ta.atr_14", "rank_ic": 0.06, "rank_ic_recent": 0.06, "decay_state": "stable"},
+        ],
+    }
+    r = client.post(
+        "/strategy_candidates",
+        headers=auth_headers,
+        json={"code": code, "description": f"decay-{salt}", "factor_snapshot": snapshot},
+    )
+    assert r.status_code == 200, r.json()
+    body = r.json()
+    # 两个衰减中因子各一条告警；stable 的不告
+    assert len(body["warnings"]) == 2
+    assert any("ta.rsi_14" in w and "decaying" in w for w in body["warnings"])
+    assert any("ta.macd" in w and "fading" in w for w in body["warnings"])
+    # 告警写进 audit 可追溯
+    assert body["audit"]["authoring_warnings"] == body["warnings"]
+    # 落库照常（只 warning 不拒绝）
+    got = client.get(f"/strategy_candidates/{body['candidate_id']}", headers=auth_headers)
+    assert got.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_stable_factor_snapshot_no_warnings(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    salt = uuid.uuid4().hex[:8]
+    code = _MIN_STRATEGY + f'\n"stable lineage salt {salt}"\n'
+    r = client.post(
+        "/strategy_candidates",
+        headers=auth_headers,
+        json={
+            "code": code,
+            "description": f"stable-{salt}",
+            "factor_snapshot": {
+                "factors": [{"id": "ta.rsi_14", "decay_state": "stable"}]
+            },
+        },
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["warnings"] == []
