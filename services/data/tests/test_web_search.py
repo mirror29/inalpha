@@ -1,8 +1,12 @@
 """Tests for GET /web/search and GET /web/news endpoints (ddgs connector)."""
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
+
+from inalpha_data.connectors.web_search import SearchOutcome, WebSearchConnector
 
 pytestmark = pytest.mark.anyio
 
@@ -28,9 +32,12 @@ def test_web_search_mock_returns_results(
     original = ws._connector.fetch_search
 
     async def mock_fetch(query, backend="auto", max_results=10):
-        return [
-            {"title": "Test Result", "href": "https://example.com", "body": "A test snippet"}
-        ]
+        return SearchOutcome(
+            results=[
+                {"title": "Test Result", "href": "https://example.com", "body": "A test snippet"}
+            ],
+            backend_used="bing",
+        )
 
     ws._connector.fetch_search = mock_fetch
     try:
@@ -42,6 +49,9 @@ def test_web_search_mock_returns_results(
         assert r.status_code == 200
         body = r.json()
         assert body["query"] == "Bitcoin"
+        assert body["status"] == "ok"
+        assert body["backend"] == "bing"  # 实际引擎透传
+        assert body["fetched_at"] is not None
         assert len(body["results"]) == 1
         assert body["results"][0]["title"] == "Test Result"
         assert body["results"][0]["url"] == "https://example.com"
@@ -58,13 +68,16 @@ def test_web_news_mock_returns_results(
     original = ws._connector.fetch_news
 
     async def mock_news(query, max_results=10):
-        return [
-            {
-                "title": "News Headline",
-                "href": "https://news.example.com/article",
-                "body": "A news snippet about the topic.",
-            }
-        ]
+        return SearchOutcome(
+            results=[
+                {
+                    "title": "News Headline",
+                    "href": "https://news.example.com/article",
+                    "body": "A news snippet about the topic.",
+                }
+            ],
+            backend_used="news",
+        )
 
     ws._connector.fetch_news = mock_news
     try:
@@ -77,11 +90,37 @@ def test_web_news_mock_returns_results(
         body = r.json()
         assert body["query"] == "Crypto"
         assert body["backend"] == "news"
+        assert body["status"] == "ok"
         assert len(body["results"]) == 1
         assert body["results"][0]["title"] == "News Headline"
         assert body["results"][0]["url"] == "https://news.example.com/article"
     finally:
         ws._connector.fetch_news = original
+
+
+def test_web_search_endpoint_surfaces_connector_failure(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """connector 抛异常 → 端点 200 + status=engine_error（不再静默返裸空数组）。"""
+    from inalpha_data.connectors import web_search as ws
+
+    original = ws._connector.fetch_search
+
+    async def mock_boom(query, backend="auto", max_results=10):
+        raise RuntimeError("connector exploded")
+
+    ws._connector.fetch_search = mock_boom
+    try:
+        r = client.get(
+            "/web/search", headers=auth_headers, params={"query": "anything"}
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "engine_error"
+        assert "connector exploded" in body["error"]
+        assert body["results"] == []
+    finally:
+        ws._connector.fetch_search = original
 
 
 def test_web_search_respects_max_results(
@@ -108,14 +147,10 @@ def test_web_search_max_results_min_bound(
     assert r.status_code == 400
 
 
-async def test_run_guarded_swallows_non_timeout_exceptions(
+async def test_run_guarded_returns_engine_error_on_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """_run_guarded 对非 TimeoutError 异常也兜底返回 []，不穿透到上层 analyst fan-out。
-
-    修复前只 except TimeoutError，底层（DDGS / to_thread）抛的其它异常会直接传出，
-    让整条 analyst 链崩掉。此 test 在修复前会因 RuntimeError 未捕获而失败。
-    """
+    """非超时异常不上抛（不能穿透 analyst fan-out），但 status 必须标 engine_error。"""
     from inalpha_data.connectors import web_search as ws
 
     def boom(*args: object, **kwargs: object) -> list[dict[str, object]]:
@@ -123,5 +158,80 @@ async def test_run_guarded_swallows_non_timeout_exceptions(
 
     monkeypatch.setattr(ws, "_search_sync", boom)
     connector = ws.WebSearchConnector()
-    result = await connector.fetch_search("anything", max_results=3)
-    assert result == []
+    out = await connector.fetch_search("anything", max_results=3)
+    assert out.results == []
+    assert out.status == "engine_error"
+    assert "ddgs blew up" in (out.error or "")
+
+
+async def test_run_guarded_classifies_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ddgs 429 类异常 → status=rate_limited（按异常类型名识别）。"""
+    from inalpha_data.connectors import web_search as ws
+
+    class RatelimitException(Exception):
+        pass
+
+    def limited(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        raise RatelimitException("429 too many requests")
+
+    monkeypatch.setattr(ws, "_search_sync", limited)
+    connector = ws.WebSearchConnector()
+    out = await connector.fetch_search("anything", backend="google", max_results=3)
+    assert out.status == "rate_limited"
+
+
+async def test_run_guarded_classifies_no_results_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ddgs 空结果是抛 'No results found.' 异常——必须识别为 no_results 而非引擎故障。"""
+    from inalpha_data.connectors import web_search as ws
+
+    def empty(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        raise Exception("No results found.")
+
+    monkeypatch.setattr(ws, "_search_sync", empty)
+    connector = ws.WebSearchConnector()
+    out = await connector.fetch_search("nonexistent gibberish", backend="google", max_results=3)
+    assert out.status == "no_results"
+
+
+async def test_run_guarded_timeout_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """整体超时 → status=timeout（修复前与"无结果"无法区分）。"""
+    from inalpha_data.connectors import web_search as ws
+
+    def slow(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        time.sleep(0.5)
+        return [{"title": "too late", "href": "", "body": ""}]
+
+    monkeypatch.setattr(ws, "_search_sync", slow)
+    connector = ws.WebSearchConnector()
+    connector._overall_timeout = 0.05
+    out = await connector.fetch_search("anything", backend="google", max_results=3)
+    assert out.status == "timeout"
+    assert out.results == []
+
+
+async def test_cjk_news_query_downgrades_to_text_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """中文 news query 跳过 ddgs.news（实测必空），直接走 text 搜索并带 hint。"""
+    from inalpha_data.connectors import web_search as ws
+
+    def news_must_not_be_called(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        raise AssertionError("_news_sync should be skipped for CJK queries")
+
+    def text_ok(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        return [{"title": "中文新闻", "href": "https://example.cn", "body": "正文"}]
+
+    monkeypatch.setattr(ws, "_news_sync", news_must_not_be_called)
+    monkeypatch.setattr(ws, "_search_sync", text_ok)
+    connector = WebSearchConnector()
+    out = await connector.fetch_news("某市场 大涨 原因", max_results=5)
+    assert out.status == "ok"
+    assert out.results[0]["title"] == "中文新闻"
+    assert "text-fallback-for-cjk-news" in out.backend_used
+    assert out.hint is not None and "data.get_market_news" in out.hint
