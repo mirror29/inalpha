@@ -263,7 +263,7 @@ class MacroAdapter:
             if not need(fid):
                 continue
             # 单因子隔离：formulas 与 _SPECS 漏同步会让 _factor_align_params 抛
-            # KeyError，若不隔离会被 engine 的 except 吞掉、14 个宏观因子一起静默消失
+            # KeyError，若不隔离会被 engine 的 except 吞掉、整批宏观因子一起静默消失
             # 且无归因。逐 fid try/except，坏一条只丢一条并记下具体 fid。
             try:
                 native = fn()
