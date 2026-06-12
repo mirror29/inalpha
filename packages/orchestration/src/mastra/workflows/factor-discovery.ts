@@ -257,7 +257,11 @@ const gateStep = createStep({
   inputSchema: z.array(EvaluatedItemSchema),
   outputSchema: DiscoveryOutputSchema,
   execute: async ({ inputData, getInitData }) => {
-    const init = getInitData<z.infer<typeof DiscoveryInputSchema>>();
+    // getInitData 只是 TS cast，无运行时校验：若 Mastra 版本/步骤 schema 漂移导致
+    // init 为 undefined/partial，门限会静默全开（propose 默认 false→全不落库、
+    // maxLibraryCorr undefined→冗余门关），外观是"没找到候选"而非报错，极难排查。
+    // 立即 parse，漏字段就抛明确错误。
+    const init = DiscoveryInputSchema.parse(getInitData<unknown>());
     const batchId = randomUUID();
     const nTested = inputData.length;
 
