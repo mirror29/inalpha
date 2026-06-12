@@ -486,8 +486,8 @@ async def test_risk_handles_empty_bars(data_client: DataClient) -> None:
 # ────────────────────────────────────────────────────────────────────
 
 
-async def test_macro_runs_without_data_fetch(data_client: DataClient) -> None:
-    """macro analyst 不调 data-service，user prompt 含日历段。"""
+async def test_macro_degrades_gracefully_without_data(data_client: DataClient) -> None:
+    """data 服务全程不可达（无 mock）→ FRED/news 各自降级，日历段仍在，不抛。"""
     llm = FakeLLMClient(
         {
             "macro analyst": {
@@ -512,6 +512,8 @@ async def test_macro_runs_without_data_fetch(data_client: DataClient) -> None:
 
     user_prompt = llm.calls[0]["user"]
     assert "upcoming_macro_events" in user_prompt
+    # FRED 不可达 → 显式 "(none available" 而不是凭空编读数
+    assert "live_macro_readings: (none available" in user_prompt
     # _as_of() 2026-05-21 的 ±14 天窗口应该包含 FOMC 2026-06-18? 那是 28 天后，不在窗口
     # 但 2026-06-06 NFP（16 天后）也不在。窗口里有 2026-05-13 CPI（8 天前）
     assert "2026-05-13" in user_prompt or "(none in ±14d window)" in user_prompt
@@ -543,6 +545,109 @@ async def test_macro_handles_no_events_in_window(data_client: DataClient) -> Non
     # D-9：events 拆 past / upcoming 后，空窗口表现为两组分别 "(none)"
     assert "past_macro_events_last_14d: (none)" in user_prompt
     assert "upcoming_macro_events_next_14d: (none)" in user_prompt
+
+
+def _fred_bars(symbol: str, *, as_of: datetime, values: list[float]) -> list[dict]:
+    """合成 FRED 风格 bar 行：daily，最后一根落在 as_of 当天（应被 PIT 截掉）。"""
+    n = len(values)
+    return [
+        {
+            "ts": (as_of - timedelta(days=n - 1 - i)).replace(hour=0, minute=0).isoformat(),
+            "venue": "fred",
+            "symbol": symbol,
+            "timeframe": "1d",
+            "open": v, "high": v, "low": v, "close": v, "volume": 0.0,
+        }
+        for i, v in enumerate(values)
+    ]
+
+
+@respx.mock
+async def test_macro_fred_readings_in_prompt(data_client: DataClient) -> None:
+    """D-12：FRED 5 序列进 prompt——含 curve_slope 派生、staleness 标注、PIT 截断。"""
+    as_of = _as_of()  # 2026-05-21 12:00 UTC
+    series_values = {
+        "DFF": [4.30] * 25,
+        "DGS10": [4.00] * 24 + [4.50],   # 最后一根 as_of 当天 → 应被 PIT 截掉
+        "DGS2": [4.60] * 25,
+        "DTWEXBGS": [120.0 + i * 0.1 for i in range(25)],
+        "VIXCLS": [14.0] * 25,
+    }
+
+    def _bars_side_effect(request):
+        symbol = request.url.params["symbol"]
+        return Response(
+            200, json=_fred_bars(symbol, as_of=as_of, values=series_values[symbol])
+        )
+
+    respx.get("http://data-mock.test/bars").mock(side_effect=_bars_side_effect)
+    respx.post("http://data-mock.test/backfill/bars").mock(
+        return_value=Response(200, json={})
+    )
+    respx.get("http://data-mock.test/news").mock(
+        return_value=Response(200, json={"items": []})
+    )
+
+    llm = FakeLLMClient(
+        {
+            "macro analyst": {
+                "stance": "bearish",
+                "confidence": 0.95,  # LLM 不守 prompt cap 的情形
+                "summary": "Curve inverted, USD grinding up.",
+            }
+        }
+    )
+    analyst = MacroAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=as_of,
+        lookback_days=30,
+    )
+
+    user_prompt = llm.calls[0]["user"]
+    assert "live_macro_readings (FRED" in user_prompt
+    # PIT：DGS10 as_of 当天的 4.50 未发布不可见，读到的是 4.00
+    assert "10Y Treasury yield (%): 4.00" in user_prompt
+    assert "4.50" not in user_prompt
+    # 派生期限利差 4.00 - 4.60 = -0.60 → inverted
+    assert "curve_slope (10Y-2Y): -0.60 (inverted)" in user_prompt
+    # staleness 标注（昨天的观测 = 1d ago）
+    assert "1d ago" in user_prompt
+    # 双档 cap：有 live 读数 → 0.7（代码级 clamp，0.95 被压下来）
+    assert brief.confidence == 0.7
+
+
+@respx.mock
+async def test_macro_confidence_capped_at_05_when_all_feeds_down(
+    data_client: DataClient,
+) -> None:
+    """D-12：FRED 全 500 + 无新闻 → "(none available" + cap 0.5 代码级生效。"""
+    respx.get("http://data-mock.test/bars").mock(
+        return_value=Response(500, json={"code": "DB_DOWN", "message": "down"})
+    )
+    respx.post("http://data-mock.test/backfill/bars").mock(
+        return_value=Response(500, json={})
+    )
+    respx.get("http://data-mock.test/news").mock(
+        return_value=Response(200, json={"items": []})
+    )
+
+    llm = FakeLLMClient(
+        {"macro analyst": {"stance": "bullish", "confidence": 0.9, "summary": "vibes"}}
+    )
+    analyst = MacroAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+    user_prompt = llm.calls[0]["user"]
+    assert "live_macro_readings: (none available" in user_prompt
+    assert brief.confidence == 0.5
 
 
 # ────────────────────────────────────────────────────────────────────
