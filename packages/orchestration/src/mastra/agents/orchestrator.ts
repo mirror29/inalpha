@@ -47,6 +47,8 @@ const INSTRUCTIONS = `
 - **data.search_symbol —— 公司名 → ticker 解析**。从新闻 / 研究里拿到公司名要落
   行情 / 财报前先解析；**禁止凭训练记忆猜代码**（可能错 / 过时）。A股返 sh./sz. 格式，
   其他市场返 yahoo 格式（venue 字段标明配哪个数据源）。
+  **你已判断出市场分类时显式传 venue**（美股/港股/全球 → yfinance，A股 → akshare）；
+  query 的语言 ≠ 市场——中文名问美股公司极常见，别把市场判断丢给 auto 兜底。
 
 **Web 搜索**（D-10 新 · 零 key，ddgs 聚合多引擎）：
 - web.search —— 搜索互联网。query 用自然语言；backend 默认 auto，中文自动走 bing。

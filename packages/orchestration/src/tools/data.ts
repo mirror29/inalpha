@@ -353,13 +353,18 @@ export const dataSearchSymbolTool = createTool({
     - 加密货币对（BTC/USDT 这类）→ 不是股票检索范围
 
     坑：
-    - venue=auto：中文 query 先查 A股表再补 Yahoo；纯英文只走 Yahoo
+    - **已能判断出市场时显式传 venue**（美股 / 港股 / 全球 → yfinance；A股 → akshare）。
+      query 的语言 ≠ 市场：中文名问美股公司极常见，别让 auto 的兜底逻辑替你判断
+    - venue=auto：中文 query 会 A股表与 Yahoo 并行都查、轮替合并；纯英文只走 Yahoo
     - 北交所代码暂不支持（会被过滤）；返回空 ≠ 公司不存在，可换关键词再试
     - 返回的 venue 字段标明该 symbol 该配哪个数据源，喂 get_fundamentals 时带上
   `.trim(),
   inputSchema: z.object({
     query: z.string().min(1).max(80).describe("公司名 / 代码片段，如公司中文名或英文名"),
-    venue: z.enum(["auto", "akshare", "yfinance"]).default("auto"),
+    venue: z
+      .enum(["auto", "akshare", "yfinance"])
+      .default("auto")
+      .describe("已判断出市场就显式传（语言≠市场）；auto 仅在市场未知时兜底"),
     maxResults: z.number().int().min(1).max(20).default(10),
   }),
   execute: async (inputData, ctx) => {
