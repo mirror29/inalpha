@@ -38,7 +38,10 @@ export function CopyableCommand({
       )}
     >
       <span className="select-none text-cyan/70">$</span>
-      <code className="flex-1 truncate text-fg">{command}</code>
+      {/* 移动端命令完整可读（断行），sm 起单行截断交给 Copy 按钮兜底 */}
+      <code className="min-w-0 flex-1 break-all text-[12.5px] leading-snug text-fg sm:truncate sm:text-sm">
+        {command}
+      </code>
       <button
         type="button"
         onClick={handleCopy}
