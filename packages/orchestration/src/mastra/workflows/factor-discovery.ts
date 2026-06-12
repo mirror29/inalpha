@@ -128,18 +128,26 @@ const DiscoveryOutputSchema = z.object({
 
 // ─── 纯函数：BH 校正（与服务端 effectiveness.bh_adjust 同算法）────────
 
-/** Benjamini–Hochberg：返回与输入同序的调整后 p 值（保单调、截到 [0,1]）。 */
-export function bhAdjust(pvalues: number[]): number[] {
-  const m = pvalues.length;
-  if (m === 0) return [];
+/**
+ * Benjamini–Hochberg：返回与输入同序的调整后 p 值（保单调、截到 [0,1]）。
+ *
+ * @param pvalues 观测到的 p 值（仅评估成功、拿到 IC p 值的项）。
+ * @param m       总检验数（默认 = pvalues.length）。当批中有评估失败的尝试时，
+ *                失败也计入选择效应背景 → 传入整批大小 `nTested > pvalues.length`，
+ *                让乘数用真实 m、单调与 [0,1] 截断在正确缩放后只做一次
+ *                （不能先按 pvalues.length 跑再线性缩放——内部 cummin/clamp 与缩放不可交换）。
+ */
+export function bhAdjust(pvalues: number[], m = pvalues.length): number[] {
+  const n = pvalues.length;
+  if (n === 0) return [];
   const order = pvalues
     .map((p, i) => [p, i] as const)
     .sort((a, b) => a[0] - b[0]);
   const ranked = order.map(([p], k) => (p * m) / (k + 1));
-  for (let k = m - 2; k >= 0; k--) {
+  for (let k = n - 2; k >= 0; k--) {
     ranked[k] = Math.min(ranked[k] ?? 1, ranked[k + 1] ?? 1);
   }
-  const out = new Array<number>(m);
+  const out = new Array<number>(n);
   order.forEach(([, idx], k) => {
     out[idx] = Math.min(1, Math.max(0, ranked[k] ?? 1));
   });
@@ -257,12 +265,10 @@ const gateStep = createStep({
         typeof it.result?.ic_pvalue === "number",
     );
     const rawPs = withP.map((it) => it.result.ic_pvalue);
-    const m = nTested;
-    // bhAdjust 内部按 m=rawPs.length 校正；线性缩放到 m=nTested（min 与正常数缩放可交换，
-    // 等价于直接用 m=nTested 跑 BH）——评估失败的尝试也计入选择效应背景
-    const adjusted = bhAdjust(rawPs).map((p) =>
-      Math.min(1, (p * m) / Math.max(1, rawPs.length)),
-    );
+    // m = 整批尝试数（含评估失败的）：失败也是一次"看了再丢"的选择，计入选择效应背景。
+    // 直接把 m 传进 bhAdjust，让乘数用真实 m、cummin/截断在正确缩放后只做一次
+    // （旧实现先按 rawPs.length 跑再线性缩放，内部 clamp 与缩放不可交换，边界情形会偏）。
+    const adjusted = bhAdjust(rawPs, nTested);
     const adjustedByExpr = new Map<string, number>();
     withP.forEach((it, i) =>
       adjustedByExpr.set(it.candidate.expression, adjusted[i] ?? 1),
@@ -324,7 +330,7 @@ const gateStep = createStep({
         verdicts.push({
           ...base,
           outcome: "rejected_adjusted_p",
-          detail: `BH 校正后 p=${adjP?.toFixed(4) ?? "n/a"} > ${init.maxAdjustedP}（m=${m}）`,
+          detail: `BH 校正后 p=${adjP?.toFixed(4) ?? "n/a"} > ${init.maxAdjustedP}（m=${nTested}）`,
         });
         continue;
       }

@@ -54,6 +54,22 @@ describe("bhAdjust", () => {
   it("empty input → empty output", () => {
     expect(bhAdjust([])).toEqual([]);
   });
+
+  it("m 覆盖 = nTested：批中含评估失败的尝试时用整批大小校正", () => {
+    // 2 个观测 p 值，但整批 5 次尝试（3 次评估失败）→ m=5。
+    // 排序 [0.01, 0.02]，ranked: 0.01*5/1=0.05, 0.02*5/2=0.05 → cummin [0.05,0.05]
+    const out = bhAdjust([0.02, 0.01], 5);
+    expect(out[0]).toBeCloseTo(0.05, 10); // 原序第 0 项 = 0.02
+    expect(out[1]).toBeCloseTo(0.05, 10); // 原序第 1 项 = 0.01
+  });
+
+  it("m 覆盖在 [0,1] 截断只做一次（缩放后），不会先 clamp 再放大", () => {
+    // p=0.3，m=5：BH = min(1, 0.3*5/1)=1。旧实现先 bhAdjust([0.3])=0.3 再 *5=1.5→clamp，
+    // 结果同为 1，但单值不暴露差异；多值时 cummin 顺序受 clamp 影响才会偏，这里验单调正确。
+    const out = bhAdjust([0.3, 0.05], 5);
+    expect(Math.max(...out)).toBeLessThanOrEqual(1);
+    expect(out[1]).toBeLessThanOrEqual(out[0]); // 小 p（0.05）调整后不大于大 p（0.3）
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────
