@@ -218,18 +218,36 @@ async def test_sector_board_two_pages_top_and_bottom() -> None:
     await conn.close()
 
 
-async def test_moneyflow_takes_last_valid_and_samples() -> None:
+async def test_moneyflow_desynced_components_no_merge() -> None:
+    """两分量更新不同步：各自给最新值，north 不合并（避免拼接错位时点 §3.1），
+    as_of_time 取两者都更新到的最晚共同时刻（min，非 max）。"""
     conn = CnMarketConnector()
     times = [f"09:{i:02d}" for i in range(60)]
-    hgt = [float(-i) for i in range(59)] + [None]  # 最后一点缺数 → 取倒数第二点
+    hgt = [float(-i) for i in range(59)] + [None]  # hgt 停在 idx 58
+    sgt = [float(-2 * i) for i in range(60)]  # sgt 更新到 idx 59
+    _patch_get_json(conn, {"time": times, "hgt": hgt, "sgt": sgt})
+    out = await conn.fetch_moneyflow()
+    assert out["hgt_net_yi_cny"] == -58.0  # 各自最新仍给
+    assert out["sgt_net_yi_cny"] == -118.0
+    assert out["north_net_yi_cny"] is None  # 不同步 → 不合并
+    assert out["as_of_time"] == "09:58"  # min(58, 59) 共同时刻，非 max 的 09:59
+    assert out["series_sample"][0]["time"] == "09:00"
+    assert "估算口径" in out["note"]
+    await conn.close()
+
+
+async def test_moneyflow_synced_components_merge() -> None:
+    """两分量更新到同一时刻：north 合并为 hgt+sgt。"""
+    conn = CnMarketConnector()
+    times = [f"09:{i:02d}" for i in range(60)]
+    hgt = [float(-i) for i in range(60)]
     sgt = [float(-2 * i) for i in range(60)]
     _patch_get_json(conn, {"time": times, "hgt": hgt, "sgt": sgt})
     out = await conn.fetch_moneyflow()
-    assert out["hgt_net_yi_cny"] == -58.0
+    assert out["hgt_net_yi_cny"] == -59.0
     assert out["sgt_net_yi_cny"] == -118.0
-    assert out["north_net_yi_cny"] == -176.0
-    assert out["series_sample"][0]["time"] == "09:00"
-    assert "估算口径" in out["note"]
+    assert out["north_net_yi_cny"] == -177.0  # 同步 → 合并
+    assert out["as_of_time"] == "09:59"
     await conn.close()
 
 
