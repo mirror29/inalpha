@@ -432,13 +432,18 @@ export const paperPromoteCandidateTool = createTool({
     把策略候选从 status='candidate' 切到 'promoted'（"草稿 → 正式"）。
 
     **审批门**（D-9.1b 起）：permission \`ask\` —— 调用时前端会弹气泡让用户点
-    "允许 / 拒绝"。30 秒无响应 → 自动 deny。**所以你仍要满足三条硬性自检**（用户
-    点允许后才能 promote，但浪费用户的点击是坏体验）：
+    "允许 / 拒绝"。30 秒无响应 → 自动 deny。**所以你仍要满足五条硬性自检（D-12）**
+    （用户点允许后才能 promote，但浪费用户的点击是坏体验）：
 
       1. 查过候选：\`paper.get_candidate(candidateId)\` 或 \`list_candidates\` 拿到完整
          \`fitness\` / \`metrics\` / \`baseline\`，**亲眼看过数字**
       2. fitness 显著优于 baseline（\`fitness > baseline.fitness\`）且 max_drawdown_pct < 25%
-      3. 用户在对话里**明确**说"上线 / promote / 转正 / 推到 trade 链路 / 把它发布"等指令；
+      3. holdout 验证不打脸：最近回测 \`validation.decay_ratio ≥ 0.5\` 且
+         \`validation.holdout.sharpe > 0\`；flags 含 insufficient_sample → 向用户
+         显式说明"holdout 样本不足，稳健性未验证"
+      4. 已跑 \`paper.check_sensitivity\` 且 verdict ≠ cliff（cliff = 参数尖峰 =
+         过拟合信号，不 promote）
+      5. 用户在对话里**明确**说"上线 / promote / 转正 / 推到 trade 链路 / 把它发布"等指令；
          **不是**用户只是"看看 / 对比 / 评估"
 
     自检不齐就不要调——会让用户面对一个气泡确认本不该发生的操作；同时后端硬校验仍在

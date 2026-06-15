@@ -262,17 +262,64 @@ async def promote_strategy_candidate(
             code="CANDIDATE_NOT_BACKTESTED",
         )
 
+    # D-12 · soft check：holdout / 敏感性未过或缺失 → 写 audit.promotion.warnings
+    # 留痕，不 hard reject（老候选没这些字段，硬拒会误杀；观察期后再评估收紧）
+    promotion_warnings = _promotion_soft_warnings(row.get("metrics"))
+
     await candidates_store.promote_candidate(
         db,
         candidate_id,
         reason=req.reason,
         promoted_by=user.user_id,
+        warnings=promotion_warnings,
     )
 
     updated = await candidates_store.get_candidate(db, candidate_id)
     # promote 函数保证行存在；updated is None 不可达，但 mypy 仍要求 narrow
     assert updated is not None, "candidate disappeared mid-transaction"
     return StrategyCandidateRecord(**updated)
+
+
+def _promotion_soft_warnings(metrics: dict | None) -> list[str]:
+    """promote 时检 holdout / 敏感性软门槛 → 告警文案（D-12，只留痕不拒绝）。
+
+    缺字段（validation / sensitivity 为 None）= 老候选或没跑过验证，告警提示而不
+    硬拒——避免误杀 D-12 前落库的候选。观察期后若要收紧成 hard gate 再改端点层。
+    """
+    if not isinstance(metrics, dict):
+        return ["promotion soft-check skipped: candidate has no metrics"]
+    out: list[str] = []
+
+    validation = metrics.get("validation")
+    if not isinstance(validation, dict):
+        out.append("no holdout validation on record — robustness not verified")
+    else:
+        decay = validation.get("decay_ratio")
+        holdout = validation.get("holdout") or {}
+        holdout_sharpe = holdout.get("sharpe") if isinstance(holdout, dict) else None
+        if isinstance(decay, (int, float)) and decay < 0.5:
+            out.append(
+                f"holdout decay_ratio {decay:.2f} < 0.5 — out-of-sample performance "
+                "decayed sharply (overfit signal)"
+            )
+        if isinstance(holdout_sharpe, (int, float)) and holdout_sharpe < 0:
+            out.append(
+                f"holdout sharpe {holdout_sharpe:.2f} < 0 — strategy loses money "
+                "out-of-sample"
+            )
+        if "insufficient_sample" in (validation.get("flags") or []):
+            out.append("holdout validation flagged insufficient_sample — inconclusive")
+
+    sensitivity = metrics.get("sensitivity")
+    if not isinstance(sensitivity, dict):
+        out.append("no parameter sensitivity check on record — run check_sensitivity")
+    elif sensitivity.get("verdict") == "cliff":
+        out.append(
+            "parameter sensitivity verdict=cliff — neighbourhood fitness collapses "
+            "under small perturbation (overfit signal)"
+        )
+
+    return out
 
 
 def _try_uuid(s: str) -> UUID | None:

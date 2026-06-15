@@ -56,13 +56,18 @@ async def candidate_id(client: TestClient, auth_headers: dict[str, str]) -> str:
     return r.json()["candidate_id"]
 
 
-async def _set_fitness(candidate_id_str: str, fitness: float) -> None:
+async def _set_fitness(
+    candidate_id_str: str,
+    fitness: float,
+    *,
+    metrics: dict | None = None,
+) -> None:
     """绕过 backtest 链路直接给 candidate 回填 fitness（隔离 promote 端点测试）。"""
     async with get_conn() as conn:
         await candidates_store.update_after_backtest(
             conn,
             uuid.UUID(candidate_id_str),
-            metrics={"sharpe": 1.5, "max_drawdown_pct": 8.0},
+            metrics=metrics or {"sharpe": 1.5, "max_drawdown_pct": 8.0},
             fitness=fitness,
             backtest_run_id=None,
         )
@@ -162,6 +167,93 @@ async def test_promote_twice_returns_409(
     body = r2.json()
     assert body["code"] == "CANDIDATE_NOT_PROMOTABLE"
     assert body["details"]["current_status"] == "promoted"
+
+
+# ────────────────────────────────────────────────────────────────────
+# D-12 · promote soft check（holdout / 敏感性留痕，不 hard reject）
+# ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_promote_soft_warnings_when_no_validation_or_sensitivity(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    candidate_id: str,
+) -> None:
+    """老候选无 validation / sensitivity → promote 仍成功，但 audit 留软告警。"""
+    await _set_fitness(candidate_id, fitness=0.85)  # 默认 metrics 无 validation/sensitivity
+    r = client.post(
+        f"/strategy_candidates/{candidate_id}/promote",
+        headers=auth_headers,
+        json={"reason": "soft check warning path"},
+    )
+    assert r.status_code == 200, r.json()
+    warnings = r.json()["audit"]["promotion"]["warnings"]
+    assert any("holdout validation" in w for w in warnings)
+    assert any("sensitivity" in w for w in warnings)
+
+
+@pytest.mark.asyncio
+async def test_promote_no_warnings_when_checks_pass(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    candidate_id: str,
+) -> None:
+    """validation 衰减比达标 + sensitivity robust → 无软告警。"""
+    await _set_fitness(
+        candidate_id,
+        fitness=0.85,
+        metrics={
+            "sharpe": 1.5,
+            "max_drawdown_pct": 8.0,
+            "validation": {
+                "decay_ratio": 0.8,
+                "holdout": {"sharpe": 1.2},
+                "flags": [],
+            },
+            "sensitivity": {"verdict": "robust"},
+        },
+    )
+    r = client.post(
+        f"/strategy_candidates/{candidate_id}/promote",
+        headers=auth_headers,
+        json={"reason": "all checks pass"},
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["audit"]["promotion"]["warnings"] == []
+
+
+@pytest.mark.asyncio
+async def test_promote_warns_on_overfit_signals(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    candidate_id: str,
+) -> None:
+    """decay_ratio < 0.5 + sensitivity cliff → 各一条告警，但仍放行（soft）。"""
+    await _set_fitness(
+        candidate_id,
+        fitness=0.85,
+        metrics={
+            "sharpe": 1.5,
+            "max_drawdown_pct": 8.0,
+            "validation": {
+                "decay_ratio": 0.2,
+                "holdout": {"sharpe": -0.3},
+                "flags": [],
+            },
+            "sensitivity": {"verdict": "cliff"},
+        },
+    )
+    r = client.post(
+        f"/strategy_candidates/{candidate_id}/promote",
+        headers=auth_headers,
+        json={"reason": "overfit but user insisted"},
+    )
+    assert r.status_code == 200, r.json()  # soft check 不拒绝
+    warnings = r.json()["audit"]["promotion"]["warnings"]
+    assert any("decay_ratio" in w for w in warnings)
+    assert any("holdout sharpe" in w for w in warnings)
+    assert any("cliff" in w for w in warnings)
 
 
 # ────────────────────────────────────────────────────────────────────

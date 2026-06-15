@@ -289,9 +289,12 @@ async def promote_candidate(
     *,
     reason: str,
     promoted_by: str,
+    warnings: list[str] | None = None,
 ) -> None:
     """把 ``status='candidate'`` 的行切到 ``'promoted'`` 并把 promote 元数据并进
-    ``audit.promotion`` JSONB 字段（reason / promoted_by / promoted_at ISO UTC 字符串）。
+    ``audit.promotion`` JSONB 字段（reason / promoted_by / promoted_at ISO UTC 字符串，
+    D-12 起加 ``warnings``：promote 时未过软门槛的记录——holdout 衰减 / 敏感性 cliff /
+    检查缺失。soft check 只留痕不拒绝，观察期后再评估是否收紧为 hard gate）。
 
     端点层负责"当前 status==candidate + fitness 非空"校验——本函数不再二次 guard
     （避免读写分裂导致的 race）。一条 UPDATE 同时改 status + audit + updated_at 保证原子性。
@@ -309,13 +312,14 @@ async def promote_candidate(
                         'promoted_at', to_char(
                             NOW() AT TIME ZONE 'UTC',
                             'YYYY-MM-DD"T"HH24:MI:SS"Z"'
-                        )
+                        ),
+                        'warnings', %s::jsonb
                     )
                 ),
                 updated_at = NOW()
             WHERE id = %s
             """,
-            (reason, promoted_by, str(candidate_id)),
+            (reason, promoted_by, json.dumps(warnings or []), str(candidate_id)),
         )
 
 
