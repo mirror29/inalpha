@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,6 +37,11 @@ from ._base import register_connector, unregister_connector
 _logger = get_logger(__name__)
 
 VENUE = "akshare"
+
+#: fundamentals 进程内缓存 TTL（秒）。A股一次 fundamentals 要打 1 次财报摘要 + 3 次
+#: Baidu 估值(串行 ~4-5s),research 多 analyst fan-out 会重复问同一标的;60s 缓存挡掉
+#: 重复打源站,兼顾防封与延迟。基本面日级更新,60s 内复用不损时效。
+_FIN_CACHE_TTL_S = 60.0
 
 # akshare 的 ``period`` 字符串映射（仅日级及以上；分钟级要走另一个接口）
 _PERIOD_MAP: dict[str, str] = {
@@ -75,8 +81,24 @@ class AkshareConnector:
     """akshare 包装 —— 同步库走 ``asyncio.to_thread``。"""
 
     def __init__(self) -> None:
-        # akshare 没有 client 对象，import 即用；这里占位，将来加缓存 / cookie 时用
-        pass
+        # akshare 无 client 对象,import 即用。fundamentals 进程内 TTL 缓存:
+        # {symbol: (expires_monotonic, result_dict)},只缓存成功结果。
+        self._fin_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+    def _fin_cache_get(self, symbol: str) -> dict[str, Any] | None:
+        hit = self._fin_cache.get(symbol)
+        if hit is None:
+            return None
+        expires, value = hit
+        if time.monotonic() > expires:
+            self._fin_cache.pop(symbol, None)
+            return None
+        return value
+
+    def _fin_cache_put(self, symbol: str, value: dict[str, Any]) -> None:
+        if len(self._fin_cache) > 128:  # 进程内软上限,超了清空(同 cn_market)
+            self._fin_cache.clear()
+        self._fin_cache[symbol] = (time.monotonic() + _FIN_CACHE_TTL_S, value)
 
     async def fetch_bars(
         self,
@@ -164,6 +186,10 @@ class AkshareConnector:
                 "reason": f"financials not supported for akshare prefix {prefix!r}",
             }
 
+        cached = self._fin_cache_get(symbol)
+        if cached is not None:
+            return cached
+
         _logger.debug("akshare_fetch_financials", symbol=symbol, prefix=prefix, code=code)
 
         try:
@@ -241,7 +267,7 @@ class AkshareConnector:
             except Exception as exc:
                 _logger.warning("akshare_valuation_fetch_failed", symbol=symbol, error=str(exc))
 
-        return {
+        result = {
             "venue": VENUE,
             "symbol": symbol,
             "available": True,
@@ -249,6 +275,8 @@ class AkshareConnector:
             "indicators": indicators,
             "raw": raw,
         }
+        self._fin_cache_put(symbol, result)  # 只缓存成功结果;失败路径不缓存,留待重试
+        return result
 
     async def fetch_news(self, symbol: str, limit: int = 20) -> list[dict[str, Any]]:
         """拉 A股 个股新闻（东方财富来源，零 key）。
