@@ -55,7 +55,9 @@ _THS_HSGT_URL = "https://data.hexin.cn/market/hsgtApi/method/dayChart/"
 
 NORTHBOUND_NOTE = (
     "沪深港通净买入为同花顺估算口径（亿元，累计值，负数=净流出）；"
-    "交易所自 2024-08 起不再盘中披露北向官方数据，本数值仅供方向参考"
+    "交易所自 2024-08 起不再盘中披露北向官方数据，本数值仅供方向参考。"
+    "north_net_yi_cny 仅在沪股通/深股通分量更新到同一时刻时给出合计，"
+    "两者更新不同步时为 null（避免拼接错位时点）——此时看各自分量与 as_of_time"
 )
 
 
@@ -218,10 +220,10 @@ class CnMarketConnector:
 
         last_h = _last_valid(hgt)
         last_s = _last_valid(sgt)
-        last_idx = max(
-            (x[0] for x in (last_h, last_s) if x is not None),
-            default=None,
-        )
+        # as_of_time 取两分量"都已更新到"的最晚共同时刻（min），不用 max——否则一边
+        # 停更时会用另一边的较晚时刻掩盖（§3.1：freshness 看真实更新到的时点）
+        valid_idx = [x[0] for x in (last_h, last_s) if x is not None]
+        last_idx = min(valid_idx) if valid_idx else None
         # 每 ~30 分钟采一个点，给 agent 看日内节奏（全量 262 点对 LLM 是噪声）
         sample: list[dict[str, Any]] = []
         for i in range(0, len(times), 30):
@@ -234,11 +236,17 @@ class CnMarketConnector:
             )
         hgt_v = last_h[1] if last_h else None
         sgt_v = last_s[1] if last_s else None
+        # north 只在两分量同一时刻才合并——不同步时（如 hgt 13:00 停更、sgt 到 15:00）
+        # 相加是把不同时点的累积值拼成虚假合点（§3.1），此时返回 None，分量各自仍给。
+        if last_h is not None and last_s is not None and last_h[0] == last_s[0]:
+            north = last_h[1] + last_s[1]  # 用 tuple[1]（mypy 已窄化为 float），非 *_v 联合类型
+        else:
+            north = None
         out = {
             "as_of_time": times[last_idx] if last_idx is not None and last_idx < len(times) else None,
             "hgt_net_yi_cny": hgt_v,
             "sgt_net_yi_cny": sgt_v,
-            "north_net_yi_cny": (hgt_v + sgt_v) if hgt_v is not None and sgt_v is not None else None,
+            "north_net_yi_cny": north,
             "series_sample": sample,
             "note": NORTHBOUND_NOTE,
         }
