@@ -98,14 +98,14 @@ async def test_cjk_news_cached_too() -> None:
 
 
 async def test_cjk_news_failure_not_cached() -> None:
-    """中文 news 失败（如全部 timeout）不进缓存，下次重新尝试。"""
+    """中文 news 失败（如 timeout）不进缓存，下次重新尝试。"""
     conn = WebSearchConnector()
-    calls = _patch_guarded(conn, [_miss("timeout"), _miss("timeout"), _hit()])
-    out1 = await conn.fetch_news("A股 今天 新闻")  # 失败：本体 + fallback 各一次
+    calls = _patch_guarded(conn, [_miss("timeout"), _hit()])
+    out1 = await conn.fetch_news("A股 今天 新闻")  # 单次尝试（allow_fallback=False），失败
     assert out1.results == []
-    assert len(calls) == 2
+    assert len(calls) == 1  # 不再 bing→duckduckgo 二次 fallback，最坏耗时减半
     await conn.fetch_news("A股 今天 新闻")  # 不命中缓存 → 再真打
-    assert len(calls) == 3
+    assert len(calls) == 2
 
 
 async def test_cache_disabled_when_ttl_zero() -> None:
