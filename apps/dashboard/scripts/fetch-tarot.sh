@@ -68,7 +68,12 @@ for entry in "${MAP[@]}"; do
   if [ "$FORCE" = "0" ] && [ "$VERIFY" = "0" ] && [ -f "$out" ]; then
     skip=$((skip+1)); continue
   fi
-  h=$(printf '%s' "$file" | md5 -q)
+  # md5 -q 是 macOS 专属;Linux(GNU coreutils)用 md5sum,兼容两边(M-3)。
+  if command -v md5 >/dev/null 2>&1; then
+    h=$(printf '%s' "$file" | md5 -q)
+  else
+    h=$(printf '%s' "$file" | md5sum | cut -d' ' -f1)
+  fi
   url="https://upload.wikimedia.org/wikipedia/commons/${h:0:1}/${h:0:2}/$file"
   if [ "$VERIFY" = "1" ]; then
     code=$(curl -sS -A "$UA" -o /dev/null -w "%{http_code}" --max-time 30 -I "$url" 2>/dev/null)
