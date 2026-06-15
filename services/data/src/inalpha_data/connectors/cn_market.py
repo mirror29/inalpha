@@ -50,7 +50,7 @@ _UA = (
 
 _EM_FASTNEWS_URL = "https://np-weblist.eastmoney.com/comm/web/getFastNewsList"
 _EM_BOARD_URL = "https://push2.eastmoney.com/api/qt/clist/get"
-_THS_HARDEN_URL = "http://zx.10jqka.com.cn/event/api/getharden/date/{date}/"
+_THS_HARDEN_URL = "https://zx.10jqka.com.cn/event/api/getharden/date/{date}/"
 _THS_HSGT_URL = "https://data.hexin.cn/market/hsgtApi/method/dayChart/"
 
 NORTHBOUND_NOTE = (
@@ -84,10 +84,15 @@ class CnMarketConnector:
         # 每 host 一把锁 + 上次请求时间戳：串行 + 限速（防封铁律①②）
         self._host_locks: dict[str, asyncio.Lock] = {}
         self._host_last: dict[str, float] = {}
-        # 大陆源直连：本地代理常把出站路由到境外出口，反而连不上/超时
+        # 大陆源直连：本地代理常把出站路由到境外出口，反而连不上/超时。
+        # follow_redirects=True：源站把端点迁到 HTTPS-only / 换路径时自动跟随 301/302，
+        # 否则 httpx 默认拿到重定向 HTML，resp.json() 抛 ValueError 会用 "non-JSON"
+        # 掩盖真实原因（是 redirect 而非 API 改版），干扰按报错跟进上游修复。
+        # 这些 host 是固定公开 API（非用户输入 URL），无 SSRF 风险。
         self._client = httpx.AsyncClient(
             timeout=self._timeout,
             trust_env=False,
+            follow_redirects=True,
             headers={"User-Agent": _UA},
         )
 
