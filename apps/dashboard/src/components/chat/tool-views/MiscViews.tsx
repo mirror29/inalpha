@@ -176,7 +176,12 @@ export function FundamentalsView({ v }: { v: Financials }) {
     {
       label: "财务",
       items: [
-        num(ind.debt_to_equity) && { label: "负债/权益", value: fmtNum(ind.debt_to_equity) },
+        // 同一 debt_to_equity 槽两个口径:akshare 填的是资产负债率(%,如 70.9),
+        // yfinance 填的是负债/权益(D/E 比值)。按 venue 给准确标签与单位,别混。
+        num(ind.debt_to_equity) &&
+          (v.venue === "akshare"
+            ? { label: "资产负债率", value: `${ind.debt_to_equity.toFixed(1)}%` }
+            : { label: "负债/权益", value: fmtNum(ind.debt_to_equity) }),
       ].filter(Boolean) as Cell[],
     },
   ].filter((g) => g.items.length > 0);
