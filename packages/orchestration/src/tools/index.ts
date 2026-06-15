@@ -6,6 +6,7 @@
  * - D-8b：research 1 个（deep_dive）
  * - D-9 spike：sandbox 1 个（run_code），ADR-0020 第二道运行隔离
  * - D-10：web 2 个（search / search_news）+ fundamentals 1 个（get_fundamentals）
+ * - D-12+：market 4 个（市场级行情归因：news / sectors / moneyflow / movers）
  */
 import {
   dataBackfillBarsTool,
@@ -71,6 +72,13 @@ import {
   paperListCandidatesTool,
   paperPromoteCandidateTool,
 } from "./strategy.js";
+import {
+  dataGetMarketMoneyflowTool,
+  dataGetMarketMoversTool,
+  dataGetMarketNewsTool,
+  dataGetMarketSectorsTool,
+  marketTools,
+} from "./market.js";
 import { skillReadTool, skillTools } from "./skill.js";
 import { swarmRunBacktestGridTool, swarmTools } from "./swarm.js";
 import { webFetchTool, webSearchNewsTool, webSearchTool, webTools } from "./web.js";
@@ -89,6 +97,10 @@ export {
   dataBackfillBarsTool,
   dataGetBarsTool,
   dataGetFundamentalsTool,
+  dataGetMarketMoneyflowTool,
+  dataGetMarketMoversTool,
+  dataGetMarketNewsTool,
+  dataGetMarketSectorsTool,
   dataGetTickerTool,
   dataSearchSymbolTool,
   divinationCastHexagramTool,
@@ -154,6 +166,8 @@ export const allTools = [
   ...sandboxTools,
   // D-10：web 搜索
   ...webTools,
+  // D-12+：市场级行情归因（快讯/板块/资金/强势股，无需 symbol）
+  ...marketTools,
   // ADR-0046：投研方法论 skill 按需读取（progressive disclosure）
   ...skillTools,
   // ADR-0006 §D6：risk.* agent 自检 + 解锁（unlock 在 permissions 层禁 LLM 直调）
@@ -209,6 +223,11 @@ export const orchestratorToolList = [
   webSearchTool,
   webSearchNewsTool,
   webFetchTool,
+  // D-12+：市场级行情归因（快讯/板块/资金/强势股，无需 symbol，venue 按 market 路由）
+  dataGetMarketNewsTool,
+  dataGetMarketSectorsTool,
+  dataGetMarketMoneyflowTool,
+  dataGetMarketMoversTool,
   // ADR-0046：投研方法论 skill 按需读取（清单在 <skills> prompt 段）
   skillReadTool,
   paperListStrategiesTool,

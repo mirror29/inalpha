@@ -16,6 +16,7 @@ from typing import Any
 from inalpha_shared import get_logger
 
 from ..config import get_data_settings
+from ..schemas import WebSearchStatus
 
 VENUE = "web"
 _logger = get_logger(__name__)
@@ -40,13 +41,13 @@ class SearchOutcome:
     """
 
     results: list[dict[str, Any]] = field(default_factory=list)
-    status: str = "ok"  # ok / no_results / timeout / rate_limited / engine_error
+    status: WebSearchStatus = "ok"
     error: str | None = None
     backend_used: str = ""
     hint: str | None = None
 
 
-def _classify_exception(exc: BaseException) -> str:
+def _classify_exception(exc: BaseException) -> WebSearchStatus:
     """按异常类型名分类（不硬依赖 ddgs.exceptions 的 import）。
 
     坑：ddgs 空结果不是返回 []，而是抛 DDGSException("No results found.")——
@@ -124,25 +125,34 @@ class WebSearchConnector:
         max_results: int = 10,
     ) -> SearchOutcome:
         """News search. results = [{title, href, body}]."""
-        # ddgs.news 的聚合源没有中文财经内容（中文 query 实测必返空），试了也是
-        # 白烧一个 overall_timeout——直接降级为网页搜索（bing 中文新闻 query 常有
-        # 可用结果），并恒带 hint 把 agent 引向市场级快讯工具。
-        if _has_cjk(query):
-            outcome = await self._search_with_fallback(
-                query=query, backend="bing", max_results=max_results, allow_fallback=True
-            )
-            outcome.backend_used = f"{outcome.backend_used}(text-fallback-for-cjk-news)"
-            outcome.hint = _CJK_NEWS_HINT
-            return outcome
-
+        # cache key check 必须在 CJK 分支之前——否则中文 news（最高频路径，
+        # deep_dive fan-out 里 sentiment/macro/web analyst 并行用同一 query）
+        # 完全绕开 60s 缓存，每路独立打源站。query 本身已区分 CJK 与否，共用 key 安全。
         key = ("news", query, max_results)
         cached = self._cache_get(key)
         if cached is not None:
             return cached
-        outcome = await self._run_guarded(
-            _news_sync, kind="news", query=query, max_results=max_results
-        )
-        outcome.backend_used = "news"
+
+        # ddgs.news 的聚合源没有中文财经内容（中文 query 实测必返空），试了也是
+        # 白烧一个 overall_timeout——直接降级为网页搜索（bing 中文新闻 query 常有
+        # 可用结果），并恒带 hint 把 agent 引向市场级快讯工具。
+        # allow_fallback=False（刻意）：CJK news 已是"兜底中的兜底"，bing 失败再换
+        # duckduckgo 会把最坏耗时翻到 40s（deep_dive fan-out 同 query 并发时进一步
+        # 放大），不值得——快速失败带 status，让 orchestrator 走 data.get_market_news
+        # （A股专业快讯源，prompt 已有此降级规则）。
+        if _has_cjk(query):
+            outcome = await self._search_with_fallback(
+                query=query, backend="bing", max_results=max_results, allow_fallback=False
+            )
+            outcome.backend_used = f"{outcome.backend_used}(text-fallback-for-cjk-news)"
+            outcome.hint = _CJK_NEWS_HINT
+        else:
+            outcome = await self._run_guarded(
+                _news_sync, kind="news", query=query, max_results=max_results
+            )
+            outcome.backend_used = "news"
+
+        # _cache_put 只缓存 status=="ok" 非空结果（失败不污染缓存）
         self._cache_put(key, outcome)
         return outcome
 
@@ -222,6 +232,11 @@ class WebSearchConnector:
                     status="timeout",
                     error=f"search timed out after {self._overall_timeout}s",
                 )
+            except asyncio.CancelledError:
+                # Py3.8+ CancelledError 非 Exception 子类——必须显式重抛，否则会穿过
+                # 下面的 except Exception 后到达 `if not results`（results 未绑定→
+                # NameError 掩盖取消信号），上层无法正确响应 tool call 取消。
+                raise
             except Exception as exc:
                 status = _classify_exception(exc)
                 _logger.warning(

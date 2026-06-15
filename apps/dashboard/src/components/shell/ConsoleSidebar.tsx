@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 import {
   Activity,
@@ -176,6 +177,35 @@ function SidebarBody({
   onNavigate?: () => void;
   onMobileClose?: () => void;
 }) {
+  // 折叠态气泡:label + 触发项的视口坐标。挂 body 的 portal + fixed 定位,
+  // 脱离 aside(z-10 + backdrop-blur)的层叠上下文 —— 否则在 aside 内无论写多大
+  // z-index 都会被外部 z-20+ 的模块(活动日志条 / 对话栏等)压住。
+  const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(
+    null,
+  );
+
+  // 侧栏因视口 resize 从折叠态自动展开时,onMouseLeave 不会触发(handler 已不绑),
+  // 残留的 tip 会以旧坐标浮在展开后的栏上 —— collapsed 转 false 即清。
+  useEffect(() => {
+    if (!collapsed) setTip(null);
+  }, [collapsed]);
+
+  const tipHandlers = (label: string) =>
+    collapsed
+      ? {
+          onMouseEnter: (e: { currentTarget: HTMLElement }) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setTip({ label, top: r.top + r.height / 2, left: r.right });
+          },
+          onMouseLeave: () => setTip(null),
+          onFocus: (e: { currentTarget: HTMLElement }) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setTip({ label, top: r.top + r.height / 2, left: r.right });
+          },
+          onBlur: () => setTip(null),
+        }
+      : undefined;
+
   return (
     <>
       {/* Brand —— 朱红印章 + 字标。折叠态仅留印章。 */}
@@ -249,7 +279,7 @@ function SidebarBody({
         ) : null}
       </div>
 
-      {/* Nav —— 折叠态仅图标(居中 + title 悬浮提示)。 */}
+      {/* Nav —— 折叠态仅图标(居中 + 右侧气泡显示菜单名)。 */}
       <nav className="flex flex-1 flex-col gap-0.5 p-3">
         {NAV.map((item) => {
           const active = !item.soon && pathname === item.href;
@@ -280,13 +310,17 @@ function SidebarBody({
             "group relative flex items-center rounded-md py-2 text-sm transition-[color,background-color,transform] duration-200",
             collapsed ? "justify-center px-0" : "gap-2.5 px-3",
           );
+          const tipLabel = item.soon
+            ? `${t(item.key)} · ${t("soon")}`
+            : t(item.key);
 
           if (item.soon) {
             return (
               <div
                 key={item.key}
                 aria-disabled
-                title={collapsed ? t(item.key) : undefined}
+                aria-label={collapsed ? tipLabel : undefined}
+                {...tipHandlers(tipLabel)}
                 className={cn(baseCls, "cursor-not-allowed text-fg-muted/50")}
               >
                 {inner}
@@ -300,7 +334,8 @@ function SidebarBody({
               href={item.href}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
-              title={collapsed ? t(item.key) : undefined}
+              aria-label={collapsed ? tipLabel : undefined}
+              {...tipHandlers(tipLabel)}
               className={cn(
                 baseCls,
                 !collapsed && "hover:translate-x-0.5",
@@ -318,6 +353,23 @@ function SidebarBody({
           );
         })}
       </nav>
+
+      {/* 折叠态气泡本体:portal 到 body,fixed + z-[60](全局最高 z-50 是移动抽屉,
+          但抽屉与桌面折叠态互斥,不会同屏)。外层钉坐标,内层 .tip-in 只做淡入右滑,
+          避免动画 transform 覆盖居中位移。pointer-events-none 防气泡截获 hover 闪烁。 */}
+      {tip &&
+        createPortal(
+          <span
+            role="tooltip"
+            style={{ top: tip.top, left: tip.left + 12 }}
+            className="pointer-events-none fixed z-[60] -translate-y-1/2 whitespace-nowrap"
+          >
+            <span className="tip-in motion-reduce:animate-none block rounded-md border border-border-subtle bg-bg-deep/95 px-2.5 py-1.5 text-xs text-fg shadow-lg backdrop-blur-md">
+              {tip.label}
+            </span>
+          </span>,
+          document.body,
+        )}
 
       {/* Footer —— 控制区(主题 / 语言)+ 折叠开关 + build 标记。 */}
       {collapsed ? (

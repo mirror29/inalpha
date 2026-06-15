@@ -409,6 +409,7 @@
     "loadingHistory": "Loading history…",
     "toolRunning": "running",
     "toolDone": "done",
+    "toolResult": "output",
     "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",
     "errorDismiss": "Dismiss",
     "context": {

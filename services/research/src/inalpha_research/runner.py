@@ -1,11 +1,12 @@
 """把 ``DeepDiveRequest`` 翻成 analysts → debate → manager → ``ResearchPlan`` 的胶水。
 
-D-9 起新增 Bull/Bear 辩论阶段（``settings.max_debate_rounds`` 控制）：
+D-9 起新增辩论阶段（``settings.max_debate_rounds`` 控制），research-hub #6 升级三方制：
 
 1. 核心 analyst 并行出 ``AnalystBrief``（ADR-0037 §A：若 ``req.personas`` 指定，
    再追加对应投资大师人格 analyst，一并并行）
-2. **Bull/Bear 辩论 N 轮**（N=0 时跳过，保留旧 D-8c 直连行为）
-3. Manager 综合 briefs + debate_log → ``ResearchPlan``
+2. **Bull/Bear(/Risk) 辩论 ≤N 轮**（N=0 跳过；默认「争议触发」——briefs 多空对立
+   才辩，软早停见 debate.run_debate；触发判定与终止原因落 plan 供复盘）
+3. Manager 综合 briefs + debate_log → ``ResearchPlan``（含 synthesis_reasoning）
 
 把"实例化 analyst / 并行调 LLM / 辩论 / 综合"的所有粘合代码集中在这里，让 api 层薄。
 """
@@ -14,13 +15,17 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, get_args
 
+from inalpha_shared import get_logger
+
 from .analysts import ALL_ANALYSTS
 from .analysts.personas import PERSONA_ANALYSTS
 from .config import get_research_settings
-from .debate import run_debate
+from .debate import assess_disagreement, run_debate
 from .manager import ResearchManager
-from .researchers import BearResearcher, BullResearcher
+from .researchers import BearResearcher, BullResearcher, RiskResearcher
 from .schemas import AnalystBrief, DebateTurn, DeepDiveRequest, ResearchPlan
+
+_logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from .data_client import DataClient
@@ -81,24 +86,49 @@ async def run_deep_dive(
         else:
             briefs.append(result)
 
-    # ─── 2) Bull/Bear 辩论（max_debate_rounds=0 跳过）───────────────
+    # ─── 2) Bull/Bear(/Risk) 辩论（max_debate_rounds=0 跳过）────────
+    # research-hub #6：默认「争议触发」——analyst 同向时辩论只是复读 briefs，
+    # 跳过省 token；判定结果 + 终止原因落 plan 供复盘（决策链路可观测）。
     debate_log: list[DebateTurn] = []
+    debate_trigger: str | None = None
+    debate_stop_reason: str | None = None
     if settings.max_debate_rounds > 0:
-        bull = BullResearcher(llm=llm)
-        bear = BearResearcher(llm=llm)
-        debate_log = await run_debate(
-            bull=bull,
-            bear=bear,
-            venue=req.venue,
-            symbol=req.symbol,
-            timeframe=req.timeframe,
-            as_of=req.as_of,
-            briefs=briefs,
-            max_rounds=settings.max_debate_rounds,
-            # #2 限输出长度 + #4 总时限（debate.run_debate 内部超时返部分 log）
-            max_tokens=settings.debate_max_tokens,
-            timeout_seconds=settings.debate_timeout_seconds,
+        contested, detail = assess_disagreement(
+            briefs, min_confidence=settings.debate_min_confidence
         )
+        should_debate = settings.debate_trigger == "always" or contested
+        # 前缀固定三选一（contested:/skipped:/always:），扁平结构供下游 startswith 解析
+        debate_trigger = (
+            f"always: debate forced regardless of disagreement ({detail})"
+            if settings.debate_trigger == "always"
+            else f"contested: {detail}" if contested
+            else f"skipped: {detail}"
+        )
+        _logger.info(
+            "debate_trigger",
+            symbol=req.symbol,
+            trigger_mode=settings.debate_trigger,
+            contested=contested,
+            should_debate=should_debate,
+        )
+        if should_debate:
+            outcome = await run_debate(
+                bull=BullResearcher(llm=llm),
+                bear=BearResearcher(llm=llm),
+                risk=RiskResearcher(llm=llm) if settings.debate_risk_enabled else None,
+                venue=req.venue,
+                symbol=req.symbol,
+                timeframe=req.timeframe,
+                as_of=req.as_of,
+                briefs=briefs,
+                max_rounds=settings.max_debate_rounds,
+                # #2 限输出长度 + #4 总时限（debate.run_debate 内部超时返部分 log）
+                max_tokens=settings.debate_max_tokens,
+                timeout_seconds=settings.debate_timeout_seconds,
+                convergence_threshold=settings.debate_convergence_threshold,
+            )
+            debate_log = outcome.turns
+            debate_stop_reason = outcome.stop_reason
 
     # ─── 3) Manager 综合 ────────────────────────────────────────────
     manager = ResearchManager(llm=llm)
@@ -110,6 +140,8 @@ async def run_deep_dive(
         briefs=briefs,
         debate_log=debate_log,
         user_question=req.user_question,
+        debate_trigger=debate_trigger,
+        debate_stop_reason=debate_stop_reason,
     )
     return plan
 

@@ -12,6 +12,15 @@ import { getSettings } from "../config.js";
 
 type ToolRequestContext = { authToken?: string };
 
+/**
+ * 工具层兜底超时（ms）。Node fetch 无默认超时——data 服务异常无响应时会让
+ * 整个 orchestrator 轮次永久挂起。设得大于 data 端最坏耗时（web search 非 CJK
+ * query 的 bing→duckduckgo fallback 最坏 ~40s），只在真正异常时兜底，不误杀
+ * 正常 fallback。AbortSignal.timeout 触发的 AbortError 由各 tool 的 catch 收为
+ * status=engine_error。
+ */
+const WEB_TOOL_FETCH_TIMEOUT_MS = 50_000;
+
 async function getBaseUrl(): Promise<string> {
   const settings = getSettings();
   return settings.dataServiceUrl;
@@ -64,7 +73,7 @@ export const webSearchTool = createTool({
     url.searchParams.set("backend", inputData.backend ?? "auto");
     url.searchParams.set("max_results", String(inputData.maxResults ?? 10));
     try {
-      const r = await fetch(url.toString(), { headers });
+      const r = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(WEB_TOOL_FETCH_TIMEOUT_MS) });
       if (!r.ok) return { results: [], status: "engine_error", error: `HTTP ${r.status}` };
       return await r.json();
     } catch (err) {
@@ -105,7 +114,7 @@ export const webSearchNewsTool = createTool({
     url.searchParams.set("query", inputData.query);
     url.searchParams.set("max_results", String(inputData.maxResults ?? 10));
     try {
-      const r = await fetch(url.toString(), { headers });
+      const r = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(WEB_TOOL_FETCH_TIMEOUT_MS) });
       if (!r.ok) return { results: [], status: "engine_error", error: `HTTP ${r.status}` };
       return await r.json();
     } catch (err) {
@@ -155,7 +164,7 @@ export const webFetchTool = createTool({
     url.searchParams.set("url", inputData.url);
     if (inputData.maxChars) url.searchParams.set("max_chars", String(inputData.maxChars));
     try {
-      const r = await fetch(url.toString(), { headers });
+      const r = await fetch(url.toString(), { headers, signal: AbortSignal.timeout(WEB_TOOL_FETCH_TIMEOUT_MS) });
       if (!r.ok) return { url: inputData.url, text: "", error: `HTTP ${r.status}` };
       return await r.json();
     } catch (err) {

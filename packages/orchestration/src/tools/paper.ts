@@ -186,6 +186,40 @@ export const paperRunBacktestTool = createTool({
   },
 });
 
+/** tool 输出里 equity_curve 的保留点数上限（首尾必留，中间等距抽样）。 */
+const EQUITY_CURVE_MAX_POINTS = 120;
+
+/**
+ * 把回测报告里的 equity_curve（含 baseline 的）降采样后再进 LLM context。
+ *
+ * 背景（2026-06-11 实测事故）：1 年 × 1h 回测的曲线 ~8760 点 ≈ 500KB ≈ 15 万 token，
+ * 原样进消息历史 + memory 窗口 50 条 → 几次回测就把 DeepSeek 1M 上下文撑爆
+ * （AI_APICallError: maximum context length），流中断、对话线程报废。
+ *
+ * 曲线形状对 LLM 判读 120 点足够；完整曲线前端走 paper 服务 API 拉，不走 chat。
+ */
+function downsampleEquityCurves<T>(report: T): T {
+  if (!report || typeof report !== "object") return report;
+  const r = report as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...r };
+  for (const key of ["equity_curve", "equityCurve"]) {
+    const curve = out[key];
+    if (Array.isArray(curve) && curve.length > EQUITY_CURVE_MAX_POINTS) {
+      const step = (curve.length - 1) / (EQUITY_CURVE_MAX_POINTS - 1);
+      out[key] = Array.from(
+        { length: EQUITY_CURVE_MAX_POINTS },
+        (_, i) => curve[Math.round(i * step)],
+      );
+      out[`${key}_downsampled_from`] = curve.length;
+    }
+  }
+  // baseline 子报告同样处理（candidate 回测自动并跑 buy_and_hold）
+  if (out.baseline && typeof out.baseline === "object") {
+    out.baseline = downsampleEquityCurves(out.baseline);
+  }
+  return out as T;
+}
+
 // ────────────────────────────────────────────────────────────────────
 // D-12 · paper.check_sensitivity
 // ────────────────────────────────────────────────────────────────────
@@ -264,40 +298,6 @@ export const paperCheckSensitivityTool = createTool({
     });
   },
 });
-
-/** tool 输出里 equity_curve 的保留点数上限（首尾必留，中间等距抽样）。 */
-const EQUITY_CURVE_MAX_POINTS = 120;
-
-/**
- * 把回测报告里的 equity_curve（含 baseline 的）降采样后再进 LLM context。
- *
- * 背景（2026-06-11 实测事故）：1 年 × 1h 回测的曲线 ~8760 点 ≈ 500KB ≈ 15 万 token，
- * 原样进消息历史 + memory 窗口 50 条 → 几次回测就把 DeepSeek 1M 上下文撑爆
- * （AI_APICallError: maximum context length），流中断、对话线程报废。
- *
- * 曲线形状对 LLM 判读 120 点足够；完整曲线前端走 paper 服务 API 拉，不走 chat。
- */
-function downsampleEquityCurves<T>(report: T): T {
-  if (!report || typeof report !== "object") return report;
-  const r = report as Record<string, unknown>;
-  const out: Record<string, unknown> = { ...r };
-  for (const key of ["equity_curve", "equityCurve"]) {
-    const curve = out[key];
-    if (Array.isArray(curve) && curve.length > EQUITY_CURVE_MAX_POINTS) {
-      const step = (curve.length - 1) / (EQUITY_CURVE_MAX_POINTS - 1);
-      out[key] = Array.from(
-        { length: EQUITY_CURVE_MAX_POINTS },
-        (_, i) => curve[Math.round(i * step)],
-      );
-      out[`${key}_downsampled_from`] = curve.length;
-    }
-  }
-  // baseline 子报告同样处理（candidate 回测自动并跑 buy_and_hold）
-  if (out.baseline && typeof out.baseline === "object") {
-    out.baseline = downsampleEquityCurves(out.baseline);
-  }
-  return out as T;
-}
 
 // ────────────────────────────────────────────────────────────────────
 // D-8c · paper.compose_strategy + paper.list_backtest_runs

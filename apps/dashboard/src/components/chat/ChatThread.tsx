@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -31,6 +32,8 @@ import {
 import { DivinationCard } from "@/components/divination/DivinationCard";
 import { isDivinationTool, parseDivination } from "@/components/divination/types";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { ToolOutput } from "./ToolOutput";
+import { resolveToolView } from "./tool-views";
 
 /** AG-UI 消息(@ag-ui/core)的最小形态 —— 只取渲染需要的字段。 */
 type AGMessage = {
@@ -77,6 +80,7 @@ interface ThreadSummary {
  * @param open 是否展开(驱动 translate-x 滑入)
  * @param width 当前栏宽(px),由左缘分隔条拖动调整
  * @param threadId 当前会话 ID(变化即触发回填)
+ * @param freshThreads 本地「新建会话」刚生成的 threadId 集合 —— 必然无历史,跳过回填 fetch
  * @param onClose 收起回调
  * @param onWidthChange 拖动时上报新宽度(父组件 clamp + 持久化 + 驱动 main reflow)
  * @param onDragChange 拖动开始/结束(父组件打 data-chat-dragging 关 main 过渡)
@@ -87,6 +91,7 @@ export function ChatThread({
   open,
   width,
   threadId,
+  freshThreads,
   onClose,
   onWidthChange,
   onDragChange,
@@ -96,6 +101,7 @@ export function ChatThread({
   open: boolean;
   width: number;
   threadId: string;
+  freshThreads?: Set<string>;
   onClose: () => void;
   onWidthChange: (px: number) => void;
   onDragChange: (dragging: boolean) => void;
@@ -308,6 +314,12 @@ export function ChatThread({
   useEffect(() => {
     if (!threadId || loadedThreadRef.current === threadId) return;
     loadedThreadRef.current = threadId;
+    // 「新建会话」刚生成的 thread 后端必然为空 —— 同步清空即可,不打 loading 不发请求
+    // (否则点新建要等一次网络往返,后端慢时面板会闪「加载历史会话…」)。
+    if (freshThreads?.has(threadId)) {
+      setMessagesRef.current([] as never);
+      return;
+    }
     let cancelled = false;
     setHistoryLoading(true);
     fetch(`/api/chat/threads/${threadId}/messages`)
@@ -326,7 +338,26 @@ export function ChatThread({
     return () => {
       cancelled = true;
     };
-  }, [threadId]);
+  }, [threadId, freshThreads]);
+
+  // 重载当前会话历史。用于「在历史列表里点了已经激活的那条会话」：此时父组件 setThreadId
+  // 值不变，上面的回填 effect（依赖 threadId）不会重跑 → 过去表现为「点第一条（恰是当前
+  // 会话、被高亮）没反应」。这里手动再拉一次，给出可见反馈并复原到最新持久化状态。
+  const reloadCurrentThread = useCallback(() => {
+    const id = loadedThreadRef.current;
+    if (!id) return;
+    setHistoryLoading(true);
+    fetch(`/api/chat/threads/${id}/messages`)
+      // 非 2xx 返 null(不要 {messages:[]})——否则会把当前会话清空白(M-1)。
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { messages?: AGMessage[] } | null) => {
+        // null(请求失败)或飞行途中已切到别的会话 → 不覆写,避免清空 / 旧数据串台(M-2)。
+        if (!d || loadedThreadRef.current !== id) return;
+        setMessagesRef.current((d.messages ?? []) as never);
+      })
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, []);
 
   // 点开历史下拉:**保留上次列表立即展示**(不再清空回 loading 态),后台 no-store 重新拉、
   // 拿到再替换 —— 重开瞬间出内容,避免每次「思考中」白屏 +（标题持久化后）后端只剩一次
@@ -545,7 +576,10 @@ export function ChatThread({
                   key={th.id}
                   type="button"
                   onClick={() => {
-                    onSwitchThread(th.id);
+                    // 点已激活的会话：threadId 不变，回填 effect 不会触发 → 手动重载;
+                    // 点别的会话：照常切 threadId，由回填 effect 拉取。
+                    if (th.id === threadId) reloadCurrentThread();
+                    else onSwitchThread(th.id);
                     setHistoryOpen(false);
                   }}
                   className={cn(
@@ -587,6 +621,7 @@ export function ChatThread({
               resolvedToolCallIds={resolvedToolCallIds}
               toolRunning={t("toolRunning")}
               toolDone={t("toolDone")}
+              toolResultLabel={t("toolResult")}
             />
           ))
         )}
@@ -665,12 +700,14 @@ function MessageRow({
   resolvedToolCallIds,
   toolRunning,
   toolDone,
+  toolResultLabel,
 }: {
   message: AGMessage;
   toolNames: Map<string, string>;
   resolvedToolCallIds: Set<string>;
   toolRunning: string;
   toolDone: string;
+  toolResultLabel: string;
 }) {
   const text = textOf(message.content);
 
@@ -698,9 +735,16 @@ function MessageRow({
         );
       }
     }
+    // 已完成 chip:展开只看**输出结果**(入参噪音大,按用户要求不展示)。
     return (
       <div className="rise flex justify-start">
-        <ToolChip name={toolName} body={text} label={toolDone} done />
+        <ToolChip
+          name={toolName}
+          result={text}
+          label={toolDone}
+          resultLabel={toolResultLabel}
+          done
+        />
       </div>
     );
   }
@@ -723,26 +767,77 @@ function MessageRow({
         <ToolChip
           key={c.id}
           name={c.function?.name ?? "tool"}
-          body={c.function?.arguments ?? ""}
           label={toolRunning}
+          resultLabel={toolResultLabel}
         />
       ))}
     </div>
   );
 }
 
-/** 工具调用 / 结果的紧凑 chip,可展开看入参或结果。 */
+/** JSON 字符串美化(两格缩进);不是合法 JSON 原样返回。 */
+function pretty(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * 工具调用 / 结果的紧凑 chip。
+ * 调用中(金):仅 chip 标头;已完成(绿):展开看**输出结果**(入参不展示,按需看 raw)。
+ * 输出按优先级渲染:工具专属视图(tool-views,行情卡/回测指标格等)→ 通用结构化
+ * ({@link ToolOutput} 键值行/表格)→ raw 钮永远可切回原始 JSON。
+ */
 function ToolChip({
   name,
-  body,
   label,
+  resultLabel,
+  result,
   done = false,
 }: {
   name: string;
-  body: string;
   label: string;
+  resultLabel: string;
+  result?: string;
   done?: boolean;
 }) {
+  const [showRaw, setShowRaw] = useState(false);
+  // 工具专属视图:结果可解析且形态命中才有;否则 null 落回通用结构化视图。
+  const view = useMemo(() => {
+    if (!result) return null;
+    try {
+      return resolveToolView(name, JSON.parse(result));
+    } catch {
+      return null;
+    }
+  }, [name, result]);
+  const sectionCaption =
+    "px-2.5 pt-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-fg-muted/60";
+
+  const head = (
+    <>
+      <Wrench
+        className="size-3.5 shrink-0 transition-colors group-hover:text-cyan"
+        strokeWidth={1.75}
+      />
+      <span className="truncate text-fg">{name}</span>
+      <span className="ml-auto uppercase tracking-[0.12em] text-fg-muted/70 transition-colors group-hover:text-fg-muted">
+        {label}
+      </span>
+    </>
+  );
+
+  // 调用中 / 无结果:没有可展开内容,渲染普通行,不给假的展开预期。
+  if (!done || !result) {
+    return (
+      <div className="group flex w-full max-w-[90%] items-center gap-2 rounded-md border border-border-subtle bg-bg/40 px-2.5 py-1.5 font-mono text-xs text-gold">
+        {head}
+      </div>
+    );
+  }
+
   return (
     <details className="group w-full max-w-[90%] overflow-hidden rounded-md border border-border-subtle bg-bg/40 text-xs transition-colors hover:border-cyan/40 hover:bg-bg-elev/50">
       <summary
@@ -751,19 +846,35 @@ function ToolChip({
           done ? "text-bull" : "text-gold",
         )}
       >
-        <Wrench
-          className="size-3.5 shrink-0 transition-colors group-hover:text-cyan"
-          strokeWidth={1.75}
-        />
-        <span className="truncate text-fg">{name}</span>
-        <span className="ml-auto uppercase tracking-[0.12em] text-fg-muted/70 transition-colors group-hover:text-fg-muted">
-          {label}
-        </span>
+        {head}
       </summary>
-      {body && (
-        <pre className="max-h-48 overflow-auto border-t border-border-subtle bg-bg-deep/50 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-fg-muted">
-          {body}
-        </pre>
+      {done && result && (
+        <div className="border-t border-border-subtle bg-bg-deep/50">
+          <div className="flex items-baseline justify-between pr-2.5">
+            <div className={sectionCaption}>{resultLabel}</div>
+            <button
+              type="button"
+              onClick={() => setShowRaw((v) => !v)}
+              className={cn(
+                "rounded-sm px-1 font-mono text-[9px] uppercase tracking-[0.18em] transition-colors",
+                showRaw
+                  ? "text-cyan"
+                  : "text-fg-muted/40 hover:text-fg-muted",
+              )}
+            >
+              raw
+            </button>
+          </div>
+          {showRaw ? (
+            <pre className="max-h-64 overflow-auto px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-fg-muted">
+              {pretty(result)}
+            </pre>
+          ) : view ? (
+            <div className="max-h-72 overflow-auto px-2.5 py-1.5">{view}</div>
+          ) : (
+            <ToolOutput raw={result} />
+          )}
+        </div>
       )}
     </details>
   );

@@ -3,7 +3,7 @@
 import { CopilotKit } from "@copilotkit/react-core";
 import { MessageSquare } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ChatThread } from "./ChatThread";
 
@@ -81,9 +81,15 @@ export function ConsoleChat() {
     localStorage.setItem(LS_WIDTH, String(w));
   }, []);
 
+  // 本会话内由「新建会话」刚生成的 threadId 集合 —— 这些 thread 后端必然还没有消息,
+  // ChatThread 据此跳过历史回填 fetch,同步清空 UI(否则新建会话也要等一次网络往返,
+  // 后端慢时面板会闪「加载历史会话…」)。刷新后集合清空 → 恢复正常回填,语义不变。
+  const freshThreads = useRef<Set<string>>(new Set());
+
   // 新建会话:换一个 threadId,CopilotKit 切到全新上下文(ChatThread 会清空 UI)。
   const onNewSession = useCallback(() => {
     const id = crypto.randomUUID();
+    freshThreads.current.add(id);
     localStorage.setItem(LS_THREAD, id);
     setThreadId(id);
   }, []);
@@ -142,6 +148,7 @@ export function ConsoleChat() {
         open={open}
         width={width}
         threadId={threadId}
+        freshThreads={freshThreads.current}
         onClose={close}
         onWidthChange={onWidthChange}
         onDragChange={setDragging}

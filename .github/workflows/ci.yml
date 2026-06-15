@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # 手动触发:pull_request 自动触发偶发不跑时,可在 Actions 页对任意分支重跑 CI。
+  workflow_dispatch:
 
 # PR 同分支新 push 取消旧 run（main 推送不取消，保证每个 commit 都跑）
 # Cancel in-progress runs on new pushes to the same PR branch; main pushes never cancel.

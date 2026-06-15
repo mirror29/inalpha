@@ -545,6 +545,86 @@ async def test_macro_handles_no_events_in_window(data_client: DataClient) -> Non
     # D-9：events 拆 past / upcoming 后，空窗口表现为两组分别 "(none)"
     assert "past_macro_events_last_14d: (none)" in user_prompt
     assert "upcoming_macro_events_next_14d: (none)" in user_prompt
+    # D-12+：窗口越过日历覆盖终点时，必须有 coverage note——
+    # 否则 LLM 会把"日历没写"误读为"无事件安排"
+    assert "calendar_coverage_note" in user_prompt
+    assert "UNKNOWN coverage" in user_prompt
+
+
+def test_macro_calendar_entries_have_region_and_valid_dates() -> None:
+    """D-12+：每条日历事件必须带 region（US/CN）且日期可解析（防手抖）。"""
+    from inalpha_research.analysts.macro import _MACRO_CALENDAR
+
+    assert _MACRO_CALENDAR, "calendar must not be empty"
+    for ev in _MACRO_CALENDAR:
+        assert ev.get("region") in ("US", "CN"), f"bad region: {ev}"
+        datetime.fromisoformat(ev["date"])  # raises on bad date
+        assert ev.get("name") and ev.get("impact")
+
+
+async def test_macro_cn_events_local_first_for_cn_stock(data_client: DataClient) -> None:
+    """D-12+：cn_stock 的 user prompt 含 [CN] 事件且本地事件排在 US 前。"""
+    llm = FakeLLMClient(
+        {
+            "macro analyst": {
+                "stance": "neutral",
+                "confidence": 0.4,
+                "summary": "local policy calendar primary",
+            }
+        }
+    )
+    analyst = MacroAnalyst(llm=llm, data=data_client)
+    # 2026-06-12：±14d 窗口同时含 CN（06-09 CPI / 06-15 MLF / 06-22 LPR）与
+    # US（06-06 NFP / 06-18 FOMC）事件
+    await analyst.run(
+        venue="akshare",
+        symbol="sh.600519",
+        timeframe="1d",
+        as_of=datetime(2026, 6, 12, 12, 0, tzinfo=UTC),
+        lookback_days=180,
+    )
+    user_prompt = llm.calls[0]["user"]
+    assert "market_type: cn_stock" in user_prompt
+    assert "[CN]" in user_prompt and "[US]" in user_prompt
+    # upcoming 段里 CN 事件（MLF 06-15）应排在 US 事件（FOMC 06-18）之前
+    upcoming = user_prompt.split("upcoming_macro_events_next_14d")[1]
+    assert upcoming.index("[CN]") < upcoming.index("[US]")
+
+
+async def test_macro_coverage_note_uses_home_region(data_client: DataClient) -> None:
+    """D-12+ CR：coverage_note 按 market 本地 region 判断覆盖终点。
+
+    as_of=2026-10-10 时，CN 日历已到头（最后一条 10-20 LPR，as_of+14=10-24 越过），
+    但全局 max 仍是 US 选举 11-03。用全局 max 会让 cn_stock 漏掉 note（把 CN
+    upcoming=(none) 误读成无政策安排）；按 home region 算则 cn_stock 触发、us_stock 不触发。
+    """
+    def _mk() -> tuple[MacroAnalyst, FakeLLMClient]:
+        llm = FakeLLMClient(
+            {"macro analyst": {"stance": "neutral", "confidence": 0.3, "summary": "x"}}
+        )
+        return MacroAnalyst(llm=llm, data=data_client), llm
+
+    as_of = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
+
+    cn, cn_llm = _mk()
+    await cn.run(venue="akshare", symbol="sh.600519", timeframe="1d",
+                 as_of=as_of, lookback_days=180)
+    assert "calendar_coverage_note" in cn_llm.calls[0]["user"]  # CN 本地日历已到头 → 触发
+
+    us, us_llm = _mk()
+    await us.run(venue="yfinance", symbol="AAPL", timeframe="1d",
+                 as_of=as_of, lookback_days=90)
+    assert "calendar_coverage_note" not in us_llm.calls[0]["user"]  # US 到 11-03 未到头 → 不触发
+
+
+def test_macro_system_prompt_local_calendar_first() -> None:
+    """D-12+：_SYSTEM 含本地日历优先指引；既有传导表锚点不破。"""
+    sys_prompt = MacroAnalyst.system_prompt(MacroAnalyst.__new__(MacroAnalyst))
+    assert "LOCAL" in sys_prompt and "region" in sys_prompt
+    assert "primary driver" in sys_prompt  # cn_stock 本地事件行
+    # 既有锚点（test_multi_market 同样断言，这里双保险）
+    assert "USD-peg" in sys_prompt
+    assert "You are a macro analyst covering any asset class." in sys_prompt
 
 
 def _fred_bars(symbol: str, *, as_of: datetime, values: list[float]) -> list[dict]:

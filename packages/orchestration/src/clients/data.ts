@@ -106,6 +106,74 @@ export class DataClient {
     }
   }
 
+  async getMarketNews(params: {
+    market?: string;
+    limit?: number;
+  }): Promise<Record<string, unknown>> {
+    try {
+      return await this.http.get<Record<string, unknown>>("/market/news", {
+        market: params.market ?? "cn",
+        limit: String(params.limit ?? 20),
+      });
+    } catch (err) {
+      if (err instanceof HttpClientError) {
+        return { market: params.market ?? "cn", items: [], error: `upstream ${err.status}: ${err.message}` };
+      }
+      return { market: params.market ?? "cn", items: [], error: String(err) };
+    }
+  }
+
+  async getMarketSectors(params: {
+    market?: string;
+    topN?: number;
+  }): Promise<Record<string, unknown>> {
+    try {
+      return await this.http.get<Record<string, unknown>>("/market/sectors", {
+        market: params.market ?? "cn",
+        top_n: String(params.topN ?? 10),
+      });
+    } catch (err) {
+      // 错误回落不带 top/bottom:空数组会误过前端 isSectorBoard 渲染出空板;
+      // 只回 {market,error}(同 moneyflow),让视图守卫失败、回落通用 ToolOutput 显示错误。
+      if (err instanceof HttpClientError) {
+        return { market: params.market ?? "cn", error: `upstream ${err.status}: ${err.message}` };
+      }
+      return { market: params.market ?? "cn", error: String(err) };
+    }
+  }
+
+  async getMarketMoneyflow(params: {
+    market?: string;
+  }): Promise<Record<string, unknown>> {
+    try {
+      return await this.http.get<Record<string, unknown>>("/market/moneyflow", {
+        market: params.market ?? "cn",
+      });
+    } catch (err) {
+      if (err instanceof HttpClientError) {
+        return { market: params.market ?? "cn", error: `upstream ${err.status}: ${err.message}` };
+      }
+      return { market: params.market ?? "cn", error: String(err) };
+    }
+  }
+
+  async getMarketMovers(params: {
+    market?: string;
+    limit?: number;
+  }): Promise<Record<string, unknown>> {
+    try {
+      return await this.http.get<Record<string, unknown>>("/market/movers", {
+        market: params.market ?? "cn",
+        limit: String(params.limit ?? 30),
+      });
+    } catch (err) {
+      if (err instanceof HttpClientError) {
+        return { market: params.market ?? "cn", items: [], error: `upstream ${err.status}: ${err.message}` };
+      }
+      return { market: params.market ?? "cn", items: [], error: String(err) };
+    }
+  }
+
   async searchSymbols(params: {
     query: string;
     venue?: string;

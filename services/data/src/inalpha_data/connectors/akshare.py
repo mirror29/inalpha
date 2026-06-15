@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -36,6 +37,11 @@ from ._base import register_connector, unregister_connector
 _logger = get_logger(__name__)
 
 VENUE = "akshare"
+
+#: fundamentals 进程内缓存 TTL（秒）。A股一次 fundamentals 要打 1 次财报摘要 + 3 次
+#: Baidu 估值(串行 ~4-5s),research 多 analyst fan-out 会重复问同一标的;60s 缓存挡掉
+#: 重复打源站,兼顾防封与延迟。基本面日级更新,60s 内复用不损时效。
+_FIN_CACHE_TTL_S = 60.0
 
 # akshare 的 ``period`` 字符串映射（仅日级及以上；分钟级要走另一个接口）
 _PERIOD_MAP: dict[str, str] = {
@@ -75,8 +81,24 @@ class AkshareConnector:
     """akshare 包装 —— 同步库走 ``asyncio.to_thread``。"""
 
     def __init__(self) -> None:
-        # akshare 没有 client 对象，import 即用；这里占位，将来加缓存 / cookie 时用
-        pass
+        # akshare 无 client 对象,import 即用。fundamentals 进程内 TTL 缓存:
+        # {symbol: (expires_monotonic, result_dict)},只缓存成功结果。
+        self._fin_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+    def _fin_cache_get(self, symbol: str) -> dict[str, Any] | None:
+        hit = self._fin_cache.get(symbol)
+        if hit is None:
+            return None
+        expires, value = hit
+        if time.monotonic() > expires:
+            self._fin_cache.pop(symbol, None)
+            return None
+        return value
+
+    def _fin_cache_put(self, symbol: str, value: dict[str, Any]) -> None:
+        if len(self._fin_cache) > 128:  # 进程内软上限,超了清空(同 cn_market)
+            self._fin_cache.clear()
+        self._fin_cache[symbol] = (time.monotonic() + _FIN_CACHE_TTL_S, value)
 
     async def fetch_bars(
         self,
@@ -164,6 +186,10 @@ class AkshareConnector:
                 "reason": f"financials not supported for akshare prefix {prefix!r}",
             }
 
+        cached = self._fin_cache_get(symbol)
+        if cached is not None:
+            return cached
+
         _logger.debug("akshare_fetch_financials", symbol=symbol, prefix=prefix, code=code)
 
         try:
@@ -188,18 +214,29 @@ class AkshareConnector:
         from datetime import datetime as dt_dt
 
         indicators: dict[str, float | None] = {}
-        # akshare 返回的 dict key 是中文指标名，做模糊匹配映射
+        # raw 由 _flatten_abstract 拍平成 {指标名: 最新期值}。
+        # 键名以 stock_financial_abstract 实际「指标」列为准（2026-06 实测）；
+        # 旧的简写键保留作其他市场 / 版本 / 未来估值源的前向兼容（命中即用，命不中无害）。
         _indicator_map = {
+            # 盈利
+            "净资产收益率(ROE)": "roe",
+            "净资产收益率": "roe",
+            "毛利率": "gross_margin",
+            "销售净利率": "net_margin",
+            "净利率": "net_margin",
+            # 成长
+            "营业总收入增长率": "revenue_yoy",
+            "营业收入同比增长": "revenue_yoy",
+            "归属母公司净利润增长率": "profit_yoy",
+            "归属净利润同比增长": "profit_yoy",
+            # 杠杆（A股摘要给的是资产负债率；近似填入 leverage 槽，前端按杠杆指标展示）
+            "资产负债率": "debt_to_equity",
+            # 估值：stock_financial_abstract 不含，A股另走 Baidu 源补齐(见下方)。
+            # 以下键留作前向兼容(摘要/其他市场若带了即用,命不中无害)。
             "总市值": "market_cap",
             "流通市值": "market_cap",
             "市盈率": "pe_ratio",
             "市净率": "pb_ratio",
-            "净资产收益率": "roe",
-            "营业收入同比增长": "revenue_yoy",
-            "归属净利润同比增长": "profit_yoy",
-            "毛利率": "gross_margin",
-            "净利率": "net_margin",
-            "资产负债率": "debt_to_equity",
             # 财务质量项（供应链瓶颈调研的红旗检查：存货应收增速 vs 收入、现金流）
             # akshare 摘要表字段随版本/市场浮动，防御性映射：缺了置 None 不报错
             "经营现金流量净额": "operating_cashflow",
@@ -219,7 +256,28 @@ class AkshareConnector:
                 except (TypeError, ValueError):
                     pass
 
-        return {
+        # 单位归一:akshare 摘要的 ROE / 利润率 / 增长率均为**百分数**(如 18.8 表示
+        # 18.8%);yfinance 同名字段是**分数**(0.188)。统一成分数对齐 yfinance,
+        # 前端按分数 ×100 展示。(debt_to_equity / 估值字段不在此列,保持原值。)
+        for _pct_key in ("roe", "gross_margin", "net_margin", "revenue_yoy", "profit_yoy"):
+            v = indicators.get(_pct_key)
+            if v is not None:
+                indicators[_pct_key] = v / 100.0
+
+        # 估值(总市值/PE/PB)不在财报摘要里 → A股另走 Baidu 源补齐(best-effort,
+        # 失败只记日志不阻断已拿到的盈利/成长/财务指标)。
+        if prefix in ("sh", "sz") and not all(
+            indicators.get(k) is not None for k in ("market_cap", "pe_ratio", "pb_ratio")
+        ):
+            try:
+                valuation = await asyncio.to_thread(_fetch_valuation_sync, code)
+                for k, v in valuation.items():
+                    if indicators.get(k) is None:
+                        indicators[k] = v
+            except Exception as exc:
+                _logger.warning("akshare_valuation_fetch_failed", symbol=symbol, error=str(exc))
+
+        result = {
             "venue": VENUE,
             "symbol": symbol,
             "available": True,
@@ -227,6 +285,8 @@ class AkshareConnector:
             "indicators": indicators,
             "raw": raw,
         }
+        self._fin_cache_put(symbol, result)  # 只缓存成功结果;失败路径不缓存,留待重试
+        return result
 
     async def fetch_news(self, symbol: str, limit: int = 20) -> list[dict[str, Any]]:
         """拉 A股 个股新闻（东方财富来源，零 key）。
@@ -292,32 +352,96 @@ class AkshareConnector:
 
 
 def _fetch_financials_sync(*, prefix: str, code: str) -> dict[str, Any]:
-    """同步调 akshare 财报接口 —— 按市场前缀路由。
+    """同步调 akshare 财报接口 —— 按前缀路由,返回 ``{指标名: 最新期值}``。
 
-    - A股（sh/sz）：``stock_financial_abstract(symbol=code)``
-    - 港股（hk）  ：``stock_hk_financial_abstract(symbol=code)``
+    ``stock_financial_abstract`` / ``stock_hk_financial_abstract`` 返回的是
+    「指标 × 报告期日期列」的**转置表**(行=指标名,列=各报告期,如 20260331)。
+    旧实现 ``raw.iloc[-1].to_dict()`` 只取了**最后一行**(单个指标)→ 上层
+    ``raw.get("净资产收益率")`` 全落空、indicators 恒为 null。这里改为遍历整表、
+    每个指标取最新一期的**非空**值,拍平成 {指标名: 值} 供上层按名映射。
     """
     import akshare as ak
 
     if prefix in ("sh", "sz"):
-        # A股财务指标摘要（主要指标表）
         raw = ak.stock_financial_abstract(symbol=code)
     else:
-        # hk
         raw = ak.stock_hk_financial_abstract(symbol=code)
 
-    # akshare 可能返回 DataFrame（最新一条 row 转 dict）或直接 dict
-    if hasattr(raw, "iloc"):
-        if len(raw) == 0:
-            return {}
-        # 取最新一期的数据（最后一行 / 第一行取决于 akshare 版本）
-        row = raw.iloc[-1] if hasattr(raw, "iloc") else raw.iloc[0]
-        return row.to_dict() if hasattr(row, "to_dict") else dict(row)
-    if isinstance(raw, dict):
-        return raw
+    return _flatten_financial_abstract(raw)
+
+
+def _flatten_financial_abstract(raw: Any) -> dict[str, Any]:
+    """转置财报表 → ``{指标名: 最新非空值}``;结构不符时退化兜底,绝不抛错。"""
+    import math
+
     if raw is None:
         return {}
-    return {}
+    if not hasattr(raw, "columns"):
+        return raw if isinstance(raw, dict) else {}
+
+    cols = [str(c) for c in raw.columns]
+    # 8 位数字列即报告期(20260331);新→旧排序,优先取最近一期。
+    date_cols = sorted(
+        (c for c in raw.columns if str(c).isdigit() and len(str(c)) == 8),
+        key=lambda c: str(c),
+        reverse=True,
+    )
+    if "指标" not in cols or not date_cols:
+        # 不是预期的转置表 → 退回最后一行(旧行为)兜底,至少不丢数据。
+        if len(raw) == 0:
+            return {}
+        row = raw.iloc[-1]
+        return row.to_dict() if hasattr(row, "to_dict") else dict(row)
+
+    out: dict[str, Any] = {}
+    for _, row in raw.iterrows():
+        name = row.get("指标")
+        if name is None:
+            continue
+        for dc in date_cols:
+            val = row.get(dc)
+            if val is None:
+                continue
+            if isinstance(val, float) and math.isnan(val):
+                continue
+            out[str(name)] = val
+            break  # 该指标已取到最新非空值
+    return out
+
+
+def _fetch_valuation_sync(code: str) -> dict[str, float]:
+    """A股估值(总市值 / 市盈率TTM / 市净率)—— 走 Baidu 源
+    (``stock_zh_valuation_baidu``),非 eastmoney、不被本地代理拦
+    (financial_abstract 不含估值;eastmoney 的 stock_individual_info_em 被代理拦)。
+
+    每个指标一次调用,串行 + 小睡防封;单项失败跳过不影响其余与基本面。
+    Baidu 总市值单位为**亿元**,×1e8 转绝对值对齐 yfinance(前端 fmtCap 按亿/万亿展示)。
+    """
+    import math
+    import time as _time
+
+    import akshare as ak
+
+    out: dict[str, float] = {}
+    plan = [
+        ("总市值", "market_cap", 1e8),
+        ("市盈率(TTM)", "pe_ratio", 1.0),
+        ("市净率", "pb_ratio", 1.0),
+    ]
+    for i, (indicator, key, scale) in enumerate(plan):
+        if i:
+            _time.sleep(0.5)  # 防封:同源连续调用留间隔
+        try:
+            df = ak.stock_zh_valuation_baidu(symbol=code, indicator=indicator, period="近一年")
+            if df is None or not hasattr(df, "iloc") or len(df) == 0:
+                continue
+            val = df.iloc[-1].get("value")
+            if val is None or (isinstance(val, float) and math.isnan(val)):
+                continue
+            out[key] = float(val) * scale
+        except Exception:
+            continue  # 单项失败跳过,不阻断其余估值/基本面
+    return out
 
 
 def _fetch_news_sync(symbol: str) -> list[dict[str, Any]]:

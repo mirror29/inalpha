@@ -12,6 +12,9 @@ D-9 起：
 - alternative.me 只覆盖 crypto；非 crypto 的等价（CNN FNG / VIX 反向）需要 FRED key
   或网页抓取，复杂度跳级；D-10 真要接的话挂在这层升级
 - LLM-only sentiment 比"硬抛错回 neutral"叙事强得多——dev/demo 足够
+- D-12+ TODO：data 服务已落 /market/moneyflow（沪深港通资金，同花顺估算口径），
+  cn_stock 的 sentiment 锚点可接资金真数据（对应 orchestrator 的
+  data.get_market_moneyflow）——挂在这层升级
 """
 from __future__ import annotations
 
@@ -19,9 +22,12 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from inalpha_shared import get_logger
 
 from ..researchers.base import infer_asset_type
 from .base import Analyst
+
+_logger = get_logger(__name__)
 
 _FNG_URL = "https://api.alternative.me/fng/"
 _FETCH_TIMEOUT_S = 10.0
@@ -97,7 +103,10 @@ class SentimentAnalyst(Analyst):
         if market_type == "crypto":
             try:
                 entries = await _fetch_fng(limit=_DEFAULT_LIMIT)
-            except Exception:
+            except Exception as exc:
+                # 不静默吞:FNG 挂了(超时/4xx/5xx/坏 JSON)要留痕,否则运维看不到;
+                # 仍回落 web 搜索(下方 if not entries),不阻断研究。
+                _logger.warning("fng_fetch_failed", symbol=symbol, error=str(exc))
                 entries = []
 
             if not entries:

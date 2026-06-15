@@ -1,27 +1,33 @@
-"""辩论协调器单测 —— 不打外部网络，用 FakeLLMClient 跑 Bull/Bear 轮换。"""
+"""辩论协调器单测 —— 不打外部网络，用 FakeLLMClient 跑 Bull/Bear(/Risk) 轮换。"""
 from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any
 
-from inalpha_research.debate import run_debate
+from inalpha_research.debate import assess_disagreement, run_debate
 from inalpha_research.llm.client import FakeLLMClient
-from inalpha_research.researchers import BearResearcher, BullResearcher
-from inalpha_research.schemas import AnalystBrief
+from inalpha_research.researchers import BearResearcher, BullResearcher, RiskResearcher
+from inalpha_research.schemas import AnalystBrief, DebateTurn
 
 
 def _as_of() -> datetime:
     return datetime(2026, 5, 21, 12, 0, tzinfo=UTC)
 
 
-def _brief(analyst: str, stance: str = "neutral") -> AnalystBrief:
+def _brief(analyst: str, stance: str = "neutral", confidence: float = 0.5) -> AnalystBrief:
     return AnalystBrief(
         analyst=analyst,  # type: ignore[arg-type]
         stance=stance,  # type: ignore[arg-type]
-        confidence=0.5,
+        confidence=confidence,
         summary=f"{analyst} brief",
         key_points=[f"{analyst} kp1"],
     )
+
+
+async def _debate_turns(**kwargs: Any) -> list[DebateTurn]:
+    """旧断言风格适配层：只关心发言序列的用例直接取 ``outcome.turns``。"""
+    return (await run_debate(**kwargs)).turns
 
 
 def _bull_bear_llm() -> FakeLLMClient:
@@ -39,7 +45,7 @@ async def test_run_debate_zero_rounds_returns_empty() -> None:
     bull = BullResearcher(llm=llm)
     bear = BearResearcher(llm=llm)
 
-    log = await run_debate(
+    log = await _debate_turns(
         bull=bull,
         bear=bear,
         venue="binance",
@@ -59,7 +65,7 @@ async def test_run_debate_one_round_alternates_bull_then_bear() -> None:
     bull = BullResearcher(llm=llm)
     bear = BearResearcher(llm=llm)
 
-    log = await run_debate(
+    log = await _debate_turns(
         bull=bull,
         bear=bear,
         venue="binance",
@@ -94,7 +100,7 @@ async def test_run_debate_multi_round_grows_history() -> None:
     bull = BullResearcher(llm=llm)
     bear = BearResearcher(llm=llm)
 
-    log = await run_debate(
+    log = await _debate_turns(
         bull=bull,
         bear=bear,
         venue="binance",
@@ -131,7 +137,7 @@ async def test_run_debate_round1_parallel_openings_when_multi_round() -> None:
     bull = BullResearcher(llm=llm)
     bear = BearResearcher(llm=llm)
 
-    log = await run_debate(
+    log = await _debate_turns(
         bull=bull,
         bear=bear,
         venue="binance",
@@ -164,7 +170,7 @@ async def test_run_debate_one_round_stays_serial_preserves_rebuttal() -> None:
     bull = BullResearcher(llm=llm)
     bear = BearResearcher(llm=llm)
 
-    await run_debate(
+    await _debate_turns(
         bull=bull,
         bear=bear,
         venue="binance",
@@ -187,7 +193,7 @@ async def test_run_debate_passes_max_tokens_to_llm() -> None:
     bull = BullResearcher(llm=llm)
     bear = BearResearcher(llm=llm)
 
-    await run_debate(
+    await _debate_turns(
         bull=bull,
         bear=bear,
         venue="binance",
@@ -223,7 +229,7 @@ async def test_run_debate_timeout_returns_partial_log_without_raising() -> None:
     bull = BullResearcher(llm=llm)
     bear = BearResearcher(llm=llm)
 
-    log = await run_debate(
+    log = await _debate_turns(
         bull=bull,
         bear=bear,
         venue="binance",
@@ -250,7 +256,7 @@ async def test_run_debate_swallows_researcher_failure() -> None:
     bull = BullResearcher(llm=llm)
     bear = BearResearcher(llm=llm)
 
-    log = await run_debate(
+    log = await _debate_turns(
         bull=bull,
         bear=bear,
         venue="binance",
@@ -323,6 +329,254 @@ def test_bull_system_prompt_adjusts_for_crypto_vs_stock() -> None:
 
     # 港股谈 Southbound / 互联互通
     assert "Southbound" in hk_prompt or "HKMA" in hk_prompt
+
+
+# ────────────────────────────────────────────────────────────────────
+# research-hub #6：三方制 / stop_reason / 软早停 / 争议判定
+# ────────────────────────────────────────────────────────────────────
+
+
+def _three_way_llm() -> FakeLLMClient:
+    return FakeLLMClient(
+        {
+            "you are a bull analyst": {"argument": "Bull says up"},
+            "you are a bear analyst": {"argument": "Bear says down"},
+            "you are a risk officer": {"argument": "Risk challenges both"},
+        }
+    )
+
+
+async def test_run_debate_risk_speaks_last_each_round() -> None:
+    """三方制：Risk 每轮在 Bull/Bear 之后殿后发言，且能读到双方本轮论点。"""
+    llm = _three_way_llm()
+
+    outcome = await run_debate(
+        bull=BullResearcher(llm=llm),
+        bear=BearResearcher(llm=llm),
+        risk=RiskResearcher(llm=llm),
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical", "bullish")],
+        max_rounds=2,
+    )
+
+    assert [(t.role, t.round) for t in outcome.turns] == [
+        ("bull", 1),
+        ("bear", 1),
+        ("risk", 1),
+        ("bull", 2),
+        ("bear", 2),
+        ("risk", 2),
+    ]
+    assert outcome.stop_reason == "completed 2 round(s)"
+
+    # Risk 第 1 轮（即使 Bull/Bear 并行开场）也必须读到双方开场论点
+    risk_r1 = next(c for c in llm.calls if "risk officer" in c["system"].lower())
+    assert "Bull says up" in risk_r1["user"]
+    assert "Bear says down" in risk_r1["user"]
+    # PR #81 CR：风险官中立——不应收到"驳斥对手"指令（那会偏向一方），
+    # 而是对称的双向压测提示
+    assert "rebut this directly!" not in risk_r1["user"]
+    assert "challenge BOTH sides symmetrically" in risk_r1["user"]
+    # PR #81 CR major：Risk 殿后导致 history 末尾是 Risk——Round 2 Bull 的
+    # rebuttal 对象必须仍是 Bear 的论据，不能错指到 Risk 的中立压测内容
+    bull_r2 = [c for c in llm.calls if "bull analyst" in c["system"].lower()][-1]
+    assert "opponent_last_turn (rebut this directly!): Bear says down" in bull_r2["user"]
+    assert "rebut this directly!): Risk challenges both" not in bull_r2["user"]
+    bear_r2 = [c for c in llm.calls if "bear analyst" in c["system"].lower()][-1]
+    assert "opponent_last_turn (rebut this directly!): Bull says up" in bear_r2["user"]
+
+
+async def test_run_debate_without_risk_keeps_two_way() -> None:
+    """``risk=None``（RESEARCH_DEBATE_RISK_ENABLED=false）退回 Bull/Bear 两方制。"""
+    llm = _three_way_llm()
+
+    outcome = await run_debate(
+        bull=BullResearcher(llm=llm),
+        bear=BearResearcher(llm=llm),
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=1,
+    )
+
+    assert [t.role for t in outcome.turns] == ["bull", "bear"]
+    assert outcome.stop_reason == "completed 1 round(s)"
+
+
+async def test_run_debate_converges_early_when_arguments_repeat() -> None:
+    """软早停：双方从第 2 轮起复读同样论点 → 不跑满 max_rounds。"""
+    llm = _three_way_llm()  # FakeLLM 每轮返回相同文本 = 重合度 1.0
+
+    outcome = await run_debate(
+        bull=BullResearcher(llm=llm),
+        bear=BearResearcher(llm=llm),
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=4,
+        convergence_threshold=0.6,
+    )
+
+    # 第 2 轮发现与第 1 轮逐字相同 → 停，省掉第 3/4 轮
+    assert [(t.role, t.round) for t in outcome.turns] == [
+        ("bull", 1),
+        ("bear", 1),
+        ("bull", 2),
+        ("bear", 2),
+    ]
+    assert outcome.stop_reason.startswith("converged: round 2")
+
+
+async def test_run_debate_three_way_converges_despite_risk_turns() -> None:
+    """三方制 × 软早停组合（PR #81 CR follow-up）：收敛判定只看 Bull/Bear，
+    Risk 轮不得干扰早停——这是 _converged role 过滤的回归锚点。
+
+    锚点成立的关键：Risk **每轮返回完全不同的文本**（词集不相交，Jaccard≈0）。
+    若 role 过滤被改坏（把 risk 也纳入判定），round 2 的 Risk 相似度过不了阈，
+    收敛永不触发 → 本测试 turns 变 12 条 / stop_reason 变 completed 而失败。"""
+    risk_texts = iter(
+        [
+            "Risk flags crowded positioning and thin liquidity beneath spot",
+            "Tail scenario: correlated unwind invalidates either thesis overnight",
+            "Sizing discipline caps exposure regardless of directional conviction",
+            "Regime dependence makes both arguments fragile to a vol spike",
+        ]
+    )
+
+    # 闭包晚绑定 llm：on_call 经构造器传入（公共 API），在响应匹配前触发，
+    # 每次 risk 发言前 set_response 换词
+    async def _rotate_risk(*, system: str, user: str) -> None:
+        if "risk officer" in system.lower():
+            llm.set_response("you are a risk officer", {"argument": next(risk_texts)})
+
+    llm = FakeLLMClient(
+        {
+            "you are a bull analyst": {"argument": "Bull says up"},
+            "you are a bear analyst": {"argument": "Bear says down"},
+        },
+        on_call=_rotate_risk,
+    )
+
+    outcome = await run_debate(
+        bull=BullResearcher(llm=llm),
+        bear=BearResearcher(llm=llm),
+        risk=RiskResearcher(llm=llm),
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=4,
+        convergence_threshold=0.6,
+    )
+
+    # Bull/Bear 第 2 轮复读 → 收敛停；Risk 两轮都殿后发言、不阻止早停
+    assert [(t.role, t.round) for t in outcome.turns] == [
+        ("bull", 1),
+        ("bear", 1),
+        ("risk", 1),
+        ("bull", 2),
+        ("bear", 2),
+        ("risk", 2),
+    ]
+    assert outcome.stop_reason.startswith("converged: round 2")
+
+
+def test_assess_disagreement_min_confidence_configurable() -> None:
+    """门槛可调（PR #81 CR follow-up）：同一组 briefs，调高 min_confidence
+    会把弱对立判成 aligned——runner 从 settings.debate_min_confidence 透传。"""
+    briefs = [
+        _brief("technical", "bullish", confidence=0.7),
+        _brief("macro", "bearish", confidence=0.5),
+    ]
+    contested_default, _ = assess_disagreement(briefs, min_confidence=0.35)
+    contested_strict, _ = assess_disagreement(briefs, min_confidence=0.6)
+    assert contested_default is True
+    assert contested_strict is False  # bearish 0.5 低于 0.6 门槛 → 无有信心对立方
+
+
+async def test_run_debate_convergence_disabled_at_threshold_one() -> None:
+    """阈值 1.0 = 实际禁用：即使逐字复读也跑满轮数（保留旧行为）。"""
+    llm = _three_way_llm()
+
+    outcome = await run_debate(
+        bull=BullResearcher(llm=llm),
+        bear=BearResearcher(llm=llm),
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=3,
+        convergence_threshold=1.0,
+    )
+
+    assert len(outcome.turns) == 6
+    assert outcome.stop_reason == "completed 3 round(s)"
+
+
+async def test_run_debate_timeout_stop_reason() -> None:
+    """超时时 stop_reason 落 timeout（决策链路可观测）。"""
+
+    async def _slow(*, system: str, user: str) -> None:
+        await asyncio.sleep(5.0)
+
+    llm = FakeLLMClient(
+        {"you are a bull analyst": {"argument": "Bull says up"}},
+        on_call=_slow,
+    )
+
+    outcome = await run_debate(
+        bull=BullResearcher(llm=llm),
+        bear=BearResearcher(llm=llm),
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[_brief("technical")],
+        max_rounds=1,
+        timeout_seconds=0.05,
+    )
+
+    assert outcome.turns == []
+    assert outcome.stop_reason.startswith("timeout:")
+
+
+def test_assess_disagreement_contested_on_confident_opposition() -> None:
+    """有信心的多空对立 → contested；detail 不带前缀（前缀由 runner 组装）。"""
+    contested, detail = assess_disagreement(
+        [
+            _brief("technical", "bullish", confidence=0.7),
+            _brief("macro", "bearish", confidence=0.6),
+            _brief("sentiment", "neutral", confidence=0.9),
+        ]
+    )
+    assert contested is True
+    assert "1 bullish vs 1 bearish" in detail
+    assert not detail.startswith("contested:")  # 扁平契约：前缀只在 runner 加一层
+
+
+def test_assess_disagreement_aligned_when_same_direction() -> None:
+    """全员同向（或反方没信心）→ aligned，不值得辩。"""
+    aligned_cases = [
+        # 全 bullish
+        [_brief("technical", "bullish", 0.8), _brief("macro", "bullish", 0.6)],
+        # 反方存在但 confidence 低于门槛（失败 brief 的 0.0 也归于此）
+        [_brief("technical", "bullish", 0.8), _brief("macro", "bearish", 0.1)],
+        # 全 neutral
+        [_brief("technical", "neutral", 0.9), _brief("macro", "neutral", 0.9)],
+    ]
+    for briefs in aligned_cases:
+        contested, detail = assess_disagreement(briefs)
+        assert contested is False
+        assert "no confident opposing stances" in detail
 
 
 def test_infer_asset_type_classifies_all_venues() -> None:

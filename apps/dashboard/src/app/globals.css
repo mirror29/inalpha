@@ -268,6 +268,17 @@
     animation: rise 0.5s cubic-bezier(0.22, 0.7, 0.22, 1) both;
   }
 
+  /* 折叠侧栏气泡:右滑淡入(挂 body 的 portal,外层负责定位、本层只动画)。 */
+  @keyframes tip-in {
+    from {
+      opacity: 0;
+      transform: translateX(4px);
+    }
+  }
+  .tip-in {
+    animation: tip-in 0.15s ease-out both;
+  }
+
   /* 数据列起始处的青色刻度(终端「行号 / 标尺」语感)。 */
   .tick-accent {
     position: relative;

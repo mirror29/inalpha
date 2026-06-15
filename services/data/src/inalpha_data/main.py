@@ -23,6 +23,7 @@ from .api import (
     fundamentals,
     fx,
     health,
+    market,
     news,
     symbols,
     ticker,
@@ -33,6 +34,7 @@ from .config import get_data_settings
 from .connectors import akshare as akshare_conn
 from .connectors import alpaca as alpaca_conn
 from .connectors import binance as binance_conn
+from .connectors import cn_market as cn_market_conn
 from .connectors import fred as fred_conn
 from .connectors import symbol_search as symbol_search_conn
 from .connectors import web_fetch as web_fetch_conn
@@ -63,6 +65,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yfinance_conn.init_connector()
     fred_conn.init_connector(api_key=_settings.fred_api_key)
     web_search_conn.init_connector()
+    cn_market_conn.init_connector()
     web_fetch_conn.init_connector()
     symbol_search_conn.init_connector()
     try:
@@ -72,6 +75,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await web_fetch_conn.close_connector()
         await fred_conn.close_connector()
         await yfinance_conn.close_connector()
+        await cn_market_conn.close_connector()
         await web_search_conn.close_connector()
         await akshare_conn.close_connector()
         await alpaca_conn.close_connector()
@@ -93,6 +97,7 @@ app.include_router(bars.router)
 app.include_router(backfill.router)
 app.include_router(ticker.router)
 app.include_router(news.router)
+app.include_router(market.router)
 app.include_router(fundamentals.router)
 app.include_router(fx.router)
 app.include_router(web_search.router)

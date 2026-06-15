@@ -203,6 +203,44 @@ else
     ok "skills/ 目录不存在（无 skill 可检）"
 fi
 
+# ---------- C8: orchestration 落盘路径红线（ADR-0048 D1）----------
+sect "C8 · orchestration 落盘路径红线（process.cwd / file:.mastra）"
+
+ORCH_SRC="packages/orchestration/src"
+if [[ -d "$ORCH_SRC" ]]; then
+    # process.cwd() 随启动方式漂移（mastra server 子进程 cwd=src/mastra/public/），
+    # 只许 paths.ts（路径单一权威）使用；注释行豁免（grep 输出形如 file:line:content）
+    CWD_HITS=$(
+        grep -rn --include='*.ts' 'process\.cwd()' "$ORCH_SRC" 2>/dev/null \
+        | grep -v "mastra/paths.ts" \
+        | grep -vE ':[0-9]+:[[:space:]]*(//|\*)' \
+        || true
+    )
+    if [[ -z "$CWD_HITS" ]]; then
+        ok "process.cwd() 仅 paths.ts 使用"
+    else
+        while IFS= read -r line; do
+            fail "process.cwd() 越权使用（路径必须走 paths.ts）：$line"
+        done <<< "$CWD_HITS"
+    fi
+
+    # .mastra/ 是 build 目录，mastra dev 启动整目录清空——持久数据落这里 = 重启即丢
+    MASTRA_HITS=$(
+        grep -rn --include='*.ts' 'file:[^"`]*\.mastra' "$ORCH_SRC" 2>/dev/null \
+        | grep -vE ':[0-9]+:[[:space:]]*(//|\*)' \
+        || true
+    )
+    if [[ -z "$MASTRA_HITS" ]]; then
+        ok "无 file:.mastra 持久化路径"
+    else
+        while IFS= read -r line; do
+            fail "持久数据落 .mastra/（mastra build 目录，启动即清）：$line"
+        done <<< "$MASTRA_HITS"
+    fi
+else
+    ok "$ORCH_SRC 不存在（跳过）"
+fi
+
 # ---------- 总结 ----------
 echo
 echo "===================="

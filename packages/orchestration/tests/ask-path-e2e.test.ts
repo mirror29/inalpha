@@ -92,6 +92,73 @@ describe("ask-path e2e · 完整 happy path + telemetry 事件序列", () => {
   });
 });
 
+describe("ask-path e2e · 审批身份投影（promote reason 措辞变化不重弹）", () => {
+  it("第一次带 reason-A，用户允许后重调换成 reason-B → 仍命中 cache → execute（不再弹第二次确认）", async () => {
+    const { events, cache, store, runner } = makeEnv();
+    const exec = vi.fn().mockResolvedValue({ candidateId: "c-42", status: "promoted" });
+    const tool = { id: "paper.promote_candidate", description: "", execute: exec };
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => "ask",
+      askCache: cache,
+      pendingApprovals: store,
+      getSessionId: () => "thread-A",
+    });
+
+    // 第一次：LLM 写了一段 reason → 被拦
+    const first = (await wrapped.execute!({
+      candidateId: "c-42",
+      reason: "2026-Q2 BTC 1h 回测，fitness=0.85 显著高于 baseline 0.32，max_drawdown=8%",
+    })) as { isError: boolean; requiresApproval: boolean };
+    expect(first.requiresApproval).toBe(true);
+    expect(exec).not.toHaveBeenCalled();
+
+    // 第二次：用户允许后 agent 重调，但 LLM 把 reason 换了个措辞（真实场景必现）
+    const second = await wrapped.execute!({
+      candidateId: "c-42",
+      reason: "回测区间 2026 二季度 BTC 一小时线，适应度 0.85 远超基准 0.32，最大回撤约 8%",
+    });
+
+    // 关键断言：reason 不同也命中 cache → 真正 execute，而不是再返 requiresApproval
+    expect(exec).toHaveBeenCalledOnce();
+    expect(second).toEqual({ candidateId: "c-42", status: "promoted" });
+    expect(eventsOf(events, "ask_consumed")).toHaveLength(1);
+    // execute 拿到的仍是完整 input（含第二次的 reason）—— 投影只作用于 cache key
+    expect(exec).toHaveBeenCalledWith(
+      expect.objectContaining({ candidateId: "c-42", reason: expect.stringContaining("适应度") }),
+      undefined,
+    );
+
+    store.clearAll();
+    cache.clear();
+  });
+
+  it("候选 ID 不同时不串号：c-42 已允许不会放行 c-99", async () => {
+    const { cache, store, runner } = makeEnv();
+    const exec = vi.fn().mockResolvedValue({ status: "promoted" });
+    const tool = { id: "paper.promote_candidate", description: "", execute: exec };
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => "ask",
+      askCache: cache,
+      pendingApprovals: store,
+      getSessionId: () => "thread-A",
+    });
+
+    await wrapped.execute!({ candidateId: "c-42", reason: "x".repeat(20) });
+    // 换一个候选重调 → 投影后 candidateId 不同 → 仍被拦（不复用 c-42 的许可）
+    const other = (await wrapped.execute!({
+      candidateId: "c-99",
+      reason: "y".repeat(20),
+    })) as { requiresApproval: boolean };
+    expect(other.requiresApproval).toBe(true);
+    expect(exec).not.toHaveBeenCalled();
+
+    store.clearAll();
+    cache.clear();
+  });
+});
+
 describe("ask-path e2e · 跨 sessionId 不复用", () => {
   it("A 用户 mark 不被 B 用户 consume；两条独立 entry", async () => {
     const { events, cache, store, runner } = makeEnv();

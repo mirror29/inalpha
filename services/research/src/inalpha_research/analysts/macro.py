@@ -5,8 +5,10 @@ D-9 起：
 - **跟 fundamental 的区分**：
   - ``fundamental`` 关注**该标的**自身（halving / ETF flows / 财报 / 政策）
   - ``macro``      关注**宏观环境**（Fed rate / DXY / 地缘 / 当周日程）+ 不同市场的传导
-- 数据：硬编码 `_MACRO_CALENDAR`（近期高影响事件列表，以美国为主）
-- LLM 拿 ``as_of ± 14 天`` 范围内的事件 + market_type → 输出按市场传导调整的 stance
+- 数据：硬编码 `_MACRO_CALENDAR`（近期高影响事件列表；D-12+ 起每事件带 region，
+  覆盖 US + CN——A股/港股不再只有"美国传导次级"视角）
+- LLM 拿 ``as_of ± 14 天`` 范围内的事件 + market_type → 本地 region 日历优先 +
+  跨市场传导次之，输出按市场调整的 stance
 
 不同市场对同一 macro 事件的反应不同（FOMC 鹰派对美股直接打、对 crypto 高敏感、
 对 A 股次级影响、港股因 USD-peg 直传）—— 由 LLM 在 system prompt 的传导表内自适应。
@@ -47,17 +49,48 @@ _FRED_STALE_DAYS = 7
 #: 高影响宏观事件硬编码列表。
 #:
 #: 维护原则：
-#: - 列入：FOMC（议息）/ CPI / NFP / Fed Chair speech / G7 / G20 / 重大加密法案
+#: - 列入（US）：FOMC（议息）/ CPI / NFP / Fed Chair speech / G7 / G20 / 重大加密法案
+#: - 列入（CN，D-12+）：LPR 报价（每月 ~20 日，遇周末顺延）/ MLF（月中）/
+#:   政治局会议（季度经济议题，日期为近似）/ 两会 / CPI·PPI（每月 ~9 日）/ 官方 PMI（月末）
 #: - 不列入：常规财报 / 单一国家小事件 / 日内数据点
+#: - **日历是硬编码、有覆盖窗口**——每季度延长一次；region ∈ {US, CN}，新增市场加新 region。
+#:   note 只写机制/背景，禁写预测结论（§3.1：事件只算"名 + 日期"）。
 _MACRO_CALENDAR: list[dict[str, str]] = [
-    {"date": "2026-05-07", "name": "FOMC rate decision",        "impact": "high", "note": "May FOMC; market priced in hold + dovish dots"},
-    {"date": "2026-05-13", "name": "US April CPI",              "impact": "high", "note": "Headline CPI for April release"},
-    {"date": "2026-06-06", "name": "US May NFP",                "impact": "high", "note": "Non-farm payrolls"},
-    {"date": "2026-06-18", "name": "FOMC rate decision",        "impact": "high", "note": "June FOMC; first cut window per Fed funds futures"},
-    {"date": "2026-07-29", "name": "FOMC rate decision",        "impact": "high", "note": "July FOMC"},
-    {"date": "2026-09-17", "name": "FOMC rate decision",        "impact": "high", "note": "September FOMC"},
-    {"date": "2026-11-03", "name": "US presidential election",  "impact": "high", "note": "Crypto policy direction depends on result"},
+    # ── US ──
+    {"date": "2026-05-07", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "May FOMC; market priced in hold + dovish dots"},
+    {"date": "2026-05-13", "region": "US", "name": "US April CPI",              "impact": "high", "note": "Headline CPI for April release"},
+    {"date": "2026-06-06", "region": "US", "name": "US May NFP",                "impact": "high", "note": "Non-farm payrolls"},
+    {"date": "2026-06-18", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "June FOMC; first cut window per Fed funds futures"},
+    {"date": "2026-07-29", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "July FOMC"},
+    {"date": "2026-09-17", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "September FOMC"},
+    {"date": "2026-11-03", "region": "US", "name": "US presidential election",  "impact": "high", "note": "Crypto policy direction depends on result"},
+    # ── CN（D-12+ 行情归因：A股/港股的本地政策事件）──
+    {"date": "2026-03-05", "region": "CN", "name": "NPC 'Two Sessions' opening",            "impact": "high",   "note": "annual GDP target + fiscal/policy tone set here"},
+    {"date": "2026-04-30", "region": "CN", "name": "Politburo meeting (quarterly economy)", "impact": "high",   "note": "date approximate (late Apr); policy-pivot watch"},
+    {"date": "2026-05-20", "region": "CN", "name": "LPR fixing (1Y/5Y)",                    "impact": "high",   "note": "monthly ~20th; rate path signal"},
+    {"date": "2026-06-09", "region": "CN", "name": "China May CPI / PPI",                   "impact": "medium", "note": "monthly ~9th"},
+    {"date": "2026-06-15", "region": "CN", "name": "PBOC MLF operation window",             "impact": "medium", "note": "mid-month; rate/volume signals stance"},
+    {"date": "2026-06-22", "region": "CN", "name": "LPR fixing (1Y/5Y)",                    "impact": "high",   "note": "monthly ~20th, weekend deferred to Mon"},
+    {"date": "2026-06-30", "region": "CN", "name": "China June official PMI",               "impact": "medium", "note": "month-end release"},
+    {"date": "2026-07-09", "region": "CN", "name": "China June CPI / PPI",                  "impact": "medium", "note": "monthly ~9th"},
+    {"date": "2026-07-15", "region": "CN", "name": "PBOC MLF operation window",             "impact": "medium", "note": "mid-month"},
+    {"date": "2026-07-20", "region": "CN", "name": "LPR fixing (1Y/5Y)",                    "impact": "high",   "note": "monthly ~20th"},
+    {"date": "2026-07-31", "region": "CN", "name": "Politburo meeting (H2 economy)",        "impact": "high",   "note": "date approximate (late Jul)"},
+    {"date": "2026-08-20", "region": "CN", "name": "LPR fixing (1Y/5Y)",                    "impact": "high",   "note": "monthly ~20th"},
+    {"date": "2026-09-09", "region": "CN", "name": "China August CPI / PPI",                "impact": "medium", "note": "monthly ~9th"},
+    {"date": "2026-09-21", "region": "CN", "name": "LPR fixing (1Y/5Y)",                    "impact": "high",   "note": "monthly ~20th, weekend deferred to Mon"},
+    {"date": "2026-09-30", "region": "CN", "name": "China September official PMI",          "impact": "medium", "note": "month-end release"},
+    {"date": "2026-10-20", "region": "CN", "name": "LPR fixing (1Y/5Y)",                    "impact": "high",   "note": "monthly ~20th"},
 ]
+
+#: market_type → 本地日历 region 优先级（排序用：本地事件排前，跨市场传导次之）。
+_HOME_REGION: dict[str, tuple[str, ...]] = {
+    "cn_stock": ("CN", "US"),
+    "hk_stock": ("CN", "US"),
+    "us_stock": ("US", "CN"),
+    "crypto": ("US", "CN"),
+    "global_stock": ("US", "CN"),
+}
 
 _SYSTEM = """
 You are a macro analyst covering any asset class.
@@ -100,9 +133,12 @@ You MAY:
 - Reference your training-time knowledge **with explicit "as of training" caveat**
   + lower confidence.
 
-You receive a near-term macro calendar (US-centric — FOMC / CPI / NFP / election)
-plus the asset + as_of + ``market_type`` (crypto / us_stock / cn_stock /
-hk_stock / global_stock). Apply the cross-market transmission table:
+You receive a near-term macro calendar where each event is tagged with a
+``region`` (US / CN / ...), plus the asset + as_of + ``market_type`` (crypto /
+us_stock / cn_stock / hk_stock / global_stock). **Read the LOCAL-region
+calendar for the given market_type FIRST** (cn_stock / hk_stock → CN events
+are the primary lens; us_stock / crypto → US events), then apply cross-market
+transmission as a SECONDARY lens:
 
 | market_type    | Transmission of hawkish FOMC / strong USD                                |
 |----------------|-------------------------------------------------------------------------|
@@ -111,6 +147,15 @@ hk_stock / global_stock). Apply the cross-market transmission table:
 | cn_stock       | **secondary** — RMB pressure + PBOC reaction; sector rotation matters    |
 | hk_stock       | **direct (USD-peg)** — HKD-rates track Fed verbatim; HK property hits    |
 | global_stock   | **mixed** — depends on local rates / FX-hedged demand                    |
+
+LOCAL-calendar reading for region=CN events (names + dates only — outcomes
+are NEVER given, use conditional phrasing):
+
+| market_type    | How to read CN events (LPR / MLF / Politburo / Two Sessions / CPI / PMI) |
+|----------------|--------------------------------------------------------------------------|
+| cn_stock       | **primary driver** — local policy calendar outranks US transmission      |
+| hk_stock       | **dual exposure** — CN policy (earnings/flows) + US rates (USD-peg)      |
+| others         | secondary spillover (commodities / China-revenue names)                  |
 
 Reference reading (universal):
 - Imminent FOMC + hawkish surprise risk      → bearish bias
@@ -308,6 +353,37 @@ def _events_in_window(
     return out
 
 
+def _calendar_coverage_end(region: str | None = None) -> datetime:
+    """日历覆盖终点（计算得出，避免手写常量随日历更新漂移）。
+
+    传 region 时只算该 region 的事件：coverage_note 要按 market 的**本地**日历
+    判断是否到头——否则全局 max（US 远期事件，如 11-03 选举）会把 CN 本地日历
+    已过期（最后一条 10-20 LPR）的情况掩盖掉，cn_stock 用户看到 CN upcoming
+    为 (none) 会误读成"无政策安排"，正是 coverage_note 要防的坑。
+    """
+    evs = _MACRO_CALENDAR
+    if region is not None:
+        scoped = [ev for ev in _MACRO_CALENDAR if ev.get("region") == region]
+        if scoped:  # 防御：该 region 无事件时回退全局
+            evs = scoped
+    return max(
+        datetime.fromisoformat(ev["date"]).replace(tzinfo=UTC)
+        for ev in evs
+    )
+
+
+def _region_sorted(evs: list[dict[str, Any]], market_type: str) -> list[dict[str, Any]]:
+    """本地 region 事件排前（local calendar first），同 region 内按日期。"""
+    priority = _HOME_REGION.get(market_type, ("US", "CN"))
+
+    def _key(e: dict[str, Any]) -> tuple[int, str]:
+        region = str(e.get("region", ""))
+        idx = priority.index(region) if region in priority else len(priority)
+        return (idx, str(e.get("date", "")))
+
+    return sorted(evs, key=_key)
+
+
 def _format_user_prompt(
     *,
     venue: str,
@@ -331,8 +407,9 @@ def _format_user_prompt(
 
     def _fmt(evs: list[dict[str, Any]]) -> str:
         return "\n".join(
-            f"  - {e.get('date')} | {e.get('name')} | impact={e.get('impact')} | {e.get('note')}"
-            for e in evs
+            f"  - {e.get('date')} | [{e.get('region', '?')}] {e.get('name')} "
+            f"| impact={e.get('impact')} | {e.get('note')}"
+            for e in _region_sorted(evs, market_type)
         )
 
     past_block = (
@@ -347,6 +424,18 @@ def _format_user_prompt(
         else "upcoming_macro_events_next_14d: (none)"
     )
     ev_block = f"{past_block}\n\n{upcoming_block}"
+    # 日历过期防误读：窗口越过硬编码日历的覆盖终点时，显式声明"之后没事件 =
+    # 覆盖未知"，否则 LLM 会把"日历没写"读成"无事件安排"。
+    # 按 market 的本地（primary home）region 判断覆盖——本地日历到头才是该
+    # market 用户真正关心的"覆盖未知"信号（全局 max 会被 US 远期事件掩盖）。
+    home_region = _HOME_REGION.get(market_type, ("US", "CN"))[0]
+    coverage_end = _calendar_coverage_end(home_region).date()
+    if (as_of_date + timedelta(days=14)) > coverage_end:
+        ev_block += (
+            f"\n\ncalendar_coverage_note: hardcoded calendar ends {coverage_end.isoformat()} — "
+            f"absence of events beyond that date means UNKNOWN coverage, "
+            f"NOT 'no events scheduled'."
+        )
 
     if macro_news:
         news_lines = ["live_macro_news (SPY-proxy headlines, newest first):"]

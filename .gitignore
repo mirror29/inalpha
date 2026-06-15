@@ -10,6 +10,8 @@ node_modules/
 .mastra/
 # orchestration 本地 SQLite 数据（memory/traces）—— 不能放 .mastra/（mastra 启动即清）
 .data/
+# .data 的兄弟备份目录（ADR-0048：与源数据分离，误删 .data/ 不连坐）
+.data-backups/
 dist/
 build/
 out/
