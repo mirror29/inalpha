@@ -135,9 +135,13 @@ class WebSearchConnector:
         # ddgs.news 的聚合源没有中文财经内容（中文 query 实测必返空），试了也是
         # 白烧一个 overall_timeout——直接降级为网页搜索（bing 中文新闻 query 常有
         # 可用结果），并恒带 hint 把 agent 引向市场级快讯工具。
+        # allow_fallback=False（刻意）：CJK news 已是"兜底中的兜底"，bing 失败再换
+        # duckduckgo 会把最坏耗时翻到 40s（deep_dive fan-out 同 query 并发时进一步
+        # 放大），不值得——快速失败带 status，让 orchestrator 走 data.get_market_news
+        # （A股专业快讯源，prompt 已有此降级规则）。
         if _has_cjk(query):
             outcome = await self._search_with_fallback(
-                query=query, backend="bing", max_results=max_results, allow_fallback=True
+                query=query, backend="bing", max_results=max_results, allow_fallback=False
             )
             outcome.backend_used = f"{outcome.backend_used}(text-fallback-for-cjk-news)"
             outcome.hint = _CJK_NEWS_HINT
