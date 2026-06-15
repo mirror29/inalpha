@@ -205,8 +205,8 @@ class AkshareConnector:
             "归属净利润同比增长": "profit_yoy",
             # 杠杆（A股摘要给的是资产负债率；近似填入 leverage 槽，前端按杠杆指标展示）
             "资产负债率": "debt_to_equity",
-            # 估值：stock_financial_abstract 不含；eastmoney 估值源被本地代理拦，
-            # 留待后续接非 eastmoney 源（如 stock_zh_valuation_baidu）。命中以下键即用。
+            # 估值：stock_financial_abstract 不含，A股另走 Baidu 源补齐(见下方)。
+            # 以下键留作前向兼容(摘要/其他市场若带了即用,命不中无害)。
             "总市值": "market_cap",
             "流通市值": "market_cap",
             "市盈率": "pe_ratio",
@@ -227,6 +227,19 @@ class AkshareConnector:
             v = indicators.get(_pct_key)
             if v is not None:
                 indicators[_pct_key] = v / 100.0
+
+        # 估值(总市值/PE/PB)不在财报摘要里 → A股另走 Baidu 源补齐(best-effort,
+        # 失败只记日志不阻断已拿到的盈利/成长/财务指标)。
+        if prefix in ("sh", "sz") and not all(
+            indicators.get(k) is not None for k in ("market_cap", "pe_ratio", "pb_ratio")
+        ):
+            try:
+                valuation = await asyncio.to_thread(_fetch_valuation_sync, code)
+                for k, v in valuation.items():
+                    if indicators.get(k) is None:
+                        indicators[k] = v
+            except Exception as exc:
+                _logger.warning("akshare_valuation_fetch_failed", symbol=symbol, error=str(exc))
 
         return {
             "venue": VENUE,
@@ -355,6 +368,41 @@ def _flatten_financial_abstract(raw: Any) -> dict[str, Any]:
                 continue
             out[str(name)] = val
             break  # 该指标已取到最新非空值
+    return out
+
+
+def _fetch_valuation_sync(code: str) -> dict[str, float]:
+    """A股估值(总市值 / 市盈率TTM / 市净率)—— 走 Baidu 源
+    (``stock_zh_valuation_baidu``),非 eastmoney、不被本地代理拦
+    (financial_abstract 不含估值;eastmoney 的 stock_individual_info_em 被代理拦)。
+
+    每个指标一次调用,串行 + 小睡防封;单项失败跳过不影响其余与基本面。
+    Baidu 总市值单位为**亿元**,×1e8 转绝对值对齐 yfinance(前端 fmtCap 按亿/万亿展示)。
+    """
+    import math
+    import time as _time
+
+    import akshare as ak
+
+    out: dict[str, float] = {}
+    plan = [
+        ("总市值", "market_cap", 1e8),
+        ("市盈率(TTM)", "pe_ratio", 1.0),
+        ("市净率", "pb_ratio", 1.0),
+    ]
+    for i, (indicator, key, scale) in enumerate(plan):
+        if i:
+            _time.sleep(0.5)  # 防封:同源连续调用留间隔
+        try:
+            df = ak.stock_zh_valuation_baidu(symbol=code, indicator=indicator, period="近一年")
+            if df is None or not hasattr(df, "iloc") or len(df) == 0:
+                continue
+            val = df.iloc[-1].get("value")
+            if val is None or (isinstance(val, float) and math.isnan(val)):
+                continue
+            out[key] = float(val) * scale
+        except Exception:
+            continue  # 单项失败跳过,不阻断其余估值/基本面
     return out
 
 
