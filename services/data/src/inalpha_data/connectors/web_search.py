@@ -124,6 +124,14 @@ class WebSearchConnector:
         max_results: int = 10,
     ) -> SearchOutcome:
         """News search. results = [{title, href, body}]."""
+        # cache key check 必须在 CJK 分支之前——否则中文 news（最高频路径，
+        # deep_dive fan-out 里 sentiment/macro/web analyst 并行用同一 query）
+        # 完全绕开 60s 缓存，每路独立打源站。query 本身已区分 CJK 与否，共用 key 安全。
+        key = ("news", query, max_results)
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached
+
         # ddgs.news 的聚合源没有中文财经内容（中文 query 实测必返空），试了也是
         # 白烧一个 overall_timeout——直接降级为网页搜索（bing 中文新闻 query 常有
         # 可用结果），并恒带 hint 把 agent 引向市场级快讯工具。
@@ -133,16 +141,13 @@ class WebSearchConnector:
             )
             outcome.backend_used = f"{outcome.backend_used}(text-fallback-for-cjk-news)"
             outcome.hint = _CJK_NEWS_HINT
-            return outcome
+        else:
+            outcome = await self._run_guarded(
+                _news_sync, kind="news", query=query, max_results=max_results
+            )
+            outcome.backend_used = "news"
 
-        key = ("news", query, max_results)
-        cached = self._cache_get(key)
-        if cached is not None:
-            return cached
-        outcome = await self._run_guarded(
-            _news_sync, kind="news", query=query, max_results=max_results
-        )
-        outcome.backend_used = "news"
+        # _cache_put 只缓存 status=="ok" 非空结果（失败不污染缓存）
         self._cache_put(key, outcome)
         return outcome
 

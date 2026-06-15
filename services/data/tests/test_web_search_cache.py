@@ -86,6 +86,28 @@ async def test_news_cached_too() -> None:
     assert len(calls) == 1
 
 
+async def test_cjk_news_cached_too() -> None:
+    """中文 news 是最高频路径（deep_dive fan-out 并行同 query）——缓存必须命中，
+    否则每个 analyst 各自打源站。回归 PR #84 CR：CJK 分支曾绕开缓存读写。"""
+    conn = WebSearchConnector()
+    calls = _patch_guarded(conn, [_hit()])
+    out1 = await conn.fetch_news("A股 今天 新闻")  # CJK → text-fallback 路径
+    out2 = await conn.fetch_news("A股 今天 新闻")
+    assert out1.results == out2.results == _HIT
+    assert len(calls) == 1  # 第二次走缓存，不重复打源站
+
+
+async def test_cjk_news_failure_not_cached() -> None:
+    """中文 news 失败（如全部 timeout）不进缓存，下次重新尝试。"""
+    conn = WebSearchConnector()
+    calls = _patch_guarded(conn, [_miss("timeout"), _miss("timeout"), _hit()])
+    out1 = await conn.fetch_news("A股 今天 新闻")  # 失败：本体 + fallback 各一次
+    assert out1.results == []
+    assert len(calls) == 2
+    await conn.fetch_news("A股 今天 新闻")  # 不命中缓存 → 再真打
+    assert len(calls) == 3
+
+
 async def test_cache_disabled_when_ttl_zero() -> None:
     conn = WebSearchConnector()
     conn._cache_ttl = 0
