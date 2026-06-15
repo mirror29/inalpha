@@ -215,11 +215,22 @@ def _events_in_window(
     return out
 
 
-def _calendar_coverage_end() -> datetime:
-    """日历最远事件日期——计算得出，避免手写常量随日历更新漂移。"""
+def _calendar_coverage_end(region: str | None = None) -> datetime:
+    """日历覆盖终点（计算得出，避免手写常量随日历更新漂移）。
+
+    传 region 时只算该 region 的事件：coverage_note 要按 market 的**本地**日历
+    判断是否到头——否则全局 max（US 远期事件，如 11-03 选举）会把 CN 本地日历
+    已过期（最后一条 10-20 LPR）的情况掩盖掉，cn_stock 用户看到 CN upcoming
+    为 (none) 会误读成"无政策安排"，正是 coverage_note 要防的坑。
+    """
+    evs = _MACRO_CALENDAR
+    if region is not None:
+        scoped = [ev for ev in _MACRO_CALENDAR if ev.get("region") == region]
+        if scoped:  # 防御：该 region 无事件时回退全局
+            evs = scoped
     return max(
         datetime.fromisoformat(ev["date"]).replace(tzinfo=UTC)
-        for ev in _MACRO_CALENDAR
+        for ev in evs
     )
 
 
@@ -276,7 +287,10 @@ def _format_user_prompt(
     ev_block = f"{past_block}\n\n{upcoming_block}"
     # 日历过期防误读：窗口越过硬编码日历的覆盖终点时，显式声明"之后没事件 =
     # 覆盖未知"，否则 LLM 会把"日历没写"读成"无事件安排"。
-    coverage_end = _calendar_coverage_end().date()
+    # 按 market 的本地（primary home）region 判断覆盖——本地日历到头才是该
+    # market 用户真正关心的"覆盖未知"信号（全局 max 会被 US 远期事件掩盖）。
+    home_region = _HOME_REGION.get(market_type, ("US", "CN"))[0]
+    coverage_end = _calendar_coverage_end(home_region).date()
     if (as_of_date + timedelta(days=14)) > coverage_end:
         ev_block += (
             f"\n\ncalendar_coverage_note: hardcoded calendar ends {coverage_end.isoformat()} — "
