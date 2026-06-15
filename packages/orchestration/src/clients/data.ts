@@ -133,10 +133,12 @@ export class DataClient {
         top_n: String(params.topN ?? 10),
       });
     } catch (err) {
+      // 错误回落不带 top/bottom:空数组会误过前端 isSectorBoard 渲染出空板;
+      // 只回 {market,error}(同 moneyflow),让视图守卫失败、回落通用 ToolOutput 显示错误。
       if (err instanceof HttpClientError) {
-        return { market: params.market ?? "cn", top: [], bottom: [], error: `upstream ${err.status}: ${err.message}` };
+        return { market: params.market ?? "cn", error: `upstream ${err.status}: ${err.message}` };
       }
-      return { market: params.market ?? "cn", top: [], bottom: [], error: String(err) };
+      return { market: params.market ?? "cn", error: String(err) };
     }
   }
 
