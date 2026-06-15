@@ -168,6 +168,24 @@ async def test_run_guarded_returns_engine_error_on_exception(
     assert "ddgs blew up" in (out.error or "")
 
 
+async def test_run_guarded_reraises_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CancelledError 必须重抛——Py3.8+ 它非 Exception 子类，若被吞会触发
+    `if not results` 的 NameError 掩盖取消信号，上层无法响应 tool call 取消。"""
+    import asyncio
+
+    from inalpha_data.connectors import web_search as ws
+
+    def cancel(*args: object, **kwargs: object) -> list[dict[str, object]]:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(ws, "_search_sync", cancel)
+    connector = ws.WebSearchConnector()
+    with pytest.raises(asyncio.CancelledError):
+        await connector.fetch_search("anything", backend="google", max_results=3)
+
+
 def test_classify_exception_direct() -> None:
     """直接覆盖 _classify_exception 的类名/消息分类。
 
