@@ -33,6 +33,24 @@ import {
 } from "./FactorViews";
 import { ResearchView, isResearch } from "./ResearchView";
 import { TradePlanView, isPlan } from "./TradeViews";
+import {
+  MarketNewsView,
+  MoneyflowView,
+  MoversView,
+  SectorBoardView,
+  isMarketNews,
+  isMoneyflow,
+  isMovers,
+  isSectorBoard,
+} from "./MarketAttributionViews";
+import {
+  FundamentalsView,
+  StrategyIdListView,
+  WebFetchView,
+  isFundamentals,
+  isStrategyIdList,
+  isWebFetch,
+} from "./MiscViews";
 
 /**
  * 工具名 → 专属可视化视图的注册分发。
@@ -69,8 +87,9 @@ export function resolveToolView(toolName: string, v: unknown): ReactNode | null 
     case "paper_stop_strategy":
       return isStrategyRun(v) ? <StrategyRunView r={v} /> : null;
     case "paper_list_strategy_runs":
-    case "paper_list_strategies":
       return isStrategyRunList(body) ? <StrategyRunListView list={body} /> : null;
+    case "paper_list_strategies":
+      return isStrategyIdList(v) ? <StrategyIdListView v={v} /> : null;
     case "paper_run_backtest":
       return isBacktest(v) ? <BacktestView b={v} /> : null;
     case "paper_get_account":
@@ -91,6 +110,19 @@ export function resolveToolView(toolName: string, v: unknown): ReactNode | null 
     case "factor_evaluate_candidate":
     case "factor_custom_score":
       return isCustomFactor(v) ? <CustomFactorView c={v} /> : null;
+    case "data_get_market_news":
+      return isMarketNews(v) ? <MarketNewsView v={v} /> : null;
+    case "data_get_market_sectors":
+      return isSectorBoard(v) ? <SectorBoardView v={v} /> : null;
+    case "data_get_market_moneyflow":
+      return isMoneyflow(v) ? <MoneyflowView v={v} /> : null;
+    case "data_get_market_movers":
+      return isMovers(v) ? <MoversView v={v} /> : null;
+    case "data_get_fundamentals":
+      // 基本面字段随市场而异 → 仅按工具名派发,不进形态嗅探(避免误命中其它 dict)。
+      return isFundamentals(v) ? <FundamentalsView v={v} /> : null;
+    case "web_fetch":
+      return isWebFetch(v) ? <WebFetchView v={v} /> : null;
   }
 
   // 名字没命中 → 形态嗅探(特征从强到弱,避免误判)。
@@ -101,6 +133,12 @@ export function resolveToolView(toolName: string, v: unknown): ReactNode | null 
   if (isResearch(v)) return <ResearchView r={v} />;
   if (isSearch(v)) return <SearchView s={v} />;
   if (isPlan(v)) return <TradePlanView p={v} />;
+  if (isSectorBoard(v)) return <SectorBoardView v={v} />;
+  if (isMoneyflow(v)) return <MoneyflowView v={v} />;
+  if (isMarketNews(v)) return <MarketNewsView v={v} />;
+  if (isMovers(v)) return <MoversView v={v} />;
+  if (isWebFetch(v)) return <WebFetchView v={v} />;
+  if (isStrategyIdList(v)) return <StrategyIdListView v={v} />;
   if (isCandidate(v)) return <CandidateView c={v} />;
   if (isStrategyRun(v)) return <StrategyRunView r={v} />;
   if (isCandidateList(body)) return <CandidateListView list={body} />;
