@@ -348,8 +348,11 @@ export function ChatThread({
     if (!id) return;
     setHistoryLoading(true);
     fetch(`/api/chat/threads/${id}/messages`)
-      .then((r) => (r.ok ? r.json() : { messages: [] }))
-      .then((d: { messages?: { id: string; role: string; content: string }[] }) => {
+      // 非 2xx 返 null(不要 {messages:[]})——否则会把当前会话清空白(M-1)。
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { messages?: AGMessage[] } | null) => {
+        // null(请求失败)或飞行途中已切到别的会话 → 不覆写,避免清空 / 旧数据串台(M-2)。
+        if (!d || loadedThreadRef.current !== id) return;
         setMessagesRef.current((d.messages ?? []) as never);
       })
       .catch(() => {})
