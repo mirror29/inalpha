@@ -6,7 +6,11 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from inalpha_data.connectors.web_search import SearchOutcome, WebSearchConnector
+from inalpha_data.connectors.web_search import (
+    SearchOutcome,
+    WebSearchConnector,
+    _classify_exception,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -162,6 +166,28 @@ async def test_run_guarded_returns_engine_error_on_exception(
     assert out.results == []
     assert out.status == "engine_error"
     assert "ddgs blew up" in (out.error or "")
+
+
+def test_classify_exception_direct() -> None:
+    """直接覆盖 _classify_exception 的类名/消息分类。
+
+    回归卡口：分类靠异常类名字符串匹配（不硬 import ddgs.exceptions）。ddgs 升级若
+    重命名异常类（如 RatelimitException→RateLimitException）会让此测试挂，提醒同步。
+    间接路径（_run_guarded）mock 的是 outcome，不经真实异常对象，覆盖不到这里。
+    """
+
+    class RatelimitException(Exception): ...
+
+    class TimeoutException(Exception): ...
+
+    class DDGSException(Exception): ...
+
+    assert _classify_exception(RatelimitException("429")) == "rate_limited"
+    assert _classify_exception(TimeoutException("timed out")) == "timeout"
+    # 空结果是抛 DDGSException("No results found.")，按消息识别（优先于类名）
+    assert _classify_exception(DDGSException("No results found.")) == "no_results"
+    assert _classify_exception(DDGSException("backend exploded")) == "engine_error"
+    assert _classify_exception(ValueError("boom")) == "engine_error"
 
 
 async def test_run_guarded_classifies_rate_limit(
