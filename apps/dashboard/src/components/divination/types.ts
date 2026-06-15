@@ -54,15 +54,24 @@ export interface TarotReadingView {
 /** 任一玄学结果。 */
 export type DivinationView = HexagramReadingView | TarotReadingView;
 
-/** 玄学 tool 名(与 orchestration 注册一致)。 */
+/**
+ * 玄学 tool 名(归一化为下划线形式)。
+ *
+ * 注意大小写之外的**点 / 下划线**两种形态都要认:
+ *  - 历史回填(DB tool-invocation.toolName)是原始 tool id `divination.cast_hexagram`(点);
+ *  - live AG-UI 把 id 里的 `.` 换成 `_` → `divination_cast_hexagram`(下划线,与
+ *    tool-views 注册表同款约定)。
+ * 早先这里只存点名 + 直接 has(name) → live 下划线名判 false,占卜在对话流里掉进裸 JSON
+ * (占卜台是直渲染所以看着正常,掩盖了 chat 的 bug)。统一归一化后两种都命中。
+ */
 export const DIVINATION_TOOL_NAMES = new Set([
-  "divination.cast_hexagram",
-  "divination.draw_tarot",
+  "divination_cast_hexagram",
+  "divination_draw_tarot",
 ]);
 
-/** 给定 tool 名是否玄学 tool。 */
+/** 给定 tool 名是否玄学 tool(点 / 下划线两种形态都认)。 */
 export function isDivinationTool(name: string | undefined): boolean {
-  return !!name && DIVINATION_TOOL_NAMES.has(name);
+  return !!name && DIVINATION_TOOL_NAMES.has(name.replace(/\./g, "_"));
 }
 
 /**
