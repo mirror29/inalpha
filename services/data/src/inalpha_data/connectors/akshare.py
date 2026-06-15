@@ -188,28 +188,29 @@ class AkshareConnector:
         from datetime import datetime as dt_dt
 
         indicators: dict[str, float | None] = {}
-        # akshare 返回的 dict key 是中文指标名，做模糊匹配映射
+        # raw 由 _flatten_abstract 拍平成 {指标名: 最新期值}。
+        # 键名以 stock_financial_abstract 实际「指标」列为准（2026-06 实测）；
+        # 旧的简写键保留作其他市场 / 版本 / 未来估值源的前向兼容（命中即用，命不中无害）。
         _indicator_map = {
+            # 盈利
+            "净资产收益率(ROE)": "roe",
+            "净资产收益率": "roe",
+            "毛利率": "gross_margin",
+            "销售净利率": "net_margin",
+            "净利率": "net_margin",
+            # 成长
+            "营业总收入增长率": "revenue_yoy",
+            "营业收入同比增长": "revenue_yoy",
+            "归属母公司净利润增长率": "profit_yoy",
+            "归属净利润同比增长": "profit_yoy",
+            # 杠杆（A股摘要给的是资产负债率；近似填入 leverage 槽，前端按杠杆指标展示）
+            "资产负债率": "debt_to_equity",
+            # 估值：stock_financial_abstract 不含；eastmoney 估值源被本地代理拦，
+            # 留待后续接非 eastmoney 源（如 stock_zh_valuation_baidu）。命中以下键即用。
             "总市值": "market_cap",
             "流通市值": "market_cap",
             "市盈率": "pe_ratio",
             "市净率": "pb_ratio",
-            "净资产收益率": "roe",
-            "营业收入同比增长": "revenue_yoy",
-            "归属净利润同比增长": "profit_yoy",
-            "毛利率": "gross_margin",
-            "净利率": "net_margin",
-            "资产负债率": "debt_to_equity",
-            # 财务质量项（供应链瓶颈调研的红旗检查：存货应收增速 vs 收入、现金流）
-            # akshare 摘要表字段随版本/市场浮动，防御性映射：缺了置 None 不报错
-            "经营现金流量净额": "operating_cashflow",
-            "每股经营现金流": "ocf_per_share",
-            "存货周转率": "inventory_turnover",
-            "存货周转天数": "inventory_days",
-            "应收账款周转率": "receivables_turnover",
-            "应收账款周转天数": "receivables_days",
-            "流动比率": "current_ratio",
-            "速动比率": "quick_ratio",
         }
         for cn_key, en_key in _indicator_map.items():
             val = raw.get(cn_key)
@@ -218,6 +219,14 @@ class AkshareConnector:
                     indicators[en_key] = float(val)
                 except (TypeError, ValueError):
                     pass
+
+        # 单位归一:akshare 摘要的 ROE / 利润率 / 增长率均为**百分数**(如 18.8 表示
+        # 18.8%);yfinance 同名字段是**分数**(0.188)。统一成分数对齐 yfinance,
+        # 前端按分数 ×100 展示。(debt_to_equity / 估值字段不在此列,保持原值。)
+        for _pct_key in ("roe", "gross_margin", "net_margin", "revenue_yoy", "profit_yoy"):
+            v = indicators.get(_pct_key)
+            if v is not None:
+                indicators[_pct_key] = v / 100.0
 
         return {
             "venue": VENUE,
@@ -292,32 +301,61 @@ class AkshareConnector:
 
 
 def _fetch_financials_sync(*, prefix: str, code: str) -> dict[str, Any]:
-    """同步调 akshare 财报接口 —— 按市场前缀路由。
+    """同步调 akshare 财报接口 —— 按前缀路由,返回 ``{指标名: 最新期值}``。
 
-    - A股（sh/sz）：``stock_financial_abstract(symbol=code)``
-    - 港股（hk）  ：``stock_hk_financial_abstract(symbol=code)``
+    ``stock_financial_abstract`` / ``stock_hk_financial_abstract`` 返回的是
+    「指标 × 报告期日期列」的**转置表**(行=指标名,列=各报告期,如 20260331)。
+    旧实现 ``raw.iloc[-1].to_dict()`` 只取了**最后一行**(单个指标)→ 上层
+    ``raw.get("净资产收益率")`` 全落空、indicators 恒为 null。这里改为遍历整表、
+    每个指标取最新一期的**非空**值,拍平成 {指标名: 值} 供上层按名映射。
     """
     import akshare as ak
 
     if prefix in ("sh", "sz"):
-        # A股财务指标摘要（主要指标表）
         raw = ak.stock_financial_abstract(symbol=code)
     else:
-        # hk
         raw = ak.stock_hk_financial_abstract(symbol=code)
 
-    # akshare 可能返回 DataFrame（最新一条 row 转 dict）或直接 dict
-    if hasattr(raw, "iloc"):
-        if len(raw) == 0:
-            return {}
-        # 取最新一期的数据（最后一行 / 第一行取决于 akshare 版本）
-        row = raw.iloc[-1] if hasattr(raw, "iloc") else raw.iloc[0]
-        return row.to_dict() if hasattr(row, "to_dict") else dict(row)
-    if isinstance(raw, dict):
-        return raw
+    return _flatten_financial_abstract(raw)
+
+
+def _flatten_financial_abstract(raw: Any) -> dict[str, Any]:
+    """转置财报表 → ``{指标名: 最新非空值}``;结构不符时退化兜底,绝不抛错。"""
+    import math
+
     if raw is None:
         return {}
-    return {}
+    if not hasattr(raw, "columns"):
+        return raw if isinstance(raw, dict) else {}
+
+    cols = [str(c) for c in raw.columns]
+    # 8 位数字列即报告期(20260331);新→旧排序,优先取最近一期。
+    date_cols = sorted(
+        (c for c in raw.columns if str(c).isdigit() and len(str(c)) == 8),
+        key=lambda c: str(c),
+        reverse=True,
+    )
+    if "指标" not in cols or not date_cols:
+        # 不是预期的转置表 → 退回最后一行(旧行为)兜底,至少不丢数据。
+        if len(raw) == 0:
+            return {}
+        row = raw.iloc[-1]
+        return row.to_dict() if hasattr(row, "to_dict") else dict(row)
+
+    out: dict[str, Any] = {}
+    for _, row in raw.iterrows():
+        name = row.get("指标")
+        if name is None:
+            continue
+        for dc in date_cols:
+            val = row.get(dc)
+            if val is None:
+                continue
+            if isinstance(val, float) and math.isnan(val):
+                continue
+            out[str(name)] = val
+            break  # 该指标已取到最新非空值
+    return out
 
 
 def _fetch_news_sync(symbol: str) -> list[dict[str, Any]]:

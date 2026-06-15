@@ -111,9 +111,9 @@ function fmtCap(v: number): string {
   return fmtNum(v);
 }
 
-/** 比率值归一到百分数:|v|≤1.5 当分数(×100),否则当已是百分数(兼容两个连接器口径)。 */
+/** 比率值 → 百分数。后端统一以**分数**返回(akshare 已 ÷100 对齐 yfinance),恒 ×100。 */
 function asPct(v: number): number {
-  return Math.abs(v) <= 1.5 ? v * 100 : v;
+  return v * 100;
 }
 
 export function FundamentalsView({ v }: { v: Financials }) {
