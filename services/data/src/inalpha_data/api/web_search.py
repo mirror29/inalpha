@@ -18,7 +18,7 @@ def _to_response(query: str, requested_backend: str, outcome: SearchOutcome) -> 
     return WebSearchResponse(
         query=query,
         backend=outcome.backend_used or requested_backend,
-        status=outcome.status,  # type: ignore[arg-type]
+        status=outcome.status,
         error=outcome.error,
         hint=outcome.hint,
         fetched_at=datetime.now(UTC).isoformat(),
