@@ -197,7 +197,12 @@ class CnMarketConnector:
         cached = self._cache_get(("moneyflow",))
         if cached is not None:
             return cached
-        data = await self._get_json("data.hexin.cn", _THS_HSGT_URL, params=None, headers=None)
+        data = await self._get_json(
+            "data.hexin.cn",
+            _THS_HSGT_URL,
+            params=None,
+            headers={"Referer": "https://www.10jqka.com.cn/"},
+        )
         times = data.get("time")
         hgt = data.get("hgt")
         sgt = data.get("sgt")
@@ -253,7 +258,7 @@ class CnMarketConnector:
             "zx.10jqka.com.cn",
             _THS_HARDEN_URL.format(date=bj_today),
             params=None,
-            headers=None,
+            headers={"Referer": "https://zx.10jqka.com.cn/"},
         )
         rows = data.get("data")
         if not isinstance(rows, list):
