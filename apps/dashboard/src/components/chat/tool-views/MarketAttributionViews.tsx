@@ -89,7 +89,14 @@ interface SectorBoard {
 }
 
 export function isSectorBoard(v: unknown): v is SectorBoard {
-  return isObj(v) && Array.isArray(v.top) && Array.isArray(v.bottom);
+  if (!isObj(v) || v.error) return false;
+  // 502 回落是 {top:[],bottom:[],error}——空数组也满足 Array.isArray,会渲染出空板;
+  // 与 isMarketNews/isMovers 一致,要求至少一侧有数据,否则回落通用 ToolOutput 显示 error。
+  return (
+    Array.isArray(v.top) &&
+    Array.isArray(v.bottom) &&
+    (v.top.length > 0 || v.bottom.length > 0)
+  );
 }
 
 function SectorRow({ s }: { s: SectorItem }) {
