@@ -228,6 +228,12 @@ class WebSearchResult(BaseModel):
     snippet: str = ""
 
 
+#: 搜索结果状态的单一真相源——connector 的 ``SearchOutcome.status`` 与
+#: ``_classify_exception`` 也复用它，避免两处 Literal 漂移（新增状态只加一处忘了
+#: 另一处会让 Pydantic 在 API 层 runtime 抛 ValidationError → 搜索端点 500）。
+WebSearchStatus = Literal["ok", "no_results", "timeout", "rate_limited", "engine_error"]
+
+
 class WebSearchResponse(BaseModel):
     """搜索结果 + 失败原因透传。
 
@@ -239,7 +245,7 @@ class WebSearchResponse(BaseModel):
     query: str
     backend: str
     """实际使用的搜索引擎（含 fallback / 降级后），不一定等于请求参数。"""
-    status: Literal["ok", "no_results", "timeout", "rate_limited", "engine_error"] = "ok"
+    status: WebSearchStatus = "ok"
     error: str | None = None
     hint: str | None = None
     """给 agent 的下一步建议（如中文 news 降级后指向市场级快讯工具）。"""

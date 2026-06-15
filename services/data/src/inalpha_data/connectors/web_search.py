@@ -16,6 +16,7 @@ from typing import Any
 from inalpha_shared import get_logger
 
 from ..config import get_data_settings
+from ..schemas import WebSearchStatus
 
 VENUE = "web"
 _logger = get_logger(__name__)
@@ -40,13 +41,13 @@ class SearchOutcome:
     """
 
     results: list[dict[str, Any]] = field(default_factory=list)
-    status: str = "ok"  # ok / no_results / timeout / rate_limited / engine_error
+    status: WebSearchStatus = "ok"
     error: str | None = None
     backend_used: str = ""
     hint: str | None = None
 
 
-def _classify_exception(exc: BaseException) -> str:
+def _classify_exception(exc: BaseException) -> WebSearchStatus:
     """按异常类型名分类（不硬依赖 ddgs.exceptions 的 import）。
 
     坑：ddgs 空结果不是返回 []，而是抛 DDGSException("No results found.")——
