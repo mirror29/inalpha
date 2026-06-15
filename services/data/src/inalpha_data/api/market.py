@@ -26,9 +26,11 @@ from inalpha_shared.errors import InalphaError, ValidationError
 
 from ..connectors.cn_market import CnMarketConnector, CnMarketError, get_connector
 from ..schemas import (
+    MarketNewsItem,
     MarketNewsResponse,
     MoneyflowResponse,
     SectorBoardResponse,
+    StrongStockItem,
     StrongStocksResponse,
 )
 
@@ -68,7 +70,9 @@ async def market_news(
         _logger.warning("market_news_failed", market=market, error=str(exc))
         raise MarketDataUnavailableError(str(exc)) from exc
     return MarketNewsResponse(
-        market=market, fetched_at=datetime.now(UTC), items=items  # type: ignore[arg-type]
+        market=market,
+        fetched_at=datetime.now(UTC),
+        items=[MarketNewsItem(**r) for r in items],
     )
 
 
@@ -123,5 +127,7 @@ async def market_movers(
         _logger.warning("market_movers_failed", market=market, error=str(exc))
         raise MarketDataUnavailableError(str(exc)) from exc
     return StrongStocksResponse(
-        market=market, fetched_at=datetime.now(UTC), items=items  # type: ignore[arg-type]
+        market=market,
+        fetched_at=datetime.now(UTC),
+        items=[StrongStockItem(**r) for r in items],
     )
