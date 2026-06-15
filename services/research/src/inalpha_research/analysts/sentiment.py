@@ -22,9 +22,12 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from inalpha_shared import get_logger
 
 from ..researchers.base import infer_asset_type
 from .base import Analyst
+
+_logger = get_logger(__name__)
 
 _FNG_URL = "https://api.alternative.me/fng/"
 _FETCH_TIMEOUT_S = 10.0
@@ -100,7 +103,10 @@ class SentimentAnalyst(Analyst):
         if market_type == "crypto":
             try:
                 entries = await _fetch_fng(limit=_DEFAULT_LIMIT)
-            except Exception:
+            except Exception as exc:
+                # 不静默吞:FNG 挂了(超时/4xx/5xx/坏 JSON)要留痕,否则运维看不到;
+                # 仍回落 web 搜索(下方 if not entries),不阻断研究。
+                _logger.warning("fng_fetch_failed", symbol=symbol, error=str(exc))
                 entries = []
 
             if not entries:
