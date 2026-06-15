@@ -61,5 +61,9 @@ export function projectApprovalInput(toolName: string, input: unknown): unknown 
   for (const f of fields) {
     if (f in obj) projected[f] = obj[f];
   }
+  // 身份字段全缺(schema 演进使 candidateId 变可选 / 越过 schema 直调)→ 投影为空。
+  // 绝不能返回 {}:stableStringify({})="{}" 会成同 session 所有缺身份调用的万能 key,
+  // 一次批准放行后续全部。退回完整 input,让每个不同 input 各自走一轮审批(fail-safe)。
+  if (Object.keys(projected).length === 0) return input;
   return projected;
 }
