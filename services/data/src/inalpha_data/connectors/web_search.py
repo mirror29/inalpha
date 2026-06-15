@@ -232,6 +232,11 @@ class WebSearchConnector:
                     status="timeout",
                     error=f"search timed out after {self._overall_timeout}s",
                 )
+            except asyncio.CancelledError:
+                # Py3.8+ CancelledError 非 Exception 子类——必须显式重抛，否则会穿过
+                # 下面的 except Exception 后到达 `if not results`（results 未绑定→
+                # NameError 掩盖取消信号），上层无法正确响应 tool call 取消。
+                raise
             except Exception as exc:
                 status = _classify_exception(exc)
                 _logger.warning(
