@@ -256,6 +256,38 @@ async def test_promote_warns_on_overfit_signals(
     assert any("cliff" in w for w in warnings)
 
 
+@pytest.mark.asyncio
+async def test_promote_warns_on_train_sharpe_nonpositive_flag(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    candidate_id: str,
+) -> None:
+    """train 段亏损 → decay_ratio=None + train_sharpe_nonpositive flag，holdout 侥幸微盈：
+    旧逻辑所有软检都不触发（零告警 promote），现必须由 flag 检查兜住（CR #86 major）。"""
+    await _set_fitness(
+        candidate_id,
+        fitness=0.85,
+        metrics={
+            "sharpe": 1.5,
+            "max_drawdown_pct": 8.0,
+            "validation": {
+                "decay_ratio": None,  # train 亏损时被置 None
+                "holdout": {"sharpe": 0.1},  # holdout 侥幸微盈 → 不触发 sharpe<0
+                "flags": ["train_sharpe_nonpositive"],
+            },
+            "sensitivity": {"verdict": "robust"},  # 敏感性也过 → 唯一能兜的是 flag 检查
+        },
+    )
+    r = client.post(
+        f"/strategy_candidates/{candidate_id}/promote",
+        headers=auth_headers,
+        json={"reason": "in-sample 亏损策略不该零告警 promote"},
+    )
+    assert r.status_code == 200, r.json()
+    warnings = r.json()["audit"]["promotion"]["warnings"]
+    assert any("train_sharpe_nonpositive" in w for w in warnings)
+
+
 # ────────────────────────────────────────────────────────────────────
 # 因子血缘 factor_snapshot（ADR-0047）
 # ────────────────────────────────────────────────────────────────────

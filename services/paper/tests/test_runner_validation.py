@@ -38,7 +38,8 @@ def test_segments_split_by_bar_count_and_fills_by_ts() -> None:
     assert block is not None
     assert block.split_ratio == 0.7
     assert block.train.num_bars == 70
-    assert block.holdout.num_bars == 31
+    # holdout 真实段长 30（split_idx=70 起到 99）；多带的切点前一根只作收益率基准不计数
+    assert block.holdout.num_bars == 30
     # fills 按切点 ts 分段：idx 5/30/69 < 70 → train 3 笔；70/90 → holdout 2 笔
     assert block.train.num_trades == 3
     assert block.holdout.num_trades == 2

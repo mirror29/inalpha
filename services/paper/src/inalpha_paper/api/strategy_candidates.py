@@ -307,8 +307,17 @@ def _promotion_soft_warnings(metrics: dict | None) -> list[str]:
                 f"holdout sharpe {holdout_sharpe:.2f} < 0 — strategy loses money "
                 "out-of-sample"
             )
-        if "insufficient_sample" in (validation.get("flags") or []):
+        flags = set(validation.get("flags") or [])
+        if "insufficient_sample" in flags:
             out.append("holdout validation flagged insufficient_sample — inconclusive")
+        # train_sharpe_nonpositive / sharpe_undefined：decay_ratio 被置 None（避免负除负
+        # 假装没衰减），但这恰恰让上面 decay<0.5 的判据失效——样本内亏损策略会零告警
+        # promote。这两个 flag 自身就是 overfitting 不可验证的信号，必须留痕（CR #86 major）。
+        for flag in sorted({"train_sharpe_nonpositive", "sharpe_undefined"} & flags):
+            out.append(
+                f"holdout validation flagged {flag} — decay_ratio unavailable, "
+                "overfit signal unverifiable (train likely unprofitable in-sample)"
+            )
 
     sensitivity = metrics.get("sensitivity")
     if not isinstance(sensitivity, dict):

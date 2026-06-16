@@ -150,7 +150,7 @@ def test_backtest_e2e_with_mocked_data(
     assert v is not None
     assert v["split_ratio"] == 0.7
     assert v["train"]["num_bars"] == 70
-    assert v["holdout"]["num_bars"] == 31  # 带切点前一根作收益率基准
+    assert v["holdout"]["num_bars"] == 30  # 真实 holdout 段长（切点前一根只作基准不计数）
     assert (
         v["train"]["num_trades"] + v["holdout"]["num_trades"] == body["num_trades"]
     )

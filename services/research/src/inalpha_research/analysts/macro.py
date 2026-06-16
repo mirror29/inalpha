@@ -57,10 +57,10 @@ _FRED_STALE_DAYS = 7
 #:   note 只写机制/背景，禁写预测结论（§3.1：事件只算"名 + 日期"）。
 _MACRO_CALENDAR: list[dict[str, str]] = [
     # ── US ──
-    {"date": "2026-05-07", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "May FOMC; market priced in hold + dovish dots"},
+    {"date": "2026-05-07", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "May FOMC (rate decision + dot plot)"},
     {"date": "2026-05-13", "region": "US", "name": "US April CPI",              "impact": "high", "note": "Headline CPI for April release"},
     {"date": "2026-06-06", "region": "US", "name": "US May NFP",                "impact": "high", "note": "Non-farm payrolls"},
-    {"date": "2026-06-18", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "June FOMC; first cut window per Fed funds futures"},
+    {"date": "2026-06-18", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "June FOMC (rate decision + dot plot + SEP)"},
     {"date": "2026-07-29", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "July FOMC"},
     {"date": "2026-09-17", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "September FOMC"},
     {"date": "2026-11-03", "region": "US", "name": "US presidential election",  "impact": "high", "note": "Crypto policy direction depends on result"},

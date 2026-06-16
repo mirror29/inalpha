@@ -379,18 +379,24 @@ def _validation_from_report(
     train_fills = sum(1 for f in fills if f.ts_ns < cut_ts_ns)
     holdout_fills = len(fills) - train_fills
 
-    def _segment(vals: list[float], num_trades: int) -> ValidationSegment:
+    def _segment(
+        vals: list[float], num_trades: int, *, bar_count: int | None = None
+    ) -> ValidationSegment:
         rets = bar_returns(vals)
         return ValidationSegment(
             sharpe=sharpe_ratio(rets, int(bars_per_year)),
             total_return_pct=(vals[-1] / vals[0] - 1.0) * 100.0 if vals[0] > 0 else 0.0,
             max_drawdown_pct=max_drawdown_pct(vals),
             num_trades=num_trades,
-            num_bars=len(vals),
+            num_bars=bar_count if bar_count is not None else len(vals),
         )
 
     train_seg = _segment(train_vals, train_fills)
-    holdout_seg = _segment(holdout_vals, holdout_fills)
+    # holdout_vals 多带切点前一根作收益率基准 → num_bars 报真实 holdout 段长（len-1），
+    # 否则 insufficient_sample 的 <30 判据在真实 29 根时被 +1 顶到 30 漏报（CR #86）。
+    holdout_seg = _segment(
+        holdout_vals, holdout_fills, bar_count=len(holdout_vals) - 1
+    )
 
     flags: list[str] = []
     # holdout 段自身要有足够样本：用 holdout_seg.num_trades 而非全窗口 report.num_trades
