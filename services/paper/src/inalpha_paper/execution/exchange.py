@@ -27,7 +27,7 @@ from ..kernel.clock import Clock
 from ..kernel.identifiers import ClientOrderId, StrategyId, VenueOrderId
 from ..kernel.msgbus import MessageBus
 from ..model.data import Bar
-from ..model.orders import Order, OrderSide, OrderType
+from ..model.orders import Order, OrderSide, OrderType, is_protective_order
 from .gateway import Gateway
 
 if TYPE_CHECKING:
@@ -130,26 +130,67 @@ class SimulatedExchange(Gateway):
                 continue
 
             fill_qty, fill_price = fill
-            trade_id = f"trade-{self._next_id}"
-            self._next_id += 1
-
-            self._msgbus.publish(
-                "internal.venue.filled",
-                {
-                    "client_order_id": order.client_order_id,
-                    "strategy_id": strategy_id,
-                    "instrument_id": order.instrument_id,
-                    "side": order.side,
-                    "fill_qty": fill_qty,
-                    "fill_price": fill_price,
-                    "trade_id": trade_id,
-                    "ts": bar.ts_event,
-                },
-            )
+            self._publish_fill(order, strategy_id, fill_qty, fill_price, bar.ts_event)
             filled_count += 1
 
         self._pending = remaining
         return filled_count
+
+    def flush_protective_at_close(self, bar: Bar) -> int:
+        """收尾兜底：对仍 pending 的【保护性出场单】按 ``bar.close`` 成交（ADR-0052）。
+
+        保护性出场（stop_loss / take_profit / trailing_stop_loss）是框架兜底——末根
+        触发时没有下一根可撮合（``_try_fill`` 用 next-bar open 避免 look-ahead）。在此
+        按**决策那根的 close** 成交：close 是决策时已知价，非 look-ahead，且与 live
+        runner「同根按 bar.close 撮合」同口径，修掉「末根触发 → backtest 漏计 / 持仓
+        显示未平」的回测/live 不一致（CR #88 medium）。
+
+        **只动保护性单**：策略单维持「不收盘强平」语义不变。返回成交笔数。
+        """
+        filled_count = 0
+        remaining: list[tuple[Order, StrategyId]] = []
+        for order, strategy_id in self._pending:
+            if order.instrument_id != bar.instrument_id or not is_protective_order(order):
+                remaining.append((order, strategy_id))
+                continue
+            # spot 守门：SELL 平仓量不应超过持仓（保护性单按全仓发，正常恒满足）
+            if (
+                self._portfolio is not None
+                and order.side == OrderSide.SELL
+                and not self._portfolio.can_afford_sell(order.instrument_id, order.quantity)
+            ):
+                remaining.append((order, strategy_id))
+                continue
+            self._publish_fill(order, strategy_id, order.quantity, bar.close, bar.ts_event)
+            filled_count += 1
+
+        self._pending = remaining
+        return filled_count
+
+    def _publish_fill(
+        self,
+        order: Order,
+        strategy_id: StrategyId,
+        fill_qty: float,
+        fill_price: float,
+        ts_event: int,
+    ) -> None:
+        """发 ``internal.venue.filled`` → ExecutionEngine → Portfolio / 策略。"""
+        trade_id = f"trade-{self._next_id}"
+        self._next_id += 1
+        self._msgbus.publish(
+            "internal.venue.filled",
+            {
+                "client_order_id": order.client_order_id,
+                "strategy_id": strategy_id,
+                "instrument_id": order.instrument_id,
+                "side": order.side,
+                "fill_qty": fill_qty,
+                "fill_price": fill_price,
+                "trade_id": trade_id,
+                "ts": ts_event,
+            },
+        )
 
     def pending_count(self) -> int:
         return len(self._pending)

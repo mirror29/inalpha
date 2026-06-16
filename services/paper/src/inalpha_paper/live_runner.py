@@ -29,7 +29,6 @@ from inalpha_shared.errors import ConflictError, InalphaError
 from .config import PaperSettings
 from .data_client import DataClient
 from .engine.live_session import LiveEngineSession
-from .engine.position_guard import PROTECTIVE_EXIT_TAGS
 from .execution import risk_guard as risk_guard_mod
 from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
@@ -39,7 +38,7 @@ from .fills import apply_fill_to_positions_and_cash
 from .fx import BaseCurrencyConverter, needs_network
 from .kernel.identifiers import InstrumentId, StrategyId
 from .model.data import Bar
-from .model.orders import Order
+from .model.orders import Order, is_protective_order
 from .runner import _bar_from_dict
 from .storage import accounts as accounts_store
 from .storage import closed_trades as closed_trades_store
@@ -598,12 +597,21 @@ class LiveRunnerManager:
         # 措辞「触发 N 个信号（待撮合）」：此处 orders 是策略意图、尚未过风控/撮合，
         # 后续可能被 risk_rejected 全拦——不写「产生 N 个下单意图」以免与最终无成交割裂（CR）。
         if orders:
+            # 区分策略信号 vs 框架 guard 兜底出场（CR #88 medium）：混算会让运维误以为
+            # 策略产生了信号，实则可能是 guard 触发止损/止盈。
+            guard_n = sum(1 for o, _ in orders if is_protective_order(o))
+            strat_n = len(orders) - guard_n
+            parts = []
+            if strat_n:
+                parts.append(f"策略触发 {strat_n} 个信号")
+            if guard_n:
+                parts.append(f"框架 guard 触发 {guard_n} 个保护性出场")
             try:
                 async with get_conn() as conn:
                     await runs_store.append_log(
                         conn, run["id"], "info",
                         f"bar {_ns_to_dt(bar.ts_event):%Y-%m-%d %H:%M} · "
-                        f"策略触发 {len(orders)} 个信号（待撮合）",
+                        f"{' + '.join(parts)}（待撮合）",
                     )
             except Exception:
                 _logger.exception("live run %s: 写出单日志失败", run["id"])
@@ -756,16 +764,20 @@ class LiveRunnerManager:
         # 1. 风控；命中 → 拒单 + 记 error_log，不杀 run。两道闸门同 except 处理：
         #    (a) 单笔 notional 硬上限（无状态，挡策略算错 quantity 的超大单，issue #42）；
         #    (b) DB-backed RiskGuard 行为型锁规则（drawdown / cooldown / ...）。
-        # ADR-0052：框架级保护性出场（stop_loss / take_profit / trailing_stop_loss）跳过
-        # "挡开仓"的行为型锁——回撤熔断锁期内恰恰最需要它平仓；guard 本身就是风控，不该
-        # 被开仓闸拦住。notional 硬上限仍保留（防 quantity 算错的超大单）。
-        is_protective_exit = order.tag in PROTECTIVE_EXIT_TAGS
+        # ADR-0052：框架级保护性出场（stop_loss / take_profit / trailing_stop_loss）**两道闸
+        # 全豁免**——guard 是风控兜底，必须能平仓：① 行为型锁（回撤熔断锁期内恰恰最需要它平
+        # 仓）；② notional 硬上限（CR #88 major：保护性 SELL 量=实际持仓，价涨/累积建仓后仓位
+        # notional 必然超单笔买入上限；若也卡 notional → 止损被静默拒 → 持仓不动 → 每根 bar
+        # 重试又被拒 → 止损形同虚设。notional 上限是防"胖手指"超大开仓单，平实际持仓不属此列）。
+        # 三因子判定(side=SELL + tag + guard 专属 client_order_id 前缀)：策略代码可控 tag/前缀，
+        # 单看 tag 会被仿冒绕过风控（CR #88 major），必须三者同时校验。
+        is_protective_exit = is_protective_order(order)
         try:
-            risk_guard_mod.check_order_notional(
-                self._factory, quantity=order.quantity, ref_price=float(bar.close),
-                venue=venue, symbol=symbol,
-            )
             if not is_protective_exit:
+                risk_guard_mod.check_order_notional(
+                    self._factory, quantity=order.quantity, ref_price=float(bar.close),
+                    venue=venue, symbol=symbol,
+                )
                 await risk_guard_mod.enforce(
                     self._factory, account_id=account_id, venue=venue, symbol=symbol,
                     side=side,
