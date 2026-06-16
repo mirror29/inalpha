@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from inalpha_paper.engine.portfolio import Portfolio
-from inalpha_paper.engine.position_guard import PROTECTIVE_EXIT_TAGS, PositionGuard
+from inalpha_paper.engine.position_guard import PositionGuard
 from inalpha_paper.execution.exchange import EXECUTION_ENGINE_ENDPOINT
 from inalpha_paper.kernel.clock import TestClock
 from inalpha_paper.kernel.identifiers import ClientOrderId, InstrumentId, StrategyId
@@ -14,7 +14,13 @@ from inalpha_paper.kernel.msgbus import MessageBus
 from inalpha_paper.model.commands import SubmitOrderCommand
 from inalpha_paper.model.data import Bar
 from inalpha_paper.model.events import OrderFilled
-from inalpha_paper.model.orders import OrderSide, OrderType
+from inalpha_paper.model.orders import (
+    PROTECTIVE_EXIT_TAGS,
+    Order,
+    OrderSide,
+    OrderType,
+    is_protective_order,
+)
 
 _SID = StrategyId("test")
 
@@ -141,29 +147,41 @@ def test_trailing_triggers_after_peak() -> None:
     pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
     guard, _ = _guard_with_capture(pf, msgbus, trailing_stop_pct=0.10)
 
-    # 第一根：mark=130（+30%）建立峰值，自身回撤 0 → 不触发
+    # 第一根：mark=130 建立峰值价，自身回撤 0 → 不触发
     assert guard.evaluate(_bar(130.0, ts_ns=1)) == []
-    # 第二根：mark=115（+15%），自峰值 +30% 回撤 15% >= 10% → 触发
+    # 第二根：mark=115，自峰值价 130 回撤 (130-115)/130≈11.5% >= 10% → 触发
     orders = guard.evaluate(_bar(115.0, ts_ns=2))
     assert len(orders) == 1
     assert orders[0].tag == "trailing_stop_loss"
 
 
-def test_trailing_does_not_trigger_when_never_profitable() -> None:
-    """CR Major 回归：持仓从未盈利（peak ≤ 0）→ trailing 不激活，亏损交给硬止损。
-
-    旧逻辑 peak 初始化为首根 pct（可负），peak-pct 在纯亏损段也会过阈 → 在 -20% 硬止损
-    前误强平。修复后 trailing 仅 peak>0 才激活。
-    """
+def test_trailing_uses_price_drawdown_not_return_pct() -> None:
+    """大盈利下 trailing 用「自峰值价格回撤」而非「成本收益率降幅」(CR #88 medium)。"""
     msgbus = MessageBus()
     pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
-    # 纯 trailing（无 stop_loss），隔离验证亏损段不被 trailing 误触发
-    guard, _ = _guard_with_capture(pf, msgbus, trailing_stop_pct=0.05)
+    guard, _ = _guard_with_capture(pf, msgbus, trailing_stop_pct=0.10)
 
-    # 建仓即亏：-4% 建"峰值"-4%（仍为负），再跌到 -15%
-    assert guard.evaluate(_bar(96.0, ts_ns=1)) == []
-    # peak-pct = -4% - (-15%) = 11% >= 5%，但 peak 从未 > 0 → 不触发 trailing
-    assert guard.evaluate(_bar(85.0, ts_ns=2)) == []
+    # 峰值 mark=200（+100%）
+    assert guard.evaluate(_bar(200.0, ts_ns=1)) == []
+    # mark=185：自峰值价回撤 (200-185)/200=7.5% < 10% → 不触发
+    #（旧的成本收益率口径会是 100%-85%=15% >=10% 误触发——本测试钉住新口径）
+    assert guard.evaluate(_bar(185.0, ts_ns=2)) == []
+    # mark=175：自峰值价回撤 (200-175)/200=12.5% >= 10% → 触发
+    orders = guard.evaluate(_bar(175.0, ts_ns=3))
+    assert len(orders) == 1
+    assert orders[0].tag == "trailing_stop_loss"
+
+
+def test_trailing_inactive_when_never_profitable() -> None:
+    """移动止损仅在仓位进入盈利区后生效；从未盈利(峰值价≤成本)不触发(CR #88 medium)。"""
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(pf, msgbus, trailing_stop_pct=0.10)
+
+    # 开仓即走低：mark 95（峰值价=95<成本100），再跌到 80
+    assert guard.evaluate(_bar(95.0, ts_ns=1)) == []
+    # 自峰值价 95 回撤 (95-80)/95≈15.8% >= 10%，但峰值价 95 < 成本 100 → trailing 不生效
+    assert guard.evaluate(_bar(80.0, ts_ns=2)) == []
 
 
 # ─── 工厂 / 关闭 / 边界 ───
@@ -227,3 +245,53 @@ def test_no_strategy_bound_returns_empty() -> None:
     # 没 bind
     assert guard.evaluate(_bar(50.0)) == []
     assert captured == []
+
+
+def test_bind_strategy_rejects_second_strategy() -> None:
+    """单策略约束：绑第二个不同 strategy_id → RuntimeError(CR #88)。"""
+    import pytest
+
+    msgbus = MessageBus()
+    pf = Portfolio(msgbus, initial_cash=10_000.0)
+    guard = PositionGuard(msgbus, TestClock(0), pf, stop_loss_pct=0.20)
+    guard.bind_strategy(StrategyId("A"))
+    guard.bind_strategy(StrategyId("A"))  # 同 id 重复绑定 ok（幂等）
+    with pytest.raises(RuntimeError, match="只支持单策略"):
+        guard.bind_strategy(StrategyId("B"))
+
+
+def _order(tag: str | None, coid: str, side: OrderSide = OrderSide.SELL) -> Order:
+    return Order(
+        client_order_id=ClientOrderId(coid),
+        instrument_id=_btc(),
+        side=side,
+        type=OrderType.MARKET,
+        quantity=1.0,
+        tag=tag,
+    )
+
+
+def test_is_protective_order_requires_sell_tag_and_guard_prefix() -> None:
+    """CR #88 major 回归：风控豁免三因子判定（side=SELL + tag + guard 前缀），缺一即仿冒。
+
+    - guard 真出场单（SELL + tag ∈ 保护集 + 'guard-' 前缀）→ True
+    - 仅改 tag（普通 client_order_id）→ False
+    - guard 前缀但非保护性 tag → False
+    - **BUY 单即便 tag + 前缀都伪造 → False**（guard 永不做 BUY；挡借豁免下超大开仓单）
+    """
+    # guard 真单
+    assert is_protective_order(_order("stop_loss", "guard-BTC/USDT-abc123")) is True
+    # 仅改 tag
+    assert is_protective_order(_order("stop_loss", "sma-BTC/USDT-deadbeef")) is False
+    # guard 前缀但 tag 不在保护集
+    assert is_protective_order(_order("signal", "guard-BTC/USDT-xyz")) is False
+    # 双因子全伪造但 side=BUY → 仍 False（side 守门挡掉借豁免开超大单）
+    forged_buy = _order("stop_loss", "guard-BTC/USDT-evil", side=OrderSide.BUY)
+    assert is_protective_order(forged_buy) is False
+    # guard 自己产的出场单恒满足（与生产构造一致）
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(pf, msgbus, stop_loss_pct=0.20)
+    orders = guard.evaluate(_bar(70.0))
+    assert len(orders) == 1
+    assert is_protective_order(orders[0]) is True

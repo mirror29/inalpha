@@ -99,7 +99,17 @@ class BacktestEngine:
         self._num_bars: int = 0
 
     def add_strategy(self, strategy: Strategy) -> None:
-        """挂载策略。strategy 构造时必须传 ``engine.clock`` / ``engine.msgbus``。"""
+        """挂载策略。strategy 构造时必须传 ``engine.clock`` / ``engine.msgbus``。
+
+        启用了 PositionGuard（protective_* 阈值非空）时**只允许单策略**：guard 只持一个
+        strategy_id，多策略会让保护性出场归属错误（前策略 on_position_closed 不触发、状态
+        不归零）。挂第二个策略即抛 RuntimeError（CR #88）。需多策略回测请关闭 protective_*。
+        """
+        if self._guard is not None and self._strategies:
+            raise RuntimeError(
+                "PositionGuard 启用时只支持单策略 per engine（多策略需先完成引擎多策略化，"
+                "CR #88 / ADR-0052 已知限制）；多策略回测请置 protective_* 阈值为 None。"
+            )
         self._strategies.append(strategy)
         # guard 出场单用策略自身 id 提交（确保 on_position_closed 回到策略让其状态归零）
         if self._guard is not None:
@@ -129,6 +139,11 @@ class BacktestEngine:
             self.portfolio.update_mark(bar.instrument_id, bar.close)
             # 3.5 ADR-0052：框架级持仓保护止损在 mark 更新后判定（与 live session 同点），
             #     触发的保护性出场单进 pending，下一根 process_bar 撮合（不偷未来）。
+            #     已知限制（CR #88，仅显式传 rules 的回测受影响、生产 runner rules=None 不触达、
+            #     live 顺序路由不受影响）：guard 的 SELL 在 bar N 仅入 pending、bar N+1 才成交，
+            #     故同一 bar 内策略经 RiskEngine 提交的 BUY 看不到这次平仓 → CooldownRule 等
+            #     基于 closed_trades 的锁在该时间窗查不到记录，可能放过同 bar 重入单（"止损后
+            #     不回场"在此窗失效）。要严格联动 rules，用 live 路径（顺序路由先确认 guard 成交）。
             if self._guard is not None:
                 self._guard.evaluate(bar)
             # 4. 发布 bar，触发 strategy.on_bar
@@ -141,6 +156,19 @@ class BacktestEngine:
             self.portfolio.snapshot(bar.ts_event)
 
             self._num_bars += 1
+
+        # ADR-0052：末根 bar 触发的保护性出场单没有下一根可撮合（process_bar 用 next-bar
+        # open 防 look-ahead）。收尾按末根 close 兜底成交——close 是决策时已知价、非
+        # look-ahead，且与 live runner 同根 close 撮合对齐，避免「末根触发 → 漏计 /
+        # 持仓显示未平」的回测/live 不一致（CR #88）。只动保护性单，策略单不收盘强平。
+        # 限制：按 bars_list[-1] 的 instrument 收尾（沿用引擎「单 instrument per session」
+        # 契约）；多标的回测末端非末根 instrument 的保护单不在此 flush——多标的支持是引擎
+        # 层整体未做项（CR #88 medium，与引擎多标的化一并推进，非本闸单独修）。
+        if self._guard is not None and bars_list:
+            if self.exchange.flush_protective_at_close(bars_list[-1]) > 0:
+                # 兜底平仓改变了持仓/现金（差一笔手续费），重记末点权益。snapshot 对同 ts
+                # 是**覆盖**末点（见 Portfolio.snapshot），不会产生重复 ts / 多算一个 bar。
+                self.portfolio.snapshot(bars_list[-1].ts_event)
 
         for s in self._strategies:
             s.on_stop()

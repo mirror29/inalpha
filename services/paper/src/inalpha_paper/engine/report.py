@@ -28,7 +28,6 @@ from ..kernel.identifiers import InstrumentId
 from ..model.orders import OrderSide
 from ..model.positions import Position
 from . import metrics
-from .position_guard import PROTECTIVE_EXIT_TAGS
 from .robustness import bootstrap_sharpe_ci
 
 if TYPE_CHECKING:
@@ -57,6 +56,9 @@ class FillRecord:
     realized_pnl: float
     intent: str | None = None
     tag: str | None = None
+    #: ADR-0052/CR #88：本笔是否为框架 PositionGuard 兜底出场（三因子 is_protective_signature
+    #: 判定）。与 ``tag`` 区分——策略也能自打 tag="stop_loss"，只有这个 bool 才真代表框架触发。
+    is_guard: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +172,8 @@ class BacktestReport:
         max_dd = metrics.max_drawdown_pct(equity_values)
         trade_pnls = portfolio.closed_trade_pnls
         fills = list(portfolio.fills)
-        protective_exits = sum(1 for f in fills if f.tag in PROTECTIVE_EXIT_TAGS)
+        # 只数框架 guard 兜底出场（f.is_guard），不混入策略自带 stop_loss tag（CR #88 major）
+        protective_exits = sum(1 for f in fills if f.is_guard)
 
         sharpe_value = metrics.sharpe_ratio(returns, ppy)
         # ADR-0027 防过拟合：单次回测给 Bootstrap Sharpe 95% CI。仅在 Sharpe 有定义
