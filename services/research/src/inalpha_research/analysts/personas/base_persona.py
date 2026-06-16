@@ -127,6 +127,10 @@ class PersonaAnalyst(Analyst):
             financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol)
         financials_block = _render_fundamentals(financials)
 
+        # 双档 confidence cap（run() 里代码级 clamp）：与 fundamental/valuation 同纪律——
+        # 无 live 财报（crypto / 拉取失败）时大师人格也不该过度自信（CR #86）。
+        self._confidence_cap = 0.75 if financials.get("available") else 0.55
+
         # 按 persona 关注点做 web 搜索（定性背景，不当硬数字用）
         web_block = ""
         if self.search_focus:
