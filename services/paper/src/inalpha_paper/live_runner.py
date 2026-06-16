@@ -29,6 +29,7 @@ from inalpha_shared.errors import ConflictError, InalphaError
 from .config import PaperSettings
 from .data_client import DataClient
 from .engine.live_session import LiveEngineSession
+from .engine.position_guard import PROTECTIVE_EXIT_TAGS
 from .execution import risk_guard as risk_guard_mod
 from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
@@ -461,6 +462,10 @@ class LiveRunnerManager:
             params=run.get("params") or {},
             initial_cash=_LIVE_INITIAL_CASH,
             fee_rate=_FEE_RATE,
+            # ADR-0052：框架级持仓保护止损（与回测共用同一阈值，行为一致）
+            protective_stop_loss_pct=self._settings.protective_stop_loss_pct,
+            protective_take_profit_pct=self._settings.protective_take_profit_pct,
+            protective_trailing_stop_pct=self._settings.protective_trailing_stop_pct,
         )
         warmup_ts = await self._warmup_session(session, run)
         # resume（last_bar_ts 非空 = 本 run 之前跑过）：把 DB 当前持仓灌回 session，让续跑
@@ -751,14 +756,20 @@ class LiveRunnerManager:
         # 1. 风控；命中 → 拒单 + 记 error_log，不杀 run。两道闸门同 except 处理：
         #    (a) 单笔 notional 硬上限（无状态，挡策略算错 quantity 的超大单，issue #42）；
         #    (b) DB-backed RiskGuard 行为型锁规则（drawdown / cooldown / ...）。
+        # ADR-0052：框架级保护性出场（stop_loss / take_profit / trailing_stop_loss）跳过
+        # "挡开仓"的行为型锁——回撤熔断锁期内恰恰最需要它平仓；guard 本身就是风控，不该
+        # 被开仓闸拦住。notional 硬上限仍保留（防 quantity 算错的超大单）。
+        is_protective_exit = order.tag in PROTECTIVE_EXIT_TAGS
         try:
             risk_guard_mod.check_order_notional(
                 self._factory, quantity=order.quantity, ref_price=float(bar.close),
                 venue=venue, symbol=symbol,
             )
-            await risk_guard_mod.enforce(
-                self._factory, account_id=account_id, venue=venue, symbol=symbol, side=side
-            )
+            if not is_protective_exit:
+                await risk_guard_mod.enforce(
+                    self._factory, account_id=account_id, venue=venue, symbol=symbol,
+                    side=side,
+                )
         except ConflictError as e:
             session.reject_order(
                 order=order, strategy_id=strategy_id,
