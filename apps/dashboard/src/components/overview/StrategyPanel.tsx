@@ -68,9 +68,10 @@ export function StrategyPanel({
       {candidates.length === 0 ? (
         <TableEmpty>{t("empty")}</TableEmpty>
       ) : (
-        <div className="overflow-x-auto">
+        // 限高内滚+表头吸顶(同最近订单 OrdersTable):候选放任自然高会把同排订单卡撑出留白。
+        <div className="max-h-96 overflow-x-auto overflow-y-auto">
           <table className="w-full border-collapse text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-bg-elev">
               <TableHeadRow>
                 <Th>{t("col.strategy")}</Th>
                 <Th>{t("col.status")}</Th>

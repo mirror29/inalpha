@@ -12,8 +12,11 @@ import type {
   TickerResponse,
 } from "@/lib/types";
 
-/** 总览策略池面板展示的候选条数上限(后端已按 fitness DESC 排,取头部即可)。 */
-const CANDIDATES_SHOWN = 6;
+/**
+ * 总览策略池面板展示的候选条数上限(后端已按 fitness DESC 排,取头部即可)。
+ * 与最近订单 ORDERS_SHOWN 对齐:两卡在总览同排 grid 里 max-h-96 内滚,条数相当才不留白。
+ */
+const CANDIDATES_SHOWN = 20;
 
 export const dynamic = "force-dynamic";
 
