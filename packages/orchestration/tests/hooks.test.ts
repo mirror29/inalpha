@@ -687,8 +687,10 @@ describe("defaultGetSessionId", () => {
     expect(defaultGetSessionId({ threadId: "t-1", runId: "r-1" })).toBe("t-1");
   });
 
-  it("falls back to runId when no threadId", () => {
-    expect(defaultGetSessionId({ runId: "r-1" })).toBe("r-1");
+  it("does NOT fall back to per-turn runId (dock ask-loop 根因；返回 undefined → askCache 稳定 __global__)", () => {
+    // runId 每 user-turn 变，用它当 askCache key 会让跨 turn 审批永远 miss → 死循环。
+    // 修复后 getSessionId 故意忽略 runId，返回 undefined（askCache 落稳定 __global__）。
+    expect(defaultGetSessionId({ runId: "r-1" })).toBeUndefined();
   });
 
   it("falls back to requestContext.sessionId", () => {
