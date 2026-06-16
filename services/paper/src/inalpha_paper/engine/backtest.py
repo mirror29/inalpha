@@ -33,6 +33,7 @@ from ..kernel.msgbus import MessageBus
 from ..model.data import Bar
 from ..strategy.base import Strategy
 from .portfolio import Portfolio
+from .position_guard import PositionGuard
 from .report import BacktestReport
 
 
@@ -46,6 +47,9 @@ class BacktestEngine:
         *,
         rules: list[RiskRule] | None = None,
         lock_store: LockStore | None = None,
+        protective_stop_loss_pct: float | None = None,
+        protective_take_profit_pct: float | None = None,
+        protective_trailing_stop_pct: float | None = None,
     ) -> None:
         """初始化。
 
@@ -56,6 +60,9 @@ class BacktestEngine:
             rules: ADR-0006 RiskRule 列表。``None`` 时 RiskEngine 退化为 pass-through
                 （向后兼容 D-5 ~ D-8 调用方）
             lock_store: 风控锁存储。None 时 RiskEngine 自动创建 InMemoryLockStore
+            protective_stop_loss_pct: ADR-0052 框架级持仓保护止损阈值（None = 关）
+            protective_take_profit_pct: 框架级止盈阈值（None = 关）
+            protective_trailing_stop_pct: 框架级移动止损阈值（None = 关）
         """
         # 内核
         self.clock = TestClock(0)
@@ -77,12 +84,26 @@ class BacktestEngine:
         # （ADR-0032 BuyingPowerRule 撮合层兜底实现，旧 BTC -98% bug 同源防御）
         self.exchange.bind_portfolio(self.portfolio)
 
+        # ADR-0052：框架级持仓保护止损（与 live session 共用同一组件，行为一致）。
+        # 三阈值全 None → from_thresholds 返 None，退化为无 guard（向后兼容）。
+        self._guard = PositionGuard.from_thresholds(
+            self.msgbus,
+            self.clock,
+            self.portfolio,
+            stop_loss_pct=protective_stop_loss_pct,
+            take_profit_pct=protective_take_profit_pct,
+            trailing_stop_pct=protective_trailing_stop_pct,
+        )
+
         self._strategies: list[Strategy] = []
         self._num_bars: int = 0
 
     def add_strategy(self, strategy: Strategy) -> None:
         """挂载策略。strategy 构造时必须传 ``engine.clock`` / ``engine.msgbus``。"""
         self._strategies.append(strategy)
+        # guard 出场单用策略自身 id 提交（确保 on_position_closed 回到策略让其状态归零）
+        if self._guard is not None:
+            self._guard.bind_strategy(strategy.strategy_id)
 
     def run(self, bars: Iterable[Bar]) -> BacktestReport:
         """跑回测，返回 ``BacktestReport``。"""
@@ -106,6 +127,10 @@ class BacktestEngine:
                 self.clock.set_time(bar.ts_event)
             # 3. 更新 mark price（让 portfolio.equity() 准确）
             self.portfolio.update_mark(bar.instrument_id, bar.close)
+            # 3.5 ADR-0052：框架级持仓保护止损在 mark 更新后判定（与 live session 同点），
+            #     触发的保护性出场单进 pending，下一根 process_bar 撮合（不偷未来）。
+            if self._guard is not None:
+                self._guard.evaluate(bar)
             # 4. 发布 bar，触发 strategy.on_bar
             topic = (
                 f"data.bars.{bar.instrument_id.venue}."
