@@ -182,6 +182,10 @@ class BacktestReport:
         ci_includes_zero: bool | None = None
         if sharpe_value is not None and not blew_up and len(returns) >= 2:
             try:
+                # n_samples=2000（默认 10000 的 1/5）是性能权衡：每次回测都同步算 CI，
+                # 2000 次重采样把延迟压到 ~ms 级。代价是 Monte Carlo 误差约 √5≈2.2×；
+                # Sharpe 极接近 0 时 includes_zero 可能在调用间抖动——但那本就是"统计上
+                # 不显著"的灰区，判定为不可信方向一致，不影响结论。长序列要更稳可调高。
                 _ci = bootstrap_sharpe_ci(returns, n_samples=2000)
                 _ann = math.sqrt(ppy)
                 ci_lower = _ci.ci_lower * _ann
