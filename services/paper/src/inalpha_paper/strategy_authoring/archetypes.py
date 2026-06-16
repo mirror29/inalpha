@@ -308,7 +308,9 @@ class VolatilityContractionStrategy(Strategy):
             return
         self._closes.append(bar.close)
         cl = list(self._closes)
-        if len(cl) < self._period:
+        # 预热需同时够 std 窗口(period)和突破窗口(breakout_lookback+1)——
+        # 否则 breakout_lookback>period(非默认调参)时 window 会取到欠填充小样本 → 假突破(CR)
+        if len(cl) < max(self._period, self._breakout_lookback + 1):
             return
         recent = cl[-self._period:]
         mean = sum(recent) / len(recent)
