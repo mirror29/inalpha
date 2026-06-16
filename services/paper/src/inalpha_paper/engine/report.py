@@ -27,6 +27,7 @@ from ..kernel.identifiers import InstrumentId
 from ..model.orders import OrderSide
 from ..model.positions import Position
 from . import metrics
+from .position_guard import PROTECTIVE_EXIT_TAGS
 
 if TYPE_CHECKING:
     from .portfolio import Portfolio
@@ -107,6 +108,10 @@ class BacktestReport:
     exposure_pct: float | None = None
     #: 逐笔成交（含每笔实现盈亏），落 ``backtest_trades`` 表用
     fills: list[FillRecord] = field(default_factory=list)
+    #: ADR-0052：框架级持仓保护止损触发的出场笔数（tag ∈ stop_loss/take_profit/
+    #: trailing_stop_loss）。> 0 表示回测期间灾难兜底生效过几次——agent / 前端可据此
+    #: 看到"如果未来这样跑，框架会在哪些点止血"，把回测对未来的兜底可见化。
+    protective_exits: int = 0
     #: 账户是否"穿仓"——任意时点 equity 跌破 -1% × initial_cash（物理上 spot
     #: 账户 equity 不应 < 0）。True 表示本次回测结果在物理上不可信，agent /
     #: 前端应当显式警告，不要直接渲染 Sharpe / 收益率（数学正确但语义无效）。
@@ -156,6 +161,7 @@ class BacktestReport:
         max_dd = metrics.max_drawdown_pct(equity_values)
         trade_pnls = portfolio.closed_trade_pnls
         fills = list(portfolio.fills)
+        protective_exits = sum(1 for f in fills if f.tag in PROTECTIVE_EXIT_TAGS)
         # exposure 用回测窗口端点（datetime → ns,整数路径:float 对 2026 时间戳
         # 丢 ~100ns,会与 fill.ts_ns 的整数路径错位）;缺端点时为 None。
         start_ns = datetime_to_ns(period_start) if period_start else None
@@ -199,6 +205,7 @@ class BacktestReport:
                 equity_values
             ),
             exposure_pct=metrics.exposure_pct(fill_events, start_ns, end_ns),
+            protective_exits=protective_exits,
             blew_up=blew_up,
             health_warnings=warnings,
         )
