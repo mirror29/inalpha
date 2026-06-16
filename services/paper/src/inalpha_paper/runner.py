@@ -348,7 +348,13 @@ async def run_backtest(
                 upper=report.sharpe_ci_upper,
                 includes_zero=report.sharpe_ci_includes_zero,
             )
-            if report.sharpe_ci_includes_zero is not None
+            # 三字段全判：SharpeCI.lower/upper 是 required float，只判 includes_zero
+            # 不能在类型层收窄它俩；未来若破坏 from_portfolio 的原子赋值会 Pydantic 500（CR）
+            if (
+                report.sharpe_ci_lower is not None
+                and report.sharpe_ci_upper is not None
+                and report.sharpe_ci_includes_zero is not None
+            )
             else None
         ),
         final_positions=final_positions,

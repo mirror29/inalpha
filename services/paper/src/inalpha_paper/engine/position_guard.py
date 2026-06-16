@@ -113,9 +113,12 @@ class PositionGuard:
         当前所有用法均单策略（每 engine/session 只 bind 一次，或重复 bind 同一策略）；用断言把
         "只支持单策略" 显式化，防未来多策略静默踩坑。
         """
-        assert (
-            self._strategy_id is None or self._strategy_id == strategy_id
-        ), "PositionGuard 只支持单策略：bind_strategy 不能绑定第二个不同的 strategy_id"
+        # 用 raise 而非 assert：assert 在 python -O 下被剥除，多策略误用会静默通过（CR）。
+        if self._strategy_id is not None and self._strategy_id != strategy_id:
+            raise ValueError(
+                "PositionGuard 只支持单策略：bind_strategy 不能绑定第二个不同的 strategy_id "
+                f"（已绑 {self._strategy_id}，又试图绑 {strategy_id}）"
+            )
         self._strategy_id = strategy_id
 
     def evaluate(self, bar: Bar) -> list[Order]:
