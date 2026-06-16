@@ -555,7 +555,10 @@ ADR-0032 BuyingPowerRule）。signal_replay 同样只认 BUY/SELL，**不支持 
        不及格 → 告诉用户"没跑赢 buy-and-hold，建议重写"，不要 promote
     3. **holdout 验证不打脸**：最近一次回测 validation.decay_ratio ≥ 0.5 且
        holdout.sharpe > 0；不满足 = 过拟合信号，回迭代纪律改；flags 含
-       insufficient_sample → 向用户显式说明"holdout 样本不足，稳健性未验证"再继续
+       insufficient_sample → 向用户显式说明"holdout 样本不足，稳健性未验证"再继续。
+       · **validation 整个为 null**（曲线太短切不出段，非过拟合）→ **别误判成过拟合
+         去换策略**，与 insufficient_sample 同理：告知用户"holdout 未计算、稳健性未验证"，
+         真要改是**扩回测窗口**而不是换策略
     4. **已跑 paper.check_sensitivity 且 verdict ≠ cliff**；cliff → 不 promote，
        告诉用户"参数敏感（邻域扰动 fitness 断崖），过拟合风险"；
        insufficient → 向用户说明后由用户决定
