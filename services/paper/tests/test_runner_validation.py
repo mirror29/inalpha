@@ -82,6 +82,19 @@ def test_insufficient_sample_flagged() -> None:
     assert "insufficient_sample" in block.flags
 
 
+def test_insufficient_sample_when_holdout_thin_but_total_ok() -> None:
+    """全窗口交易够（≥5）但 holdout 段 <2 笔 → 仍 flag（CR #86：holdout 段自身判据）。"""
+    # 100 根曲线 0.7 切：train 70 / holdout 31。fills 大多在 train，holdout 仅 1 笔
+    equities = [100.0 + i * 0.3 + (0.2 if i % 2 else -0.2) for i in range(100)]
+    report = _report(equities, fill_idxs=[5, 10, 20, 40, 60, 95])  # 5 笔 train + 1 笔 holdout
+    block = _validation_from_report(report, split=0.7, bars_per_year=8760)
+
+    assert block is not None
+    assert block.train.num_trades >= 5  # 全窗口看着够
+    assert block.holdout.num_trades < 2  # 但 holdout 段几乎没交易
+    assert "insufficient_sample" in block.flags  # 必须 flag
+
+
 def test_flat_segment_sharpe_undefined_flag() -> None:
     """holdout 完全平稳（零波动）→ sharpe null → sharpe_undefined flag。"""
     train = [100.0 + i + (0.3 if i % 2 else -0.3) for i in range(70)]

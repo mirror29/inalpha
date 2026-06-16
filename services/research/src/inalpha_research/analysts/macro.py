@@ -294,7 +294,7 @@ async def _fetch_macro_readings(
         return series_id, reading
 
     results = await asyncio.gather(*(_one(s) for s in _FRED_SERIES))
-    return {sid: r for item in results if item is not None for sid, r in [item]}
+    return {item[0]: item[1] for item in results if item is not None}
 
 
 def _format_macro_readings(readings: dict[str, dict[str, Any]]) -> str:

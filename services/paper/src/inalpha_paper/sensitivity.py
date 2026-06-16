@@ -124,12 +124,16 @@ async def run_sensitivity(
     candidate 路径下摘要 merge 进 ``candidate.metrics.sensitivity``（best-effort，
     写失败不阻断响应）。邻域 run 不落 ``backtest_runs``。
     """
+    # fresh=True 显式传：sensitivity 是 promote 前的量化裁判，在真实 as_of 调用，
+    # 不能用过期 bars 给出 robust 误判（金融时效性红线）。paper DataClient 默认本就
+    # fresh=True，这里显式化以防默认值被重构时静默退化（CR #86）。
     raw_bars = await data_client.get_bars(
         venue=req.venue,
         symbol=req.symbol,
         timeframe=req.timeframe,
         from_ts=req.from_ts,
         to_ts=req.to_ts,
+        fresh=True,
     )
     instrument_id = InstrumentId(symbol=req.symbol, venue=req.venue)
     bars = [_bar_from_dict(b, instrument_id, req.timeframe) for b in raw_bars]
@@ -162,6 +166,15 @@ async def run_sensitivity(
 
     bars_per_year = float(periods_per_year(req.timeframe))
     combos = build_neighborhood(req.params, pct=req.pct, max_combos=req.max_combos)
+    if not combos:
+        # 参数全是 bool/字符串/sizing（无可扰动的数值参数）→ 邻域为空，verdict 会
+        # 静默落 insufficient 但 neighbors 也空，用户无从判断原因。提前明确报错。
+        raise ValidationError(
+            "no numeric parameters to perturb — sensitivity needs at least one "
+            "non-sizing numeric param (e.g. fast_period); got: "
+            f"{sorted(req.params)}",
+            code="SENSITIVITY_NO_NUMERIC_PARAMS",
+        )
 
     async def _fitness_for(params: dict[str, Any]) -> float | None:
         """单组合跑引擎 → fitness；策略构造/运行报错返 None（非法组合自然过滤）。"""

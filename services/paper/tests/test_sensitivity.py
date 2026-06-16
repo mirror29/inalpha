@@ -158,6 +158,31 @@ def test_sensitivity_invalid_combo_recorded_not_raised(
     assert body["stats"]["n_failed"] >= 1
 
 
+@respx.mock
+def test_sensitivity_all_non_numeric_params_rejected(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """参数全是字符串/sizing（无可扰动数值参数）→ 400 明确报错而非静默 insufficient（CR #86）。"""
+    respx.get("http://data-mock.test/bars").mock(
+        return_value=Response(200, json=_bars_for_oscillating(120))
+    )
+    r = client.post(
+        "/backtest/sensitivity",
+        headers=auth_headers,
+        json={
+            "strategy_id": "sma_cross",
+            "params": {"trade_size": 0.05, "position_pct": 1.0},  # 全是 sizing
+            "symbol": "BTC/USDT",
+            "venue": "binance",
+            "timeframe": "1h",
+            "from_ts": "2026-01-01T00:00:00Z",
+            "to_ts": "2026-01-06T00:00:00Z",
+        },
+    )
+    assert r.status_code == 400, r.json()
+    assert r.json()["code"] == "SENSITIVITY_NO_NUMERIC_PARAMS"
+
+
 def test_sensitivity_requires_exactly_one_strategy_source(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:

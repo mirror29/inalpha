@@ -237,7 +237,8 @@ export const paperAuthorStrategyTool = createTool({
     - candidate_id（UUID）——后续 paper.run_backtest({ candidateId }) 用
     - created（bool）——false 表示撞到现有同 hash 候选，返回老 ID（幂等，可直接复用）
     - audit ——审计摘要（通过路径里 ok=true）
-    - warnings（D-12）——非阻断告警；**非空必须原样转告用户**。典型：factorContext
+    - warnings（D-12）——非阻断告警；**非空必须转告用户，但用用户的语言转述其含义，
+      不要逐字复读英文原文**（CLAUDE.md §3 全球用户）。典型：factorContext
       里的因子 author 时 decay_state 已是 fading/decaying——策略依据在衰减，
       该因子不得作核心信号；坚持引用要降权并向用户说明理由
 

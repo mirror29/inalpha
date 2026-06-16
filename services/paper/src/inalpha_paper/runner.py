@@ -393,7 +393,14 @@ def _validation_from_report(
     holdout_seg = _segment(holdout_vals, holdout_fills)
 
     flags: list[str] = []
-    if holdout_seg.num_bars < 30 or report.num_trades < 5:
+    # holdout 段自身要有足够样本：用 holdout_seg.num_trades 而非全窗口 report.num_trades
+    # ——策略可能 train 段交易密集、holdout 段几乎不动，全窗口 ≥5 却 holdout 只 1-2 笔，
+    # 此时 holdout Sharpe / decay_ratio 不可信，必须 flag（CR #86 major）。
+    if (
+        holdout_seg.num_bars < 30
+        or holdout_seg.num_trades < 2
+        or report.num_trades < 5
+    ):
         flags.append("insufficient_sample")
 
     decay_ratio: float | None = None

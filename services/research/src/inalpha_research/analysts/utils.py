@@ -65,6 +65,9 @@ def render_financial_indicators(
                 lines.append(f"  {lbl}: {val / 1e12:.2f}T")
             elif val >= 1e9:
                 lines.append(f"  {lbl}: {val / 1e9:.2f}B")
+            elif val >= 1e6:
+                # 100M-1B 中小盘：补 M 档，否则裸浮点 LLM 难推理（CR #86）
+                lines.append(f"  {lbl}: {val / 1e6:.2f}M")
             else:
                 lines.append(f"  {lbl}: {val:.0f}")
         else:
