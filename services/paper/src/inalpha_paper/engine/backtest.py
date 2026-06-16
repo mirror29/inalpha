@@ -146,6 +146,9 @@ class BacktestEngine:
         # open 防 look-ahead）。收尾按末根 close 兜底成交——close 是决策时已知价、非
         # look-ahead，且与 live runner 同根 close 撮合对齐，避免「末根触发 → 漏计 /
         # 持仓显示未平」的回测/live 不一致（CR #88）。只动保护性单，策略单不收盘强平。
+        # 限制：按 bars_list[-1] 的 instrument 收尾（沿用引擎「单 instrument per session」
+        # 契约）；多标的回测末端非末根 instrument 的保护单不在此 flush——多标的支持是引擎
+        # 层整体未做项（CR #88 medium，与引擎多标的化一并推进，非本闸单独修）。
         if self._guard is not None and bars_list:
             if self.exchange.flush_protective_at_close(bars_list[-1]) > 0:
                 # 兜底平仓改变了持仓/现金（差一笔手续费），重记末点权益

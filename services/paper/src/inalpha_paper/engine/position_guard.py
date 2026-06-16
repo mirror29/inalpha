@@ -106,7 +106,13 @@ class PositionGuard:
         )
 
     def bind_strategy(self, strategy_id: StrategyId) -> None:
-        """绑定所属策略 id。出场单用它提交，确保 on_position_closed 回到策略让其状态归零。"""
+        """绑定所属策略 id。出场单用它提交，确保 on_position_closed 回到策略让其状态归零。
+
+        **单值（last-bind wins）**：沿用引擎契约「单 strategy 单 instrument per session」
+        （见 ``BacktestEngine`` / ``Portfolio`` docstring）。多策略场景下 guard 出场单会
+        全部归属最后 bind 的策略——多策略支持是引擎层整体未做项（CR #88 medium，非本闸单独
+        修，需与引擎多策略化一并推进）。
+        """
         self._strategy_id = strategy_id
 
     def evaluate(self, bar: Bar) -> list[Order]:
