@@ -263,6 +263,11 @@ class LiveEngineSession:
         局限：策略若用非标准内部 flag（不订阅 position/fill 事件）跟踪持仓，无法还原其
         私有状态——但 Inalpha 契约 / 模板引导走 position/fill hook，主流策略可正确续跑。
         ``quantity_signed == 0`` 时 no-op。
+
+        **PositionGuard 移动止损 resume 限制（CR #88 medium）**：resume 不还原 guard 的
+        ``_peak_mark``（历史峰值价 DB 没存），续跑后峰值从首根 bar 的 close 重新起算。若
+        崩溃前价格曾远高于续跑价，``trailing_stop`` 触发会延迟（按续跑后新峰值算回撤）。
+        硬止损 / 止盈不受影响（按 avg 算，avg 已还原）；且 ``trailing`` 默认关，影响面小。
         """
         if quantity_signed == 0:
             return

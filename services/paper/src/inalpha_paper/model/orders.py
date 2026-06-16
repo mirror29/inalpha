@@ -50,6 +50,10 @@ PROTECTIVE_EXIT_TAGS: frozenset[str] = frozenset(
     {"stop_loss", "take_profit", "trailing_stop_loss"}
 )
 
+#: ``PositionGuard`` 出场单 ``client_order_id`` 的专属前缀。与 ``PROTECTIVE_EXIT_TAGS``
+#: 一起构成「不可仅靠 tag 仿冒」的双因子判定（见 ``is_protective_order``）。
+GUARD_ORDER_PREFIX = "guard-"
+
 
 # 合法转移表，违反抛 ``ValueError``
 _VALID_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
@@ -189,3 +193,16 @@ class Order:
         if reason:
             self.reason = reason
         self._transition(OrderStatus.CANCELED, ts)
+
+
+def is_protective_order(order: Order) -> bool:
+    """是否为 ``PositionGuard`` 框架兜底出场单（享风控豁免：跳过开仓闸 + notional 上限）。
+
+    **双因子判定**（ADR-0052 / CR #88 major）：``tag`` ∈ ``PROTECTIVE_EXIT_TAGS`` **且**
+    ``client_order_id`` 以 ``GUARD_ORDER_PREFIX`` 开头。单看 tag 不够——策略代码能自由设
+    ``Order(tag="stop_loss")`` 仿冒以绕过风控；guard 出场单的 client_order_id 由框架按
+    ``GUARD_ORDER_PREFIX`` 生成，二者同时满足才认定为框架兜底单。
+    """
+    return order.tag in PROTECTIVE_EXIT_TAGS and str(
+        order.client_order_id
+    ).startswith(GUARD_ORDER_PREFIX)

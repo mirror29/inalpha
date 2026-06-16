@@ -38,7 +38,7 @@ from .fills import apply_fill_to_positions_and_cash
 from .fx import BaseCurrencyConverter, needs_network
 from .kernel.identifiers import InstrumentId, StrategyId
 from .model.data import Bar
-from .model.orders import PROTECTIVE_EXIT_TAGS, Order
+from .model.orders import Order, is_protective_order
 from .runner import _bar_from_dict
 from .storage import accounts as accounts_store
 from .storage import closed_trades as closed_trades_store
@@ -760,7 +760,9 @@ class LiveRunnerManager:
         # 仓）；② notional 硬上限（CR #88 major：保护性 SELL 量=实际持仓，价涨/累积建仓后仓位
         # notional 必然超单笔买入上限；若也卡 notional → 止损被静默拒 → 持仓不动 → 每根 bar
         # 重试又被拒 → 止损形同虚设。notional 上限是防"胖手指"超大开仓单，平实际持仓不属此列）。
-        is_protective_exit = order.tag in PROTECTIVE_EXIT_TAGS
+        # 双因子判定(tag + guard 专属 client_order_id 前缀)：策略代码可控 tag，单看 tag 会被
+        # 仿冒绕过风控（CR #88 major），故必须连 client_order_id 前缀一起校验。
+        is_protective_exit = is_protective_order(order)
         try:
             if not is_protective_exit:
                 risk_guard_mod.check_order_notional(

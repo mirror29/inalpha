@@ -14,7 +14,13 @@ from inalpha_paper.kernel.msgbus import MessageBus
 from inalpha_paper.model.commands import SubmitOrderCommand
 from inalpha_paper.model.data import Bar
 from inalpha_paper.model.events import OrderFilled
-from inalpha_paper.model.orders import PROTECTIVE_EXIT_TAGS, OrderSide, OrderType
+from inalpha_paper.model.orders import (
+    PROTECTIVE_EXIT_TAGS,
+    Order,
+    OrderSide,
+    OrderType,
+    is_protective_order,
+)
 
 _SID = StrategyId("test")
 
@@ -252,3 +258,39 @@ def test_bind_strategy_rejects_second_strategy() -> None:
     guard.bind_strategy(StrategyId("A"))  # 同 id 重复绑定 ok（幂等）
     with pytest.raises(RuntimeError, match="只支持单策略"):
         guard.bind_strategy(StrategyId("B"))
+
+
+def _order(tag: str | None, coid: str) -> Order:
+    return Order(
+        client_order_id=ClientOrderId(coid),
+        instrument_id=_btc(),
+        side=OrderSide.SELL,
+        type=OrderType.MARKET,
+        quantity=1.0,
+        tag=tag,
+    )
+
+
+def test_is_protective_order_requires_tag_and_guard_prefix() -> None:
+    """CR #88 major 回归：风控豁免双因子判定，策略仅靠 tag 仿冒无法绕过。
+
+    - guard 真出场单（tag ∈ 保护集 + client_order_id 以 'guard-' 开头）→ True
+    - 策略仿冒（tag='stop_loss' 但普通 client_order_id）→ False（仍走风控闸）
+    - guard 前缀但非保护性 tag → False
+    """
+    # guard 真单
+    real = _order("stop_loss", "guard-BTC/USDT-abc123")
+    assert is_protective_order(real) is True
+    # 策略仿冒：只改 tag，client_order_id 仍是策略自己的命名
+    spoof = _order("stop_loss", "sma-BTC/USDT-deadbeef")
+    assert is_protective_order(spoof) is False
+    # 有 guard 前缀但 tag 不在保护集
+    not_protective = _order("signal", "guard-BTC/USDT-xyz")
+    assert is_protective_order(not_protective) is False
+    # guard 自己产的出场单恒满足（与生产构造一致）
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(pf, msgbus, stop_loss_pct=0.20)
+    orders = guard.evaluate(_bar(70.0))
+    assert len(orders) == 1
+    assert is_protective_order(orders[0]) is True

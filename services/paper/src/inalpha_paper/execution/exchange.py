@@ -27,7 +27,7 @@ from ..kernel.clock import Clock
 from ..kernel.identifiers import ClientOrderId, StrategyId, VenueOrderId
 from ..kernel.msgbus import MessageBus
 from ..model.data import Bar
-from ..model.orders import PROTECTIVE_EXIT_TAGS, Order, OrderSide, OrderType
+from ..model.orders import Order, OrderSide, OrderType, is_protective_order
 from .gateway import Gateway
 
 if TYPE_CHECKING:
@@ -150,7 +150,7 @@ class SimulatedExchange(Gateway):
         filled_count = 0
         remaining: list[tuple[Order, StrategyId]] = []
         for order, strategy_id in self._pending:
-            if order.instrument_id != bar.instrument_id or order.tag not in PROTECTIVE_EXIT_TAGS:
+            if order.instrument_id != bar.instrument_id or not is_protective_order(order):
                 remaining.append((order, strategy_id))
                 continue
             # spot 守门：SELL 平仓量不应超过持仓（保护性单按全仓发，正常恒满足）

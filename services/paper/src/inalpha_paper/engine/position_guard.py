@@ -30,7 +30,7 @@ from ..kernel.identifiers import ClientOrderId, InstrumentId, StrategyId
 from ..kernel.msgbus import MessageBus
 from ..model.commands import SubmitOrderCommand
 from ..model.data import Bar
-from ..model.orders import Order, OrderSide, OrderType
+from ..model.orders import GUARD_ORDER_PREFIX, Order, OrderSide, OrderType
 
 if TYPE_CHECKING:
     from ..kernel.clock import Clock
@@ -177,7 +177,8 @@ class PositionGuard:
 
     def _build_exit(self, inst: InstrumentId, quantity: float, tag: str) -> Order:
         return Order(
-            client_order_id=ClientOrderId(f"guard-{inst.symbol}-{uuid4().hex[:8]}"),
+            # GUARD_ORDER_PREFIX 是风控豁免的「不可仿冒」第二因子（见 is_protective_order）
+            client_order_id=ClientOrderId(f"{GUARD_ORDER_PREFIX}{inst.symbol}-{uuid4().hex[:8]}"),
             instrument_id=inst,
             side=OrderSide.SELL,  # spot long-only：平多 = 卖出
             type=OrderType.MARKET,

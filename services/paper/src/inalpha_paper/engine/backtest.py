@@ -166,7 +166,8 @@ class BacktestEngine:
         # 层整体未做项（CR #88 medium，与引擎多标的化一并推进，非本闸单独修）。
         if self._guard is not None and bars_list:
             if self.exchange.flush_protective_at_close(bars_list[-1]) > 0:
-                # 兜底平仓改变了持仓/现金（差一笔手续费），重记末点权益
+                # 兜底平仓改变了持仓/现金（差一笔手续费），重记末点权益。snapshot 对同 ts
+                # 是**覆盖**末点（见 Portfolio.snapshot），不会产生重复 ts / 多算一个 bar。
                 self.portfolio.snapshot(bars_list[-1].ts_event)
 
         for s in self._strategies:
