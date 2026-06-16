@@ -35,6 +35,7 @@ from .schemas import (
     BaselineSnapshot,
     EquityPoint,
     PositionSnapshot,
+    SharpeCI,
 )
 from .storage import backtest_runs as backtest_runs_store
 from .storage import backtest_trades as backtest_trades_store
@@ -320,6 +321,15 @@ async def run_backtest(
         blew_up=report.blew_up,
         health_warnings=list(report.health_warnings),
         protective_exits=report.protective_exits,
+        sharpe_ci=(
+            SharpeCI(
+                lower=report.sharpe_ci_lower,
+                upper=report.sharpe_ci_upper,
+                includes_zero=report.sharpe_ci_includes_zero,
+            )
+            if report.sharpe_ci_includes_zero is not None
+            else None
+        ),
         final_positions=final_positions,
     )
 

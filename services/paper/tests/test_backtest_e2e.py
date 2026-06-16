@@ -96,6 +96,15 @@ def test_backtest_sma_cross_on_oscillating_prices() -> None:
     assert report.win_rate is not None
     assert 0.0 <= report.win_rate <= 100.0
 
+    # ADR-0027 防过拟合：Sharpe 有定义 + 未穿仓 → Bootstrap Sharpe CI 已算出
+    assert report.sharpe_ci_includes_zero is not None
+    assert report.sharpe_ci_lower is not None
+    assert report.sharpe_ci_upper is not None
+    # CI 下界 ≤ 上界；includes_zero 真值与"下界<0<上界"自洽
+    assert report.sharpe_ci_lower <= report.sharpe_ci_upper
+    spans_zero = report.sharpe_ci_lower <= 0.0 <= report.sharpe_ci_upper
+    assert report.sharpe_ci_includes_zero == spans_zero
+
 
 # ─── 逐笔成交记录（含每笔盈亏） ───
 
@@ -205,6 +214,10 @@ def test_backtest_downtrend_no_buy_signals() -> None:
     assert report.max_drawdown_pct == 0.0
     # equity 全程平稳 → Sharpe=None（std=0）
     assert report.sharpe is None
+    # ADR-0027：Sharpe 未定义 → 不算 Bootstrap CI（None，不污染响应）
+    assert report.sharpe_ci_includes_zero is None
+    assert report.sharpe_ci_lower is None
+    assert report.sharpe_ci_upper is None
 
 
 # ─── 空 bars 报错 ───

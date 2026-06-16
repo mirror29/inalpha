@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -28,6 +29,7 @@ from ..model.orders import OrderSide
 from ..model.positions import Position
 from . import metrics
 from .position_guard import PROTECTIVE_EXIT_TAGS
+from .robustness import bootstrap_sharpe_ci
 
 if TYPE_CHECKING:
     from .portfolio import Portfolio
@@ -119,6 +121,13 @@ class BacktestReport:
     #: 物理一致性警告列表，例如 "账户穿仓"、"现金最终为负"。空列表 = 干净。
     #: 前端 / orchestrator agent 见非空时必须告警，禁止无声渲染。
     health_warnings: list[str] = field(default_factory=list)
+    #: ── 防过拟合：Bootstrap Sharpe 95% CI（ADR-0027 单次回测路径，年化口径，与
+    #: ``sharpe`` 同尺度）。样本不足 / Sharpe 未定义 / 穿仓时为 None。
+    #: ``sharpe_ci_includes_zero=True`` ⇒ "回测 Sharpe 看起来好，但统计上不显著为正"——
+    #: 这是把"看起来好"和"真的好"分开的第一道闸（详 ADR-0026 反过拟合体系）。
+    sharpe_ci_lower: float | None = None
+    sharpe_ci_upper: float | None = None
+    sharpe_ci_includes_zero: bool | None = None
 
     @classmethod
     def from_portfolio(
@@ -162,6 +171,25 @@ class BacktestReport:
         trade_pnls = portfolio.closed_trade_pnls
         fills = list(portfolio.fills)
         protective_exits = sum(1 for f in fills if f.tag in PROTECTIVE_EXIT_TAGS)
+
+        sharpe_value = metrics.sharpe_ratio(returns, ppy)
+        # ADR-0027 防过拟合：单次回测给 Bootstrap Sharpe 95% CI。仅在 Sharpe 有定义
+        # （样本足 + 有波动）且账户未穿仓时算——穿仓的 CI 物理上无意义。bootstrap 返
+        # per-bar Sharpe，按 √ppy 年化到与 sharpe_value 同口径；includes_zero 是符号
+        # 判据，年化不改变其真值。
+        ci_lower: float | None = None
+        ci_upper: float | None = None
+        ci_includes_zero: bool | None = None
+        if sharpe_value is not None and not blew_up and len(returns) >= 2:
+            try:
+                _ci = bootstrap_sharpe_ci(returns, n_samples=2000)
+                _ann = math.sqrt(ppy)
+                ci_lower = _ci.ci_lower * _ann
+                ci_upper = _ci.ci_upper * _ann
+                ci_includes_zero = _ci.ci_includes_zero
+            except ValueError:
+                # returns 退化（如全相等）→ 维持 None，不污染响应
+                pass
         # exposure 用回测窗口端点（datetime → ns,整数路径:float 对 2026 时间戳
         # 丢 ~100ns,会与 fill.ts_ns 的整数路径错位）;缺端点时为 None。
         start_ns = datetime_to_ns(period_start) if period_start else None
@@ -183,7 +211,7 @@ class BacktestReport:
             period_start=period_start,
             period_end=period_end,
             positions=portfolio.positions(),
-            sharpe=metrics.sharpe_ratio(returns, ppy),
+            sharpe=sharpe_value,
             sortino=metrics.sortino_ratio(returns, ppy),
             max_drawdown_pct=max_dd,
             win_rate=metrics.win_rate(trade_pnls),
@@ -208,6 +236,9 @@ class BacktestReport:
             protective_exits=protective_exits,
             blew_up=blew_up,
             health_warnings=warnings,
+            sharpe_ci_lower=ci_lower,
+            sharpe_ci_upper=ci_upper,
+            sharpe_ci_includes_zero=ci_includes_zero,
         )
 
     def __str__(self) -> str:
