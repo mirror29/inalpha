@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from inalpha_paper.engine.portfolio import Portfolio
-from inalpha_paper.engine.position_guard import PROTECTIVE_EXIT_TAGS, PositionGuard
+from inalpha_paper.engine.position_guard import PositionGuard
 from inalpha_paper.execution.exchange import EXECUTION_ENGINE_ENDPOINT
 from inalpha_paper.kernel.clock import TestClock
 from inalpha_paper.kernel.identifiers import ClientOrderId, InstrumentId, StrategyId
@@ -14,7 +14,7 @@ from inalpha_paper.kernel.msgbus import MessageBus
 from inalpha_paper.model.commands import SubmitOrderCommand
 from inalpha_paper.model.data import Bar
 from inalpha_paper.model.events import OrderFilled
-from inalpha_paper.model.orders import OrderSide, OrderType
+from inalpha_paper.model.orders import PROTECTIVE_EXIT_TAGS, OrderSide, OrderType
 
 _SID = StrategyId("test")
 
@@ -239,3 +239,16 @@ def test_no_strategy_bound_returns_empty() -> None:
     # 没 bind
     assert guard.evaluate(_bar(50.0)) == []
     assert captured == []
+
+
+def test_bind_strategy_rejects_second_strategy() -> None:
+    """单策略约束：绑第二个不同 strategy_id → RuntimeError(CR #88)。"""
+    import pytest
+
+    msgbus = MessageBus()
+    pf = Portfolio(msgbus, initial_cash=10_000.0)
+    guard = PositionGuard(msgbus, TestClock(0), pf, stop_loss_pct=0.20)
+    guard.bind_strategy(StrategyId("A"))
+    guard.bind_strategy(StrategyId("A"))  # 同 id 重复绑定 ok（幂等）
+    with pytest.raises(RuntimeError, match="只支持单策略"):
+        guard.bind_strategy(StrategyId("B"))

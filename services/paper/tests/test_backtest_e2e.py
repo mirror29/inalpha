@@ -9,10 +9,10 @@ import math
 
 from inalpha_paper.engine.backtest import BacktestEngine
 from inalpha_paper.engine.live_session import LiveEngineSession
-from inalpha_paper.engine.position_guard import PROTECTIVE_EXIT_TAGS
 from inalpha_paper.engine.report import BacktestReport
 from inalpha_paper.kernel.identifiers import InstrumentId
 from inalpha_paper.model.data import Bar
+from inalpha_paper.model.orders import PROTECTIVE_EXIT_TAGS
 from inalpha_paper.strategies.buy_and_hold import BuyAndHoldStrategy
 from inalpha_paper.strategies.sma_cross import SMACrossStrategy
 
@@ -358,3 +358,43 @@ def test_backtest_protective_stop_on_last_bar_settles_at_close() -> None:
     assert stop_fills[0].fill_price == 70.0  # 按末根 close 兜底成交
     pos = report.positions.get(_btc())
     assert pos is None or pos.is_flat
+
+
+def test_guard_enabled_rejects_second_strategy() -> None:
+    """启用 guard 时挂第二个策略 → RuntimeError(单策略约束,CR #88)。"""
+    import pytest
+
+    engine = BacktestEngine(
+        initial_cash=10_000.0, fee_rate=0.0, protective_stop_loss_pct=0.20
+    )
+    engine.add_strategy(
+        BuyAndHoldStrategy(
+            name="a", clock=engine.clock, msgbus=engine.msgbus,
+            instrument_id=_btc(), timeframe="1h", trade_size=1.0,
+        )
+    )
+    with pytest.raises(RuntimeError, match="只支持单策略"):
+        engine.add_strategy(
+            BuyAndHoldStrategy(
+                name="b", clock=engine.clock, msgbus=engine.msgbus,
+                instrument_id=_btc(), timeframe="1h", trade_size=1.0,
+            )
+        )
+
+
+def test_no_guard_allows_multiple_strategies() -> None:
+    """未启用 guard(阈值全 None)时多策略仍可挂(不破坏既有能力)。"""
+    engine = BacktestEngine(initial_cash=10_000.0, fee_rate=0.0)
+    engine.add_strategy(
+        BuyAndHoldStrategy(
+            name="a", clock=engine.clock, msgbus=engine.msgbus,
+            instrument_id=_btc(), timeframe="1h", trade_size=1.0,
+        )
+    )
+    # 第二个策略不报错
+    engine.add_strategy(
+        BuyAndHoldStrategy(
+            name="b", clock=engine.clock, msgbus=engine.msgbus,
+            instrument_id=_btc(), timeframe="1h", trade_size=1.0,
+        )
+    )

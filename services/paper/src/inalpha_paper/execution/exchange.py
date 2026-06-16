@@ -27,7 +27,7 @@ from ..kernel.clock import Clock
 from ..kernel.identifiers import ClientOrderId, StrategyId, VenueOrderId
 from ..kernel.msgbus import MessageBus
 from ..model.data import Bar
-from ..model.orders import Order, OrderSide, OrderType
+from ..model.orders import PROTECTIVE_EXIT_TAGS, Order, OrderSide, OrderType
 from .gateway import Gateway
 
 if TYPE_CHECKING:
@@ -147,9 +147,6 @@ class SimulatedExchange(Gateway):
 
         **只动保护性单**：策略单维持「不收盘强平」语义不变。返回成交笔数。
         """
-        # 局部 import 防 execution↔engine 环（position_guard 反向依赖本模块的 endpoint）
-        from ..engine.position_guard import PROTECTIVE_EXIT_TAGS
-
         filled_count = 0
         remaining: list[tuple[Order, StrategyId]] = []
         for order, strategy_id in self._pending:

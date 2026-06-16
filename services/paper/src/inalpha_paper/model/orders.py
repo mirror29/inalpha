@@ -43,6 +43,14 @@ class OrderStatus(Enum):
     REJECTED = "REJECTED"
 
 
+#: 框架级保护性出场的 ``Order.tag`` 集合（ADR-0052）。放在 model 中立层：engine
+#: （PositionGuard）与 execution（SimulatedExchange）都引它，避免 engine↔execution
+#: 循环依赖（与下方 ``Order.tag`` 约定值同源）。
+PROTECTIVE_EXIT_TAGS: frozenset[str] = frozenset(
+    {"stop_loss", "take_profit", "trailing_stop_loss"}
+)
+
+
 # 合法转移表，违反抛 ``ValueError``
 _VALID_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.NEW: {OrderStatus.SUBMITTED, OrderStatus.REJECTED},

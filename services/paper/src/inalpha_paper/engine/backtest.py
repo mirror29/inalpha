@@ -99,7 +99,17 @@ class BacktestEngine:
         self._num_bars: int = 0
 
     def add_strategy(self, strategy: Strategy) -> None:
-        """挂载策略。strategy 构造时必须传 ``engine.clock`` / ``engine.msgbus``。"""
+        """挂载策略。strategy 构造时必须传 ``engine.clock`` / ``engine.msgbus``。
+
+        启用了 PositionGuard（protective_* 阈值非空）时**只允许单策略**：guard 只持一个
+        strategy_id，多策略会让保护性出场归属错误（前策略 on_position_closed 不触发、状态
+        不归零）。挂第二个策略即抛 RuntimeError（CR #88）。需多策略回测请关闭 protective_*。
+        """
+        if self._guard is not None and self._strategies:
+            raise RuntimeError(
+                "PositionGuard 启用时只支持单策略 per engine（多策略需先完成引擎多策略化，"
+                "CR #88 / ADR-0052 已知限制）；多策略回测请置 protective_* 阈值为 None。"
+            )
         self._strategies.append(strategy)
         # guard 出场单用策略自身 id 提交（确保 on_position_closed 回到策略让其状态归零）
         if self._guard is not None:

@@ -36,12 +36,6 @@ if TYPE_CHECKING:
     from ..kernel.clock import Clock
     from .portfolio import Portfolio
 
-#: 保护性出场 tag 集合（与 closed_trades.exit_reason CHECK 集合、StoplossGuardRule 对齐）。
-#: live_runner 据此判定一笔单是否为框架兜底出场（跳过开仓闸 enforce）。
-PROTECTIVE_EXIT_TAGS: frozenset[str] = frozenset(
-    {"stop_loss", "take_profit", "trailing_stop_loss"}
-)
-
 
 class PositionGuard:
     """框架级持仓保护止损。被回测引擎与 live session 实例化。
@@ -108,11 +102,16 @@ class PositionGuard:
     def bind_strategy(self, strategy_id: StrategyId) -> None:
         """绑定所属策略 id。出场单用它提交，确保 on_position_closed 回到策略让其状态归零。
 
-        **单值（last-bind wins）**：沿用引擎契约「单 strategy 单 instrument per session」
-        （见 ``BacktestEngine`` / ``Portfolio`` docstring）。多策略场景下 guard 出场单会
-        全部归属最后 bind 的策略——多策略支持是引擎层整体未做项（CR #88 medium，非本闸单独
-        修，需与引擎多策略化一并推进）。
+        **单策略约束**：guard 只持一个 ``_strategy_id``。绑第二个不同策略会让保护性出场
+        归属错误（前策略状态不归零），故直接断言拒绝——多策略支持是引擎层整体未做项
+        （CR #88，需与引擎多策略化一并推进）。调用方 ``BacktestEngine.add_strategy`` 也已
+        在挂第二个策略时抛 RuntimeError，双层防呆。
         """
+        if self._strategy_id is not None and self._strategy_id != strategy_id:
+            raise RuntimeError(
+                "PositionGuard 只支持单策略：不能绑定第二个不同的 strategy_id"
+                f"（已绑 {self._strategy_id}，又试图绑 {strategy_id}）"
+            )
         self._strategy_id = strategy_id
 
     def evaluate(self, bar: Bar) -> list[Order]:

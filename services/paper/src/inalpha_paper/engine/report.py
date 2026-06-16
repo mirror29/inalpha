@@ -24,10 +24,9 @@ from typing import TYPE_CHECKING
 
 from ..kernel.clock import datetime_to_ns
 from ..kernel.identifiers import InstrumentId
-from ..model.orders import OrderSide
+from ..model.orders import PROTECTIVE_EXIT_TAGS, OrderSide
 from ..model.positions import Position
 from . import metrics
-from .position_guard import PROTECTIVE_EXIT_TAGS
 
 if TYPE_CHECKING:
     from .portfolio import Portfolio

@@ -29,7 +29,6 @@ from inalpha_shared.errors import ConflictError, InalphaError
 from .config import PaperSettings
 from .data_client import DataClient
 from .engine.live_session import LiveEngineSession
-from .engine.position_guard import PROTECTIVE_EXIT_TAGS
 from .execution import risk_guard as risk_guard_mod
 from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
@@ -39,7 +38,7 @@ from .fills import apply_fill_to_positions_and_cash
 from .fx import BaseCurrencyConverter, needs_network
 from .kernel.identifiers import InstrumentId, StrategyId
 from .model.data import Bar
-from .model.orders import Order
+from .model.orders import PROTECTIVE_EXIT_TAGS, Order
 from .runner import _bar_from_dict
 from .storage import accounts as accounts_store
 from .storage import closed_trades as closed_trades_store
