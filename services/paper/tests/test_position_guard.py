@@ -260,33 +260,34 @@ def test_bind_strategy_rejects_second_strategy() -> None:
         guard.bind_strategy(StrategyId("B"))
 
 
-def _order(tag: str | None, coid: str) -> Order:
+def _order(tag: str | None, coid: str, side: OrderSide = OrderSide.SELL) -> Order:
     return Order(
         client_order_id=ClientOrderId(coid),
         instrument_id=_btc(),
-        side=OrderSide.SELL,
+        side=side,
         type=OrderType.MARKET,
         quantity=1.0,
         tag=tag,
     )
 
 
-def test_is_protective_order_requires_tag_and_guard_prefix() -> None:
-    """CR #88 major 回归：风控豁免双因子判定，策略仅靠 tag 仿冒无法绕过。
+def test_is_protective_order_requires_sell_tag_and_guard_prefix() -> None:
+    """CR #88 major 回归：风控豁免三因子判定（side=SELL + tag + guard 前缀），缺一即仿冒。
 
-    - guard 真出场单（tag ∈ 保护集 + client_order_id 以 'guard-' 开头）→ True
-    - 策略仿冒（tag='stop_loss' 但普通 client_order_id）→ False（仍走风控闸）
+    - guard 真出场单（SELL + tag ∈ 保护集 + 'guard-' 前缀）→ True
+    - 仅改 tag（普通 client_order_id）→ False
     - guard 前缀但非保护性 tag → False
+    - **BUY 单即便 tag + 前缀都伪造 → False**（guard 永不做 BUY；挡借豁免下超大开仓单）
     """
     # guard 真单
-    real = _order("stop_loss", "guard-BTC/USDT-abc123")
-    assert is_protective_order(real) is True
-    # 策略仿冒：只改 tag，client_order_id 仍是策略自己的命名
-    spoof = _order("stop_loss", "sma-BTC/USDT-deadbeef")
-    assert is_protective_order(spoof) is False
-    # 有 guard 前缀但 tag 不在保护集
-    not_protective = _order("signal", "guard-BTC/USDT-xyz")
-    assert is_protective_order(not_protective) is False
+    assert is_protective_order(_order("stop_loss", "guard-BTC/USDT-abc123")) is True
+    # 仅改 tag
+    assert is_protective_order(_order("stop_loss", "sma-BTC/USDT-deadbeef")) is False
+    # guard 前缀但 tag 不在保护集
+    assert is_protective_order(_order("signal", "guard-BTC/USDT-xyz")) is False
+    # 双因子全伪造但 side=BUY → 仍 False（side 守门挡掉借豁免开超大单）
+    forged_buy = _order("stop_loss", "guard-BTC/USDT-evil", side=OrderSide.BUY)
+    assert is_protective_order(forged_buy) is False
     # guard 自己产的出场单恒满足（与生产构造一致）
     msgbus = MessageBus()
     pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)

@@ -597,12 +597,21 @@ class LiveRunnerManager:
         # 措辞「触发 N 个信号（待撮合）」：此处 orders 是策略意图、尚未过风控/撮合，
         # 后续可能被 risk_rejected 全拦——不写「产生 N 个下单意图」以免与最终无成交割裂（CR）。
         if orders:
+            # 区分策略信号 vs 框架 guard 兜底出场（CR #88 medium）：混算会让运维误以为
+            # 策略产生了信号，实则可能是 guard 触发止损/止盈。
+            guard_n = sum(1 for o, _ in orders if is_protective_order(o))
+            strat_n = len(orders) - guard_n
+            parts = []
+            if strat_n:
+                parts.append(f"策略触发 {strat_n} 个信号")
+            if guard_n:
+                parts.append(f"框架 guard 触发 {guard_n} 个保护性出场")
             try:
                 async with get_conn() as conn:
                     await runs_store.append_log(
                         conn, run["id"], "info",
                         f"bar {_ns_to_dt(bar.ts_event):%Y-%m-%d %H:%M} · "
-                        f"策略触发 {len(orders)} 个信号（待撮合）",
+                        f"{' + '.join(parts)}（待撮合）",
                     )
             except Exception:
                 _logger.exception("live run %s: 写出单日志失败", run["id"])

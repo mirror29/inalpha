@@ -198,11 +198,14 @@ class Order:
 def is_protective_order(order: Order) -> bool:
     """是否为 ``PositionGuard`` 框架兜底出场单（享风控豁免：跳过开仓闸 + notional 上限）。
 
-    **双因子判定**（ADR-0052 / CR #88 major）：``tag`` ∈ ``PROTECTIVE_EXIT_TAGS`` **且**
-    ``client_order_id`` 以 ``GUARD_ORDER_PREFIX`` 开头。单看 tag 不够——策略代码能自由设
-    ``Order(tag="stop_loss")`` 仿冒以绕过风控；guard 出场单的 client_order_id 由框架按
-    ``GUARD_ORDER_PREFIX`` 生成，二者同时满足才认定为框架兜底单。
+    **三因子判定**（ADR-0052 / CR #88 major）：① ``side == SELL``（guard 只做 spot 多头
+    平仓，永不生成 BUY）② ``tag`` ∈ ``PROTECTIVE_EXIT_TAGS`` ③ ``client_order_id`` 以
+    ``GUARD_ORDER_PREFIX`` 开头。三者缺一不可——策略代码能自由设 ``tag`` 与 ``client_order_id``
+    仿冒以绕过风控豁免；尤其 ``side`` 守门挡掉「双因子都伪造的 BUY 单借豁免下超大开仓单」
+    （只看 tag+前缀会放行任意 BUY，CR #88 major）。
     """
-    return order.tag in PROTECTIVE_EXIT_TAGS and str(
-        order.client_order_id
-    ).startswith(GUARD_ORDER_PREFIX)
+    return (
+        order.side == OrderSide.SELL
+        and order.tag in PROTECTIVE_EXIT_TAGS
+        and str(order.client_order_id).startswith(GUARD_ORDER_PREFIX)
+    )
