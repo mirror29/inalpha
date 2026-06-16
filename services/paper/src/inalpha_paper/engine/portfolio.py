@@ -20,7 +20,7 @@ from uuid import UUID
 from ..kernel.identifiers import InstrumentId
 from ..kernel.msgbus import MessageBus
 from ..model.events import OrderFilled, PositionChanged, PositionClosed, PositionOpened
-from ..model.orders import OrderSide
+from ..model.orders import OrderSide, is_protective_signature
 from ..model.positions import Position
 from .close_detector import ClosedTradeStaging, detect_close
 from .report import FillRecord
@@ -262,6 +262,10 @@ class Portfolio:
                 realized_pnl=pos.realized_pnl - prev_realized,
                 intent=intent,
                 tag=msg.tag,
+                # 三因子判定是否框架 guard 兜底出场（区分策略自带 stop_loss tag，CR #88）
+                is_guard=is_protective_signature(
+                    msg.side, msg.tag, msg.client_order_id
+                ),
             )
         )
 

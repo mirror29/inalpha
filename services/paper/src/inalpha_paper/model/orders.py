@@ -195,17 +195,28 @@ class Order:
         self._transition(OrderStatus.CANCELED, ts)
 
 
+def is_protective_signature(
+    side: OrderSide, tag: str | None, client_order_id: object
+) -> bool:
+    """三因子判定原语：``side==SELL`` + ``tag`` ∈ ``PROTECTIVE_EXIT_TAGS`` + ``client_order_id``
+    以 ``GUARD_ORDER_PREFIX`` 开头。供 :func:`is_protective_order`（拿 Order）与成交侧
+    （Portfolio 拿 OrderFilled 字段，无 Order 对象）共用，避免重复逻辑。
+
+    **安全前提（CR #88 medium）**：三个字段策略代码均可自设，故这层判定**不是**对抗性防伪，
+    用途是把「框架 guard 出场」与「策略普通单 / 策略自带 stop_loss」区分开（给 guard 出场
+    风控豁免 + 单独计数）。真正防伪依赖**策略源码 AST 审计 + 运行隔离**（audit_strategy_code；
+    当前策略不在 runtime 沙箱内，是已知攻击面，待后续补沙箱时收口——见 ADR-0052）。
+    """
+    return (
+        side == OrderSide.SELL
+        and tag in PROTECTIVE_EXIT_TAGS
+        and str(client_order_id).startswith(GUARD_ORDER_PREFIX)
+    )
+
+
 def is_protective_order(order: Order) -> bool:
     """是否为 ``PositionGuard`` 框架兜底出场单（享风控豁免：跳过开仓闸 + notional 上限）。
 
-    **三因子判定**（ADR-0052 / CR #88 major）：① ``side == SELL``（guard 只做 spot 多头
-    平仓，永不生成 BUY）② ``tag`` ∈ ``PROTECTIVE_EXIT_TAGS`` ③ ``client_order_id`` 以
-    ``GUARD_ORDER_PREFIX`` 开头。三者缺一不可——策略代码能自由设 ``tag`` 与 ``client_order_id``
-    仿冒以绕过风控豁免；尤其 ``side`` 守门挡掉「双因子都伪造的 BUY 单借豁免下超大开仓单」
-    （只看 tag+前缀会放行任意 BUY，CR #88 major）。
+    见 :func:`is_protective_signature`（三因子判定 + 安全前提说明）。
     """
-    return (
-        order.side == OrderSide.SELL
-        and order.tag in PROTECTIVE_EXIT_TAGS
-        and str(order.client_order_id).startswith(GUARD_ORDER_PREFIX)
-    )
+    return is_protective_signature(order.side, order.tag, order.client_order_id)

@@ -6,15 +6,25 @@
 from __future__ import annotations
 
 import math
+from uuid import uuid4
 
 from inalpha_paper.engine.backtest import BacktestEngine
 from inalpha_paper.engine.live_session import LiveEngineSession
 from inalpha_paper.engine.report import BacktestReport
-from inalpha_paper.kernel.identifiers import InstrumentId
+from inalpha_paper.kernel.clock import Clock
+from inalpha_paper.kernel.identifiers import ClientOrderId, InstrumentId
+from inalpha_paper.kernel.msgbus import MessageBus
 from inalpha_paper.model.data import Bar
-from inalpha_paper.model.orders import PROTECTIVE_EXIT_TAGS
+from inalpha_paper.model.events import PositionClosed, PositionOpened
+from inalpha_paper.model.orders import (
+    PROTECTIVE_EXIT_TAGS,
+    Order,
+    OrderSide,
+    OrderType,
+)
 from inalpha_paper.strategies.buy_and_hold import BuyAndHoldStrategy
 from inalpha_paper.strategies.sma_cross import SMACrossStrategy
+from inalpha_paper.strategy.base import Strategy
 
 
 def _btc() -> InstrumentId:
@@ -398,3 +408,77 @@ def test_no_guard_allows_multiple_strategies() -> None:
             instrument_id=_btc(), timeframe="1h", trade_size=1.0,
         )
     )
+
+
+class _StrategyStopLossStrat(Strategy):
+    """测试用：bar1 买入，bar3 用 tag='stop_loss' 卖出（普通 client_order_id，非 guard）。"""
+
+    def __init__(
+        self,
+        name: str,
+        clock: Clock,
+        msgbus: MessageBus,
+        instrument_id: InstrumentId,
+        timeframe: str = "1h",
+        trade_size: float = 1.0,
+        **_: object,
+    ) -> None:
+        super().__init__(name, clock, msgbus)
+        self._iid = instrument_id
+        self._tf = timeframe
+        self._size = trade_size
+        self._n = 0
+        self._is_long = False
+        self._open_qty = 0.0
+
+    def on_start(self) -> None:
+        self.subscribe_bars(self._iid, self._tf)
+
+    def on_bar(self, bar: Bar) -> None:
+        self._n += 1
+        if self._n == 1:
+            self.submit_order(Order(
+                client_order_id=ClientOrderId(f"mystrat-{uuid4().hex[:8]}"),
+                instrument_id=self._iid, side=OrderSide.BUY,
+                type=OrderType.MARKET, quantity=self._size,
+            ))
+        elif self._n == 3 and self._is_long:
+            self.submit_order(Order(
+                client_order_id=ClientOrderId(f"mystrat-{uuid4().hex[:8]}"),
+                instrument_id=self._iid, side=OrderSide.SELL,
+                type=OrderType.MARKET, quantity=self._open_qty, tag="stop_loss",
+            ))
+
+    def on_position_opened(self, event: PositionOpened) -> None:
+        self._is_long = True
+        self._open_qty = abs(event.quantity)
+
+    def on_position_closed(self, event: PositionClosed) -> None:
+        self._is_long = False
+
+
+def test_strategy_own_stop_loss_tag_not_counted_as_guard() -> None:
+    """CR #88 major 回归：策略自打 tag='stop_loss' 的平仓不计入 protective_exits。
+
+    protective_exits 只数框架 guard 兜底（is_guard），策略自带止损 tag（client_order_id 非
+    'guard-' 前缀）不算——否则 agent 会把策略止损误报成"框架止损"。
+    """
+    # 价格平稳，guard 不会触发；关掉 guard 也行，这里关掉以纯测策略 tag 计数
+    bars = _gen_bars([100.0, 100.0, 100.0, 100.0, 100.0])
+    engine = BacktestEngine(
+        initial_cash=10_000.0, fee_rate=0.0, protective_stop_loss_pct=None
+    )
+    engine.add_strategy(
+        _StrategyStopLossStrat(
+            name="s", clock=engine.clock, msgbus=engine.msgbus,
+            instrument_id=_btc(), timeframe="1h", trade_size=1.0,
+        )
+    )
+    report = engine.run(bars)
+
+    # 策略确实平了一笔且打了 stop_loss tag
+    stop_fills = [f for f in report.fills if f.tag == "stop_loss"]
+    assert len(stop_fills) == 1
+    assert stop_fills[0].is_guard is False  # 关键：不是框架 guard
+    # 框架 guard 计数为 0（不被策略自带 tag 污染）
+    assert report.protective_exits == 0

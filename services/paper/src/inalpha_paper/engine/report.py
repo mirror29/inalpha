@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 
 from ..kernel.clock import datetime_to_ns
 from ..kernel.identifiers import InstrumentId
-from ..model.orders import PROTECTIVE_EXIT_TAGS, OrderSide
+from ..model.orders import OrderSide
 from ..model.positions import Position
 from . import metrics
 
@@ -54,6 +54,9 @@ class FillRecord:
     realized_pnl: float
     intent: str | None = None
     tag: str | None = None
+    #: ADR-0052/CR #88：本笔是否为框架 PositionGuard 兜底出场（三因子 is_protective_signature
+    #: 判定）。与 ``tag`` 区分——策略也能自打 tag="stop_loss"，只有这个 bool 才真代表框架触发。
+    is_guard: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +163,8 @@ class BacktestReport:
         max_dd = metrics.max_drawdown_pct(equity_values)
         trade_pnls = portfolio.closed_trade_pnls
         fills = list(portfolio.fills)
-        protective_exits = sum(1 for f in fills if f.tag in PROTECTIVE_EXIT_TAGS)
+        # 只数框架 guard 兜底出场（f.is_guard），不混入策略自带 stop_loss tag（CR #88 major）
+        protective_exits = sum(1 for f in fills if f.is_guard)
         # exposure 用回测窗口端点（datetime → ns,整数路径:float 对 2026 时间戳
         # 丢 ~100ns,会与 fill.ts_ns 的整数路径错位）;缺端点时为 None。
         start_ns = datetime_to_ns(period_start) if period_start else None
