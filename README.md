@@ -306,6 +306,19 @@ and an `en / 中` switcher in the sidebar.
 > never calls an LLM directly. Prefer the manual three-terminal flow, or want the low-level live
 > trace (the `mastra dev` playground at <http://127.0.0.1:4111>)? See [`AGENTS.md §4`](AGENTS.md).
 
+### 5 · Try asking
+
+With the console up, talk to the orchestrator in the docked chat on the right — it replies in the language of your message. Each prompt below shows off a different part of the system:
+
+- `Which factors are working for NVDA right now, and how strong is each?` — **factor timing**: ranks the currently-effective factors by time-series Rank IC, with decay state.
+- `Research NVDA: latest price + fundamentals, run a bull / bear / risk debate, and synthesize a rating.` — **multi-perspective research**: six analysts in parallel plus a three-party debate, triggered only when they disagree, with the decision chain persisted.
+- `Research TSLA with a Buffett and a Cathie Wood take.` — **investing-legends panel**: opt-in master personas argue in their own styles.
+- `Design a mean-reversion strategy for ETH, backtest the last 6 months, and show its fitness vs buy-and-hold.` — **LLM-authored strategy**: the model writes the full source, it clears three sandbox gates, then auto-races a baseline.
+- `Backtest momentum / mean-reversion / breakout across BTC, ETH, SOL for the last year and give me the Pareto frontier.` — **swarm**: dozens of backtests fanned out in parallel.
+- `Open a small NVDA position.` — **machine-approved orders**: watch it route through propose → approve → execute; the LLM has no direct path to placing an order.
+
+> Examples only, not a fixed menu — ask about any ticker or market (crypto · US · A-shares · HK · global indices · commodities · FRED macro) in any language; the orchestrator picks the venue and answers in kind.
+
 ---
 
 ## AI Collaboration
