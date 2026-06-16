@@ -262,7 +262,7 @@ class AnthropicLLMClient:
         self,
         *,
         api_key: str,
-        model: str = "claude-opus-4-7",
+        model: str = "claude-opus-4-8",
         timeout_seconds: float = 60.0,
         max_concurrent: int = 5,
         max_retries: int = 3,
@@ -563,13 +563,13 @@ _OPENAI_COMPAT_DEFAULTS: dict[str, tuple[str, str]] = {
     "deepseek": ("https://api.deepseek.com/v1", "deepseek-v4-pro"),
     "openai": ("https://api.openai.com/v1", "gpt-5.5"),
     "kimi": ("https://api.moonshot.cn/v1", "kimi-k2.6"),
-    "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "glm-5.1"),
+    "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "glm-5.2"),
     "ollama": ("http://localhost:11434/v1", "llama4"),
 }
 
 # 非 OpenAI-compat provider 的默认模型
 _NATIVE_DEFAULTS: dict[str, str] = {
-    "anthropic": "claude-opus-4-7",
+    "anthropic": "claude-opus-4-8",
     "gemini": "gemini-3-pro",
 }
 
