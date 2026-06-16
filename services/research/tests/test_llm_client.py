@@ -15,6 +15,7 @@ from inalpha_research.llm.client import (
     _parse_json_response,
     _with_language_directive,
     build_llm_client,
+    infer_output_language,
 )
 
 # ────────────────────────────────────────────────────────────────────
@@ -399,3 +400,27 @@ async def test_language_scoped_aclose_delegates() -> None:
     fake = FakeLLMClient({})
     client = LanguageScopedClient(fake, "English")
     await client.aclose()  # 透传给内层 fake，不抛
+
+
+# ────────────────────────────────────────────────────────────────────
+# infer_output_language (Fix C 第二层：从 user_question 兜底推断语言)
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_infer_language_chinese() -> None:
+    assert infer_output_language("研究英伟达：最新价格和基本面") == "中文"
+
+
+def test_infer_language_english() -> None:
+    assert infer_output_language("Research NVDA: latest price") == "English"
+
+
+def test_infer_language_mixed_cjk_wins() -> None:
+    # 含任一汉字即判中文(中文用户常夹英文 ticker)
+    assert infer_output_language("研究 NVDA 现在怎么样") == "中文"
+
+
+def test_infer_language_empty_or_none_is_none() -> None:
+    assert infer_output_language("") is None
+    assert infer_output_language("   ") is None
+    assert infer_output_language(None) is None

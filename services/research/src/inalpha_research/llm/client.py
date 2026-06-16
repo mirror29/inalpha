@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 from collections.abc import Mapping
 from typing import Any, Protocol
 
@@ -583,6 +584,21 @@ SUPPORTED_PROVIDERS = (
     "ollama",
     "fake",
 )
+
+
+#: 中日韩统一表意文字区段（粗判中文用，够区分中文 vs 拉丁语系）。
+_CJK_RE = re.compile(r"[㐀-鿿豈-﫿]")
+
+
+def infer_output_language(text: str | None) -> str | None:
+    """从一段文本粗判输出语言：含 CJK 汉字 → "中文"，非空非 CJK → "English"，空 → None。
+
+    用作 deep_dive 的语言兜底（Fix C 第二层）：orchestrator 没显式传 language 时，从
+    user_question 推断，让研究结果跟随提问语言——确定性、不靠模型自觉。
+    """
+    if not text or not text.strip():
+        return None
+    return "中文" if _CJK_RE.search(text) else "English"
 
 
 def _with_language_directive(system: str, language: str) -> str:
