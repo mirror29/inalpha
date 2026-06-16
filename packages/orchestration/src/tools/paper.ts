@@ -58,6 +58,49 @@ export const paperListStrategiesTool = createTool({
 });
 
 // ────────────────────────────────────────────────────────────────────
+// paper.list_archetypes（D-12 · ADR-0051 D1）
+// ────────────────────────────────────────────────────────────────────
+
+export const paperListArchetypesTool = createTool({
+  id: "paper.list_archetypes",
+  description: `
+    列出策略原型库——经验证、过沙盒协议、可参数化的 Strategy 骨架，给 author_strategy 当**起点**。
+
+    何时用：
+    - **写策略前**（研究链路第 2 步：拿到 factor.timing 的 stable 因子 + kind 之后）
+    - 按主因子 kind 传 factorKinds，取匹配骨架；以骨架 code 为起点**按因子证据改参/改逻辑**
+      再走 paper.author_strategy（骨架降低协议踩坑 + 给结构，但逻辑仍要定制）
+
+    何时不用：
+    - 用户明确点名内置策略（"用 sma_cross"）→ 走 paper.compose_strategy
+    - 纯调已有候选的参数 → 直接 paper.run_backtest
+
+    坑：
+    - 骨架是**起点不是终点**，更不是绕过验证——改完仍走 author_strategy 过沙盒三审
+    - 骨架参数默认值是初值参考，别原样套用钉死；不保证 alpha
+    - 现货 long-only；返回 code 已是"候选源码"形态（无 import，直接用注入符号）
+
+    返回：{ archetypes: [{ name, applies_to_kinds, description, when_to_use,
+    when_not_to_use, failure_modes, compatible_pivots, params, code }] }
+    （传 factorKinds 时匹配 kind 的排前面）
+  `.trim(),
+  inputSchema: z.object({
+    factorKinds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "因子 kind 列表（来自 factor.timing 的 top 因子 kind，如 ['momentum','trend']）；" +
+          "匹配的骨架排前面。省略则返回全部。",
+      ),
+  }),
+  execute: async (input, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listArchetypes(input.factorKinds);
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────
 // paper.run_backtest
 // ────────────────────────────────────────────────────────────────────
 
@@ -92,6 +135,9 @@ export const paperRunBacktestTool = createTool({
       >0 说明灾难兜底生效过几次；这是回测对"未来 live 也会有的兜底"的如实反映，
       可向用户说明风险被框架封住了几次（默认 -20% 硬止损，非策略自带）
     - D-9：fitness（多目标合成，ADR-0020）—— 排序候选用这个，不要用裸 Sharpe
+    - D-12（ADR-0027）：sharpe_ci { lower, upper, includes_zero }（年化 Sharpe 95% 置信区间）——
+      **防"看起来好"的关键字段**。includes_zero=true ⇒ Sharpe 统计上不显著为正，
+      回测曲线好看但禁不起重采样检验，**不要把 Sharpe 当卖点**，必须如实告诉用户
     - equity_curve：[(ts, equity)] 序列；**超 120 点会等距降采样**（带
       equity_curve_downsampled_from 标原始点数），看形状趋势用，精确逐点分析
       不要从这里取（完整曲线在 paper 服务 API）

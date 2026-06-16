@@ -75,7 +75,30 @@ export type BacktestReport = {
    * orchestrator 必须把警告原样转给用户。
    */
   health_warnings?: string[];
+  /**
+   * D-12 起（ADR-0027）：Bootstrap Sharpe 95% 置信区间（年化，与 sharpe 同口径）。
+   * includes_zero=true ⇒ Sharpe 统计上不显著为正——回测"看起来好"但禁不起重采样，
+   * agent 不应把该 Sharpe 当卖点。样本不足 / 穿仓 / 无波动时为 null。
+   */
+  sharpe_ci?: { lower: number; upper: number; includes_zero: boolean } | null;
   final_positions: PositionSnapshot[];
+};
+
+/** D-12（ADR-0051）：策略原型库单条。 */
+export type Archetype = {
+  name: string;
+  /** 源 canonical（MIT 出处）；Inalpha 特有的为空串 */
+  source_archetype: string;
+  applies_to_kinds: string[];
+  description: string;
+  when_to_use: string;
+  when_not_to_use: string;
+  failure_modes: string[];
+  /** 可转向的兼容原型名（喂 ADR-0051 D6 自动 pivot 的 archetype-switch） */
+  compatible_pivots: string[];
+  params: { name: string; default: number; doc: string }[];
+  /** 完整可跑候选源码（过沙盒三审）；agent 以此为起点改参再 author */
+  code: string;
 };
 
 export type BacktestParams = {
@@ -375,6 +398,14 @@ export class PaperClient {
 
   async listStrategies(): Promise<{ strategies: string[] }> {
     return await this.http.get("/strategies");
+  }
+
+  async listArchetypes(factorKinds?: string[]): Promise<{ archetypes: Archetype[] }> {
+    const query =
+      factorKinds && factorKinds.length > 0
+        ? { factor_kinds: factorKinds.join(",") }
+        : undefined;
+    return await this.http.get("/archetypes", query);
   }
 
   async runBacktest(params: BacktestParams): Promise<BacktestReport> {
