@@ -165,7 +165,14 @@ class PositionGuard:
         """按优先级判定触发的保护性 tag：硬止损 > 移动止损 > 止盈（None = 不触发）。"""
         if self._stop_loss_pct is not None and pct <= -self._stop_loss_pct:
             return "stop_loss"
-        if self._trailing_stop_pct is not None and (peak - pct) >= self._trailing_stop_pct:
+        # trailing 仅在持仓**曾经盈利**（peak > 0）时激活——语义是"自峰值浮盈回撤锁利"。
+        # 否则建仓即亏损会误触发（peak=-4% 跌到 -11% 时 peak-pct=7% 也过阈），抢在 -20%
+        # 硬止损前强平，与文档/用户预期不符（CR Major）。亏损阶段交给 stop_loss 兜底。
+        if (
+            self._trailing_stop_pct is not None
+            and peak > 0
+            and (peak - pct) >= self._trailing_stop_pct
+        ):
             return "trailing_stop_loss"
         if self._take_profit_pct is not None and pct >= self._take_profit_pct:
             return "take_profit"

@@ -149,6 +149,23 @@ def test_trailing_triggers_after_peak() -> None:
     assert orders[0].tag == "trailing_stop_loss"
 
 
+def test_trailing_does_not_trigger_when_never_profitable() -> None:
+    """CR Major 回归：持仓从未盈利（peak ≤ 0）→ trailing 不激活，亏损交给硬止损。
+
+    旧逻辑 peak 初始化为首根 pct（可负），peak-pct 在纯亏损段也会过阈 → 在 -20% 硬止损
+    前误强平。修复后 trailing 仅 peak>0 才激活。
+    """
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    # 纯 trailing（无 stop_loss），隔离验证亏损段不被 trailing 误触发
+    guard, _ = _guard_with_capture(pf, msgbus, trailing_stop_pct=0.05)
+
+    # 建仓即亏：-4% 建"峰值"-4%（仍为负），再跌到 -15%
+    assert guard.evaluate(_bar(96.0, ts_ns=1)) == []
+    # peak-pct = -4% - (-15%) = 11% >= 5%，但 peak 从未 > 0 → 不触发 trailing
+    assert guard.evaluate(_bar(85.0, ts_ns=2)) == []
+
+
 # ─── 工厂 / 关闭 / 边界 ───
 
 

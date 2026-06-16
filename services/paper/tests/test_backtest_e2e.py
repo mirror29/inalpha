@@ -325,6 +325,80 @@ def test_backtest_without_guard_holds_through_crash() -> None:
     assert pos is not None and not pos.is_flat
 
 
+def test_backtest_guard_and_strategy_double_sell_same_bar_no_corruption() -> None:
+    """CR Medium：guard 硬止损 + 策略自主出场同 bar 双 SELL → exchange can_afford_sell
+    拒掉多余那笔（INSUFFICIENT_POSITION 拒单日志），但末态干净（空仓 / 不穿仓 / 不负仓）。
+
+    骨架策略（momentum_trend / mean_reversion）都有自主出场，用骨架时这是高频路径。
+    """
+    from uuid import uuid4
+
+    from inalpha_paper.kernel.identifiers import ClientOrderId
+    from inalpha_paper.model.orders import Order, OrderSide, OrderType
+    from inalpha_paper.strategy.base import Strategy
+
+    class _BuyThenExitOnDrop(Strategy):
+        def __init__(self, name, clock, msgbus, instrument_id, timeframe="1h", trade_size=1.0):  # type: ignore[no-untyped-def]
+            super().__init__(name, clock, msgbus)
+            self._iid = instrument_id
+            self._tf = timeframe
+            self._sz = trade_size
+            self._is_long = False
+            self._open_qty = 0.0
+
+        def on_start(self) -> None:
+            self.subscribe_bars(self._iid, self._tf)
+
+        def on_bar(self, bar: Bar) -> None:
+            if bar.instrument_id != self._iid:
+                return
+            if not self._is_long and bar.close >= 100.0:  # 首段建仓
+                self._submit(OrderSide.BUY, self._sz)
+            elif self._is_long and bar.close <= 75.0:  # 崩盘自主出场（与 guard 同 bar）
+                self._submit(OrderSide.SELL, self._open_qty)
+
+        def on_position_opened(self, event) -> None:  # type: ignore[no-untyped-def]
+            self._is_long = event.quantity > 0
+            self._open_qty = abs(event.quantity)
+
+        def on_position_closed(self, event) -> None:  # type: ignore[no-untyped-def]
+            self._is_long = False
+            self._open_qty = 0.0
+
+        def _submit(self, side: int, qty: float) -> None:
+            self.submit_order(
+                Order(
+                    client_order_id=ClientOrderId("dbl-" + uuid4().hex[:8]),
+                    instrument_id=self._iid,
+                    side=side,
+                    type=OrderType.MARKET,
+                    quantity=qty,
+                )
+            )
+
+    bars = _gen_bars(_CRASH_PRICES)
+    engine = BacktestEngine(
+        initial_cash=10_000.0, fee_rate=0.0, protective_stop_loss_pct=0.20
+    )
+    strat = _BuyThenExitOnDrop(
+        name="dbl",
+        clock=engine.clock,
+        msgbus=engine.msgbus,
+        instrument_id=_btc(),
+        timeframe="1h",
+        trade_size=1.0,
+    )
+    engine.add_strategy(strat)
+    report = engine.run(bars)
+
+    # 核心不变量：双 SELL 不污染 —— 末态空仓、未穿仓、无负持仓
+    assert not report.blew_up
+    pos = report.positions.get(_btc())
+    assert pos is None or pos.is_flat
+    if pos is not None:
+        assert pos.quantity >= 0  # 多余 SELL 被守门拒，不会卖出负仓
+
+
 def test_live_session_protective_stop_matches_backtest() -> None:
     """live session 走 feed_bar 路径同样触发框架兜底，与回测同口径（tag=stop_loss、平仓）。
 
