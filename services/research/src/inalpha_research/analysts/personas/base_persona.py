@@ -29,7 +29,7 @@ from datetime import datetime
 
 from ...researchers.base import infer_asset_type
 from ..base import Analyst
-from ..utils import render_financial_indicators, render_web_results
+from ..utils import fundamentals_route, render_financial_indicators, render_web_results
 
 #: 所有 persona 共享的输出契约 —— 拼到每个具体 persona 的风格化 lens 之后。
 #: 放在基类集中维护，保证 6 个 persona 的多市场措辞 / 纪律 / JSON shape 完全一致。
@@ -118,9 +118,18 @@ class PersonaAnalyst(Analyst):
     ) -> str:
         market_type = infer_asset_type(venue=venue, symbol=symbol)
 
-        # 免费 fundamentals 快照（与 valuation 共用同一数据源；crypto 多半 available=False）
-        financials = await self._data.get_fundamentals(venue=venue, symbol=symbol)
+        # 免费 fundamentals 快照（与 valuation 共用同一数据源 + 同一 venue 路由；
+        # crypto 直接跳过请求，显式 unavailable）
+        fund_venue = fundamentals_route(venue=venue, market_type=market_type)
+        if fund_venue is None:
+            financials = {"available": False, "reason": "crypto has no financial statements"}
+        else:
+            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol)
         financials_block = _render_fundamentals(financials)
+
+        # 双档 confidence cap（run() 里代码级 clamp）：与 fundamental/valuation 同纪律——
+        # 无 live 财报（crypto / 拉取失败）时大师人格也不该过度自信（CR #86）。
+        self._confidence_cap = 0.75 if financials.get("available") else 0.55
 
         # 按 persona 关注点做 web 搜索（定性背景，不当硬数字用）
         web_block = ""

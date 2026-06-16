@@ -25,6 +25,8 @@ allow:
   - "paper.list_*"
   - "paper.get_*"
   - "paper.run_backtest"
+  # D-12 · 参数邻域敏感性（promote 前必跑）：只读回测扇出，无下单路径
+  - "paper.check_sensitivity"
   - "paper.compose_strategy"
   - "paper.author_strategy"
   - "paper.health"

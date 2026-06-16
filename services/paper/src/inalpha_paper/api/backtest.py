@@ -22,7 +22,10 @@ from ..schemas import (
     BacktestResponse,
     BacktestRunSummary,
     BacktestTradeRecord,
+    SensitivityRequest,
+    SensitivityResponse,
 )
+from ..sensitivity import run_sensitivity as _run_sensitivity
 from ..storage import backtest_runs as backtest_runs_store
 from ..storage import backtest_trades as backtest_trades_store
 from ..strategies import list_strategies
@@ -68,6 +71,41 @@ async def post_backtest(
 
     async with DataClient(settings.data_service_url, user_token) as data_client:
         return await _run_backtest(req, data_client, conn=db)
+
+
+@router.post("/backtest/sensitivity", response_model=SensitivityResponse)
+async def post_backtest_sensitivity(
+    req: SensitivityRequest,
+    db: DBConn,
+    settings: Annotated[PaperSettings, Depends(get_paper_settings)],
+    _user: Annotated[User, Depends(get_current_user)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> SensitivityResponse:
+    """参数邻域敏感性检查（D-12）：base + one-at-a-time ±pct 扰动各跑一次回测。
+
+    promote 前必跑——verdict=cliff（邻域最差 < 0.5×base）= 参数尖峰 = 过拟合信号。
+    邻域 run **不落 backtest_runs**；candidate 路径摘要 merge 进
+    ``candidate.metrics.sensitivity``。
+    """
+    if req.from_ts >= req.to_ts:
+        raise ValidationError(
+            "from_ts must be < to_ts",
+            details={"from_ts": req.from_ts.isoformat(), "to_ts": req.to_ts.isoformat()},
+        )
+    if req.strategy_id is not None:
+        available = list_strategies()
+        if req.strategy_id not in available:
+            raise ValidationError(
+                f"unknown strategy_id {req.strategy_id!r}",
+                details={"available": available},
+            )
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise UnauthorizedError("missing Authorization header")
+    user_token = authorization.removeprefix("Bearer ").strip()
+
+    async with DataClient(settings.data_service_url, user_token) as data_client:
+        return await _run_sensitivity(req, data_client, conn=db)
 
 
 @router.get("/strategies", response_model=dict)

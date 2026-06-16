@@ -12,14 +12,39 @@ D-9 起：
 
 不同市场对同一 macro 事件的反应不同（FOMC 鹰派对美股直接打、对 crypto 高敏感、
 对 A 股次级影响、港股因 USD-peg 直传）—— 由 LLM 在 system prompt 的传导表内自适应。
+
+D-12 起：接 FRED live 读数——直接走 data 服务 ``venue=fred`` 拉 5 条 daily 序列
+（DFF / DGS10 / DGS2 / DTWEXBGS / VIXCLS，与 factor 服务 macro_adapter 同一来源），
+本地算 level / Δ20obs / 期限利差 / 美元动量，按 +1 天发布滞后做 point-in-time 截断。
+不走 factor ``/compute``：它要求**该标的**的 1d bars 已在 DB（1h 研究时大概率缺），
+而 FRED 序列与标的无关，直拉链路最短。双档 confidence：有 live 读数或新闻 cap 0.7，
+全无 cap 0.5（``Analyst.run()`` 代码级 clamp）。
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..researchers.base import infer_asset_type
 from .base import Analyst
+
+#: FRED daily 序列 → 展示名。与 factor 服务 macro_adapter ``_SERIES_META`` 的
+#: daily 组保持一致（都是 +1 天发布滞后的市场化序列）。
+_FRED_SERIES: dict[str, str] = {
+    "DFF": "Fed Funds effective rate (%)",
+    "DGS10": "10Y Treasury yield (%)",
+    "DGS2": "2Y Treasury yield (%)",
+    "DTWEXBGS": "Broad USD index",
+    "VIXCLS": "VIX",
+}
+
+#: daily 序列的发布滞后（天）—— 对齐 macro_adapter 的 point-in-time 纪律：
+#: as_of 时刻只能看到 observation date ≤ as_of - 1d 的观测。
+_FRED_PUBLISH_LAG_DAYS = 1
+
+#: 最近观测距 as_of 超过该天数标 stale 并提示降权。
+_FRED_STALE_DAYS = 7
 
 #: 高影响宏观事件硬编码列表。
 #:
@@ -32,10 +57,10 @@ from .base import Analyst
 #:   note 只写机制/背景，禁写预测结论（§3.1：事件只算"名 + 日期"）。
 _MACRO_CALENDAR: list[dict[str, str]] = [
     # ── US ──
-    {"date": "2026-05-07", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "May FOMC; market priced in hold + dovish dots"},
+    {"date": "2026-05-07", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "May FOMC (rate decision + dot plot)"},
     {"date": "2026-05-13", "region": "US", "name": "US April CPI",              "impact": "high", "note": "Headline CPI for April release"},
     {"date": "2026-06-06", "region": "US", "name": "US May NFP",                "impact": "high", "note": "Non-farm payrolls"},
-    {"date": "2026-06-18", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "June FOMC; first cut window per Fed funds futures"},
+    {"date": "2026-06-18", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "June FOMC (rate decision + dot plot + SEP)"},
     {"date": "2026-07-29", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "July FOMC"},
     {"date": "2026-09-17", "region": "US", "name": "FOMC rate decision",        "impact": "high", "note": "September FOMC"},
     {"date": "2026-11-03", "region": "US", "name": "US presidential election",  "impact": "high", "note": "Crypto policy direction depends on result"},
@@ -75,16 +100,21 @@ geopolitics, election cycles) and how it shapes the next 1-12 weeks of
 risk appetite **in the given market_type**. You do NOT analyze price charts
 (technical) or asset-specific narrative (fundamental).
 
-**HARD CONSTRAINT — DATA TRUTHFULNESS (D-9)**:
+**HARD CONSTRAINT — DATA TRUTHFULNESS (D-9 / D-12 two-tier)**:
 
-You only receive **event NAMES + DATES** in the calendar (no actual outcomes,
-no realized prints, no current price levels). The system has **NO live feed**
-for macro indicators (DXY, CPI prints, rate decisions, NFP numbers).
+The calendar gives you **event NAMES + DATES only** (no outcomes, no realized
+prints). The user prompt MAY additionally contain a ``live_macro_readings``
+block — REAL, recently fetched FRED observations (Fed funds rate, Treasury
+yields, curve slope, broad USD index, VIX) each tagged with its observation
+date and staleness. When present, anchor your regime read on those numbers and
+cite them as given (mind each line's staleness tag — discount stale ones).
+When it says ``(none available ...)``, you have NO live feed.
 
-Therefore you MUST NOT:
+Regardless, you MUST NOT:
 - Claim specific directional outcomes you weren't told ("CPI surprised upside",
-  "DXY rallying", "Fed cut by 25bps", "EUR/USD at 1.08") — there is **no data
-  for these claims**; you'd be hallucinating from training-time knowledge.
+  "Fed cut by 25bps", "EUR/USD at 1.08") — unless the number appears verbatim
+  in ``live_macro_readings`` / ``live_macro_news``, there is **no data for the
+  claim**; you'd be hallucinating from training-time knowledge.
 - Quote specific numbers / percentages / pip moves for any indicator unless
   they appear verbatim in the user prompt's calendar/news section.
 - Treat past dates in the calendar as "already-released with known results" —
@@ -157,9 +187,10 @@ If your training cutoff is older than as_of, say so in summary; confidence
 should reflect that uncertainty. All macro factor.kind should be "macro".
 Be explicit about how each event translates to the current market_type.
 
-**Confidence ceiling without live data**: when **no live macro feed** is in the
-user prompt (only event dates), cap your ``confidence`` at **0.5**. Higher
-confidence requires actual data points cited verbatim.
+**Confidence ceiling (two-tier, D-12)**: when the user prompt contains
+``live_macro_readings`` and/or ``live_macro_news`` with actual data, your
+``confidence`` may go up to **0.7** (still: only cite numbers given verbatim).
+When BOTH are ``(none available ...)``, cap your ``confidence`` at **0.5**.
 """.strip()
 
 
@@ -184,7 +215,13 @@ class MacroAnalyst(Analyst):
         market_type = infer_asset_type(venue=venue, symbol=symbol)
         # D-9 L3：拉 SPY 当宏观 proxy（美国宏观环境主导全球风险偏好）。
         # 拉不到时返空 list，prompt 里清晰标注，LLM 走纯 calendar + 训练知识。
-        macro_news = await self._data.get_news(symbol="SPY", limit=8)
+        # D-12：FRED 读数与新闻并发拉（互不依赖，各自独立降级）。
+        macro_news, readings = await asyncio.gather(
+            self._data.get_news(symbol="SPY", limit=8),
+            _fetch_macro_readings(self._data, as_of=as_of),
+        )
+        # 双档 cap（run() 里代码级 clamp）：有任一 live 数据 0.7，全无 0.5
+        self._confidence_cap = 0.7 if (readings or macro_news) else 0.5
         return _format_user_prompt(
             venue=venue,
             symbol=symbol,
@@ -192,7 +229,112 @@ class MacroAnalyst(Analyst):
             events=events,
             market_type=market_type,
             macro_news=macro_news,
+            readings=readings,
         )
+
+
+async def _fetch_macro_readings(
+    data: Any,
+    *,
+    as_of: datetime,
+) -> dict[str, dict[str, Any]]:
+    """并发拉 5 条 FRED daily 序列，本地算 point-in-time 读数。
+
+    每条序列独立 try/except 降级（FRED key 缺失 / data 服务 4xx / 网络抖动都
+    不应让 deep_dive 500——与 ``get_news`` 的吞错哲学一致）；全部失败返空 dict，
+    caller 渲染 "(none available)" 走旧的 calendar-only 行为。
+
+    Returns:
+        ``{series_id: {"value", "chg_20obs", "obs_date", "staleness_days"}}``，
+        只含成功拉到且通过 PIT 截断后非空的序列。
+    """
+    from_ts = as_of - timedelta(days=40)
+    # PIT 纪律（对齐 factor macro_adapter）：daily 序列 +1 天发布滞后——
+    # as_of 当天的观测在现实里还没发布，引用它就是未来函数。
+    cutoff = as_of - timedelta(days=_FRED_PUBLISH_LAG_DAYS)
+
+    async def _one(series_id: str) -> tuple[str, dict[str, Any]] | None:
+        try:
+            bars = await data.get_bars(
+                venue="fred",
+                symbol=series_id,
+                timeframe="1d",
+                from_ts=from_ts,
+                to_ts=as_of,
+                fresh=True,
+            )
+        except Exception:
+            return None
+        # 先解析成 (ts, close) 再按 ts 升序——freshness 红线（CLAUDE.md §3.1）：
+        # value[-1] / values[-21] / last_obs 都依赖"最新在尾"，不显式排序时若上游
+        # /bars 某次返回乱序，会把过时读数当 live 喂进 prompt 且全程不报错。
+        pairs: list[tuple[datetime, float]] = []
+        for b in bars:
+            try:
+                ts = datetime.fromisoformat(str(b["ts"]))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+                if ts > cutoff:
+                    continue
+                pairs.append((ts, float(b["close"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        if not pairs:
+            return None
+        pairs.sort(key=lambda p: p[0])
+        values = [c for _ts, c in pairs]
+        last_obs = pairs[-1][0]
+        reading: dict[str, Any] = {
+            "value": values[-1],
+            "obs_date": last_obs.date().isoformat(),
+            "staleness_days": max(0, (as_of.date() - last_obs.date()).days),
+        }
+        if len(values) >= 21:
+            reading["chg_20obs"] = values[-1] - values[-21]
+        return series_id, reading
+
+    results = await asyncio.gather(*(_one(s) for s in _FRED_SERIES))
+    return {item[0]: item[1] for item in results if item is not None}
+
+
+def _format_macro_readings(readings: dict[str, dict[str, Any]]) -> str:
+    """FRED 读数 → ``live_macro_readings`` 块（含派生指标 + staleness 标注）。"""
+    if not readings:
+        return (
+            "live_macro_readings: (none available — FRED feed unreachable or not "
+            "configured; do NOT invent rate/USD/VIX levels)"
+        )
+    lines = [
+        "live_macro_readings (FRED, point-in-time as of publish lag; "
+        "each line shows its observation date):"
+    ]
+
+    def _fmt_line(sid: str) -> None:
+        r = readings.get(sid)
+        if r is None:
+            return
+        label = _FRED_SERIES[sid]
+        chg = r.get("chg_20obs")
+        chg_part = f", Δ20obs {chg:+.2f}" if chg is not None else ""
+        stale_part = (
+            f" [STALE: {r['staleness_days']}d old — discount accordingly]"
+            if r["staleness_days"] > _FRED_STALE_DAYS
+            else f" (obs {r['obs_date']}, {r['staleness_days']}d ago)"
+        )
+        lines.append(f"  - {label}: {r['value']:.2f}{chg_part}{stale_part}")
+
+    for sid in _FRED_SERIES:
+        _fmt_line(sid)
+
+    # 派生指标：期限利差（经典衰退/周期信号，LLM 直接可用，免心算）
+    dgs10, dgs2 = readings.get("DGS10"), readings.get("DGS2")
+    if dgs10 and dgs2:
+        slope = dgs10["value"] - dgs2["value"]
+        lines.append(
+            f"  - curve_slope (10Y-2Y): {slope:+.2f} "
+            f"({'inverted' if slope < 0 else 'normal'})"
+        )
+    return "\n".join(lines)
 
 
 def _events_in_window(
@@ -254,6 +396,7 @@ def _format_user_prompt(
     events: list[dict[str, Any]],
     market_type: str,
     macro_news: list[dict[str, Any]],
+    readings: dict[str, dict[str, Any]] | None = None,
 ) -> str:
     # 按 as_of 把事件拆成 past / upcoming —— 避免 LLM 把 14 天前已发生的 CPI 说成"即将"
     as_of_date = as_of.date()
@@ -313,15 +456,21 @@ def _format_user_prompt(
             "do NOT invent specific event outcomes)"
         )
 
+    readings_block = _format_macro_readings(readings or {})
+
     return (
         f"asset: {symbol} @ {venue}\n"
         f"market_type: {market_type}\n"
         f"as_of: {as_of.isoformat()}\n\n"
         f"{ev_block}\n\n"
+        f"{readings_block}\n\n"
         f"{news_block}\n\n"
-        f"**If live_macro_news has headlines, anchor your read on them** "
+        f"**If live_macro_readings has numbers, anchor your regime read on them** "
+        f"(rate level/trend, curve slope, USD momentum, VIX regime) — mind each "
+        f"line's staleness tag.\n"
+        f"**If live_macro_news has headlines, anchor on them too** "
         f"(macro tone, theme repetition, surprises mentioned).\n"
-        f"**If no live_macro_news**, do NOT fabricate specific outcomes "
+        f"**If neither is available**, do NOT fabricate specific outcomes "
         f"(e.g. 'CPI surprised upside'); use conditional language and cap confidence ≤ 0.5.\n\n"
         f"Output the required JSON only."
     )

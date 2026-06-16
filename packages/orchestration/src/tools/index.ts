@@ -17,11 +17,13 @@ import {
   dataTools,
 } from "./data.js";
 import {
+  paperCheckSensitivityTool,
   paperComposeStrategyTool,
   paperGetAccountTool,
   paperHealthTool,
   paperListArchetypesTool,
   paperListBacktestRunsTool,
+  paperListBacktestTradesTool,
   paperListOrdersTool,
   paperListPositionsTool,
   paperListStrategiesTool,
@@ -114,12 +116,14 @@ export {
   factorTimingTool,
   getTradePlanTool,
   paperAuthorStrategyTool,
+  paperCheckSensitivityTool,
   paperComposeStrategyTool,
   paperGetAccountTool,
   paperGetCandidateTool,
   paperHealthTool,
   paperListArchetypesTool,
   paperListBacktestRunsTool,
+  paperListBacktestTradesTool,
   paperListCandidatesTool,
   paperListOrdersTool,
   paperListPositionsTool,
@@ -232,6 +236,8 @@ export const orchestratorToolList = [
   // ADR-0051：策略原型库——写策略前按因子 kind 取骨架当起点
   paperListArchetypesTool,
   paperRunBacktestTool,
+  // D-12 · 参数邻域敏感性（promote 前必跑，cliff = 过拟合信号）
+  paperCheckSensitivityTool,
   paperHealthTool,
   // 研究
   researchDeepDiveTool,
@@ -248,6 +254,8 @@ export const orchestratorToolList = [
   // D-8c 研究→策略 链路（compose 路由 + 历史回测查询）
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
+  // D-12 · 逐笔成交明细（迭代诊断"亏在哪几笔"）
+  paperListBacktestTradesTool,
   // D-9 · ADR-0020 E1 MVP：LLM 自创策略候选（compose 不够用时走这条）
   paperAuthorStrategyTool,
   paperListCandidatesTool,

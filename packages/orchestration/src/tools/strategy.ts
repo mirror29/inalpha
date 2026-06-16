@@ -161,10 +161,86 @@ export const paperAuthorStrategyTool = createTool({
             self.submit_order(order)
     \`\`\`
 
+    **非技术 thesis 的参数化范式**（D-12）：策略代码运行时只能看到 OHLCV，宏观 /
+    基本面 / 估值结论要进策略，就把它**编码为静态参数**（risk_scale / position_pct /
+    单向门），并在 description 写明依据 + 研究 as_of（"risk_scale=0.5：FRED 曲线倒挂
+    + VIX 高位，risk-off，as_of 2026-XX-XX"）。regime 变了就 re-author 一版新参数。
+    第二个模板演示"波动率目标仓位 × 宏观 risk_scale 油门"：
+
+    \`\`\`python
+    import statistics
+
+    class VolTargetRegimeStrategy(Strategy):
+        # risk_scale：宏观/基本面 regime 油门（risk-on 1.0 / 中性 0.7 / risk-off 0.4）
+        # —— 取值依据写进 description，不要拍脑袋
+        def __init__(
+            self, name, clock, msgbus, instrument_id,
+            timeframe="1h", sma_period=50, vol_period=20,
+            target_vol=0.02, risk_scale=0.7, base_size=0.05,
+        ):
+            super().__init__(name, clock, msgbus)
+            self._instrument_id = instrument_id
+            self._timeframe = timeframe
+            self._closes = deque(maxlen=max(sma_period, vol_period) + 1)
+            self._sma_period = sma_period
+            self._vol_period = vol_period
+            self._target_vol = target_vol
+            self._risk_scale = risk_scale
+            self._base_size = base_size
+            self._is_long = False
+            self._held = 0.0
+
+        def on_start(self):
+            self.subscribe_bars(self._instrument_id, self._timeframe)
+
+        def on_bar(self, bar):
+            if bar.instrument_id != self._instrument_id:
+                return
+            self._closes.append(bar.close)
+            if len(self._closes) <= self._sma_period:
+                return
+            closes = list(self._closes)
+            sma = sum(closes[-self._sma_period:]) / self._sma_period
+            rets = [closes[i] / closes[i - 1] - 1 for i in range(-self._vol_period, 0)]
+            realized_vol = statistics.stdev(rets) or 1e-9
+            # 波动率目标仓位 × 宏观油门：高波动自动缩仓，risk-off 再压一档
+            size = self._base_size * min(2.0, self._target_vol / realized_vol) * self._risk_scale
+            if bar.close > sma and not self._is_long:
+                self._submit(OrderSide.BUY, size)
+            elif bar.close < sma and self._is_long and self._held > 0:
+                self._submit(OrderSide.SELL, self._held)  # 平仓卖实际持仓量，不是重算的 size
+
+        def on_position_opened(self, event):
+            self._is_long = event.quantity > 0
+            self._held = event.quantity
+
+        def on_position_changed(self, event):
+            self._held = event.quantity
+
+        def on_position_closed(self, event):
+            self._is_long = False
+            self._held = 0.0
+
+        def _submit(self, side, qty):
+            order = Order(
+                client_order_id=ClientOrderId("x-" + uuid4().hex[:8]),
+                instrument_id=self._instrument_id, side=side,
+                type=OrderType.MARKET, quantity=qty,
+            )
+            self.submit_order(order)
+    \`\`\`
+
+    另一常用范式（不给完整代码）：**regime 单向门**——risk-off 时只允许减仓 / 禁止新开多
+    （\`if not self._allow_new_longs: return\`），门的开关同样是静态参数 + description 写依据。
+
     返回字段：
     - candidate_id（UUID）——后续 paper.run_backtest({ candidateId }) 用
     - created（bool）——false 表示撞到现有同 hash 候选，返回老 ID（幂等，可直接复用）
     - audit ——审计摘要（通过路径里 ok=true）
+    - warnings（D-12）——非阻断告警；**非空必须转告用户，但用用户的语言转述其含义，
+      不要逐字复读英文原文**（CLAUDE.md §3 全球用户）。典型：factorContext
+      里的因子 author 时 decay_state 已是 fading/decaying——策略依据在衰减，
+      该因子不得作核心信号；坚持引用要降权并向用户说明理由
 
     失败模式：
     - 422 STRATEGY_AUDIT_FAILED：源码含禁止 import / 名字 / dunder 访问；按 findings 改
@@ -357,13 +433,18 @@ export const paperPromoteCandidateTool = createTool({
     把策略候选从 status='candidate' 切到 'promoted'（"草稿 → 正式"）。
 
     **审批门**（D-9.1b 起）：permission \`ask\` —— 调用时前端会弹气泡让用户点
-    "允许 / 拒绝"。30 秒无响应 → 自动 deny。**所以你仍要满足三条硬性自检**（用户
-    点允许后才能 promote，但浪费用户的点击是坏体验）：
+    "允许 / 拒绝"。30 秒无响应 → 自动 deny。**所以你仍要满足五条硬性自检（D-12）**
+    （用户点允许后才能 promote，但浪费用户的点击是坏体验）：
 
       1. 查过候选：\`paper.get_candidate(candidateId)\` 或 \`list_candidates\` 拿到完整
          \`fitness\` / \`metrics\` / \`baseline\`，**亲眼看过数字**
       2. fitness 显著优于 baseline（\`fitness > baseline.fitness\`）且 max_drawdown_pct < 25%
-      3. 用户在对话里**明确**说"上线 / promote / 转正 / 推到 trade 链路 / 把它发布"等指令；
+      3. holdout 验证不打脸：最近回测 \`validation.decay_ratio ≥ 0.5\` 且
+         \`validation.holdout.sharpe > 0\`；flags 含 insufficient_sample → 向用户
+         显式说明"holdout 样本不足，稳健性未验证"
+      4. 已跑 \`paper.check_sensitivity\` 且 verdict ≠ cliff（cliff = 参数尖峰 =
+         过拟合信号，不 promote）
+      5. 用户在对话里**明确**说"上线 / promote / 转正 / 推到 trade 链路 / 把它发布"等指令；
          **不是**用户只是"看看 / 对比 / 评估"
 
     自检不齐就不要调——会让用户面对一个气泡确认本不该发生的操作；同时后端硬校验仍在

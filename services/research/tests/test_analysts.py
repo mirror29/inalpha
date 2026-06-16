@@ -119,8 +119,15 @@ async def test_technical_propagates_data_service_error(data_client: DataClient) 
 # ────────────────────────────────────────────────────────────────────
 
 
-async def test_fundamental_runs_without_data_fetch(data_client: DataClient) -> None:
-    """D-8b 基本面 LLM-only —— 不应该调 data-service。"""
+@respx.mock
+async def test_fundamental_crypto_skips_fundamentals_fetch(data_client: DataClient) -> None:
+    """D-12 路由：crypto 无财报 → 不打 /fundamentals（省 round-trip），prompt 显式说明。"""
+    fund_route = respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={"available": True, "indicators": {}})
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
     llm = FakeLLMClient(
         {
             "fundamental": {
@@ -141,7 +148,9 @@ async def test_fundamental_runs_without_data_fetch(data_client: DataClient) -> N
     )
     assert brief.analyst == "fundamental"
     assert brief.stance == "neutral"
-    # confirm no data fetch by checking we did not hit respx (no mock set)
+    assert not fund_route.called
+    user_prompt = llm.calls[0]["user"]
+    assert "crypto has no financial statements" in user_prompt
 
 
 @respx.mock
@@ -194,8 +203,8 @@ async def test_fundamental_invalid_stance_falls_back_to_neutral(data_client: Dat
     """LLM 返不在 enum 里的 stance / 越界 confidence 走兜底，不抛（review B2 fix）。
 
     旧行为：pydantic 抛 ValidationError → 整条 deep_dive 链路 500。
-    新行为：stance fallback 到 'neutral'、confidence clamp 到 [0, 1]，brief
-    正常返。
+    新行为：stance fallback 到 'neutral'、confidence clamp 到 [0, 1]；D-12 起
+    crypto（无 live 财报）再被双档 cap 压到 0.55。
     """
     llm = FakeLLMClient(
         {
@@ -214,8 +223,8 @@ async def test_fundamental_invalid_stance_falls_back_to_neutral(data_client: Dat
         as_of=_as_of(),
         lookback_days=30,
     )
-    assert brief.stance == "neutral"  # fallback
-    assert brief.confidence == 1.0    # clamp 到上限
+    assert brief.stance == "neutral"   # fallback
+    assert brief.confidence == 0.55    # clamp 1.0 后再吃无数据档 cap
 
 
 async def test_fundamental_negative_confidence_clamps_to_zero(data_client: DataClient) -> None:
@@ -477,8 +486,8 @@ async def test_risk_handles_empty_bars(data_client: DataClient) -> None:
 # ────────────────────────────────────────────────────────────────────
 
 
-async def test_macro_runs_without_data_fetch(data_client: DataClient) -> None:
-    """macro analyst 不调 data-service，user prompt 含日历段。"""
+async def test_macro_degrades_gracefully_without_data(data_client: DataClient) -> None:
+    """data 服务全程不可达（无 mock）→ FRED/news 各自降级，日历段仍在，不抛。"""
     llm = FakeLLMClient(
         {
             "macro analyst": {
@@ -503,6 +512,8 @@ async def test_macro_runs_without_data_fetch(data_client: DataClient) -> None:
 
     user_prompt = llm.calls[0]["user"]
     assert "upcoming_macro_events" in user_prompt
+    # FRED 不可达 → 显式 "(none available" 而不是凭空编读数
+    assert "live_macro_readings: (none available" in user_prompt
     # _as_of() 2026-05-21 的 ±14 天窗口应该包含 FOMC 2026-06-18? 那是 28 天后，不在窗口
     # 但 2026-06-06 NFP（16 天后）也不在。窗口里有 2026-05-13 CPI（8 天前）
     assert "2026-05-13" in user_prompt or "(none in ±14d window)" in user_prompt
@@ -616,6 +627,109 @@ def test_macro_system_prompt_local_calendar_first() -> None:
     assert "You are a macro analyst covering any asset class." in sys_prompt
 
 
+def _fred_bars(symbol: str, *, as_of: datetime, values: list[float]) -> list[dict]:
+    """合成 FRED 风格 bar 行：daily，最后一根落在 as_of 当天（应被 PIT 截掉）。"""
+    n = len(values)
+    return [
+        {
+            "ts": (as_of - timedelta(days=n - 1 - i)).replace(hour=0, minute=0).isoformat(),
+            "venue": "fred",
+            "symbol": symbol,
+            "timeframe": "1d",
+            "open": v, "high": v, "low": v, "close": v, "volume": 0.0,
+        }
+        for i, v in enumerate(values)
+    ]
+
+
+@respx.mock
+async def test_macro_fred_readings_in_prompt(data_client: DataClient) -> None:
+    """D-12：FRED 5 序列进 prompt——含 curve_slope 派生、staleness 标注、PIT 截断。"""
+    as_of = _as_of()  # 2026-05-21 12:00 UTC
+    series_values = {
+        "DFF": [4.30] * 25,
+        "DGS10": [4.00] * 24 + [4.50],   # 最后一根 as_of 当天 → 应被 PIT 截掉
+        "DGS2": [4.60] * 25,
+        "DTWEXBGS": [120.0 + i * 0.1 for i in range(25)],
+        "VIXCLS": [14.0] * 25,
+    }
+
+    def _bars_side_effect(request):
+        symbol = request.url.params["symbol"]
+        return Response(
+            200, json=_fred_bars(symbol, as_of=as_of, values=series_values[symbol])
+        )
+
+    respx.get("http://data-mock.test/bars").mock(side_effect=_bars_side_effect)
+    respx.post("http://data-mock.test/backfill/bars").mock(
+        return_value=Response(200, json={})
+    )
+    respx.get("http://data-mock.test/news").mock(
+        return_value=Response(200, json={"items": []})
+    )
+
+    llm = FakeLLMClient(
+        {
+            "macro analyst": {
+                "stance": "bearish",
+                "confidence": 0.95,  # LLM 不守 prompt cap 的情形
+                "summary": "Curve inverted, USD grinding up.",
+            }
+        }
+    )
+    analyst = MacroAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=as_of,
+        lookback_days=30,
+    )
+
+    user_prompt = llm.calls[0]["user"]
+    assert "live_macro_readings (FRED" in user_prompt
+    # PIT：DGS10 as_of 当天的 4.50 未发布不可见，读到的是 4.00
+    assert "10Y Treasury yield (%): 4.00" in user_prompt
+    assert "4.50" not in user_prompt
+    # 派生期限利差 4.00 - 4.60 = -0.60 → inverted
+    assert "curve_slope (10Y-2Y): -0.60 (inverted)" in user_prompt
+    # staleness 标注（昨天的观测 = 1d ago）
+    assert "1d ago" in user_prompt
+    # 双档 cap：有 live 读数 → 0.7（代码级 clamp，0.95 被压下来）
+    assert brief.confidence == 0.7
+
+
+@respx.mock
+async def test_macro_confidence_capped_at_05_when_all_feeds_down(
+    data_client: DataClient,
+) -> None:
+    """D-12：FRED 全 500 + 无新闻 → "(none available" + cap 0.5 代码级生效。"""
+    respx.get("http://data-mock.test/bars").mock(
+        return_value=Response(500, json={"code": "DB_DOWN", "message": "down"})
+    )
+    respx.post("http://data-mock.test/backfill/bars").mock(
+        return_value=Response(500, json={})
+    )
+    respx.get("http://data-mock.test/news").mock(
+        return_value=Response(200, json={"items": []})
+    )
+
+    llm = FakeLLMClient(
+        {"macro analyst": {"stance": "bullish", "confidence": 0.9, "summary": "vibes"}}
+    )
+    analyst = MacroAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+    user_prompt = llm.calls[0]["user"]
+    assert "live_macro_readings: (none available" in user_prompt
+    assert brief.confidence == 0.5
+
+
 # ────────────────────────────────────────────────────────────────────
 # D-10: Fundamental with real financial data + Sentiment web search
 # ────────────────────────────────────────────────────────────────────
@@ -711,6 +825,105 @@ async def test_fundamental_financials_unavailable(data_client: DataClient) -> No
     user_prompt = llm.calls[0]["user"]
     assert "not available" in user_prompt.lower()
     assert "lower confidence" in user_prompt.lower()
+
+
+@respx.mock
+async def test_fundamental_confidence_capped_at_075_with_live_data(
+    data_client: DataClient,
+) -> None:
+    """D-12 双档：有 live 财报时 LLM 给 0.9 也被代码级 clamp 到 0.75。"""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(
+            200,
+            json={
+                "venue": "yfinance",
+                "symbol": "AAPL",
+                "available": True,
+                "as_of": "2026-05-20T00:00:00Z",
+                "indicators": {"pe_ratio": 30.1, "roe": 0.45},
+            },
+        )
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {
+            "fundamental": {
+                "stance": "bullish",
+                "confidence": 0.9,  # LLM 不守 prompt cap 的情形
+                "summary": "Great numbers.",
+            }
+        }
+    )
+    analyst = FundamentalAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="alpaca",  # 路由 → yfinance
+        symbol="AAPL",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+    assert brief.confidence == 0.75
+    # 财报快照的 as_of 渲染进块头（时效性红线）
+    user_prompt = llm.calls[0]["user"]
+    assert "data as_of 2026-05-20" in user_prompt
+
+
+@respx.mock
+async def test_fundamental_confidence_capped_at_055_without_live_data(
+    data_client: DataClient,
+) -> None:
+    """D-12 双档：财报 unavailable 时 LLM 给 0.9 被 clamp 到 0.55。"""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={"available": False, "reason": "no data"})
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {"fundamental": {"stance": "bullish", "confidence": 0.9, "summary": "vibes"}}
+    )
+    analyst = FundamentalAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="yfinance",
+        symbol="AAPL",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+    assert brief.confidence == 0.55
+
+
+@respx.mock
+async def test_valuation_confidence_two_tier_cap(data_client: DataClient) -> None:
+    """valuation 同享双档 cap：有指标 0.75 / 无指标 0.55（代码级）。"""
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(
+            200, json={"available": True, "indicators": {"pe_ratio": 12.0}}
+        )
+    )
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {
+            "you are a relative valuation analyst": {
+                "stance": "bullish",
+                "confidence": 0.95,
+                "summary": "cheap",
+            }
+        }
+    )
+    analyst = ValuationAnalyst(llm=llm, data=data_client)
+    brief = await analyst.run(
+        venue="alpaca",
+        symbol="AAPL",
+        timeframe="1d",
+        as_of=_as_of(),
+        lookback_days=30,
+    )
+    assert brief.confidence == 0.75
 
 
 @respx.mock
@@ -821,9 +1034,12 @@ async def test_valuation_anchors_on_real_fundamentals(data_client: DataClient) -
 
     user_prompt = llm.calls[0]["user"]
     assert "valuation_inputs" in user_prompt
-    assert "市盈率 PE" in user_prompt
+    assert "PE ratio" in user_prompt
     # 关键纪律：prompt 显式要求"只做相对估值、不做 DCF"
     assert "relative valuation only" in user_prompt.lower()
+    # venue 路由（D-12）：alpaca 研究 → fundamentals 走 yfinance，不再 422
+    fund_route = respx.get("http://data-mock.test/fundamentals")
+    assert fund_route.calls.last.request.url.params["venue"] == "yfinance"
 
 
 @respx.mock

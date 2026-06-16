@@ -215,6 +215,99 @@ def test_build_plan_non_numeric_confidence_falls_back() -> None:
     assert plan.confidence == 0.5  # fallback default
 
 
+# ────────────────────────────────────────────────────────────────────
+# strategy_hint 兜底路由（D-12：macro 不再一刀切 buy_hold）
+# ────────────────────────────────────────────────────────────────────
+
+
+def _factor(name: str, kind: str, strength: float) -> dict:
+    return {
+        "name": name,
+        "kind": kind,
+        "value": 1.0,
+        "strength": strength,
+        "horizon": "swing",
+        "explanation": f"{name} test factor",
+    }
+
+
+def test_macro_dominant_with_secondary_momentum_routes_to_trend() -> None:
+    """macro 主导 + 次强 momentum → trend 当交易引擎，sizing 体现宏观 regime。"""
+    plan = build_plan_from_raw(
+        {
+            "rating": "overweight",
+            "confidence": 0.7,
+            "factors": [
+                _factor("risk_on_regime", "macro", 0.9),
+                _factor("dovish_tailwind", "macro", 0.8),
+                _factor("sma_upcross", "momentum", 0.6),
+            ],
+        },
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[],
+    )
+    assert plan.strategy_hint.family == "trend"
+    assert "sizing" in plan.strategy_hint.reasoning
+    # trade_size 随 confidence 缩放（0.04 * 0.7 = 0.028）
+    assert plan.strategy_hint.params["trade_size"] == 0.028
+
+
+def test_pure_macro_overweight_position_routes_to_buy_hold() -> None:
+    """纯 macro + overweight + position 长线论点 → 仍允许 buy_hold。"""
+    plan = build_plan_from_raw(
+        {
+            "rating": "overweight",
+            "confidence": 0.7,
+            "horizon": "position",
+            "factors": [_factor("structural_adoption", "macro", 0.8)],
+        },
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[],
+    )
+    assert plan.strategy_hint.family == "buy_hold"
+
+
+def test_pure_macro_underweight_routes_to_none_not_buy_hold() -> None:
+    """看空（underweight）绝不该兜底成买入持有——旧逻辑的 bug 回归。"""
+    plan = build_plan_from_raw(
+        {
+            "rating": "underweight",
+            "confidence": 0.7,
+            "factors": [_factor("hawkish_squeeze", "macro", 0.8)],
+        },
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[],
+    )
+    assert plan.strategy_hint.family == "none"
+
+
+def test_pure_macro_swing_horizon_routes_to_none() -> None:
+    """纯 macro + swing（非长线）→ 无技术引擎可用 → none，不强行持有。"""
+    plan = build_plan_from_raw(
+        {
+            "rating": "overweight",
+            "confidence": 0.7,
+            "horizon": "swing",
+            "factors": [_factor("risk_on_regime", "macro", 0.8)],
+        },
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        briefs=[],
+    )
+    assert plan.strategy_hint.family == "none"
+
+
 def test_briefs_to_compact_text_is_json() -> None:
     import json
 

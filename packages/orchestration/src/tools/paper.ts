@@ -142,6 +142,15 @@ export const paperRunBacktestTool = createTool({
       equity_curve_downsampled_from 标原始点数），看形状趋势用，精确逐点分析
       不要从这里取（完整曲线在 paper 服务 API）
     - final_positions：结束时残留持仓（趋势策略可能持有到尾盘）
+    - **D-12 validation（holdout 验证，默认开）**：前 70% train + 后 30% holdout
+      各自的 sharpe/return/mdd/num_trades + decay_ratio（holdout_sharpe/train_sharpe）。
+      **解读纪律**：
+      · decay_ratio < 0.5 或 holdout.sharpe < 0 → 过拟合信号，下一版**减参数/简化逻辑**
+        而不是加逻辑
+      · holdout_sharpe_ci_includes_zero=true → holdout 收益统计上不显著为正
+      · flags 含 insufficient_sample → 衰减比不可靠，扩窗口再跑
+      · **调参看 train 段，holdout 只作裁判**——反复对着 holdout 调参 = 间接过拟合 holdout
+      · 报给用户的结论必须引用 holdout（别只报全窗 Sharpe 当"历史表现"）
   `.trim(),
   inputSchema: z
     .object({
@@ -259,6 +268,85 @@ function downsampleEquityCurves<T>(report: T): T {
   }
   return out as T;
 }
+
+// ────────────────────────────────────────────────────────────────────
+// D-12 · paper.check_sensitivity
+// ────────────────────────────────────────────────────────────────────
+
+export const paperCheckSensitivityTool = createTool({
+  id: "paper.check_sensitivity",
+  description: `
+    参数邻域敏感性检查：对最终参数的每个数值参数做 one-at-a-time ±20% 扰动，
+    base + 邻域（≤16 组）各跑一次回测，返回邻域 fitness 分布 + verdict。
+
+    何时用：
+    - **promote 前必跑**——verdict=cliff（邻域最差 < 0.5×base）= 参数尖峰 =
+      这套参数恰好踩中历史，**不应 promote**
+    - 迭代中怀疑某版"好得可疑"时做体检
+
+    何时不用：
+    - 策略还没跑出 fitness > baseline（先把策略本身改及格，敏感性无意义——
+      base fitness ≤ 0 时 verdict 恒为 insufficient）
+    - 想做参数搜索/调优 → 这不是网格搜索工具，邻域结果只用来判稳健，
+      **不要**拿邻域里最好的组合当新参数（那是对着噪声调参）
+
+    坑：
+    - params 必须传**最终收敛的完整参数 dict**——源码里的默认值不在扰动范围
+    - trade_size / position_pct 不扰动（只缩放仓位不改信号）；bool/字符串跳过
+    - 邻域 run 不落 backtest_runs（不污染回测历史）；candidate 路径摘要自动写
+      candidate.metrics.sensitivity 供 promote 审计
+    - verdict=insufficient（成功邻域 < 4 组）→ 结论不可靠，看 neighbors 里的
+      error 修参数边界后重跑
+
+    解读：
+    - robust：参数面是高原，小扰动不掉崖 → 可进入 promote 流程
+    - cliff：报告里必须向用户明示"参数敏感，过拟合风险"，建议减参数/简化逻辑
+  `.trim(),
+  inputSchema: z
+    .object({
+      strategyId: z.string().optional().describe("内置策略 ID；与 candidateId 互斥"),
+      candidateId: z.string().uuid().optional().describe("候选 UUID；与 strategyId 互斥"),
+      params: z
+        .record(z.string(), z.unknown())
+        .describe("最终收敛的完整参数 dict（数值参数将被 ±20% 扰动）"),
+      venue: z.string().default("binance"),
+      symbol: SymbolSchema,
+      timeframe: TimeframeSchema.default("1h"),
+      fromTs: z.string().datetime().describe("ISO 8601 起始时间（与最终回测同窗口）"),
+      toTs: z.string().datetime().describe("ISO 8601 结束时间"),
+      initialCash: z.number().positive().default(10_000),
+      feeRate: z.number().min(0).lt(1).default(0.001),
+      pct: z.number().gt(0).lt(1).default(0.2).describe("扰动幅度（默认 ±20%）"),
+    })
+    .superRefine((data, ctx) => {
+      const hasId = typeof data.strategyId === "string" && data.strategyId.length > 0;
+      const hasCand = typeof data.candidateId === "string" && data.candidateId.length > 0;
+      if (hasId === hasCand) {
+        ctx.addIssue({
+          code: "custom",
+          message: "必须给 strategyId 或 candidateId，二选一（不能同给也不能都不给）",
+          path: ["strategyId"],
+        });
+      }
+    }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.checkSensitivity({
+      strategyId: inputData.strategyId,
+      candidateId: inputData.candidateId,
+      params: inputData.params,
+      venue: inputData.venue ?? "binance",
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe ?? "1h",
+      fromTs: inputData.fromTs,
+      toTs: inputData.toTs,
+      initialCash: inputData.initialCash ?? 10_000,
+      feeRate: inputData.feeRate ?? 0.001,
+      pct: inputData.pct ?? 0.2,
+    });
+  },
+});
 
 // ────────────────────────────────────────────────────────────────────
 // D-8c · paper.compose_strategy + paper.list_backtest_runs
@@ -387,6 +475,42 @@ export const paperListBacktestRunsTool = createTool({
       strategyCode: inputData.strategyCode,
       limit: inputData.limit ?? 20,
     });
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────
+// D-12 · paper.list_backtest_trades
+// ────────────────────────────────────────────────────────────────────
+
+export const paperListBacktestTradesTool = createTool({
+  id: "paper.list_backtest_trades",
+  description: `
+    一次回测的**逐笔成交明细**（按成交先后），含每笔实现盈亏 / 手续费 / intent。
+
+    何时用：
+    - 迭代诊断"策略到底亏在哪几笔"——总 metrics 说不出原因时看逐笔：
+      是连续小止损磨掉的（手续费/换手问题），还是几笔大亏（止损没生效/逆势扛单）
+    - 验证止损/出场逻辑是否真的触发（找 intent=close 的笔看 realized_pnl 分布）
+    - 用户问"这次回测都做了哪些交易"
+
+    何时不用：
+    - 只要总览指标 → run_backtest 响应里已有（sharpe/win_rate/profit_factor）
+    - 看权益曲线形状 → run_backtest 的 equity_curve
+
+    坑：
+    - runId 来自 run_backtest 响应的 run_id（或 list_backtest_runs）
+    - realized_pnl：开仓笔=0，平仓/反手笔=价差盈亏（**不含手续费**）；
+      算净盈亏要自己减 fee
+    - 默认 limit=50 控 context；交易多时按需加大（≤500），别无脑拉满
+  `.trim(),
+  inputSchema: z.object({
+    runId: z.string().uuid().describe("回测 run_id（run_backtest 响应 / list_backtest_runs）"),
+    limit: z.number().int().min(1).max(500).default(50),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listBacktestTrades(inputData.runId, inputData.limit ?? 50);
   },
 });
 
@@ -616,12 +740,14 @@ export const paperListStrategyRunDecisionsTool = createTool({
 export const paperTools = [
   paperListStrategiesTool,
   paperRunBacktestTool,
+  paperCheckSensitivityTool,
   paperHealthTool,
   paperListOrdersTool,
   paperListPositionsTool,
   paperGetAccountTool,
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
+  paperListBacktestTradesTool,
   paperStartStrategyTool,
   paperStopStrategyTool,
   paperListStrategyRunsTool,

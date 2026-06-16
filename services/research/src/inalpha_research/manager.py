@@ -92,7 +92,7 @@ Return ONLY a JSON object with this exact shape:
   ],
 
   "strategy_hint": {
-    "family": "trend" | "mean_reversion" | "buy_hold" | "none",
+    "family": "trend" | "mean_reversion" | "breakout" | "volatility" | "buy_hold" | "none",
     "params": {                                 // recommended starting params (compose engine may tighten)
       "fast_period": 10,
       "slow_period": 30,
@@ -108,8 +108,16 @@ do NOT default to "trend"; diversify based on what the factors actually say):
 - "mean_reversion" — oscillator extremes + low recent trend (RSI extreme, BB %B at edges)
 - "breakout"       — price compressing then a clear range break / new N-bar high (Donchian channel)
 - "volatility"     — volatility regime expanding (ATR rising); want channel-breakout sizing (ATR/Keltner)
-- "buy_hold"       — strong long-horizon macro thesis + no near-term technical edge
-- "none"           — factors disagree too much, or rating "neutral" with low confidence
+- "buy_hold"       — ONLY for rating "overweight" + long ("position") horizon + genuinely no
+                     near-term technical edge. Never for "underweight" (that's a flat/none call).
+- "none"           — factors disagree too much, rating "neutral" with low confidence, or
+                     rating "underweight" with no actionable edge (spot venues cannot short)
+
+When macro / sentiment factors DOMINATE the mix, do NOT collapse to "buy_hold" by default:
+pick the strongest secondary technical family (trend / mean_reversion / breakout / volatility)
+as the trade engine, and express the macro regime through SIZING — scale trade_size /
+position params up in risk-on, down in risk-off — and state that in reasoning. The macro
+view sets the throttle; the technical family sets the entries/exits.
 
 Rules for params (pick concrete numbers, not ranges; trade_size scales with confidence × signal strength):
 - trend          : { fast_period: 5-20, slow_period: 20-60, trade_size: 0.01-0.05 }
@@ -310,6 +318,7 @@ def _build_plan(
         rating=rating,
         confidence=confidence,
         factors=factors,
+        horizon=horizon,
     )
 
     payload = {
@@ -384,12 +393,26 @@ def _parse_signals(raw_signals: Any) -> list[Signal]:
     return out[:3]
 
 
+#: 技术因子大类 → (策略族, 默认参数)。macro/sentiment 主导时也从这里挑次强技术族。
+_TECH_KIND_TO_FAMILY: dict[str, tuple[StrategyFamily, dict[str, Any]]] = {
+    "momentum": ("trend", {"fast_period": 10, "slow_period": 30}),
+    "mean_reversion": ("mean_reversion", {"period": 20, "num_std": 2.0}),
+    "volatility": ("volatility", {"period": 20, "atr_mult": 2.0}),
+}
+
+
+def _macro_scaled_trade_size(confidence: float) -> float:
+    """macro regime → sizing：confidence 当油门，clamp 到 [0.01, 0.05]。"""
+    return round(max(0.01, min(0.05, 0.04 * confidence)), 3)
+
+
 def _parse_strategy_hint(
     raw_hint: Any,
     *,
     rating: str,
     confidence: float,
     factors: list[Factor],
+    horizon: str = "swing",
 ) -> StrategyHint:
     """LLM 没给 strategy_hint 时由因子大类 + rating 推断兜底。
 
@@ -398,7 +421,12 @@ def _parse_strategy_hint(
     - factor 主导类 = momentum                  → trend
     - factor 主导类 = mean_reversion            → mean_reversion
     - factor 主导类 = volatility                → volatility（ATR 通道）
-    - factor 主导类 = macro / sentiment         → buy_hold
+    - factor 主导类 = macro / sentiment（D-12 不再一刀切 buy_hold）：
+        - 有次强技术因子 → 该技术族当交易引擎，宏观 regime 体现在 sizing
+          （trade_size 随 confidence 缩放）
+        - 无技术因子且 overweight + position → buy_hold（真长线持有论点）
+        - 无技术因子且 underweight → none（看空不该买入持有——旧逻辑的 bug）
+        - 其余 → none
     - 其它                                       → none
     """
     if isinstance(raw_hint, dict):
@@ -418,27 +446,50 @@ def _parse_strategy_hint(
     family: StrategyFamily
     params: dict[str, Any]
     reasoning: str
-    if dominant == "momentum":
-        family = "trend"
-        params = {"fast_period": 10, "slow_period": 30, "trade_size": 0.02}
-        reasoning = "fallback: momentum-dominant factors → trend family"
-    elif dominant == "mean_reversion":
-        family = "mean_reversion"
-        params = {"period": 20, "num_std": 2.0, "trade_size": 0.02}
-        reasoning = "fallback: mean_reversion-dominant factors → mean_reversion family"
-    elif dominant == "volatility":
-        family = "volatility"
-        params = {"period": 20, "atr_mult": 2.0, "trade_size": 0.02}
-        reasoning = "fallback: volatility-dominant factors → volatility (ATR channel) family"
+    if dominant in _TECH_KIND_TO_FAMILY:
+        family, base_params = _TECH_KIND_TO_FAMILY[dominant]
+        params = {**base_params, "trade_size": 0.02}
+        reasoning = f"fallback: {dominant}-dominant factors → {family} family"
     elif dominant in ("macro", "sentiment"):
-        family = "buy_hold"
-        params = {"trade_size": 0.5}
-        reasoning = f"fallback: {dominant}-dominant factors → buy_hold family"
+        secondary = _strongest_technical_kind(factors)
+        if secondary is not None:
+            family, base_params = _TECH_KIND_TO_FAMILY[secondary]
+            params = {**base_params, "trade_size": _macro_scaled_trade_size(confidence)}
+            reasoning = (
+                f"fallback: {dominant}-dominant with secondary {secondary} factors → "
+                f"{family} family as trade engine; macro regime expressed via sizing "
+                f"(trade_size scaled by confidence {confidence:.2f})"
+            )
+        elif rating == "overweight" and horizon == "position":
+            family = "buy_hold"
+            params = {"trade_size": 0.5}
+            reasoning = (
+                f"fallback: {dominant}-dominant, no technical factors, "
+                "overweight position-horizon thesis → buy_hold"
+            )
+        else:
+            family = "none"
+            params = {}
+            reasoning = (
+                f"fallback: {dominant}-dominant but no technical trade engine and no "
+                f"long-horizon overweight thesis (rating={rating}) → none"
+            )
     else:
         family = "none"
         params = {}
         reasoning = "fallback: no factors / disagreement → none"
     return StrategyHint(family=family, params=params, reasoning=reasoning)
+
+
+def _strongest_technical_kind(factors: list[Factor]) -> str | None:
+    """strength 加权挑最强的技术大类（momentum/mean_reversion/volatility），无则 None。"""
+    weights: Counter[str] = Counter()
+    for f in factors:
+        if f.kind in _TECH_KIND_TO_FAMILY:
+            weights[f.kind] += f.strength
+    if not weights:
+        return None
+    return weights.most_common(1)[0][0]
 
 
 def _dominant_kind(factors: list[Factor]) -> str | None:

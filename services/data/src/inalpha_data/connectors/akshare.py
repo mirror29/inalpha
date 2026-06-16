@@ -237,6 +237,16 @@ class AkshareConnector:
             "流通市值": "market_cap",
             "市盈率": "pe_ratio",
             "市净率": "pb_ratio",
+            # 财务质量项（供应链瓶颈调研的红旗检查：存货应收增速 vs 收入、现金流）
+            # akshare 摘要表字段随版本/市场浮动，防御性映射：缺了置 None 不报错
+            "经营现金流量净额": "operating_cashflow",
+            "每股经营现金流": "ocf_per_share",
+            "存货周转率": "inventory_turnover",
+            "存货周转天数": "inventory_days",
+            "应收账款周转率": "receivables_turnover",
+            "应收账款周转天数": "receivables_days",
+            "流动比率": "current_ratio",
+            "速动比率": "quick_ratio",
         }
         for cn_key, en_key in _indicator_map.items():
             val = raw.get(cn_key)
