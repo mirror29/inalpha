@@ -180,7 +180,7 @@ A good investing method is often a *procedure*, not a model — "trace a hot the
 
 - **Progressive disclosure.** On startup it scans the skills folder and surfaces a one-line menu; a skill's full text loads only when a task actually needs it — no prompt bloat, zero cost when none apply.
 - **Fail-open and trust-bounded.** A broken skill is skipped with a warning, never blocking the agent. Skills are read-only markdown (no bundled scripts are vendored or executed), and every "look up data" step is mapped onto the existing `web.* / data.* / factor.* / research.*` tools under the same freshness discipline.
-- **First one in.** `serenity` — a supply-chain-bottleneck research method — rewritten to be market-agnostic and source-grounded, with any trade action routed back through the approval chain.
+- **Bundled today.** `cn-equity-research` (A-share systematic research), `serenity` (supply-chain-bottleneck investing), `earnings-analysis` (earnings recap), `thesis-tracker` (falsifiable-thesis tracking) — each rewritten to be market-agnostic and source-grounded, with any trade action routed back through the approval chain.
 
 ### 7. Inari Omikuji — undecided? draw a slip for direction
 
@@ -313,6 +313,7 @@ With the console up, talk to the orchestrator in the docked chat on the right �
 - `Which factors are working for NVDA right now, and how strong is each?` — **factor timing**: ranks the currently-effective factors by time-series Rank IC, with decay state.
 - `Research NVDA: latest price + fundamentals, run a bull / bear / risk debate, and synthesize a rating.` — **multi-perspective research**: six analysts in parallel plus a three-party debate, triggered only when they disagree, with the decision chain persisted.
 - `Research TSLA with a Buffett and a Cathie Wood take.` — **investing-legends panel**: opt-in master personas argue in their own styles.
+- `Trace the AI-compute supply chain to its tightest bottleneck and surface the names worth researching first.` — **research-methodology skills**: auto-loads an external playbook (e.g. `serenity` supply-chain bottleneck, or `cn-equity-research` for A-shares).
 - `Design a mean-reversion strategy for ETH, backtest the last 6 months, and show its fitness vs buy-and-hold.` — **LLM-authored strategy**: the model writes the full source, it clears three sandbox gates, then auto-races a baseline.
 - `Backtest momentum / mean-reversion / breakout across BTC, ETH, SOL for the last year and give me the Pareto frontier.` — **swarm**: dozens of backtests fanned out in parallel.
 - `Open a small NVDA position.` — **machine-approved orders**: watch it route through propose → approve → execute; the LLM has no direct path to placing an order.
