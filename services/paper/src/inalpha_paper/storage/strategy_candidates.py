@@ -216,14 +216,16 @@ async def update_after_backtest(
 ) -> None:
     """回测跑完后回写 metrics / fitness / last_backtest_run_id。
 
-    每次 backtest 都覆盖（MVP 不保留"历次回测 in candidate"，要看历次去
-    backtest_runs 表查）。
+    metrics 用 JSONB **merge**（`|| `）而非整列覆盖：回测相关 key（sharpe/validation/…）
+    被新值更新，但 `update_sensitivity` 另路 merge 进来的 `sensitivity` key 得以保留
+    ——否则"check_sensitivity 后再调参重测"会静默丢掉 sensitivity，promote 软检误报
+    "没跑过敏感性"（CR #86 major）。历次回测明细仍去 backtest_runs 表查。
     """
     async with conn.cursor() as cur:
         await cur.execute(
             """
             UPDATE strategy_candidates
-            SET metrics = %s,
+            SET metrics = COALESCE(metrics, '{}'::jsonb) || %s::jsonb,
                 fitness = %s,
                 last_backtest_run_id = %s,
                 updated_at = NOW()

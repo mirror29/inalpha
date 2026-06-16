@@ -288,6 +288,38 @@ async def test_promote_warns_on_train_sharpe_nonpositive_flag(
     assert any("train_sharpe_nonpositive" in w for w in warnings)
 
 
+@pytest.mark.asyncio
+async def test_update_after_backtest_preserves_sensitivity(
+    client: TestClient,
+    candidate_id: str,
+) -> None:
+    """check_sensitivity 后再调参重测：update_after_backtest 必须 merge 保留 sensitivity
+    （CR #86 major：旧的整列覆盖会静默丢掉 sensitivity → promote 软检误报没跑过）。"""
+    cid = uuid.UUID(candidate_id)
+    async with get_conn() as conn:
+        # 1) 首次回测写 metrics（含 validation）
+        await candidates_store.update_after_backtest(
+            conn, cid, metrics={"sharpe": 1.2, "validation": {"decay_ratio": 0.8}},
+            fitness=0.5, backtest_run_id=None,
+        )
+        # 2) check_sensitivity merge 写 sensitivity
+        await candidates_store.update_sensitivity(
+            conn, cid, sensitivity={"verdict": "robust", "base_fitness": 0.5},
+        )
+        # 3) 用户调参重测 → 再次 update_after_backtest
+        await candidates_store.update_after_backtest(
+            conn, cid, metrics={"sharpe": 1.4, "validation": {"decay_ratio": 0.6}},
+            fitness=0.6, backtest_run_id=None,
+        )
+        row = await candidates_store.get_candidate(conn, cid)
+
+    assert row is not None
+    m = row["metrics"]
+    assert m["sharpe"] == 1.4  # 回测 key 被更新
+    assert m["validation"]["decay_ratio"] == 0.6  # validation 更新
+    assert m["sensitivity"]["verdict"] == "robust"  # sensitivity 保留，未被覆盖丢弃
+
+
 # ────────────────────────────────────────────────────────────────────
 # 因子血缘 factor_snapshot（ADR-0047）
 # ────────────────────────────────────────────────────────────────────

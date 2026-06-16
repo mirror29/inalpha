@@ -203,7 +203,9 @@ class SensitivityRequest(BaseModel):
 
     @model_validator(mode="after")
     def _exactly_one_strategy_source(self) -> SensitivityRequest:
-        has_id = bool(self.strategy_id)
+        # is not None 而非 bool()：strategy_id="" + candidate_id=<uuid> 时 bool("")=False
+        # 会误判互斥通过，随后端点层报误导性的 "unknown strategy_id ''"（CR #86）。
+        has_id = self.strategy_id is not None
         has_cand = self.candidate_id is not None
         if has_id == has_cand:
             raise PydanticCustomError(
