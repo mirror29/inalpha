@@ -216,14 +216,16 @@ async def update_after_backtest(
 ) -> None:
     """回测跑完后回写 metrics / fitness / last_backtest_run_id。
 
-    每次 backtest 都覆盖（MVP 不保留"历次回测 in candidate"，要看历次去
-    backtest_runs 表查）。
+    metrics 用 JSONB **merge**（`|| `）而非整列覆盖：回测相关 key（sharpe/validation/…）
+    被新值更新，但 `update_sensitivity` 另路 merge 进来的 `sensitivity` key 得以保留
+    ——否则"check_sensitivity 后再调参重测"会静默丢掉 sensitivity，promote 软检误报
+    "没跑过敏感性"（CR #86 major）。历次回测明细仍去 backtest_runs 表查。
     """
     async with conn.cursor() as cur:
         await cur.execute(
             """
             UPDATE strategy_candidates
-            SET metrics = %s,
+            SET metrics = COALESCE(metrics, '{}'::jsonb) || %s::jsonb,
                 fitness = %s,
                 last_backtest_run_id = %s,
                 updated_at = NOW()
@@ -233,6 +235,32 @@ async def update_after_backtest(
                 json.dumps(metrics, default=str),
                 fitness,
                 str(backtest_run_id) if backtest_run_id else None,
+                str(candidate_id),
+            ),
+        )
+
+
+async def update_sensitivity(
+    conn: AsyncConnection,
+    candidate_id: UUID,
+    *,
+    sensitivity: dict[str, Any],
+) -> None:
+    """敏感性摘要 **merge** 进 metrics（D-12）。
+
+    不能走 ``update_after_backtest`` 的整体覆盖——那会把最近一次回测的
+    metrics/validation 抹掉；这里只补 ``metrics.sensitivity`` 一个 key。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            UPDATE strategy_candidates
+            SET metrics = COALESCE(metrics, '{}'::jsonb) || %s::jsonb,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (
+                json.dumps({"sensitivity": sensitivity}, default=str),
                 str(candidate_id),
             ),
         )
@@ -263,9 +291,12 @@ async def promote_candidate(
     *,
     reason: str,
     promoted_by: str,
+    warnings: list[str] | None = None,
 ) -> None:
     """把 ``status='candidate'`` 的行切到 ``'promoted'`` 并把 promote 元数据并进
-    ``audit.promotion`` JSONB 字段（reason / promoted_by / promoted_at ISO UTC 字符串）。
+    ``audit.promotion`` JSONB 字段（reason / promoted_by / promoted_at ISO UTC 字符串，
+    D-12 起加 ``warnings``：promote 时未过软门槛的记录——holdout 衰减 / 敏感性 cliff /
+    检查缺失。soft check 只留痕不拒绝，观察期后再评估是否收紧为 hard gate）。
 
     端点层负责"当前 status==candidate + fitness 非空"校验——本函数不再二次 guard
     （避免读写分裂导致的 race）。一条 UPDATE 同时改 status + audit + updated_at 保证原子性。
@@ -283,13 +314,14 @@ async def promote_candidate(
                         'promoted_at', to_char(
                             NOW() AT TIME ZONE 'UTC',
                             'YYYY-MM-DD"T"HH24:MI:SS"Z"'
-                        )
+                        ),
+                        'warnings', %s::jsonb
                     )
                 ),
                 updated_at = NOW()
             WHERE id = %s
             """,
-            (reason, promoted_by, str(candidate_id)),
+            (reason, promoted_by, json.dumps(warnings or []), str(candidate_id)),
         )
 
 

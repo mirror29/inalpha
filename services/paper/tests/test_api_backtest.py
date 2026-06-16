@@ -145,6 +145,41 @@ def test_backtest_e2e_with_mocked_data(
     assert "ts" in p0 and "equity" in p0
     # 振荡市必然有回撤
     assert body["max_drawdown_pct"] > 0.0
+    # D-12：默认 validation_split=0.7 → 响应带 holdout 验证块（100 根足够切）
+    v = body["validation"]
+    assert v is not None
+    assert v["split_ratio"] == 0.7
+    assert v["train"]["num_bars"] == 70
+    assert v["holdout"]["num_bars"] == 30  # 真实 holdout 段长（切点前一根只作基准不计数）
+    assert (
+        v["train"]["num_trades"] + v["holdout"]["num_trades"] == body["num_trades"]
+    )
+
+
+@respx.mock
+def test_backtest_validation_split_zero_disables(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """validation_split=0 显式关闭 → validation 为 null（如刻意全窗回测）。"""
+    respx.get("http://data-mock.test/bars").mock(
+        return_value=Response(200, json=_bars_for_oscillating(100))
+    )
+    r = client.post(
+        "/backtest",
+        headers=auth_headers,
+        json={
+            "strategy_id": "sma_cross",
+            "params": {"fast_period": 5, "slow_period": 15, "trade_size": 0.05},
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+            "from_ts": "2026-01-01T00:00:00Z",
+            "to_ts": "2026-01-05T00:00:00Z",
+            "validation_split": 0,
+        },
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["validation"] is None
 
 
 @respx.mock

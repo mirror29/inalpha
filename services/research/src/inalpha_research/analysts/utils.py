@@ -5,17 +5,19 @@
 """
 from __future__ import annotations
 
-#: fundamentals 快照的指标 → 中文标签（valuation / persona 共用，避免多处 drift）。
+#: fundamentals 快照的指标 → 英文标签（valuation / fundamental / persona 共用）。
+#: 英文而非中文：prompt 面向全球资产 + LLM 内部消费，中文 label 会把检索/推理
+#: 偏向中文市场视角（CLAUDE.md §3）。
 _FINANCIAL_LABELS = {
-    "market_cap": "市值",
-    "pe_ratio": "市盈率 PE",
-    "pb_ratio": "市净率 PB",
+    "market_cap": "market_cap",
+    "pe_ratio": "PE ratio",
+    "pb_ratio": "PB ratio",
     "roe": "ROE",
-    "gross_margin": "毛利率",
-    "net_margin": "净利率",
-    "revenue_yoy": "营收同比",
-    "profit_yoy": "利润同比",
-    "debt_to_equity": "负债权益比",
+    "gross_margin": "gross margin",
+    "net_margin": "net margin",
+    "revenue_yoy": "revenue YoY",
+    "profit_yoy": "profit YoY",
+    "debt_to_equity": "debt/equity",
 }
 #: 需按百分比渲染的指标 key。
 _FINANCIAL_PCT_KEYS = frozenset(
@@ -47,7 +49,11 @@ def render_financial_indicators(
     if not data.get("available"):
         return f"{label}: (not available — {data.get('reason', 'unknown')})\n{unavailable_hint}"
     ind = data.get("indicators", {})
-    lines = [f"{label} (most recent disclosure):"]
+    # 数据 as_of 进块头（D-12 时效性红线）：LLM 必须能看到这份财报快照"多新"，
+    # 不带日期的数字会被当成"现在"引用。
+    data_as_of = data.get("as_of")
+    suffix = f", data as_of {data_as_of}" if data_as_of else ""
+    lines = [f"{label} (most recent disclosure{suffix}):"]
     for key, lbl in _FINANCIAL_LABELS.items():
         val = ind.get(key)
         if val is None:
@@ -55,10 +61,13 @@ def render_financial_indicators(
         if key in _FINANCIAL_PCT_KEYS:
             lines.append(f"  {lbl}: {val * 100:.1f}%")
         elif key == "market_cap":
-            if val > 1e12:
-                lines.append(f"  {lbl}: {val / 1e12:.1f}万亿")
-            elif val > 1e8:
-                lines.append(f"  {lbl}: {val / 1e8:.1f}亿")
+            if val >= 1e12:
+                lines.append(f"  {lbl}: {val / 1e12:.2f}T")
+            elif val >= 1e9:
+                lines.append(f"  {lbl}: {val / 1e9:.2f}B")
+            elif val >= 1e6:
+                # 100M-1B 中小盘：补 M 档，否则裸浮点 LLM 难推理（CR #86）
+                lines.append(f"  {lbl}: {val / 1e6:.2f}M")
             else:
                 lines.append(f"  {lbl}: {val:.0f}")
         else:
@@ -89,3 +98,26 @@ def render_web_results(results: list[dict]) -> str:
         if snippet:
             lines.append(f"    {snippet}")
     return "\n".join(lines) + "\n"
+
+
+def fundamentals_route(*, venue: str, market_type: str) -> str | None:
+    """研究 venue → fundamentals 数据源 venue 的映射。
+
+    data 服务 ``/fundamentals`` 只支持 akshare / yfinance，直接透传研究 venue
+    （alpaca / binance / ...）会 422 → 永远 unavailable——美股走 alpaca 研究时
+    本可从 yfinance 拿到财报却拿不到，这是 fundamental/valuation/persona 一直
+    "无 live 数据"的根因之一。
+
+    Returns:
+        ``"akshare"`` / ``"yfinance"``，或 ``None``（crypto 无财报，调用方应跳过
+        fundamentals 请求省一次 round-trip，转而依赖链上 / web 证据）。
+    """
+    if market_type == "crypto":
+        return None
+    v = venue.lower()
+    if v in ("akshare", "yfinance"):
+        return v
+    if market_type in ("cn_stock", "hk_stock"):
+        return "akshare"
+    # us_stock / global_stock / 指数：yfinance 全球兜底（查不到时上游返 available=False）
+    return "yfinance"

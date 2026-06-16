@@ -24,6 +24,31 @@ export type BaselineSnapshot = {
   blew_up?: boolean;
 };
 
+/** D-12 · holdout 验证的单段（train / holdout）指标 */
+export type ValidationSegment = {
+  sharpe: number | null;
+  total_return_pct: number;
+  max_drawdown_pct: number;
+  num_trades: number;
+  num_bars: number;
+};
+
+/**
+ * D-12 · holdout 时间切分验证（单次引擎运行按 equity_curve 切段）。
+ * decay_ratio < 0.5 或 holdout.sharpe < 0 = 过拟合信号。
+ * 注意这是"窗口内一致性检验"非盲 OOS：调参看 train，holdout 只作裁判。
+ */
+export type ValidationBlock = {
+  split_ratio: number;
+  train: ValidationSegment;
+  holdout: ValidationSegment;
+  /** holdout_sharpe / train_sharpe；train ≤ 0 或 Sharpe 无定义时 null（看 flags） */
+  decay_ratio: number | null;
+  /** holdout bootstrap Sharpe 95% CI 是否横跨 0；true = 统计上不显著为正 */
+  holdout_sharpe_ci_includes_zero: boolean | null;
+  flags: string[];
+};
+
 export type BacktestReport = {
   /** D-8c 起：落库后 run_id，可作血缘锚点供 trade.create_plan 引用 */
   run_id: string | null;
@@ -43,6 +68,8 @@ export type BacktestReport = {
    * alpha 判定 = fitness 显著高于 baseline.fitness。
    */
   baseline: BaselineSnapshot | null;
+  /** D-12 起：holdout 时间切分验证；曲线太短或显式关闭时 null */
+  validation?: ValidationBlock | null;
   venue: string;
   symbol: string;
   timeframe: string;
@@ -70,6 +97,46 @@ export type BacktestReport = {
    */
   health_warnings?: string[];
   final_positions: PositionSnapshot[];
+};
+
+/** D-12 · 参数敏感性检查（promote 前必跑） */
+export type SensitivityParams = {
+  strategyId?: string;
+  candidateId?: string;
+  /** 最终收敛的完整参数 dict——源码默认值不在扰动范围 */
+  params: Record<string, unknown>;
+  venue?: string;
+  symbol: string;
+  timeframe?: string;
+  fromTs: string;
+  toTs: string;
+  initialCash?: number;
+  feeRate?: number;
+  /** 扰动幅度，默认 0.2（±20%） */
+  pct?: number;
+};
+
+export type SensitivityNeighbor = {
+  params: Record<string, unknown>;
+  fitness: number | null;
+  error: string | null;
+};
+
+export type SensitivityResult = {
+  candidate_id: string | null;
+  strategy_id: string | null;
+  base_fitness: number;
+  pct: number;
+  neighbors: SensitivityNeighbor[];
+  stats: {
+    mean: number | null;
+    std: number | null;
+    worst: number | null;
+    n_ok: number;
+    n_failed: number;
+  };
+  /** cliff = 邻域最差 < 0.5×base，过拟合信号，不应 promote */
+  verdict: "robust" | "cliff" | "insufficient";
 };
 
 export type BacktestParams = {
@@ -113,6 +180,11 @@ export type AuthorStrategyResult = {
   /** true=新落库；false=撞到同 code_hash，返已有 ID（幂等） */
   created: boolean;
   audit: Record<string, unknown>;
+  /**
+   * D-12 · 非阻断告警（如血缘里的因子 author 时已在衰减）。非空时 agent 必须
+   * 转告用户，衰减因子不作核心信号。
+   */
+  warnings?: string[];
 };
 
 export type StrategyCandidateSummary = {
@@ -182,6 +254,22 @@ export type BacktestRunSummary = {
   strategy_hint: Record<string, unknown> | null;
   status: string;
   created_at: string;
+};
+
+/** D-12 · 回测逐笔成交（GET /backtest_runs/{id}/trades 的一行）。 */
+export type BacktestTradeRecord = {
+  seq: number;
+  bar_ts: string;
+  bar_close: number;
+  side: string;
+  quantity: number;
+  order_type: string;
+  fill_price: number | null;
+  fee: number | null;
+  /** 本笔引起的 realized_pnl 增量（开仓笔=0，平仓/反手笔=价差盈亏，不含手续费） */
+  realized_pnl: number | null;
+  intent: string | null;
+  tag: string | null;
 };
 
 export type SubmitOrderParams = {
@@ -398,6 +486,26 @@ export class PaperClient {
     });
   }
 
+  /**
+   * D-12 · 参数邻域敏感性检查：base + one-at-a-time ±pct 扰动各跑一次回测。
+   * 邻域 run 不落 backtest_runs；candidate 路径摘要写 candidate.metrics.sensitivity。
+   */
+  async checkSensitivity(params: SensitivityParams): Promise<SensitivityResult> {
+    return await this.http.post<SensitivityResult>("/backtest/sensitivity", {
+      strategy_id: params.strategyId,
+      candidate_id: params.candidateId,
+      params: params.params,
+      venue: params.venue ?? "binance",
+      symbol: params.symbol,
+      timeframe: params.timeframe ?? "1h",
+      from_ts: params.fromTs,
+      to_ts: params.toTs,
+      initial_cash: params.initialCash ?? 10_000,
+      fee_rate: params.feeRate ?? 0.001,
+      pct: params.pct ?? 0.2,
+    });
+  }
+
   // ────────────────────────────────────────────────────────────────────
   // D-9 · 自创策略候选（ADR-0020 E1 MVP）
   // ────────────────────────────────────────────────────────────────────
@@ -473,6 +581,17 @@ export class PaperClient {
       strategy_code: filter.strategyCode,
       limit: filter.limit,
     });
+  }
+
+  /** D-12 · 一次回测的逐笔成交（按成交先后），诊断"亏在哪几笔"用。 */
+  async listBacktestTrades(
+    runId: string,
+    limit = 50,
+  ): Promise<BacktestTradeRecord[]> {
+    return await this.http.get<BacktestTradeRecord[]>(
+      `/backtest_runs/${runId}/trades`,
+      { limit },
+    );
   }
 
   async submitOrder(params: SubmitOrderParams): Promise<SubmitOrderResult> {

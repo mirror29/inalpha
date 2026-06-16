@@ -127,7 +127,7 @@ async def test_persona_anchors_on_real_fundamentals(data_client: DataClient) -> 
 
     user_prompt = llm.calls[0]["user"]
     assert "fundamentals" in user_prompt
-    assert "市盈率 PE" in user_prompt
+    assert "PE ratio" in user_prompt
     assert "market_type: us_stock" in user_prompt
 
 
@@ -164,3 +164,32 @@ async def test_persona_degrades_without_fundamentals(data_client: DataClient) ->
     user_prompt = llm.calls[0]["user"]
     assert "not available" in user_prompt
     assert "0.55" in user_prompt
+
+
+@respx.mock
+async def test_persona_confidence_cap_clamps(data_client: DataClient) -> None:
+    """双档 cap 代码级生效（CR #86）：crypto 无财报 LLM 给 0.95 也被 clamp 到 0.55；
+    美股有财报 clamp 到 0.75。"""
+    # crypto：fundamentals_route 返 None，不打 /fundamentals
+    respx.get("http://data-mock.test/web/search").mock(
+        return_value=Response(200, json={"results": []})
+    )
+    llm = FakeLLMClient(
+        {"you are michael burry": {"stance": "bearish", "confidence": 0.95, "summary": "vibes"}}
+    )
+    brief = await PERSONA_ANALYSTS["burry"](llm=llm, data=data_client).run(
+        venue="binance", symbol="BTC/USDT", timeframe="1h", as_of=_as_of(), lookback_days=30
+    )
+    assert brief.confidence == 0.55
+
+    # 美股有 live 财报 → cap 0.75
+    respx.get("http://data-mock.test/fundamentals").mock(
+        return_value=Response(200, json={"available": True, "indicators": {"pe_ratio": 28.0}})
+    )
+    llm2 = FakeLLMClient(
+        {"you are warren buffett": {"stance": "bullish", "confidence": 0.95, "summary": "moat"}}
+    )
+    brief2 = await PERSONA_ANALYSTS["buffett"](llm=llm2, data=data_client).run(
+        venue="alpaca", symbol="AAPL", timeframe="1d", as_of=_as_of(), lookback_days=30
+    )
+    assert brief2.confidence == 0.75

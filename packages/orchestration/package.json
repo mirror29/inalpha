@@ -19,6 +19,7 @@
     "lint": "echo 'TODO: add eslint or biome'",
     "smoke": "tsx scripts/smoke.ts",
     "smoke:plan": "tsx scripts/smoke-plan.ts",
+    "smoke:optloop": "tsx scripts/smoke-optimization-loop.ts",
     "scheduler:trigger": "tsx scripts/scheduler-trigger.ts",
     "smoke:sandbox": "tsx scripts/smoke-sandbox.ts",
     "smoke:sandbox-loop": "tsx scripts/smoke-sandbox-loop.ts",

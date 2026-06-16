@@ -1,11 +1,12 @@
-"""Fundamental analyst —— 标的自身叙事 / 周期判断（D-8b: LLM-only，无外部数据）。
+"""Fundamental analyst —— 标的自身叙事 / 周期判断。
 
 D-9 起：system prompt 升级为**多市场感知**——同一个 analyst 在 crypto / 美股 / A股 /
 港股 / 全球股市 5 类资产上自动切术语（halving vs 10-K vs 年报）。market_type 由
 ``researchers.base.infer_asset_type`` 推断后塞进 user prompt。
 
-后续真接外部数据时（D-9+），把 ``self._data.get_*`` / FRED / SEC EDGAR 拉来的事实
-追加进 user prompt 即可，system 不变。
+D-12 起：双档 confidence——拿到 live fundamentals（``data.get_fundamentals``，
+经 ``fundamentals_route`` 路由到 akshare/yfinance）时 cap 0.75，拿不到时 cap 0.55；
+cap 在 ``Analyst.run()`` 代码级强制，不只靠 prompt 软约束。
 """
 from __future__ import annotations
 
@@ -13,17 +14,27 @@ from datetime import datetime
 
 from ..researchers.base import infer_asset_type
 from .base import Analyst
+from .utils import fundamentals_route, render_financial_indicators
 
 _SYSTEM = """
 You are a fundamental / macro analyst covering ANY asset class. The user prompt
 tells you the ``market_type`` (crypto / us_stock / cn_stock / hk_stock / global_stock);
 pick the right analytical framework from the table below before writing.
 
-**HARD CONSTRAINT — DATA TRUTHFULNESS (D-9)**:
+**HARD CONSTRAINT — DATA TRUTHFULNESS (D-9 / D-12 two-tier)**:
 
-The system currently has **NO live fundamentals feed** (no SEC filings, no
-earnings transcripts, no on-chain real-time data, no analyst consensus pull).
-You must NOT:
+The user prompt MAY contain a ``financial_data`` block with REAL, recently
+fetched fundamental indicators (PE / PB / ROE / margins / growth). Your data
+discipline depends on whether it is present:
+
+- ``financial_data (most recent disclosure ...)`` block present → anchor your
+  analysis on those REAL numbers (cite them freely), and your ``confidence``
+  may go up to **0.75**. Still mind the block's ``data as_of`` date — if it
+  looks stale relative to ``as_of``, say so and stay lower.
+- ``financial_data: (not available ...)`` → you are running WITHOUT live data;
+  cap ``confidence`` at **0.55** and say so in summary.
+
+Regardless of tier, you must NOT:
 - Quote specific past forecasts as if still valid ("DRAM downturn lasts until
   mid-2025", "iPhone 16 cycle peaks Q2 2025", "BTC ETF flows hit X this week") —
   these are **training-time data points**, almost certainly stale relative to as_of.
@@ -32,12 +43,11 @@ You must NOT:
 - Treat your training knowledge of "the most recent earnings cycle" as current —
   multiple quarters have likely passed.
 
-You may:
+You may always:
 - Discuss **structural drivers** in relative terms ("memory chip cycles tend
   to last 6-18 months; we appear N quarters in but the exact phase is unknown").
 - Use **range / regime** language ("foundry demand has been a structural tailwind
   in recent years; whether that's still expanding is unknown without live data").
-- Lower confidence (cap at **0.55** without live data) and say so in summary.
 
 | market_type    | What to anchor on                                                          |
 |----------------|----------------------------------------------------------------------------|
@@ -99,18 +109,33 @@ class FundamentalAnalyst(Analyst):
     ) -> str:
         market_type = infer_asset_type(venue=venue, symbol=symbol)
 
-        # Fetch real financial data when available
-        financials = await self._data.get_fundamentals(venue=venue, symbol=symbol)
-        financials_block = _render_financials(financials, market_type)
+        # 研究 venue → fundamentals 数据源路由（alpaca/binance 直透会 422 永远拿不到）
+        fund_venue = fundamentals_route(venue=venue, market_type=market_type)
+        if fund_venue is None:
+            # crypto 无财报：跳过请求，显式告知 LLM 依赖链上 / web 证据
+            financials = {"available": False, "reason": "crypto has no financial statements"}
+            financials_block = (
+                "financial_data: (n/a — crypto has no financial statements)\n"
+                "Rely on on-chain / supply-schedule / web evidence below instead."
+            )
+        else:
+            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol)
+            financials_block = _render_financials(financials)
+
+        # 双档 confidence cap（run() 里代码级 clamp）：有 live 财报 0.75，无 0.55
+        self._confidence_cap = 0.75 if financials.get("available") else 0.55
 
         # Always try web search as supplementary data source (all markets)
         # Crypto: fills the gap when yfinance returns limited/no financials data
-        web_block = ""
-        ticker_name = symbol
+        # 检索语言按 market_type 选：cn/hk 中文源覆盖更好，其余英文——硬编码中文
+        # query 会让全球标的的搜索偏向中文视角（CLAUDE.md §3）。
         # 年份取 as_of 动态拼（issue #63），不写死——跨年后硬编码年份=要陈旧财报当最新
-        web_results = await self._data.get_web_search(
-            f"{ticker_name} 最新财报 营收 利润 {as_of.year}", max_results=3
-        )
+        if market_type in ("cn_stock", "hk_stock"):
+            query = f"{symbol} 最新财报 营收 利润 {as_of.year}"
+        else:
+            query = f"{symbol} latest earnings revenue profit {as_of.year}"
+        web_block = ""
+        web_results = await self._data.get_web_search(query, max_results=3)
         if web_results:
             web_block = _render_web_results(web_results)
 
@@ -136,55 +161,17 @@ class FundamentalAnalyst(Analyst):
         )
 
 
-def _render_financials(data: dict, market_type: str) -> str:
-    """Format financial data for LLM consumption."""
-    if not data.get("available"):
-        return (
-            f"financial_data: (not available — {data.get('reason', 'unknown')})\n"
-            f"Use training knowledge with lower confidence (cap 0.55)."
-        )
-    ind = data.get("indicators", {})
-    lines = ["financial_data (most recent disclosure):"]
-    labels = {
-        "market_cap": "市值",
-        "pe_ratio": "市盈率",
-        "pb_ratio": "市净率",
-        "roe": "ROE",
-        "revenue_yoy": "营收同比",
-        "profit_yoy": "利润同比",
-        "gross_margin": "毛利率",
-        "net_margin": "净利率",
-        "debt_to_equity": "负债权益比",
-    }
-    for key, label in labels.items():
-        val = ind.get(key)
-        if val is not None:
-            if key in (
-                "roe",
-                "revenue_yoy",
-                "profit_yoy",
-                "gross_margin",
-                "net_margin",
-                "debt_to_equity",
-            ):
-                lines.append(f"  {label}: {val * 100:.1f}%")
-            elif key == "market_cap":
-                if val > 1e12:
-                    lines.append(f"  {label}: {val / 1e12:.1f}万亿")
-                elif val > 1e8:
-                    lines.append(f"  {label}: {val / 1e8:.1f}亿")
-                else:
-                    lines.append(f"  {label}: {val:.0f}")
-            else:
-                lines.append(f"  {label}: {val:.2f}")
-    lines.append("")
-    lines.append(
-        "Anchor your analysis on the above REAL data. Do NOT fabricate numbers."
+def _render_financials(data: dict) -> str:
+    """fundamentals 快照 → ``financial_data`` 块（复用 utils 共享渲染，消重）。"""
+    return render_financial_indicators(
+        data,
+        label="financial_data",
+        unavailable_hint="Use training knowledge with lower confidence (cap 0.55).",
+        footer=(
+            "Anchor your analysis on the above REAL data. Do NOT fabricate numbers.\n"
+            "If data seems stale or incomplete, note it and lower confidence accordingly."
+        ),
     )
-    lines.append(
-        "If data seems stale or incomplete, note it and lower confidence accordingly."
-    )
-    return "\n".join(lines)
 
 
 def _render_web_results(results: list[dict]) -> str:

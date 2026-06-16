@@ -24,7 +24,7 @@ from datetime import datetime
 
 from ..researchers.base import infer_asset_type
 from .base import Analyst
-from .utils import render_financial_indicators, render_web_results
+from .utils import fundamentals_route, render_financial_indicators, render_web_results
 
 _SYSTEM = """
 You are a relative valuation analyst covering ANY asset class. Your single job:
@@ -49,8 +49,10 @@ consensus feed**. It only passes you a snapshot of free fundamental indicators
 You may:
 - Reason about the **provided** multiples relative to **qualitative** sector norms
   ("a PE of X for a mature bank is on the high side; for a high-growth name it is not").
-- Use range / regime language and lower confidence (cap at **0.55** without live peer
-  data) and say so in the summary.
+- Use range / regime language. Two-tier confidence (D-12): when the prompt contains a
+  ``valuation_inputs (most recent disclosure ...)`` block with real indicators, your
+  confidence may go up to **0.75**; when it says ``(not available ...)``, cap at
+  **0.55** and say so in the summary.
 
 | market_type    | Relative-valuation anchors                                                  |
 |----------------|------------------------------------------------------------------------------|
@@ -109,9 +111,20 @@ class ValuationAnalyst(Analyst):
     ) -> str:
         market_type = infer_asset_type(venue=venue, symbol=symbol)
 
-        # 复用免费 fundamentals 快照（PE / PB / ROE / margins）作相对估值的锚
-        financials = await self._data.get_fundamentals(venue=venue, symbol=symbol)
+        # 复用免费 fundamentals 快照（PE / PB / ROE / margins）作相对估值的锚；
+        # venue 经 fundamentals_route 路由（alpaca/binance 直透 422 → 永远 unavailable）
+        fund_venue = fundamentals_route(venue=venue, market_type=market_type)
+        if fund_venue is None:
+            financials = {
+                "available": False,
+                "reason": "crypto has no financial statements — use NVT/MVRV-style reasoning",
+            }
+        else:
+            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol)
         financials_block = _render_valuation_inputs(financials)
+
+        # 双档 confidence cap（run() 里代码级 clamp）：有 live 指标 0.75，无 0.55
+        self._confidence_cap = 0.75 if financials.get("available") else 0.55
 
         # web search 补充（peer / 行业估值的定性背景；不当硬数字用）
         web_block = ""
