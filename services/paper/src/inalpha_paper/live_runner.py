@@ -755,16 +755,18 @@ class LiveRunnerManager:
         # 1. 风控；命中 → 拒单 + 记 error_log，不杀 run。两道闸门同 except 处理：
         #    (a) 单笔 notional 硬上限（无状态，挡策略算错 quantity 的超大单，issue #42）；
         #    (b) DB-backed RiskGuard 行为型锁规则（drawdown / cooldown / ...）。
-        # ADR-0052：框架级保护性出场（stop_loss / take_profit / trailing_stop_loss）跳过
-        # "挡开仓"的行为型锁——回撤熔断锁期内恰恰最需要它平仓；guard 本身就是风控，不该
-        # 被开仓闸拦住。notional 硬上限仍保留（防 quantity 算错的超大单）。
+        # ADR-0052：框架级保护性出场（stop_loss / take_profit / trailing_stop_loss）**两道闸
+        # 全豁免**——guard 是风控兜底，必须能平仓：① 行为型锁（回撤熔断锁期内恰恰最需要它平
+        # 仓）；② notional 硬上限（CR #88 major：保护性 SELL 量=实际持仓，价涨/累积建仓后仓位
+        # notional 必然超单笔买入上限；若也卡 notional → 止损被静默拒 → 持仓不动 → 每根 bar
+        # 重试又被拒 → 止损形同虚设。notional 上限是防"胖手指"超大开仓单，平实际持仓不属此列）。
         is_protective_exit = order.tag in PROTECTIVE_EXIT_TAGS
         try:
-            risk_guard_mod.check_order_notional(
-                self._factory, quantity=order.quantity, ref_price=float(bar.close),
-                venue=venue, symbol=symbol,
-            )
             if not is_protective_exit:
+                risk_guard_mod.check_order_notional(
+                    self._factory, quantity=order.quantity, ref_price=float(bar.close),
+                    venue=venue, symbol=symbol,
+                )
                 await risk_guard_mod.enforce(
                     self._factory, account_id=account_id, venue=venue, symbol=symbol,
                     side=side,
