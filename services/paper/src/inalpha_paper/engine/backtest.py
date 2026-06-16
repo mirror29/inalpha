@@ -139,6 +139,11 @@ class BacktestEngine:
             self.portfolio.update_mark(bar.instrument_id, bar.close)
             # 3.5 ADR-0052：框架级持仓保护止损在 mark 更新后判定（与 live session 同点），
             #     触发的保护性出场单进 pending，下一根 process_bar 撮合（不偷未来）。
+            #     已知限制（CR #88，仅显式传 rules 的回测受影响、生产 runner rules=None 不触达、
+            #     live 顺序路由不受影响）：guard 的 SELL 在 bar N 仅入 pending、bar N+1 才成交，
+            #     故同一 bar 内策略经 RiskEngine 提交的 BUY 看不到这次平仓 → CooldownRule 等
+            #     基于 closed_trades 的锁在该时间窗查不到记录，可能放过同 bar 重入单（"止损后
+            #     不回场"在此窗失效）。要严格联动 rules，用 live 路径（顺序路由先确认 guard 成交）。
             if self._guard is not None:
                 self._guard.evaluate(bar)
             # 4. 发布 bar，触发 strategy.on_bar
