@@ -21,6 +21,7 @@ from inalpha_shared.db import get_conn
 
 from . import __version__
 from .api import (
+    archetypes,
     backtest,
     health,
     orders,
@@ -162,6 +163,7 @@ install_error_handler(app)
 
 app.include_router(health.router)
 app.include_router(backtest.router)
+app.include_router(archetypes.router)
 app.include_router(orders.router)
 app.include_router(risk.router)
 app.include_router(strategies.router)
