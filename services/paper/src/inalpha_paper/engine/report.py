@@ -187,8 +187,10 @@ class BacktestReport:
                 ci_lower = _ci.ci_lower * _ann
                 ci_upper = _ci.ci_upper * _ann
                 ci_includes_zero = _ci.ci_includes_zero
-            except ValueError:
-                # returns 退化（如全相等）→ 维持 None，不污染响应
+            except Exception:  # CI 是非关键增强，任何失败都不能拖垮主回测
+                # bootstrap 内部 numpy 对边缘分布（退化 returns / 极偏态 / 浮点噪声）
+                # 可能抛 ValueError 以外的 LinAlgError / RuntimeError / FloatingPointError。
+                # 防过拟合 CI 算不出 → 静默维持 None，绝不让 from_portfolio 整体抛 → 500（CR Major）。
                 pass
         # exposure 用回测窗口端点（datetime → ns,整数路径:float 对 2026 时间戳
         # 丢 ~100ns,会与 fill.ts_ns 的整数路径错位）;缺端点时为 None。
