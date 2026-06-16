@@ -19,7 +19,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { HookRunner, withHooks } from "../src/hooks/index.js";
+import { defaultGetSessionId, HookRunner, withHooks } from "../src/hooks/index.js";
 import { AskApprovalCache } from "../src/permissions/ask-cache.js";
 import { PendingApprovalsStore } from "../src/permissions/pending.js";
 
@@ -262,6 +262,57 @@ describe("ask-path e2e · store.request fire-and-forget timeout", () => {
     // cache 仍存活（60s TTL 默认未到）—— 印证 store timeout 不影响 cache 路径
     expect(cache.size()).toBe(1);
 
+    cache.clear();
+  });
+});
+
+describe("defaultGetSessionId · 不回退到 per-turn runId（dock 审批死循环根因）", () => {
+  it("ctx 只有 runId（无稳定 thread/resource）→ 返回 undefined（让 askCache 落稳定 __global__）", () => {
+    // 回归：AG-UI / Mastra dock 路径下 ctx.agent.threadId/resourceId 槽位在、值恒空，
+    // 只有每-turn 变的 runId。旧实现回退到 runId → 跨 turn askCache 必 miss → 审批死循环。
+    expect(defaultGetSessionId({ runId: "turn-1" })).toBeUndefined();
+    expect(defaultGetSessionId({ agent: { threadId: "", resourceId: "" }, runId: "turn-2" })).toBeUndefined();
+  });
+
+  it("有稳定 id 时仍优先用（不破坏正常路径）", () => {
+    expect(defaultGetSessionId({ agent: { threadId: "thr-1" }, runId: "turn-1" })).toBe("thr-1");
+    expect(defaultGetSessionId({ agent: { resourceId: "res-1" }, runId: "turn-1" })).toBe("res-1");
+    expect(defaultGetSessionId({ requestContext: { sessionId: "sess-1" }, runId: "turn-1" })).toBe("sess-1");
+  });
+});
+
+describe("ask-path e2e · dock 场景回归（runId 每 turn 变，仍能跨 turn 审批）", () => {
+  it("无稳定 id、两次调用 runId 不同 → 第二次仍命中 __global__ → 放行（不再死循环）", async () => {
+    const { cache, store, runner } = makeEnv();
+    const exec = vi.fn().mockResolvedValue({ candidateId: "c-7", status: "promoted" });
+    const tool = { id: "paper.promote_candidate", description: "", execute: exec };
+    // 不传 getSessionId → 用真 defaultGetSessionId（被测路径）
+    const wrapped = withHooks(tool, {
+      runner,
+      permissionResolver: () => "ask",
+      askCache: cache,
+      pendingApprovals: store,
+    });
+
+    // turn-1：用户问 promote → 被拦（mark __global__）。ctx 模拟 dock：只有 runId。
+    const first = (await wrapped.execute!(
+      { candidateId: "c-7", reason: "r".repeat(20) },
+      { runId: "turn-1" },
+    )) as { requiresApproval: boolean };
+    expect(first.requiresApproval).toBe(true);
+    expect(exec).not.toHaveBeenCalled();
+
+    // turn-2：用户「同意」，agent 重调。**runId 变了**（dock 每 turn 新 runId）。
+    // 旧实现：sid=turn-2 ≠ turn-1 → miss → 又弹确认（死循环）。
+    // 修复后：两次 sid 都是 undefined → __global__ 稳定 → 命中 → execute。
+    const second = await wrapped.execute!(
+      { candidateId: "c-7", reason: "different wording but same candidate" },
+      { runId: "turn-2" },
+    );
+    expect(exec).toHaveBeenCalledOnce();
+    expect(second).toEqual({ candidateId: "c-7", status: "promoted" });
+
+    store.clearAll();
     cache.clear();
   });
 });

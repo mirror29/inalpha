@@ -21,6 +21,7 @@ from uuid import UUID
 from inalpha_shared.errors import NotFoundError, ValidationError
 from psycopg import AsyncConnection
 
+from .config import get_paper_settings
 from .data_client import DataClient
 from .engine.backtest import BacktestEngine
 from .engine.metrics import (
@@ -40,6 +41,7 @@ from .schemas import (
     BaselineSnapshot,
     EquityPoint,
     PositionSnapshot,
+    SharpeCI,
     ValidationBlock,
     ValidationSegment,
 )
@@ -339,6 +341,22 @@ async def run_backtest(
         equity_curve=equity_points,
         blew_up=report.blew_up,
         health_warnings=list(report.health_warnings),
+        protective_exits=report.protective_exits,
+        sharpe_ci=(
+            SharpeCI(
+                lower=report.sharpe_ci_lower,
+                upper=report.sharpe_ci_upper,
+                includes_zero=report.sharpe_ci_includes_zero,
+            )
+            # 三字段全判：SharpeCI.lower/upper 是 required float，只判 includes_zero
+            # 不能在类型层收窄它俩；未来若破坏 from_portfolio 的原子赋值会 Pydantic 500（CR）
+            if (
+                report.sharpe_ci_lower is not None
+                and report.sharpe_ci_upper is not None
+                and report.sharpe_ci_includes_zero is not None
+            )
+            else None
+        ),
         final_positions=final_positions,
         validation=validation,
     )
@@ -563,6 +581,10 @@ async def _run_engine(
     except RuntimeError:
         pool = None
 
+    # ADR-0052：从 Settings 解析框架级持仓保护止损阈值（main 进程读，传给子进程；
+    # 回测与 live 共用同一阈值，保证行为一致）。
+    sl, tp, ts = _protective_thresholds()
+
     if pool is None:
         # 兜底：同进程跑（不真正 CPU 并行，但函数语义一致）
         return run_engine_in_subprocess(
@@ -574,6 +596,9 @@ async def _run_engine(
             params=params,
             initial_cash=initial_cash,
             fee_rate=fee_rate,
+            protective_stop_loss_pct=sl,
+            protective_take_profit_pct=tp,
+            protective_trailing_stop_pct=ts,
         )
 
     loop = asyncio.get_running_loop()
@@ -588,8 +613,21 @@ async def _run_engine(
         params=params,
         initial_cash=initial_cash,
         fee_rate=fee_rate,
+        protective_stop_loss_pct=sl,
+        protective_take_profit_pct=tp,
+        protective_trailing_stop_pct=ts,
     )
     return await loop.run_in_executor(pool, fn)
+
+
+def _protective_thresholds() -> tuple[float | None, float | None, float | None]:
+    """从 Settings 读 ADR-0052 框架级持仓保护止损三阈值 ``(stop_loss, take_profit, trailing)``。"""
+    s = get_paper_settings()
+    return (
+        s.protective_stop_loss_pct,
+        s.protective_take_profit_pct,
+        s.protective_trailing_stop_pct,
+    )
 
 
 def _make_pool_call(
@@ -602,6 +640,9 @@ def _make_pool_call(
     initial_cash: float,
     fee_rate: float,
     candidate_code: str | None = None,
+    protective_stop_loss_pct: float | None = None,
+    protective_take_profit_pct: float | None = None,
+    protective_trailing_stop_pct: float | None = None,
 ) -> Any:
     """生成一个无参 callable，丢给 ``run_in_executor``。
 
@@ -620,6 +661,9 @@ def _make_pool_call(
         params=params,
         initial_cash=initial_cash,
         fee_rate=fee_rate,
+        protective_stop_loss_pct=protective_stop_loss_pct,
+        protective_take_profit_pct=protective_take_profit_pct,
+        protective_trailing_stop_pct=protective_trailing_stop_pct,
     )
 
 
@@ -633,6 +677,9 @@ def run_engine_in_subprocess(
     initial_cash: float,
     fee_rate: float,
     candidate_code: str | None = None,
+    protective_stop_loss_pct: float | None = None,
+    protective_take_profit_pct: float | None = None,
+    protective_trailing_stop_pct: float | None = None,
 ) -> BacktestReport:
     """**Top-level 函数 = 可 pickle**：实例化 engine + strategy + 跑 bars，返 ``BacktestReport``。
 
@@ -651,7 +698,15 @@ def run_engine_in_subprocess(
       （main 进程已审过；这里只走 load + contract，避免再次 AST 浪费 CPU）
     - 否则走内置 ``get_strategy_class(strategy_id)``
     """
-    engine = BacktestEngine(initial_cash=initial_cash, fee_rate=fee_rate)
+    # ADR-0052：框架级持仓保护止损阈值由 main 进程从 Settings 解析后传入（子进程不读
+    # Settings 单例，保持 picklable + 纯）。三阈值全 None → BacktestEngine 不建 guard。
+    engine = BacktestEngine(
+        initial_cash=initial_cash,
+        fee_rate=fee_rate,
+        protective_stop_loss_pct=protective_stop_loss_pct,
+        protective_take_profit_pct=protective_take_profit_pct,
+        protective_trailing_stop_pct=protective_trailing_stop_pct,
+    )
 
     if candidate_code is not None:
         strategy_cls = load_strategy_class(candidate_code)

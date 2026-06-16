@@ -148,6 +148,31 @@ class PaperSettings(BaseSettings):
         "无人值守长驻兜底：策略卡死 / 无限空跑也能自动收场。",
     )
 
+    # ─── ADR-0052 · 框架级持仓保护止损（Position Guard）────────────────
+
+    protective_stop_loss_pct: float | None = Field(
+        default=0.20,
+        alias="INALPHA_PROTECTIVE_STOP_LOSS_PCT",
+        gt=0.0,
+        le=1.0,
+        description="框架级持仓灾难性兜底止损：单仓浮亏穿 -X → 全平（回测 + live 共用同一"
+        "阈值，行为一致）。默认 0.20 = 宽兜底（封尾部风险而非切正常波动；贴行情的紧止损"
+        "是策略层 alpha 的事）。None / 0 视为关闭硬止损闸。",
+    )
+    protective_take_profit_pct: float | None = Field(
+        default=None,
+        alias="INALPHA_PROTECTIVE_TAKE_PROFIT_PCT",
+        gt=0.0,
+        description="框架级止盈：单仓浮盈穿 +X → 全平。默认 None = 关（封上行偏 alpha 决策，"
+        "会伤趋势策略，框架层默认不做）。",
+    )
+    protective_trailing_stop_pct: float | None = Field(
+        default=None,
+        alias="INALPHA_PROTECTIVE_TRAILING_STOP_PCT",
+        gt=0.0,
+        description="框架级移动止损：自峰值浮盈回撤 X → 全平（锁大利润）。默认 None = 关。",
+    )
+
     # ─── D-12 · 因子衰减巡检（ADR-0047）────────────────────────────────
 
     factor_service_url: str = Field(

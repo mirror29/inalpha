@@ -21,6 +21,7 @@ import {
   paperComposeStrategyTool,
   paperGetAccountTool,
   paperHealthTool,
+  paperListArchetypesTool,
   paperListBacktestRunsTool,
   paperListBacktestTradesTool,
   paperListOrdersTool,
@@ -120,6 +121,7 @@ export {
   paperGetAccountTool,
   paperGetCandidateTool,
   paperHealthTool,
+  paperListArchetypesTool,
   paperListBacktestRunsTool,
   paperListBacktestTradesTool,
   paperListCandidatesTool,
@@ -231,6 +233,8 @@ export const orchestratorToolList = [
   // ADR-0046：投研方法论 skill 按需读取（清单在 <skills> prompt 段）
   skillReadTool,
   paperListStrategiesTool,
+  // ADR-0051：策略原型库——写策略前按因子 kind 取骨架当起点
+  paperListArchetypesTool,
   paperRunBacktestTool,
   // D-12 · 参数邻域敏感性（promote 前必跑，cliff = 过拟合信号）
   paperCheckSensitivityTool,

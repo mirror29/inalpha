@@ -63,13 +63,17 @@ type GenericTool = {
  * - 顶层 ``ctx.threadId`` 在 1.10 已**不再存在**（被移进 ``ctx.agent``）
  *
  * 因此优先级：``ctx.agent.threadId`` > ``ctx.agent.resourceId`` >
- * ``requestContext.sessionId`` > 顶层 ``sessionId`` > ``runId``（兜底，知道不稳定）。
+ * ``requestContext.sessionId`` > 顶层 ``sessionId`` > **undefined**（→ askCache
+ * 用稳定的 ``"__global__"`` scope）。
  *
- * 这样 askCache 跨 turn 也能命中，audit-log 也能按 thread 聚合。
+ * **故意不回退到 ``ctx.runId``**：runId 每 user-turn 一个新值，当 askCache key 会让
+ * 跨 turn 审批永远 miss → 死循环（ADR-0018）。stable ``__global__`` 比 unstable runId
+ * 更对：跨 turn 能命中，approvalKey 里的 candidateId 仍区分不同候选。
+ *
+ * 这样 askCache 跨 turn 也能命中（单租户 dev）；多租户隔离需让 threadId 真正进 ctx。
  */
 /** Module-level flag：进程内仅 warn 一次 runId fallback / 完全失败，避免每次 tool 调用刷屏。 */
 let _warnedRunIdFallback = false;
-let _warnedNoSessionId = false;
 
 export function defaultGetSessionId(ctx: unknown): string | undefined {
   if (!ctx || typeof ctx !== "object") return undefined;
@@ -96,23 +100,24 @@ export function defaultGetSessionId(ctx: unknown): string | undefined {
   const sid = pickString(c.sessionId);
   if (sid) return sid;
 
-  // 最后 fallback：runId —— turn-level 不稳定，会让 askCache 跨 turn miss
-  const runId = pickString(c.runId);
-  if (runId) {
-    if (!_warnedRunIdFallback) {
-      _warnedRunIdFallback = true;
-      console.warn(
-        "[with-hooks] defaultGetSessionId falling back to ctx.runId — runId changes per user-turn, " +
-          "askCache will miss across turns. Check if ctx.agent.threadId/resourceId is populated by Mastra runtime.",
-      );
-    }
-    return runId;
-  }
-  if (!_warnedNoSessionId) {
-    _warnedNoSessionId = true;
+  // 没有任何**会话级稳定** id（threadId / resourceId / sessionId）。
+  //
+  // **故意不回退到 ctx.runId**：runId 每个 user-turn 一个新值，用它当 askCache key
+  // → 用户每次「同意」都是新 turn = 新 key → mark / consume 永远撞不上 → 审批死循环
+  // （ADR-0018 ask-path）。返回 undefined 让 askCache 落**稳定**的 "__global__" key，
+  // 跨 turn 能命中（approvalKey 已含 candidateId 区分不同候选，60s TTL 兜底）。
+  //
+  // 已知局限：AG-UI / Mastra 当前版本不把 memory.thread / resource 暴露进 tool
+  // ToolExecutionContext（ctx.agent.threadId / resourceId 槽位在、值恒空，实测）。
+  // 单租户 dev 下 "__global__" 够用；接真实多租户前需让 threadId 真正进 ctx
+  // （改 dashboard ↔ mastra 转发或升级 @ag-ui/mastra），届时上面的 threadId 分支即生效。
+  if (pickString(c.runId) && !_warnedRunIdFallback) {
+    _warnedRunIdFallback = true;
     console.warn(
-      "[with-hooks] defaultGetSessionId could not extract any stable id from ctx; " +
-        "ask-path will fall back to __global__ cache key (multi-user unsafe).",
+      "[with-hooks] defaultGetSessionId: no stable thread/resource id in ctx; " +
+        "intentionally NOT using per-turn ctx.runId (would break cross-turn ask-cache). " +
+        "Using stable '__global__' ask-cache scope (single-tenant safe). " +
+        "Populate ctx.agent.threadId/resourceId for multi-tenant isolation.",
     );
   }
   return undefined;

@@ -133,6 +133,22 @@ class EquityPoint(BaseModel):
     equity: float
 
 
+class SharpeCI(BaseModel):
+    """ADR-0027 · 单次回测的 Bootstrap Sharpe 95% 置信区间（年化口径）。
+
+    ``includes_zero=True`` 是核心信号：表示 Sharpe 统计上不显著为正——回测曲线
+    "看起来好"但禁不起重采样检验，agent 不应把这个 Sharpe 当卖点（详 ADR-0026
+    反过拟合体系）。
+    """
+
+    lower: float = Field(..., description="95% CI 下界（年化 Sharpe）")
+    upper: float = Field(..., description="95% CI 上界（年化 Sharpe）")
+    includes_zero: bool = Field(
+        ...,
+        description="CI 是否横跨 0；True ⇒ Sharpe 统计上不显著为正，回测好看但不可信",
+    )
+
+
 class ValidationSegment(BaseModel):
     """holdout 验证的单个时间段（train 或 holdout）指标。"""
 
@@ -318,6 +334,12 @@ class BacktestResponse(BaseModel):
         default=None,
         description="round-trip 胜率（百分比）；无 round-trip 时为 null",
     )
+    protective_exits: int = Field(
+        default=0,
+        description="ADR-0052：本次回测框架级持仓保护止损触发的平仓笔数（tag ∈ "
+        "stop_loss/take_profit/trailing_stop_loss）。>0 说明灾难兜底生效过几次——回测如实"
+        "反映未来 live 也会有的兜底,agent 可据此向用户说明风险被框架封住了几次。",
+    )
     equity_curve: list[EquityPoint] = Field(
         default_factory=list,
         description="每根 bar 的 (ts, equity)；前端可直接画图",
@@ -332,6 +354,12 @@ class BacktestResponse(BaseModel):
         default_factory=list,
         description="回测物理一致性警告列表（如账户穿仓、现金透支）；非空时禁止无声渲染，"
         "agent 必须把警告原样转给用户",
+    )
+    sharpe_ci: SharpeCI | None = Field(
+        default=None,
+        description="ADR-0027 防过拟合：Bootstrap Sharpe 95% 置信区间（年化，与 sharpe 同口径）。"
+        "includes_zero=True 表示 Sharpe 统计上不显著为正——回测'看起来好'但不可信，"
+        "agent 不应把 Sharpe 当卖点。样本不足 / 穿仓 / 无波动时为 null",
     )
 
     final_positions: list[PositionSnapshot]

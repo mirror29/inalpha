@@ -87,6 +87,12 @@ export type BacktestReport = {
   max_drawdown_pct: number;
   win_rate: number | null;
   /**
+   * ADR-0052：本次回测框架级持仓保护止损触发的平仓笔数（tag ∈
+   * stop_loss/take_profit/trailing_stop_loss）。>0 说明灾难兜底生效过几次——
+   * 回测如实反映未来 live 也会有的兜底，agent 可据此向用户说明风险被框架封住了几次。
+   */
+  protective_exits?: number;
+  /**
    * D-9 起：账户是否穿仓（任意时点 equity ≤ -1%×initial_cash）。true 表示本次
    * 回测物理上不可信，agent 必须显式告警而非直接展示 Sharpe / 收益率。
    */
@@ -96,7 +102,30 @@ export type BacktestReport = {
    * orchestrator 必须把警告原样转给用户。
    */
   health_warnings?: string[];
+  /**
+   * D-12 起（ADR-0027）：Bootstrap Sharpe 95% 置信区间（年化，与 sharpe 同口径）。
+   * includes_zero=true ⇒ Sharpe 统计上不显著为正——回测"看起来好"但禁不起重采样，
+   * agent 不应把该 Sharpe 当卖点。样本不足 / 穿仓 / 无波动时为 null。
+   */
+  sharpe_ci?: { lower: number; upper: number; includes_zero: boolean } | null;
   final_positions: PositionSnapshot[];
+};
+
+/** D-12（ADR-0051）：策略原型库单条。 */
+export type Archetype = {
+  name: string;
+  /** 源 canonical（MIT 出处）；Inalpha 特有的为空串 */
+  source_archetype: string;
+  applies_to_kinds: string[];
+  description: string;
+  when_to_use: string;
+  when_not_to_use: string;
+  failure_modes: string[];
+  /** 可转向的兼容原型名（喂 ADR-0051 D6 自动 pivot 的 archetype-switch） */
+  compatible_pivots: string[];
+  params: { name: string; default: number; doc: string }[];
+  /** 完整可跑候选源码（过沙盒三审）；agent 以此为起点改参再 author */
+  code: string;
 };
 
 /** D-12 · 参数敏感性检查（promote 前必跑） */
@@ -457,6 +486,14 @@ export class PaperClient {
 
   async listStrategies(): Promise<{ strategies: string[] }> {
     return await this.http.get("/strategies");
+  }
+
+  async listArchetypes(factorKinds?: string[]): Promise<{ archetypes: Archetype[] }> {
+    const query =
+      factorKinds && factorKinds.length > 0
+        ? { factor_kinds: factorKinds.join(",") }
+        : undefined;
+    return await this.http.get("/archetypes", query);
   }
 
   async runBacktest(params: BacktestParams): Promise<BacktestReport> {

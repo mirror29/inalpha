@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -27,6 +28,8 @@ from ..kernel.identifiers import InstrumentId
 from ..model.orders import OrderSide
 from ..model.positions import Position
 from . import metrics
+from .position_guard import PROTECTIVE_EXIT_TAGS
+from .robustness import bootstrap_sharpe_ci
 
 if TYPE_CHECKING:
     from .portfolio import Portfolio
@@ -107,6 +110,10 @@ class BacktestReport:
     exposure_pct: float | None = None
     #: 逐笔成交（含每笔实现盈亏），落 ``backtest_trades`` 表用
     fills: list[FillRecord] = field(default_factory=list)
+    #: ADR-0052：框架级持仓保护止损触发的出场笔数（tag ∈ stop_loss/take_profit/
+    #: trailing_stop_loss）。> 0 表示回测期间灾难兜底生效过几次——agent / 前端可据此
+    #: 看到"如果未来这样跑，框架会在哪些点止血"，把回测对未来的兜底可见化。
+    protective_exits: int = 0
     #: 账户是否"穿仓"——任意时点 equity 跌破 -1% × initial_cash（物理上 spot
     #: 账户 equity 不应 < 0）。True 表示本次回测结果在物理上不可信，agent /
     #: 前端应当显式警告，不要直接渲染 Sharpe / 收益率（数学正确但语义无效）。
@@ -114,6 +121,13 @@ class BacktestReport:
     #: 物理一致性警告列表，例如 "账户穿仓"、"现金最终为负"。空列表 = 干净。
     #: 前端 / orchestrator agent 见非空时必须告警，禁止无声渲染。
     health_warnings: list[str] = field(default_factory=list)
+    #: ── 防过拟合：Bootstrap Sharpe 95% CI（ADR-0027 单次回测路径，年化口径，与
+    #: ``sharpe`` 同尺度）。样本不足 / Sharpe 未定义 / 穿仓时为 None。
+    #: ``sharpe_ci_includes_zero=True`` ⇒ "回测 Sharpe 看起来好，但统计上不显著为正"——
+    #: 这是把"看起来好"和"真的好"分开的第一道闸（详 ADR-0026 反过拟合体系）。
+    sharpe_ci_lower: float | None = None
+    sharpe_ci_upper: float | None = None
+    sharpe_ci_includes_zero: bool | None = None
 
     @classmethod
     def from_portfolio(
@@ -156,6 +170,32 @@ class BacktestReport:
         max_dd = metrics.max_drawdown_pct(equity_values)
         trade_pnls = portfolio.closed_trade_pnls
         fills = list(portfolio.fills)
+        protective_exits = sum(1 for f in fills if f.tag in PROTECTIVE_EXIT_TAGS)
+
+        sharpe_value = metrics.sharpe_ratio(returns, ppy)
+        # ADR-0027 防过拟合：单次回测给 Bootstrap Sharpe 95% CI。仅在 Sharpe 有定义
+        # （样本足 + 有波动）且账户未穿仓时算——穿仓的 CI 物理上无意义。bootstrap 返
+        # per-bar Sharpe，按 √ppy 年化到与 sharpe_value 同口径；includes_zero 是符号
+        # 判据，年化不改变其真值。
+        ci_lower: float | None = None
+        ci_upper: float | None = None
+        ci_includes_zero: bool | None = None
+        if sharpe_value is not None and not blew_up and len(returns) >= 2:
+            try:
+                # n_samples=2000（默认 10000 的 1/5）是性能权衡：每次回测都同步算 CI，
+                # 2000 次重采样把延迟压到 ~ms 级。代价是 Monte Carlo 误差约 √5≈2.2×；
+                # Sharpe 极接近 0 时 includes_zero 可能在调用间抖动——但那本就是"统计上
+                # 不显著"的灰区，判定为不可信方向一致，不影响结论。长序列要更稳可调高。
+                _ci = bootstrap_sharpe_ci(returns, n_samples=2000)
+                _ann = math.sqrt(ppy)
+                ci_lower = _ci.ci_lower * _ann
+                ci_upper = _ci.ci_upper * _ann
+                ci_includes_zero = _ci.ci_includes_zero
+            except Exception:  # CI 是非关键增强，任何失败都不能拖垮主回测
+                # bootstrap 内部 numpy 对边缘分布（退化 returns / 极偏态 / 浮点噪声）
+                # 可能抛 ValueError 以外的 LinAlgError / RuntimeError / FloatingPointError。
+                # 防过拟合 CI 算不出 → 静默维持 None，绝不让 from_portfolio 整体抛 → 500（CR Major）。
+                pass
         # exposure 用回测窗口端点（datetime → ns,整数路径:float 对 2026 时间戳
         # 丢 ~100ns,会与 fill.ts_ns 的整数路径错位）;缺端点时为 None。
         start_ns = datetime_to_ns(period_start) if period_start else None
@@ -177,7 +217,7 @@ class BacktestReport:
             period_start=period_start,
             period_end=period_end,
             positions=portfolio.positions(),
-            sharpe=metrics.sharpe_ratio(returns, ppy),
+            sharpe=sharpe_value,
             sortino=metrics.sortino_ratio(returns, ppy),
             max_drawdown_pct=max_dd,
             win_rate=metrics.win_rate(trade_pnls),
@@ -199,8 +239,12 @@ class BacktestReport:
                 equity_values
             ),
             exposure_pct=metrics.exposure_pct(fill_events, start_ns, end_ns),
+            protective_exits=protective_exits,
             blew_up=blew_up,
             health_warnings=warnings,
+            sharpe_ci_lower=ci_lower,
+            sharpe_ci_upper=ci_upper,
+            sharpe_ci_includes_zero=ci_includes_zero,
         )
 
     def __str__(self) -> str:
