@@ -106,7 +106,16 @@ class PositionGuard:
         )
 
     def bind_strategy(self, strategy_id: StrategyId) -> None:
-        """绑定所属策略 id。出场单用它提交，确保 on_position_closed 回到策略让其状态归零。"""
+        """绑定所属策略 id。出场单用它提交，确保 on_position_closed 回到策略让其状态归零。
+
+        **单策略约束**（CR Medium）：PositionGuard 只记一个 ``_strategy_id``，多策略挂同一
+        engine 时后绑定会覆盖前者 → 保护性出场的 on_position_closed 回错策略，前策略状态不归零。
+        当前所有用法均单策略（每 engine/session 只 bind 一次，或重复 bind 同一策略）；用断言把
+        "只支持单策略" 显式化，防未来多策略静默踩坑。
+        """
+        assert (
+            self._strategy_id is None or self._strategy_id == strategy_id
+        ), "PositionGuard 只支持单策略：bind_strategy 不能绑定第二个不同的 strategy_id"
         self._strategy_id = strategy_id
 
     def evaluate(self, bar: Bar) -> list[Order]:
