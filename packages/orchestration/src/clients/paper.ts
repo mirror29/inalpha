@@ -87,6 +87,12 @@ export type BacktestReport = {
   max_drawdown_pct: number;
   win_rate: number | null;
   /**
+   * ADR-0052：本次回测框架级持仓保护止损触发的平仓笔数（tag ∈
+   * stop_loss/take_profit/trailing_stop_loss）。>0 说明灾难兜底生效过几次——
+   * 回测如实反映未来 live 也会有的兜底，agent 可据此向用户说明风险被框架封住了几次。
+   */
+  protective_exits?: number;
+  /**
    * D-9 起：账户是否穿仓（任意时点 equity ≤ -1%×initial_cash）。true 表示本次
    * 回测物理上不可信，agent 必须显式告警而非直接展示 Sharpe / 收益率。
    */

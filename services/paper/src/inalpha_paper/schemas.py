@@ -318,6 +318,12 @@ class BacktestResponse(BaseModel):
         default=None,
         description="round-trip 胜率（百分比）；无 round-trip 时为 null",
     )
+    protective_exits: int = Field(
+        default=0,
+        description="ADR-0052：本次回测框架级持仓保护止损触发的平仓笔数（tag ∈ "
+        "stop_loss/take_profit/trailing_stop_loss）。>0 说明灾难兜底生效过几次——回测如实"
+        "反映未来 live 也会有的兜底,agent 可据此向用户说明风险被框架封住了几次。",
+    )
     equity_curve: list[EquityPoint] = Field(
         default_factory=list,
         description="每根 bar 的 (ts, equity)；前端可直接画图",

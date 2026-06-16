@@ -88,6 +88,9 @@ export const paperRunBacktestTool = createTool({
     报告字段（D-7+）：
     - 基础：total_return_pct / num_trades / total_fees / final_equity / num_bars_processed
     - 绩效：sharpe / sortino / max_drawdown_pct / win_rate（数据不足时为 null）
+    - 框架兜底：protective_exits（ADR-0052 框架级持仓保护止损本次触发的平仓笔数）——
+      >0 说明灾难兜底生效过几次；这是回测对"未来 live 也会有的兜底"的如实反映，
+      可向用户说明风险被框架封住了几次（默认 -20% 硬止损，非策略自带）
     - D-9：fitness（多目标合成，ADR-0020）—— 排序候选用这个，不要用裸 Sharpe
     - equity_curve：[(ts, equity)] 序列；**超 120 点会等距降采样**（带
       equity_curve_downsampled_from 标原始点数），看形状趋势用，精确逐点分析

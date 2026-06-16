@@ -340,6 +340,7 @@ async def run_backtest(
         equity_curve=equity_points,
         blew_up=report.blew_up,
         health_warnings=list(report.health_warnings),
+        protective_exits=report.protective_exits,
         final_positions=final_positions,
         validation=validation,
     )
