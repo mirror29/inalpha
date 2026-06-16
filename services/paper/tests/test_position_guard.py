@@ -141,12 +141,41 @@ def test_trailing_triggers_after_peak() -> None:
     pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
     guard, _ = _guard_with_capture(pf, msgbus, trailing_stop_pct=0.10)
 
-    # 第一根：mark=130（+30%）建立峰值，自身回撤 0 → 不触发
+    # 第一根：mark=130 建立峰值价，自身回撤 0 → 不触发
     assert guard.evaluate(_bar(130.0, ts_ns=1)) == []
-    # 第二根：mark=115（+15%），自峰值 +30% 回撤 15% >= 10% → 触发
+    # 第二根：mark=115，自峰值价 130 回撤 (130-115)/130≈11.5% >= 10% → 触发
     orders = guard.evaluate(_bar(115.0, ts_ns=2))
     assert len(orders) == 1
     assert orders[0].tag == "trailing_stop_loss"
+
+
+def test_trailing_uses_price_drawdown_not_return_pct() -> None:
+    """大盈利下 trailing 用「自峰值价格回撤」而非「成本收益率降幅」(CR #88 medium)。"""
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(pf, msgbus, trailing_stop_pct=0.10)
+
+    # 峰值 mark=200（+100%）
+    assert guard.evaluate(_bar(200.0, ts_ns=1)) == []
+    # mark=185：自峰值价回撤 (200-185)/200=7.5% < 10% → 不触发
+    #（旧的成本收益率口径会是 100%-85%=15% >=10% 误触发——本测试钉住新口径）
+    assert guard.evaluate(_bar(185.0, ts_ns=2)) == []
+    # mark=175：自峰值价回撤 (200-175)/200=12.5% >= 10% → 触发
+    orders = guard.evaluate(_bar(175.0, ts_ns=3))
+    assert len(orders) == 1
+    assert orders[0].tag == "trailing_stop_loss"
+
+
+def test_trailing_inactive_when_never_profitable() -> None:
+    """移动止损仅在仓位进入盈利区后生效；从未盈利(峰值价≤成本)不触发(CR #88 medium)。"""
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(pf, msgbus, trailing_stop_pct=0.10)
+
+    # 开仓即走低：mark 95（峰值价=95<成本100），再跌到 80
+    assert guard.evaluate(_bar(95.0, ts_ns=1)) == []
+    # 自峰值价 95 回撤 (95-80)/95≈15.8% >= 10%，但峰值价 95 < 成本 100 → trailing 不生效
+    assert guard.evaluate(_bar(80.0, ts_ns=2)) == []
 
 
 # ─── 工厂 / 关闭 / 边界 ───

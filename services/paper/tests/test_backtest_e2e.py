@@ -327,3 +327,34 @@ def test_live_session_protective_stop_matches_backtest() -> None:
     tags_off, final_qty_off = _drive_live_with_guard(bars, stop_loss_pct=None)
     assert tags_off == []
     assert final_qty_off > 0.0  # 仍持有
+
+
+def test_backtest_protective_stop_on_last_bar_settles_at_close() -> None:
+    """末根 bar 触发兜底也如实成交+计数(按末根 close 兜底平仓),与 live 对齐(CR #88)。
+
+    价格在最后一根才砸穿 -20%：常规 next-bar 撮合没有下一根,会漏计/显示未平；
+    收尾 flush_protective_at_close 按末根 close 兜底平仓修正。
+    """
+    # 买入持有到末根(第5根 idx=4)才跌到 -30%
+    bars = _gen_bars([100.0, 100.0, 100.0, 100.0, 70.0])
+    engine = BacktestEngine(
+        initial_cash=10_000.0, fee_rate=0.0, protective_stop_loss_pct=0.20
+    )
+    strat = BuyAndHoldStrategy(
+        name="bh",
+        clock=engine.clock,
+        msgbus=engine.msgbus,
+        instrument_id=_btc(),
+        timeframe="1h",
+        trade_size=1.0,
+    )
+    engine.add_strategy(strat)
+    report = engine.run(bars)
+
+    # 末根触发也计入、也平仓（修复前是 0 / 持有）
+    assert report.protective_exits == 1
+    stop_fills = [f for f in report.fills if f.tag == "stop_loss"]
+    assert len(stop_fills) == 1
+    assert stop_fills[0].fill_price == 70.0  # 按末根 close 兜底成交
+    pos = report.positions.get(_btc())
+    assert pos is None or pos.is_flat

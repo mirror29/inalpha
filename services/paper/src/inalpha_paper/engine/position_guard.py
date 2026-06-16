@@ -80,8 +80,8 @@ class PositionGuard:
         self._take_profit_pct = take_profit_pct
         self._trailing_stop_pct = trailing_stop_pct
         self._strategy_id: StrategyId | None = None
-        # 每 instrument 的峰值浮盈率（trailing 用）；持仓转 flat 时清除
-        self._peak_pct: dict[InstrumentId, float] = {}
+        # 每 instrument 的峰值 mark 价（trailing 用，自峰值价格回撤口径）；持仓转 flat 时清除
+        self._peak_mark: dict[InstrumentId, float] = {}
 
     @staticmethod
     def from_thresholds(
@@ -121,7 +121,7 @@ class PositionGuard:
         inst = bar.instrument_id
         pos = self._portfolio.position(inst)
         if pos is None or pos.is_flat:
-            self._peak_pct.pop(inst, None)
+            self._peak_mark.pop(inst, None)
             return []
 
         # 仅 spot long；short 留待合约阶段（no-op，避免对 short 误平）
@@ -134,26 +134,37 @@ class PositionGuard:
 
         mark = bar.close
         pct = (mark - avg) / avg
-        peak = max(self._peak_pct.get(inst, pct), pct)
-        self._peak_pct[inst] = peak
+        # trailing 用「自峰值价格的回撤」口径（不是自成本基准的收益率降幅）：避免大盈利下
+        # 触发远比 trailing_stop_pct 直觉更激进（CR #88 medium）。峰值价跟 mark 走。
+        peak_mark = max(self._peak_mark.get(inst, mark), mark)
+        self._peak_mark[inst] = peak_mark
 
-        tag = self._triggered_tag(pct, peak)
+        tag = self._triggered_tag(pct, mark, peak_mark, avg)
         if tag is None:
             return []
 
         order = self._build_exit(inst, pos.quantity, tag)
         self._submit(order, bar.ts_event)
         # 出场单已下，清峰值（持仓将于下一根平掉；防同 instrument 状态泄漏）
-        self._peak_pct.pop(inst, None)
+        self._peak_mark.pop(inst, None)
         return [order]
 
     # ─── 内部 ───
 
-    def _triggered_tag(self, pct: float, peak: float) -> str | None:
+    def _triggered_tag(
+        self, pct: float, mark: float, peak_mark: float, avg: float
+    ) -> str | None:
         """按优先级判定触发的保护性 tag：硬止损 > 移动止损 > 止盈（None = 不触发）。"""
         if self._stop_loss_pct is not None and pct <= -self._stop_loss_pct:
             return "stop_loss"
-        if self._trailing_stop_pct is not None and (peak - pct) >= self._trailing_stop_pct:
+        # 移动止损：仅在仓位「曾进入盈利区」（峰值价 > 成本）后才生效——锁的是已有利润；
+        # 用自峰值价格的回撤幅度判定（peak_mark - mark) / peak_mark），不掺成本基准。
+        if (
+            self._trailing_stop_pct is not None
+            and peak_mark > avg
+            and peak_mark > 0
+            and (peak_mark - mark) / peak_mark >= self._trailing_stop_pct
+        ):
             return "trailing_stop_loss"
         if self._take_profit_pct is not None and pct >= self._take_profit_pct:
             return "take_profit"

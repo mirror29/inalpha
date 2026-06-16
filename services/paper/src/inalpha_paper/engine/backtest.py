@@ -142,6 +142,15 @@ class BacktestEngine:
 
             self._num_bars += 1
 
+        # ADR-0052：末根 bar 触发的保护性出场单没有下一根可撮合（process_bar 用 next-bar
+        # open 防 look-ahead）。收尾按末根 close 兜底成交——close 是决策时已知价、非
+        # look-ahead，且与 live runner 同根 close 撮合对齐，避免「末根触发 → 漏计 /
+        # 持仓显示未平」的回测/live 不一致（CR #88）。只动保护性单，策略单不收盘强平。
+        if self._guard is not None and bars_list:
+            if self.exchange.flush_protective_at_close(bars_list[-1]) > 0:
+                # 兜底平仓改变了持仓/现金（差一笔手续费），重记末点权益
+                self.portfolio.snapshot(bars_list[-1].ts_event)
+
         for s in self._strategies:
             s.on_stop()
 

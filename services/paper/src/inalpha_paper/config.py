@@ -157,7 +157,7 @@ class PaperSettings(BaseSettings):
         le=1.0,
         description="框架级持仓灾难性兜底止损：单仓浮亏穿 -X → 全平（回测 + live 共用同一"
         "阈值，行为一致）。默认 0.20 = 宽兜底（封尾部风险而非切正常波动；贴行情的紧止损"
-        "是策略层 alpha 的事）。None / 0 视为关闭硬止损闸。",
+        "是策略层 alpha 的事）。关闭硬止损闸 = 不设该环境变量（None）；0 不合法（gt=0）。",
     )
     protective_take_profit_pct: float | None = Field(
         default=None,
@@ -170,7 +170,8 @@ class PaperSettings(BaseSettings):
         default=None,
         alias="INALPHA_PROTECTIVE_TRAILING_STOP_PCT",
         gt=0.0,
-        description="框架级移动止损：自峰值浮盈回撤 X → 全平（锁大利润）。默认 None = 关。",
+        description="框架级移动止损：仓位进入盈利区后，自【峰值价格】回撤 X → 全平（锁大利润，"
+        "口径是价格自峰值的跌幅，非成本收益率降幅）。默认 None = 关（设 0 不合法，gt=0）。",
     )
 
     # ─── D-12 · 因子衰减巡检（ADR-0047）────────────────────────────────
