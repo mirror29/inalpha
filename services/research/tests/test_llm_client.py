@@ -399,7 +399,8 @@ async def test_language_scoped_passes_through_user_and_params() -> None:
 async def test_language_scoped_aclose_delegates() -> None:
     fake = FakeLLMClient({})
     client = LanguageScopedClient(fake, "English")
-    await client.aclose()  # 透传给内层 fake，不抛
+    await client.aclose()
+    assert fake.aclose_called == 1  # 真透传给内层(防 aclose 被写成 pass 泄漏连接池)
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -418,6 +419,15 @@ def test_infer_language_english() -> None:
 def test_infer_language_mixed_cjk_wins() -> None:
     # 含任一汉字即判中文(中文用户常夹英文 ticker)
     assert infer_output_language("研究 NVDA 现在怎么样") == "中文"
+
+
+def test_infer_language_japanese_kana() -> None:
+    # 纯假名日文(无汉字)不再误判 English
+    assert infer_output_language("このコインはどうですか") == "日本語"
+
+
+def test_infer_language_korean() -> None:
+    assert infer_output_language("이 종목 지금 어때요") == "한국어"
 
 
 def test_infer_language_empty_or_none_is_none() -> None:

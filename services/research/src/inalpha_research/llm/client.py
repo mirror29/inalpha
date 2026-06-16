@@ -515,6 +515,7 @@ class FakeLLMClient:
         self._responses = dict(responses or {})
         self._on_call = on_call
         self.calls: list[dict[str, Any]] = []
+        self.aclose_called = 0  # 供 LanguageScopedClient 委托测试断言透传
 
     def set_response(self, key: str, value: dict[str, Any]) -> None:
         """运行时改 / 加响应。"""
@@ -548,7 +549,7 @@ class FakeLLMClient:
         )
 
     async def aclose(self) -> None:
-        return None
+        self.aclose_called += 1
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -586,19 +587,31 @@ SUPPORTED_PROVIDERS = (
 )
 
 
-#: 中日韩统一表意文字区段（粗判中文用，够区分中文 vs 拉丁语系）。
-_CJK_RE = re.compile(r"[㐀-鿿豈-﫿]")
+#: 脚本区段（粗判输出语言用）。假名/谚文先判，避免日韩文被当中文或英文。
+_KANA_RE = re.compile(r"[\u3040-\u30ff]")  # 平假名 + 片假名
+_HANGUL_RE = re.compile(r"[\uac00-\ud7a3]")  # 韩文谚文音节
+_HAN_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")  # CJK 统一表意文字 + 兼容区
 
 
 def infer_output_language(text: str | None) -> str | None:
-    """从一段文本粗判输出语言：含 CJK 汉字 → "中文"，非空非 CJK → "English"，空 → None。
+    """从一段文本粗判输出语言：日文假名→"日本語"，韩文→"한국어"，汉字→"中文"，
+    非空非以上→"English"，空→None。
 
     用作 deep_dive 的语言兜底（Fix C 第二层）：orchestrator 没显式传 language 时，从
     user_question 推断，让研究结果跟随提问语言——确定性、不靠模型自觉。
+
+    粗判局限：纯汉字无假名的日文会判成"中文"（漢字共用）；这是兜底，主路径仍应由
+    orchestrator 显式传 language。
     """
     if not text or not text.strip():
         return None
-    return "中文" if _CJK_RE.search(text) else "English"
+    if _KANA_RE.search(text):
+        return "日本語"
+    if _HANGUL_RE.search(text):
+        return "한국어"
+    if _HAN_RE.search(text):
+        return "中文"
+    return "English"
 
 
 def _with_language_directive(system: str, language: str) -> str:
