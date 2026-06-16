@@ -61,9 +61,9 @@ def render_financial_indicators(
         if key in _FINANCIAL_PCT_KEYS:
             lines.append(f"  {lbl}: {val * 100:.1f}%")
         elif key == "market_cap":
-            if val > 1e12:
+            if val >= 1e12:
                 lines.append(f"  {lbl}: {val / 1e12:.2f}T")
-            elif val > 1e9:
+            elif val >= 1e9:
                 lines.append(f"  {lbl}: {val / 1e9:.2f}B")
             else:
                 lines.append(f"  {lbl}: {val:.0f}")

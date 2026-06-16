@@ -265,8 +265,10 @@ async def _fetch_macro_readings(
             )
         except Exception:
             return None
-        values: list[float] = []
-        last_obs: datetime | None = None
+        # 先解析成 (ts, close) 再按 ts 升序——freshness 红线（CLAUDE.md §3.1）：
+        # value[-1] / values[-21] / last_obs 都依赖"最新在尾"，不显式排序时若上游
+        # /bars 某次返回乱序，会把过时读数当 live 喂进 prompt 且全程不报错。
+        pairs: list[tuple[datetime, float]] = []
         for b in bars:
             try:
                 ts = datetime.fromisoformat(str(b["ts"]))
@@ -274,12 +276,14 @@ async def _fetch_macro_readings(
                     ts = ts.replace(tzinfo=UTC)
                 if ts > cutoff:
                     continue
-                values.append(float(b["close"]))
-                last_obs = ts
+                pairs.append((ts, float(b["close"])))
             except (KeyError, TypeError, ValueError):
                 continue
-        if not values or last_obs is None:
+        if not pairs:
             return None
+        pairs.sort(key=lambda p: p[0])
+        values = [c for _ts, c in pairs]
+        last_obs = pairs[-1][0]
         reading: dict[str, Any] = {
             "value": values[-1],
             "obs_date": last_obs.date().isoformat(),

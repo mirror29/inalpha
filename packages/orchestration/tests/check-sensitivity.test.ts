@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearSettings, setSettings } from "../src/config.js";
 import { DEFAULT_PERMISSIONS, PermissionEngine } from "../src/permissions/index.js";
-import { paperCheckSensitivityTool } from "../src/tools/index.js";
+import {
+  paperCheckSensitivityTool,
+  paperListBacktestTradesTool,
+} from "../src/tools/index.js";
 
 const TEST_TOKEN = "test-token-doesnt-need-to-be-real";
 
@@ -109,5 +112,54 @@ describe("paper.check_sensitivity", () => {
   it("默认 permission = allow（只读回测扇出，无下单路径）", () => {
     const engine = new PermissionEngine(DEFAULT_PERMISSIONS);
     expect(engine.authorize("paper.check_sensitivity", {}).decision).toBe("allow");
+  });
+});
+
+describe("paper.list_backtest_trades", () => {
+  it("GET /backtest_runs/{runId}/trades 透传 limit + token", async () => {
+    let capturedUrl = "";
+    let capturedAuth = "";
+    mockFetch(async (url, init) => {
+      capturedUrl = url;
+      capturedAuth = (init?.headers as Record<string, string>)?.Authorization ?? "";
+      return new Response(
+        JSON.stringify([
+          {
+            seq: 0,
+            bar_ts: "2026-04-19T15:00:00Z",
+            bar_close: 76024.01,
+            side: "BUY",
+            quantity: 0.007,
+            order_type: "MARKET",
+            fill_price: 76024.02,
+            fee: 0.53,
+            realized_pnl: 0,
+            intent: "open_long",
+            tag: null,
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const result = await paperListBacktestTradesTool.execute!(
+      { runId: "550e8400-e29b-41d4-a716-446655440000", limit: 5 } as never,
+      ctx(),
+    );
+
+    expect(capturedUrl).toContain(
+      "/backtest_runs/550e8400-e29b-41d4-a716-446655440000/trades",
+    );
+    expect(capturedUrl).toContain("limit=5");
+    expect(capturedAuth).toBe(`Bearer ${TEST_TOKEN}`);
+    expect((result as unknown[]).length).toBe(1);
+    expect((result as { intent: string }[])[0].intent).toBe("open_long");
+  });
+
+  it("默认 permission = allow（命中 paper.list_* 通配）", () => {
+    const engine = new PermissionEngine(DEFAULT_PERMISSIONS);
+    expect(
+      engine.authorize("paper.list_backtest_trades", {}).decision,
+    ).toBe("allow");
   });
 });
