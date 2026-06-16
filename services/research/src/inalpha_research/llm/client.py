@@ -585,6 +585,50 @@ SUPPORTED_PROVIDERS = (
 )
 
 
+def _with_language_directive(system: str, language: str) -> str:
+    """在 system prompt 末尾追加输出语言指令（recency 位置，最显眼）。
+
+    analyst / researcher / manager 的 system prompt 都是中文写的，默认模型会跟着
+    输出中文（Fix C）。这里强制所有自然语言字段用用户语言；JSON key / ticker / 数值不动。
+    """
+    return (
+        f"{system}\n\n[OUTPUT LANGUAGE] Write every natural-language string value in "
+        f"your JSON response (summary, rationale, argument, reasoning, recommendation, "
+        f"thesis, etc.) in {language}. Do NOT translate or change JSON keys, tickers, "
+        f"symbols, numbers, or factor IDs."
+    )
+
+
+class LanguageScopedClient:
+    """包装任意 LLMClient，对每次 ``complete_json`` 的 system 注入输出语言指令。
+
+    per-request 构造（deep_dive 路由按 ``req.language`` 包装），不共享可变状态、并发
+    安全；``aclose`` 透传内层 client。language 为空时调用方不应包装（保持模型默认行为）。
+    """
+
+    def __init__(self, inner: LLMClient, language: str) -> None:
+        self._inner = inner
+        self._language = language
+
+    async def complete_json(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.2,
+    ) -> dict[str, Any]:
+        return await self._inner.complete_json(
+            system=_with_language_directive(system, self._language),
+            user=user,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
 def build_llm_client(
     *,
     provider: str,

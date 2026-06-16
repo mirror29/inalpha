@@ -85,6 +85,8 @@ export type DeepDiveParams = {
   userQuestion?: string;
   /** ADR-0037 §A：额外启用的投资大师人格；省略 = 只跑核心 analyst */
   personas?: PersonaKey[];
+  /** Fix C：期望输出语言（自然语言名，如 "English" / "中文"）；省略 = 模型默认 */
+  language?: string;
 };
 
 export class ResearchClient {
@@ -109,6 +111,7 @@ export class ResearchClient {
       lookback_days: params.lookbackDays ?? 30,
       user_question: params.userQuestion,
       personas: params.personas,
+      language: params.language,
     });
   }
 

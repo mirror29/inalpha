@@ -14,7 +14,7 @@ from inalpha_shared.errors import UnauthorizedError
 from ..config import ResearchSettings, get_research_settings
 from ..data_client import DataClient
 from ..factor_client import FactorClient
-from ..llm.client import build_llm_client
+from ..llm.client import LanguageScopedClient, build_llm_client
 from ..runner import run_deep_dive
 from ..schemas import DeepDiveRequest, ResearchPlan
 
@@ -43,6 +43,9 @@ async def post_deep_dive(
         max_retries=settings.llm_max_retries,
         retry_base_seconds=settings.llm_retry_base_seconds,
     )
+    # Fix C：用户指定语言时包装 client，所有 analyst/辩论/manager 输出随之切换。
+    if req.language:
+        llm = LanguageScopedClient(llm, req.language)
 
     try:
         # factor-service 透传同一 user_token（factor 再转发给 data /bars）；

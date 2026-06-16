@@ -27,45 +27,45 @@ from .base import FactorSpec
 _SPECS: list[FactorSpec] = [
     # ── K 线形态（单根 bar，无窗口）─────────────────────────────────
     FactorSpec("qlib.kmid", "qlib_alpha158", "KMID (close-open)/open", "momentum", direction_hint=1),
-    FactorSpec("qlib.klen", "qlib_alpha158", "KLEN (high-low)/open 波幅", "volatility"),
-    FactorSpec("qlib.kup", "qlib_alpha158", "KUP 上影线占比", "mean_reversion", direction_hint=-1),
-    FactorSpec("qlib.klow", "qlib_alpha158", "KLOW 下影线占比", "mean_reversion", direction_hint=1),
+    FactorSpec("qlib.klen", "qlib_alpha158", "KLEN (high-low)/open range", "volatility"),
+    FactorSpec("qlib.kup", "qlib_alpha158", "KUP upper-shadow ratio", "mean_reversion", direction_hint=-1),
+    FactorSpec("qlib.klow", "qlib_alpha158", "KLOW lower-shadow ratio", "mean_reversion", direction_hint=1),
     # ── ROC 动量 ─────────────────────────────────────────────────────
     FactorSpec("qlib.roc_5", "qlib_alpha158", "ROC(5) close/Ref(close,5)", "momentum", direction_hint=1),
     FactorSpec("qlib.roc_20", "qlib_alpha158", "ROC(20) close/Ref(close,20)", "momentum", direction_hint=1),
     FactorSpec("qlib.roc_60", "qlib_alpha158", "ROC(60) close/Ref(close,60)", "momentum", direction_hint=1),
     # ── STD 波动率 ───────────────────────────────────────────────────
-    FactorSpec("qlib.std_5", "qlib_alpha158", "STD(5)/close 波动率", "volatility"),
-    FactorSpec("qlib.std_20", "qlib_alpha158", "STD(20)/close 波动率", "volatility"),
-    FactorSpec("qlib.std_60", "qlib_alpha158", "STD(60)/close 波动率", "volatility"),
+    FactorSpec("qlib.std_5", "qlib_alpha158", "STD(5)/close volatility", "volatility"),
+    FactorSpec("qlib.std_20", "qlib_alpha158", "STD(20)/close volatility", "volatility"),
+    FactorSpec("qlib.std_60", "qlib_alpha158", "STD(60)/close volatility", "volatility"),
     # ── BETA / RSQR 趋势 ─────────────────────────────────────────────
-    FactorSpec("qlib.beta_20", "qlib_alpha158", "BETA(20) 收盘价斜率/close", "trend", direction_hint=1),
-    FactorSpec("qlib.beta_60", "qlib_alpha158", "BETA(60) 收盘价斜率/close", "trend", direction_hint=1),
-    FactorSpec("qlib.rsqr_20", "qlib_alpha158", "RSQR(20) 线性拟合 R²", "trend"),
+    FactorSpec("qlib.beta_20", "qlib_alpha158", "BETA(20) close slope/close", "trend", direction_hint=1),
+    FactorSpec("qlib.beta_60", "qlib_alpha158", "BETA(60) close slope/close", "trend", direction_hint=1),
+    FactorSpec("qlib.rsqr_20", "qlib_alpha158", "RSQR(20) linear-fit R²", "trend"),
     # ── MAX / MIN 距高低点 ───────────────────────────────────────────
-    FactorSpec("qlib.max_20", "qlib_alpha158", "MAX(20)/close 距高点", "mean_reversion", direction_hint=-1),
-    FactorSpec("qlib.max_60", "qlib_alpha158", "MAX(60)/close 距高点", "mean_reversion", direction_hint=-1),
-    FactorSpec("qlib.min_20", "qlib_alpha158", "MIN(20)/close 距低点", "mean_reversion", direction_hint=1),
-    FactorSpec("qlib.min_60", "qlib_alpha158", "MIN(60)/close 距低点", "mean_reversion", direction_hint=1),
+    FactorSpec("qlib.max_20", "qlib_alpha158", "MAX(20)/close distance to high", "mean_reversion", direction_hint=-1),
+    FactorSpec("qlib.max_60", "qlib_alpha158", "MAX(60)/close distance to high", "mean_reversion", direction_hint=-1),
+    FactorSpec("qlib.min_20", "qlib_alpha158", "MIN(20)/close distance to low", "mean_reversion", direction_hint=1),
+    FactorSpec("qlib.min_60", "qlib_alpha158", "MIN(60)/close distance to low", "mean_reversion", direction_hint=1),
     # ── QTLU / QTLD 滚动分位 ─────────────────────────────────────────
-    FactorSpec("qlib.qtlu_20", "qlib_alpha158", "QTLU(20) 80分位/close", "mean_reversion"),
-    FactorSpec("qlib.qtld_20", "qlib_alpha158", "QTLD(20) 20分位/close", "mean_reversion"),
+    FactorSpec("qlib.qtlu_20", "qlib_alpha158", "QTLU(20) 80th pctl/close", "mean_reversion"),
+    FactorSpec("qlib.qtld_20", "qlib_alpha158", "QTLD(20) 20th pctl/close", "mean_reversion"),
     # ── RSV 区间位置 ─────────────────────────────────────────────────
-    FactorSpec("qlib.rsv_5", "qlib_alpha158", "RSV(5) close 在高低区间位置", "momentum"),
-    FactorSpec("qlib.rsv_20", "qlib_alpha158", "RSV(20) close 在高低区间位置", "momentum"),
+    FactorSpec("qlib.rsv_5", "qlib_alpha158", "RSV(5) close position in range", "momentum"),
+    FactorSpec("qlib.rsv_20", "qlib_alpha158", "RSV(20) close position in range", "momentum"),
     # ── CORR 价量相关 ────────────────────────────────────────────────
-    FactorSpec("qlib.corr_20", "qlib_alpha158", "CORR(20) close×log(volume) 相关", "volume"),
-    FactorSpec("qlib.corr_60", "qlib_alpha158", "CORR(60) close×log(volume) 相关", "volume"),
+    FactorSpec("qlib.corr_20", "qlib_alpha158", "CORR(20) close×log(volume) corr", "volume"),
+    FactorSpec("qlib.corr_60", "qlib_alpha158", "CORR(60) close×log(volume) corr", "volume"),
     # ── CNTP / CNTN 涨跌占比 ─────────────────────────────────────────
-    FactorSpec("qlib.cntp_20", "qlib_alpha158", "CNTP(20) 上涨 bar 占比", "momentum", direction_hint=1),
-    FactorSpec("qlib.cntp_60", "qlib_alpha158", "CNTP(60) 上涨 bar 占比", "momentum", direction_hint=1),
-    FactorSpec("qlib.cntn_20", "qlib_alpha158", "CNTN(20) 下跌 bar 占比", "momentum", direction_hint=-1),
+    FactorSpec("qlib.cntp_20", "qlib_alpha158", "CNTP(20) up-bar ratio", "momentum", direction_hint=1),
+    FactorSpec("qlib.cntp_60", "qlib_alpha158", "CNTP(60) up-bar ratio", "momentum", direction_hint=1),
+    FactorSpec("qlib.cntn_20", "qlib_alpha158", "CNTN(20) down-bar ratio", "momentum", direction_hint=-1),
     # ── SUMP 涨幅占比（RSI 型）──────────────────────────────────────
-    FactorSpec("qlib.sump_20", "qlib_alpha158", "SUMP(20) 涨幅/总幅 RSI 型", "momentum"),
-    FactorSpec("qlib.sump_60", "qlib_alpha158", "SUMP(60) 涨幅/总幅 RSI 型", "momentum"),
+    FactorSpec("qlib.sump_20", "qlib_alpha158", "SUMP(20) gains/total-range RSI-style", "momentum"),
+    FactorSpec("qlib.sump_60", "qlib_alpha158", "SUMP(60) gains/total-range RSI-style", "momentum"),
     # ── VMA / VSTD 量能 ──────────────────────────────────────────────
-    FactorSpec("qlib.vma_20", "qlib_alpha158", "VMA(20) volume/量均线", "volume"),
-    FactorSpec("qlib.vstd_20", "qlib_alpha158", "VSTD(20) 量变异系数", "volume"),
+    FactorSpec("qlib.vma_20", "qlib_alpha158", "VMA(20) volume/volume-MA", "volume"),
+    FactorSpec("qlib.vstd_20", "qlib_alpha158", "VSTD(20) volume coeff of variation", "volume"),
 ]
 
 
