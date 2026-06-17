@@ -30,7 +30,7 @@ from ..kernel.identifiers import ClientOrderId, InstrumentId, StrategyId, VenueO
 from ..kernel.msgbus import MessageBus
 from ..model.commands import SubmitOrderCommand
 from ..model.data import Bar
-from ..model.orders import Order, OrderSide, OrderType
+from ..model.orders import Order, OrderSide, OrderType, is_protective_order
 from ..strategy.base import RISK_ENGINE_ENDPOINT, Strategy
 from .portfolio import Portfolio
 from .position_guard import PositionGuard
@@ -244,6 +244,10 @@ class LiveEngineSession:
                 "ts": ts_event,
             },
         )
+        # 保护性出场被拒 → 解除 guard 去重标记，否则出场没成交、持仓不 flat，guard 会永久
+        # 跳过该 inst，灾难止损静默失效（#94 CR）。
+        if self._guard is not None and is_protective_order(order):
+            self._guard.cancel_pending_exit(order.instrument_id)
 
     def restore_position(
         self,
