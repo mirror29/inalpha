@@ -190,15 +190,21 @@ class YfinanceConnector:
         rows = await asyncio.to_thread(_fetch_news_sync, symbol, limit)
         return rows
 
-    async def fetch_financials(self, symbol: str) -> dict[str, Any]:
+    async def fetch_financials(
+        self, symbol: str, as_of: str | None = None
+    ) -> dict[str, Any]:
         """拉 Yahoo Finance 财报基本面数据。
 
         Uses ``yf.Ticker(symbol).info`` for key metrics +
         ``.quarterly_financials`` for revenue/earnings.
 
         Returns standardized dict with same structure as akshare version.
+
+        ``as_of``（ADR-0053 阶段 A）：接受参数以与 akshare 端签名对称，但 **v1 不对 yfinance
+        财报做 PIT 截断**（yfinance .info 只给"最新"快照、不带历史报告期列，无法可靠按
+        as_of 回溯）；如需 yfinance 财报 PIT 须改用带报告期的数据源，留后续。
         """
-        _logger.debug("yfinance_fetch_financials", symbol=symbol)
+        _logger.debug("yfinance_fetch_financials", symbol=symbol, as_of=as_of)
 
         try:
             result = await asyncio.to_thread(_fetch_financials_sync, symbol)

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from inalpha_shared import get_logger
@@ -168,14 +168,19 @@ class AkshareConnector:
             out = out[-limit:]
         return out
 
-    async def fetch_financials(self, symbol: str) -> dict[str, Any]:
+    async def fetch_financials(
+        self, symbol: str, as_of: str | None = None
+    ) -> dict[str, Any]:
         """拉 A股 / 港股 财报基本面数据。
 
         A-share: ``ak.stock_financial_abstract(symbol=code)``
         HK stock: ``ak.stock_hk_financial_abstract(symbol=code)``
 
-        akshare 返回字段因市场不同有差异，做防御性字段映射；
-        缺失字段置 None 不抛异常。
+        akshare 返回字段因市场不同有差异，做防御性字段映射；缺失字段置 None 不抛异常。
+
+        ``as_of``（ISO 时间串，ADR-0053 阶段 A）：point-in-time 截断——只取"报告期末 +
+        发布滞后 <= as_of"的财报期，防回测看到当时还没披露的财报（未来函数）。给 as_of 时
+        **绕过缓存**（PIT 查询较少，避免与非 PIT 结果串味）。
         """
         prefix, code = _parse_symbol(symbol)
         if prefix not in ("sh", "sz", "hk"):
@@ -186,14 +191,38 @@ class AkshareConnector:
                 "reason": f"financials not supported for akshare prefix {prefix!r}",
             }
 
-        cached = self._fin_cache_get(symbol)
-        if cached is not None:
-            return cached
+        as_of_dt: datetime | None = None
+        if as_of is not None:
+            try:
+                as_of_dt = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+                if as_of_dt.tzinfo is None:
+                    as_of_dt = as_of_dt.replace(tzinfo=UTC)
+            except ValueError:
+                return {
+                    "venue": VENUE,
+                    "symbol": symbol,
+                    "available": False,
+                    "reason": f"invalid as_of datetime: {as_of!r}",
+                }
 
-        _logger.debug("akshare_fetch_financials", symbol=symbol, prefix=prefix, code=code)
+        # 非 PIT 走缓存；PIT 查询绕过缓存（按 as_of 截断结果不可与默认结果共用一格）
+        if as_of_dt is None:
+            cached = self._fin_cache_get(symbol)
+            if cached is not None:
+                return cached
+
+        _logger.debug(
+            "akshare_fetch_financials", symbol=symbol, prefix=prefix, code=code, as_of=as_of
+        )
 
         try:
-            raw = await asyncio.to_thread(_fetch_financials_sync, prefix=prefix, code=code)
+            raw = await asyncio.to_thread(
+                _fetch_financials_sync,
+                prefix=prefix,
+                code=code,
+                as_of=as_of_dt,
+                publish_lag_days=FINANCIALS_PUBLISH_LAG_DAYS,
+            )
         except Exception as exc:
             _logger.warning("akshare_financials_fetch_failed", symbol=symbol, error=str(exc))
             return {
@@ -204,11 +233,16 @@ class AkshareConnector:
             }
 
         if raw is None or (isinstance(raw, (dict, list)) and len(raw) == 0):
+            reason = (
+                f"no financials published as of {as_of}"
+                if as_of_dt is not None
+                else "akshare returned empty financial data"
+            )
             return {
                 "venue": VENUE,
                 "symbol": symbol,
                 "available": False,
-                "reason": "akshare returned empty financial data",
+                "reason": reason,
             }
 
         from datetime import datetime as dt_dt
@@ -277,15 +311,23 @@ class AkshareConnector:
             except Exception as exc:
                 _logger.warning("akshare_valuation_fetch_failed", symbol=symbol, error=str(exc))
 
+        # as_of 回填：PIT 查询回显请求的 as_of（数据有效时点）；非 PIT 回填取数时刻
+        as_of_echo = (
+            as_of_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if as_of_dt is not None
+            else dt_dt.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        )
         result = {
             "venue": VENUE,
             "symbol": symbol,
             "available": True,
-            "as_of": dt_dt.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "as_of": as_of_echo,
             "indicators": indicators,
             "raw": raw,
         }
-        self._fin_cache_put(symbol, result)  # 只缓存成功结果;失败路径不缓存,留待重试
+        # 只缓存非 PIT 成功结果;PIT 结果按 as_of 截断、不可与默认结果共格,失败路径不缓存
+        if as_of_dt is None:
+            self._fin_cache_put(symbol, result)
         return result
 
     async def fetch_news(self, symbol: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -351,7 +393,28 @@ class AkshareConnector:
         return None
 
 
-def _fetch_financials_sync(*, prefix: str, code: str) -> dict[str, Any]:
+#: 财报发布滞后保守估计（ADR-0053 阶段 A · point-in-time）：报告期末 + 此天数 ≈ 法定披露
+#: 上限（A股年报次年 4/30 ≈ 120 天；季报法定更早，取 120 天对"as_of 时是否已发布"的判定
+#: 偏保守——宁可晚一期也不偷看未发布财报。拿不到真实公告日时的兜底口径（ADR-0053 OQ1）。
+FINANCIALS_PUBLISH_LAG_DAYS = 120
+
+
+def _period_publishable(period: str, as_of: datetime, lag_days: int) -> bool:
+    """报告期(YYYYMMDD)在 ``as_of`` 时是否已发布：报告期末 + lag_days <= as_of。"""
+    try:
+        end = datetime.strptime(str(period), "%Y%m%d").replace(tzinfo=UTC)
+    except ValueError:
+        return False
+    return end + timedelta(days=lag_days) <= as_of
+
+
+def _fetch_financials_sync(
+    *,
+    prefix: str,
+    code: str,
+    as_of: datetime | None = None,
+    publish_lag_days: int = FINANCIALS_PUBLISH_LAG_DAYS,
+) -> dict[str, Any]:
     """同步调 akshare 财报接口 —— 按前缀路由,返回 ``{指标名: 最新期值}``。
 
     ``stock_financial_abstract`` / ``stock_hk_financial_abstract`` 返回的是
@@ -367,11 +430,20 @@ def _fetch_financials_sync(*, prefix: str, code: str) -> dict[str, Any]:
     else:
         raw = ak.stock_hk_financial_abstract(symbol=code)
 
-    return _flatten_financial_abstract(raw)
+    return _flatten_financial_abstract(raw, as_of=as_of, publish_lag_days=publish_lag_days)
 
 
-def _flatten_financial_abstract(raw: Any) -> dict[str, Any]:
-    """转置财报表 → ``{指标名: 最新非空值}``;结构不符时退化兜底,绝不抛错。"""
+def _flatten_financial_abstract(
+    raw: Any,
+    *,
+    as_of: datetime | None = None,
+    publish_lag_days: int = FINANCIALS_PUBLISH_LAG_DAYS,
+) -> dict[str, Any]:
+    """转置财报表 → ``{指标名: 最新非空值}``;结构不符时退化兜底,绝不抛错。
+
+    ``as_of`` 非空时只保留"报告期末 + 发布滞后 <= as_of"的报告期列（PIT 防未来函数：
+    回测在 as_of 时刻不应看到当时还没披露的财报）；过滤后无可用期 → 返回 ``{}``。
+    """
     import math
 
     if raw is None:
@@ -386,6 +458,11 @@ def _flatten_financial_abstract(raw: Any) -> dict[str, Any]:
         key=lambda c: str(c),
         reverse=True,
     )
+    # PIT 截断：剔除 as_of 时尚未发布的报告期（ADR-0053 阶段 A）
+    if as_of is not None:
+        date_cols = [c for c in date_cols if _period_publishable(str(c), as_of, publish_lag_days)]
+        if not date_cols:
+            return {}
     if "指标" not in cols or not date_cols:
         # 不是预期的转置表 → 退回最后一行(旧行为)兜底,至少不丢数据。
         if len(raw) == 0:

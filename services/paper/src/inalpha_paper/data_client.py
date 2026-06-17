@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -199,6 +199,52 @@ class DataClient:
                 f"unexpected response shape from data-service: {type(result).__name__}"
             )
         return result
+
+    async def get_bars_pit(
+        self,
+        *,
+        venue: str,
+        symbol: str,
+        timeframe: str,
+        from_ts: datetime,
+        as_of: datetime,
+        limit: int = 10_000,
+        publish_lag: timedelta = timedelta(0),
+    ) -> list[dict[str, Any]]:
+        """point-in-time 取 bars（ADR-0053 阶段 A）：只返回 ``ts <= as_of - publish_lag``
+        的 K 线——回测在 ``as_of`` 时刻不应看到当时还没收盘 / 还没发布的 bar（防未来函数）。
+
+        与 ``get_bars`` 的区别：
+        - ``to_ts`` 上限钉死在 ``as_of``（不拉 as_of 之后的数据）；
+        - 用 ``fresh=False``（PIT 是历史重建，不需要把最新行情补进来）；
+        - 客户端侧再按 ``as_of - publish_lag`` 兜底过滤（多数 venue 的 K 线 publish_lag=0：
+          bar 在自身 ts 收盘即已知；带发布滞后的非 bar 数据走各自 connector 的 PIT 口径）。
+        """
+        cutoff = as_of - publish_lag
+        bars = await self.get_bars(
+            venue=venue,
+            symbol=symbol,
+            timeframe=timeframe,
+            from_ts=from_ts,
+            to_ts=as_of,
+            limit=limit,
+            fresh=False,
+        )
+        out: list[dict[str, Any]] = []
+        for b in bars:
+            ts_raw = b.get("ts")
+            if ts_raw is None:
+                continue
+            ts = (
+                datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+                if isinstance(ts_raw, str)
+                else ts_raw
+            )
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            if ts <= cutoff:
+                out.append(b)
+        return out
 
     async def backfill_bars(
         self,
