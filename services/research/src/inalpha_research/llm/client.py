@@ -600,8 +600,10 @@ def infer_output_language(text: str | None) -> str | None:
     用作 deep_dive 的语言兜底（Fix C 第二层）：orchestrator 没显式传 language 时，从
     user_question 推断，让研究结果跟随提问语言——确定性、不靠模型自觉。
 
-    粗判局限：纯汉字无假名的日文会判成"中文"（漢字共用）；这是兜底，主路径仍应由
-    orchestrator 显式传 language。
+    粗判局限（脚本级，非真正语言识别）：纯汉字无假名的日文会判成"中文"（漢字共用）；
+    拉丁字母语言（法 / 德 / 西…）与未覆盖的非拉丁脚本（阿 / 俄 / 泰…）都落到 "English"。
+    这只是兜底——非英语用户必须由 orchestrator 显式传 language（Fix A），不要依赖本函数
+    识别小语种；要更全可换 langdetect / lingua，但当前不引额外依赖。
     """
     if not text or not text.strip():
         return None
