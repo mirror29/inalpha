@@ -50,6 +50,8 @@ class BacktestEngine:
         protective_stop_loss_pct: float | None = None,
         protective_take_profit_pct: float | None = None,
         protective_trailing_stop_pct: float | None = None,
+        protective_chandelier_atr_mult: float | None = None,
+        protective_chandelier_atr_period: int = 22,
     ) -> None:
         """初始化。
 
@@ -63,6 +65,8 @@ class BacktestEngine:
             protective_stop_loss_pct: ADR-0052 框架级持仓保护止损阈值（None = 关）
             protective_take_profit_pct: 框架级止盈阈值（None = 关）
             protective_trailing_stop_pct: 框架级移动止损阈值（None = 关）
+            protective_chandelier_atr_mult: Chandelier ATR 移动止损倍数（增补 A，None = 关）
+            protective_chandelier_atr_period: Chandelier ATR 周期（默认 22）
         """
         # 内核
         self.clock = TestClock(0)
@@ -85,7 +89,7 @@ class BacktestEngine:
         self.exchange.bind_portfolio(self.portfolio)
 
         # ADR-0052：框架级持仓保护止损（与 live session 共用同一组件，行为一致）。
-        # 三阈值全 None → from_thresholds 返 None，退化为无 guard（向后兼容）。
+        # 所有闸阈值全 None → from_thresholds 返 None，退化为无 guard（向后兼容）。
         self._guard = PositionGuard.from_thresholds(
             self.msgbus,
             self.clock,
@@ -93,6 +97,8 @@ class BacktestEngine:
             stop_loss_pct=protective_stop_loss_pct,
             take_profit_pct=protective_take_profit_pct,
             trailing_stop_pct=protective_trailing_stop_pct,
+            chandelier_atr_mult=protective_chandelier_atr_mult,
+            chandelier_atr_period=protective_chandelier_atr_period,
         )
 
         self._strategies: list[Strategy] = []

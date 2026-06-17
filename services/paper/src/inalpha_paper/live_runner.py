@@ -465,6 +465,8 @@ class LiveRunnerManager:
             protective_stop_loss_pct=self._settings.protective_stop_loss_pct,
             protective_take_profit_pct=self._settings.protective_take_profit_pct,
             protective_trailing_stop_pct=self._settings.protective_trailing_stop_pct,
+            protective_chandelier_atr_mult=self._settings.protective_chandelier_atr_mult,
+            protective_chandelier_atr_period=self._settings.protective_chandelier_atr_period,
         )
         warmup_ts = await self._warmup_session(session, run)
         # resume（last_bar_ts 非空 = 本 run 之前跑过）：把 DB 当前持仓灌回 session，让续跑

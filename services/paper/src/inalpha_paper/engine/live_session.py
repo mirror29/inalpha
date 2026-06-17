@@ -116,6 +116,8 @@ class LiveEngineSession:
         protective_stop_loss_pct: float | None = None,
         protective_take_profit_pct: float | None = None,
         protective_trailing_stop_pct: float | None = None,
+        protective_chandelier_atr_mult: float | None = None,
+        protective_chandelier_atr_period: int = 22,
     ) -> None:
         self.clock = TestClock(0)
         self.msgbus = MessageBus()
@@ -133,7 +135,7 @@ class LiveEngineSession:
         self._strategy = self._build_strategy(strategy_cls, params, initial_cash)
         self._strategy.on_start()  # 策略在此订阅 bars（subscribe_bars）
 
-        # ADR-0052：框架级持仓保护止损（与回测引擎共用同一组件，行为一致）。三阈值全
+        # ADR-0052：框架级持仓保护止损（与回测引擎共用同一组件，行为一致）。所有闸阈值全
         # None → None（退化为无 guard）。出场单直发 ExecutionEngine → 被 _CaptureGateway
         # 收走，与策略单一起由 runner 走护栏 plan/exec 路由（runner 对保护性 tag 跳过开仓闸）。
         self._guard = PositionGuard.from_thresholds(
@@ -143,6 +145,8 @@ class LiveEngineSession:
             stop_loss_pct=protective_stop_loss_pct,
             take_profit_pct=protective_take_profit_pct,
             trailing_stop_pct=protective_trailing_stop_pct,
+            chandelier_atr_mult=protective_chandelier_atr_mult,
+            chandelier_atr_period=protective_chandelier_atr_period,
         )
         if self._guard is not None:
             self._guard.bind_strategy(self._strategy.strategy_id)

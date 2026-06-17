@@ -43,6 +43,21 @@ def _bar(close: float, ts_ns: int = 1) -> Bar:
     )
 
 
+def _ohlc(o: float, h: float, low: float, c: float, ts_ns: int) -> Bar:
+    """显式 OHLC bar（chandelier 测试用：ATR 需要 high/low/prev_close 算 TR）。"""
+    return Bar(
+        instrument_id=_btc(),
+        timeframe="1h",
+        open=o,
+        high=h,
+        low=low,
+        close=c,
+        volume=1.0,
+        ts_event=ts_ns,
+        ts_init=ts_ns,
+    )
+
+
 def _long_portfolio(msgbus: MessageBus, qty: float, avg_price: float) -> Portfolio:
     """建一个持有 long 仓的 Portfolio（通过发一笔 BUY fill 走正常路径建仓）。"""
     pf = Portfolio(msgbus, initial_cash=1_000_000.0, fee_rate=0.0)
@@ -182,6 +197,88 @@ def test_trailing_inactive_when_never_profitable() -> None:
     assert guard.evaluate(_bar(95.0, ts_ns=1)) == []
     # 自峰值价 95 回撤 (95-80)/95≈15.8% >= 10%，但峰值价 95 < 成本 100 → trailing 不生效
     assert guard.evaluate(_bar(80.0, ts_ns=2)) == []
+
+
+# ─── chandelier（吊灯）ATR 移动止损（ADR-0052 增补 A）───
+
+
+def test_chandelier_triggers_on_atr_drop() -> None:
+    """涨出最高价、ATR 种子就绪后，收盘跌穿 最高价 − mult×ATR → 触发 trailing_stop_loss。"""
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(
+        msgbus=msgbus, pf=pf, chandelier_atr_mult=1.0, chandelier_atr_period=2
+    )
+
+    # bar1：建最高价 110，prev_close 未就绪无 TR、atr None → 不触发
+    assert guard.evaluate(_ohlc(100.0, 110.0, 99.0, 108.0, 1)) == []
+    # bar2：最高价升到 120，TR2 入种子（tr_count=1<2）、atr 仍 None → 不触发
+    assert guard.evaluate(_ohlc(108.0, 120.0, 107.0, 118.0, 2)) == []
+    # bar3：最高价 124，TR3 让 atr 种子就绪（atr=10.5）；止损位=124−10.5=113.5，mark=120>113.5 不触发
+    assert guard.evaluate(_ohlc(118.0, 124.0, 116.0, 120.0, 3)) == []
+    # bar4：atr≈10.75，止损位=124−10.75≈113.25，mark=112≤113.25 → 触发，复用 trailing_stop_loss tag
+    orders = guard.evaluate(_ohlc(120.0, 121.0, 110.0, 112.0, 4))
+    assert len(orders) == 1
+    assert orders[0].tag == "trailing_stop_loss"
+    assert orders[0].tag in PROTECTIVE_EXIT_TAGS
+    assert orders[0].quantity == 1.0  # 全平
+
+
+def test_chandelier_no_trigger_before_atr_seeded() -> None:
+    """ATR 种子未就绪（开仓后不足 period 根）期间 chandelier 静默，即便大跌也不触发。"""
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(
+        msgbus=msgbus, pf=pf, chandelier_atr_mult=1.0, chandelier_atr_period=10
+    )
+
+    assert guard.evaluate(_ohlc(100.0, 130.0, 99.0, 128.0, 1)) == []  # 建高点，无 TR
+    # 暴跌到 80（自高点 −38%），但 period=10 atr 远未就绪 → chandelier 不触发
+    assert guard.evaluate(_ohlc(128.0, 129.0, 80.0, 80.0, 2)) == []
+
+
+def test_chandelier_inactive_when_never_profitable() -> None:
+    """chandelier 仅在「曾进盈利区」（最高价 > 成本）后生效；从未盈利不触发。"""
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(
+        msgbus=msgbus, pf=pf, chandelier_atr_mult=1.0, chandelier_atr_period=2
+    )
+
+    # 价格全程在成本 100 之下（最高价 ≤ 99）：atr 会就绪但 highest_high < avg → 不生效
+    assert guard.evaluate(_ohlc(100.0, 99.0, 95.0, 98.0, 1)) == []
+    assert guard.evaluate(_ohlc(98.0, 97.0, 90.0, 92.0, 2)) == []
+    assert guard.evaluate(_ohlc(92.0, 93.0, 80.0, 82.0, 3)) == []
+
+
+def test_from_thresholds_chandelier_only_builds_guard() -> None:
+    """仅配 chandelier（其余 None）→ from_thresholds 仍建出 guard（不退化为 None）。"""
+    msgbus = MessageBus()
+    pf = Portfolio(msgbus, initial_cash=10_000.0)
+    guard = PositionGuard.from_thresholds(
+        msgbus,
+        TestClock(0),
+        pf,
+        stop_loss_pct=None,
+        take_profit_pct=None,
+        trailing_stop_pct=None,
+        chandelier_atr_mult=2.0,
+    )
+    assert guard is not None
+
+
+def test_chandelier_param_validation() -> None:
+    """chandelier_atr_mult ≤ 0 / period < 2 → ValueError。"""
+    import pytest
+
+    msgbus = MessageBus()
+    pf = Portfolio(msgbus, initial_cash=10_000.0)
+    with pytest.raises(ValueError, match="chandelier_atr_mult"):
+        PositionGuard(msgbus, TestClock(0), pf, chandelier_atr_mult=0.0)
+    with pytest.raises(ValueError, match="chandelier_atr_period"):
+        PositionGuard(
+            msgbus, TestClock(0), pf, chandelier_atr_mult=2.0, chandelier_atr_period=1
+        )
 
 
 # ─── pending-exit 去重（防 live 撮合延迟重复触发，#91）───
