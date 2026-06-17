@@ -62,22 +62,43 @@ type GenericTool = {
  * - ``ctx.runId`` —— **每个 user-turn 一个新值**（不稳定，跨 turn 会变）
  * - 顶层 ``ctx.threadId`` 在 1.10 已**不再存在**（被移进 ``ctx.agent``）
  *
- * 因此优先级：``ctx.agent.threadId`` > ``ctx.agent.resourceId`` >
- * ``requestContext.sessionId`` > 顶层 ``sessionId`` > **undefined**（→ askCache
- * 用稳定的 ``"__global__"`` scope）。
+ * 因此优先级：``requestContext[AUTH_SUB_KEY]``（mastra server.middleware 从 Bearer 注入的
+ * **已认证主体**，#91 多租户隔离的权威 scope）> ``ctx.agent.threadId`` >
+ * ``ctx.agent.resourceId`` > ``requestContext.sessionId`` > 顶层 ``sessionId`` >
+ * **undefined**（→ askCache 用稳定的 ``"__global__"`` scope）。
  *
  * **故意不回退到 ``ctx.runId``**：runId 每 user-turn 一个新值，当 askCache key 会让
  * 跨 turn 审批永远 miss → 死循环（ADR-0018）。stable ``__global__`` 比 unstable runId
  * 更对：跨 turn 能命中，approvalKey 里的 candidateId 仍区分不同候选。
  *
- * 这样 askCache 跨 turn 也能命中（单租户 dev）；多租户隔离需让 threadId 真正进 ctx。
+ * 多租户隔离：dashboard 给每用户发各自 JWT（现发 CONSOLE_SUBJECT 常量）后，askSub 即按
+ * 用户隔离，promote 审批不再跨用户越权——askCache 侧无需再改（#91）。
  */
+/**
+ * mastra ``server.middleware`` 从 Bearer JWT 解出的已认证主体（sub）写进 RequestContext
+ * 的 key（#91）。getSessionId 最高优先读它 → askCache 按已认证主体 scope（替代 __global__）。
+ * 单租户 = console subject（稳定唯一）；多租户 = 每用户隔离，自动生效。
+ */
+export const AUTH_SUB_KEY = "inalpha__authSub";
+
 /** Module-level flag：进程内仅 warn 一次 runId fallback / 完全失败，避免每次 tool 调用刷屏。 */
 let _warnedRunIdFallback = false;
 
 export function defaultGetSessionId(ctx: unknown): string | undefined {
   if (!ctx || typeof ctx !== "object") return undefined;
   const c = ctx as Record<string, unknown>;
+
+  // 最高优先级：mastra server.middleware 注入的已认证主体（#91 多租户 askCache scope）。
+  // requestContext 是 Mastra RequestContext（Map → .get）；也兼容自构造的普通对象。
+  const rcForAuth = c.requestContext;
+  if (rcForAuth && typeof rcForAuth === "object") {
+    const getter = (rcForAuth as { get?: (k: string) => unknown }).get;
+    const authSub =
+      typeof getter === "function"
+        ? pickString(getter.call(rcForAuth, AUTH_SUB_KEY))
+        : pickString((rcForAuth as Record<string, unknown>)[AUTH_SUB_KEY]);
+    if (authSub) return authSub;
+  }
 
   // Mastra 1.10：threadId / resourceId 在 ctx.agent 下（thread-level 稳定）
   const agent = c.agent;
