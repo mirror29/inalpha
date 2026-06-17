@@ -569,3 +569,47 @@ def test_strategy_own_stop_loss_tag_not_counted_as_guard() -> None:
     assert stop_fills[0].is_guard is False  # 关键：不是框架 guard
     # 框架 guard 计数为 0（不被策略自带 tag 污染）
     assert report.protective_exits == 0
+
+
+def test_live_session_reject_protective_exit_rearms_guard() -> None:
+    """集成（#94）：保护性出场单被 `session.reject_order` 拒 → 经
+    `cancel_pending_exit` 解除去重 → 下一根 bar guard 重新发出场单。
+
+    锁住安全 wiring（reject_order → guard.cancel_pending_exit）防 reject_order 重构回归：
+    guard 层单测只验 guard 自身，这条走完整 LiveEngineSession 路径。无 wiring 则第一笔被拒后
+    持仓永不平、guard 永久跳过 → 只见 1 笔（死锁）。
+    """
+    session = LiveEngineSession(
+        strategy_cls=BuyAndHoldStrategy,
+        instrument_id=_btc(),
+        timeframe="1h",
+        params={},
+        initial_cash=10_000.0,
+        fee_rate=0.0,
+        protective_stop_loss_pct=0.20,
+    )
+    protective_seen = 0
+    for bar in _gen_bars(_CRASH_PRICES):
+        orders = session.feed_bar(bar)
+        session.take_unsupported_orders()
+        for order, sid in orders:
+            is_protective = order.tag in PROTECTIVE_EXIT_TAGS
+            if is_protective:
+                protective_seen += 1
+            # 第一笔保护性出场模拟路由失败 → reject（不 confirm，持仓维持开仓）；
+            # 其余（建仓 BUY、第二笔保护性出场）正常回灌成交。
+            if is_protective and protective_seen == 1:
+                session.reject_order(
+                    order=order, strategy_id=sid,
+                    reason="simulated route failure", ts_event=bar.ts_event,
+                )
+            else:
+                session.confirm_fill(
+                    order=order, strategy_id=sid,
+                    fill_qty=order.quantity, fill_price=bar.close, ts_event=bar.ts_event,
+                )
+    # 第一笔被拒后 guard 重新武装、后续 bar 再发 → 至少 2 笔（无 wiring 则死锁只见 1）
+    assert protective_seen >= 2
+    # 第二笔成交后持仓已平
+    pos = session.portfolio.position(_btc())
+    assert pos is None or pos.is_flat
