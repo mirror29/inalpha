@@ -76,6 +76,10 @@ class PositionGuard:
         self._strategy_id: StrategyId | None = None
         # 每 instrument 的峰值 mark 价（trailing 用，自峰值价格回撤口径）；持仓转 flat 时清除
         self._peak_mark: dict[InstrumentId, float] = {}
+        # 已提交保护性出场、但持仓尚未平掉的 instrument（出场单下一根才撮合）。
+        # 防 live 撮合延迟 / batch 行情下 evaluate 在持仓仍在时重复提交出场单（#91）。
+        # 持仓转 flat（出场成交）时清除。
+        self._pending_exit_insts: set[InstrumentId] = set()
 
     @staticmethod
     def from_thresholds(
@@ -127,10 +131,15 @@ class PositionGuard:
         pos = self._portfolio.position(inst)
         if pos is None or pos.is_flat:
             self._peak_mark.pop(inst, None)
+            self._pending_exit_insts.discard(inst)  # 出场已成交（持仓平），解除去重标记
             return []
 
         # 仅 spot long；short 留待合约阶段（no-op，避免对 short 误平）
         if pos.quantity <= 0:
+            return []
+
+        # 已下保护性出场但持仓未平（撮合延迟）→ 跳过，不重复提交第二笔出场单（#91）
+        if inst in self._pending_exit_insts:
             return []
 
         avg = pos.avg_open_price
@@ -150,8 +159,10 @@ class PositionGuard:
 
         order = self._build_exit(inst, pos.quantity, tag)
         self._submit(order, bar.ts_event)
-        # 出场单已下，清峰值（持仓将于下一根平掉；防同 instrument 状态泄漏）
+        # 出场单已下，清峰值（持仓将于下一根平掉；防同 instrument 状态泄漏）。
+        # 标记 pending：撮合前若再被 evaluate（live 延迟）不重复下单，待持仓平掉再解除。
         self._peak_mark.pop(inst, None)
+        self._pending_exit_insts.add(inst)
         return [order]
 
     # ─── 内部 ───
