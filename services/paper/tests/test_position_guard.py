@@ -184,6 +184,28 @@ def test_trailing_inactive_when_never_profitable() -> None:
     assert guard.evaluate(_bar(80.0, ts_ns=2)) == []
 
 
+# ─── pending-exit 去重（防 live 撮合延迟重复触发，#91）───
+
+
+def test_no_duplicate_exit_while_pending_fill() -> None:
+    """已提交保护性出场、持仓尚未平（撮合下一根才发生）→ 再次 evaluate 不重复下单 (#91)。
+
+    捕获 endpoint 不真撮合，故 pf 持仓在 evaluate 之间保持开仓——模拟 live 撮合延迟。
+    无去重时第二次会再发一笔；有去重则 captured 始终 1。
+    """
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, captured = _guard_with_capture(pf, msgbus, stop_loss_pct=0.20)
+
+    orders1 = guard.evaluate(_bar(79.0, ts_ns=1))  # -21% 穿阈 → 出 1 单 + 标 pending
+    assert len(orders1) == 1
+    assert len(captured) == 1
+
+    orders2 = guard.evaluate(_bar(78.0, ts_ns=2))  # 持仓未平、仍穿阈 → 不重复
+    assert orders2 == []
+    assert len(captured) == 1  # 没多发第二笔
+
+
 # ─── 工厂 / 关闭 / 边界 ───
 
 
