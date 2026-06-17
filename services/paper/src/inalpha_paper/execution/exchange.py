@@ -21,6 +21,7 @@ internal topic 约定（仅在本服务内使用）：
 """
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from ..kernel.clock import Clock
@@ -34,6 +35,8 @@ if TYPE_CHECKING:
     from ..engine.portfolio import Portfolio
 
 EXECUTION_ENGINE_ENDPOINT = "ExecutionEngine.execute"
+
+_logger = logging.getLogger(__name__)
 
 
 class SimulatedExchange(Gateway):
@@ -159,6 +162,11 @@ class SimulatedExchange(Gateway):
                 and order.side == OrderSide.SELL
                 and not self._portfolio.can_afford_sell(order.instrument_id, order.quantity)
             ):
+                # 正常不可达(guard 出场量=持仓);留日志便于未来排查边界异常
+                _logger.warning(
+                    "flush_protective_at_close: 保护单 %s 量 %s 超持仓被守门拒,跳过",
+                    order.client_order_id, order.quantity,
+                )
                 remaining.append((order, strategy_id))
                 continue
             self._publish_fill(order, strategy_id, order.quantity, bar.close, bar.ts_event)
