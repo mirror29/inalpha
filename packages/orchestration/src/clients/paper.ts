@@ -169,6 +169,45 @@ export type SensitivityResult = {
   verdict: "robust" | "cliff" | "insufficient";
 };
 
+export type CVBacktestParams = {
+  strategyId?: string;
+  candidateId?: string;
+  params?: Record<string, unknown>;
+  venue?: string;
+  symbol: string;
+  timeframe?: string;
+  fromTs: string;
+  toTs: string;
+  initialCash?: number;
+  feeRate?: number;
+  /** 时序 CV 切分器；cpcv（多路径最强）/ walk_forward / purged_kfold */
+  splitter?: "cpcv" | "walk_forward" | "purged_kfold";
+  nFolds?: number;
+  nTestFolds?: number;
+  embargoPct?: number;
+  wfTestSize?: number;
+  wfTrainSize?: number;
+};
+
+export type CVBacktestResult = {
+  symbol: string;
+  timeframe: string;
+  n_bars: number;
+  /** 实际用的 splitter（cpcv 不足回落时 != 请求值） */
+  splitter_used: string;
+  n_paths: number;
+  n_splits: number;
+  sharpe_per_path: number[];
+  max_dd_per_path: number[];
+  sharpe_p5: number;
+  sharpe_p50: number;
+  sharpe_p95: number;
+  sharpe_mean: number;
+  dsr: number | null;
+  dsr_p_value: number | null;
+  note: string | null;
+};
+
 export type BacktestParams = {
   /** 内置策略 ID（与 candidateId 二选一） */
   strategyId?: string;
@@ -541,6 +580,31 @@ export class PaperClient {
       initial_cash: params.initialCash ?? 10_000,
       fee_rate: params.feeRate ?? 0.001,
       pct: params.pct ?? 0.2,
+    });
+  }
+
+  /**
+   * ADR-0028 · 多路径时序交叉验证回测：输出样本外 Sharpe 分布 + DSR。
+   * cpcv 在 bar 不足时自动回落 walk_forward（splitter_used 标明）。
+   */
+  async cvBacktest(params: CVBacktestParams): Promise<CVBacktestResult> {
+    return await this.http.post<CVBacktestResult>("/backtest/cv", {
+      strategy_id: params.strategyId,
+      candidate_id: params.candidateId,
+      params: params.params ?? {},
+      venue: params.venue ?? "binance",
+      symbol: params.symbol,
+      timeframe: params.timeframe ?? "1h",
+      from_ts: params.fromTs,
+      to_ts: params.toTs,
+      initial_cash: params.initialCash ?? 10_000,
+      fee_rate: params.feeRate ?? 0.001,
+      splitter: params.splitter ?? "cpcv",
+      n_folds: params.nFolds ?? 6,
+      n_test_folds: params.nTestFolds ?? 2,
+      embargo_pct: params.embargoPct ?? 0.05,
+      wf_test_size: params.wfTestSize ?? 21,
+      wf_train_size: params.wfTrainSize ?? 252,
     });
   }
 

@@ -23,7 +23,13 @@ from psycopg import AsyncConnection
 
 from .config import get_paper_settings
 from .data_client import DataClient
-from .engine.backtest import BacktestEngine
+from .engine.backtest import BacktestEngine, run_cv_backtest
+from .engine.cv import (
+    CombinatorialPurgedCV,
+    InsufficientDataError,
+    PurgedKFold,
+    WalkForward,
+)
 from .engine.metrics import (
     bar_returns,
     max_drawdown_pct,
@@ -39,6 +45,8 @@ from .schemas import (
     BacktestRequest,
     BacktestResponse,
     BaselineSnapshot,
+    CVBacktestRequest,
+    CVBacktestResponse,
     EquityPoint,
     PositionSnapshot,
     SharpeCI,
@@ -49,6 +57,7 @@ from .storage import backtest_runs as backtest_runs_store
 from .storage import backtest_trades as backtest_trades_store
 from .storage import strategy_candidates as candidates_store
 from .strategies import BASELINE_BUY_AND_HOLD, get_strategy_class
+from .strategy.base import Strategy
 from .strategy_authoring import (
     FitnessInputs,
     audit_strategy_code,
@@ -556,6 +565,133 @@ def _fitness_from_report(report: Any, *, bars_per_year: float) -> float:
             num_trades=report.num_trades,
             num_bars_processed=report.num_bars_processed,
         )
+    )
+
+
+async def run_cv(
+    req: CVBacktestRequest,
+    data_client: DataClient,
+    *,
+    conn: AsyncConnection | None = None,
+) -> CVBacktestResponse:
+    """跑多路径时序交叉验证回测（ADR-0028）：拉数据 → 造策略工厂 → 切分 → 聚合分布。
+
+    与 ``run_backtest`` 平行的入口；CV 评估稳健性，不落 backtest_runs（多路径无单一 run）。
+    cpcv 在 bar 不足（< 200 或 < 2×n_folds）时**自动回落 walk_forward**（CLAUDE.md §3.1
+    末段含最新 bar 由 splitter 保证）。
+    """
+    raw_bars = await data_client.get_bars(
+        venue=req.venue,
+        symbol=req.symbol,
+        timeframe=req.timeframe,
+        from_ts=req.from_ts,
+        to_ts=req.to_ts,
+    )
+    instrument_id = InstrumentId(symbol=req.symbol, venue=req.venue)
+    bars = [_bar_from_dict(b, instrument_id, req.timeframe) for b in raw_bars]
+    if len(bars) < 2:
+        raise ValidationError(
+            f"CV needs >= 2 bars, got {len(bars)} for {req.symbol}@{req.venue}",
+            code="NO_BARS_AVAILABLE",
+        )
+
+    # 策略类解析（内置 id 或 LLM 候选；候选二次过 ast_audit）
+    if req.candidate_id is not None:
+        if conn is None:
+            raise ValidationError(
+                "candidate_id path requires database connection", code="CANDIDATE_NO_DB"
+            )
+        row = await candidates_store.get_candidate(conn, req.candidate_id)
+        if row is None:
+            raise NotFoundError(
+                f"candidate {req.candidate_id} not found", code="CANDIDATE_NOT_FOUND"
+            )
+        reaudit = audit_strategy_code(row["code"])
+        if not reaudit.ok:
+            raise ValidationError(
+                f"candidate {req.candidate_id} failed re-audit: {reaudit.reason()}",
+                code="CANDIDATE_REAUDIT_FAILED",
+            )
+        strategy_cls = load_strategy_class(row["code"])
+        strategy_name = f"candidate-{req.symbol}"
+    else:
+        strategy_cls = get_strategy_class(req.strategy_id)  # type: ignore[arg-type]
+        strategy_name = f"{req.strategy_id}-{req.symbol}"
+
+    def build_strategy(engine: BacktestEngine) -> Strategy:
+        kwargs: dict[str, Any] = dict(req.params)
+        sig = inspect.signature(strategy_cls.__init__)
+        if "initial_cash" in sig.parameters and "initial_cash" not in kwargs:
+            kwargs["initial_cash"] = req.initial_cash
+        if "position_pct" in sig.parameters and "position_pct" not in kwargs:
+            kwargs["position_pct"] = 1.0
+        return strategy_cls(  # type: ignore[call-arg]
+            name=strategy_name,
+            clock=engine.clock,
+            msgbus=engine.msgbus,
+            instrument_id=instrument_id,
+            timeframe=req.timeframe,
+            **kwargs,
+        )
+
+    splitter: CombinatorialPurgedCV | PurgedKFold | WalkForward
+    if req.splitter == "cpcv":
+        splitter = CombinatorialPurgedCV(
+            req.n_folds, req.n_test_folds, embargo_pct=req.embargo_pct
+        )
+    elif req.splitter == "purged_kfold":
+        splitter = PurgedKFold(req.n_folds, embargo_pct=req.embargo_pct)
+    else:
+        splitter = WalkForward(req.wf_test_size, req.wf_train_size)
+
+    splitter_used = req.splitter
+    note: str | None = None
+    try:
+        report = run_cv_backtest(
+            build_strategy=build_strategy,
+            bars=bars,
+            splitter=splitter,
+            initial_cash=req.initial_cash,
+            fee_rate=req.fee_rate,
+        )
+    except InsufficientDataError as exc:
+        if req.splitter != "cpcv":
+            raise ValidationError(
+                f"CV splitter data insufficient: {exc}", code="CV_INSUFFICIENT_DATA"
+            ) from exc
+        # cpcv 数据不足 → 回落 walk_forward（ADR-0028 D1）
+        splitter_used = "walk_forward"
+        note = f"cpcv 数据不足（{len(bars)} bars），已回落 walk_forward：{exc}"
+        try:
+            report = run_cv_backtest(
+                build_strategy=build_strategy,
+                bars=bars,
+                splitter=WalkForward(req.wf_test_size, req.wf_train_size),
+                initial_cash=req.initial_cash,
+                fee_rate=req.fee_rate,
+            )
+        except InsufficientDataError as exc2:
+            raise ValidationError(
+                f"CV data insufficient even for walk_forward: {exc2}",
+                code="CV_INSUFFICIENT_DATA",
+            ) from exc2
+
+    return CVBacktestResponse(
+        symbol=req.symbol,
+        timeframe=req.timeframe,
+        n_bars=len(bars),
+        splitter_used=splitter_used,
+        n_paths=report.n_paths,
+        n_splits=report.n_splits,
+        sharpe_per_path=report.sharpe_per_path,
+        max_dd_per_path=report.max_dd_per_path,
+        sharpe_p5=report.sharpe_p5,
+        sharpe_p50=report.sharpe_p50,
+        sharpe_p95=report.sharpe_p95,
+        sharpe_mean=report.sharpe_mean,
+        dsr=report.dsr,
+        dsr_p_value=report.dsr_p_value,
+        note=note,
     )
 
 

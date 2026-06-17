@@ -228,3 +228,70 @@ def test_backtest_empty_bars_rejected(
     body = r.json()
     assert body["code"] == "NO_BARS_AVAILABLE"
     assert "backfill" in body["message"]
+
+
+# ─── CV 多路径回测（ADR-0028） ───
+
+
+@respx.mock
+def test_backtest_cv_cpcv_paths(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """300 根 bar → cpcv(6,2) 出 5 条 OOS 路径 + DSR。"""
+    respx.get("http://data-mock.test/bars").mock(
+        return_value=Response(200, json=_bars_for_oscillating(300))
+    )
+    r = client.post(
+        "/backtest/cv",
+        headers=auth_headers,
+        json={
+            "strategy_id": "sma_cross",
+            "params": {"fast_period": 5, "slow_period": 15},
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+            "from_ts": "2026-01-01T00:00:00Z",
+            "to_ts": "2026-02-01T00:00:00Z",
+            "splitter": "cpcv",
+            "n_folds": 6,
+            "n_test_folds": 2,
+        },
+    )
+    assert r.status_code == 200, r.json()
+    body = r.json()
+    assert body["splitter_used"] == "cpcv"
+    assert body["n_paths"] == 5
+    assert len(body["sharpe_per_path"]) == 5
+    assert body["n_splits"] == 30
+    assert body["sharpe_p5"] <= body["sharpe_p50"] <= body["sharpe_p95"]
+    assert body["note"] is None
+
+
+@respx.mock
+def test_backtest_cv_falls_back_to_walkforward(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """bar < 200 → cpcv 自动回落 walk_forward，splitter_used 改写 + note 说明。"""
+    respx.get("http://data-mock.test/bars").mock(
+        return_value=Response(200, json=_bars_for_oscillating(100))
+    )
+    r = client.post(
+        "/backtest/cv",
+        headers=auth_headers,
+        json={
+            "strategy_id": "sma_cross",
+            "symbol": "BTC/USDT",
+            "from_ts": "2026-01-01T00:00:00Z",
+            "to_ts": "2026-01-10T00:00:00Z",
+            "splitter": "cpcv",
+            "n_folds": 6,
+            "n_test_folds": 2,
+            "wf_test_size": 10,
+            "wf_train_size": 20,
+        },
+    )
+    assert r.status_code == 200, r.json()
+    body = r.json()
+    assert body["splitter_used"] == "walk_forward"
+    assert body["note"] is not None
+    assert "回落" in body["note"]
+    assert body["n_paths"] == 1

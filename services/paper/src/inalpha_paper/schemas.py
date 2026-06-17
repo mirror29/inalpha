@@ -93,6 +93,63 @@ class BacktestRequest(BaseModel):
         return self
 
 
+class CVBacktestRequest(BacktestRequest):
+    """``POST /backtest/cv`` 请求体（ADR-0028）—— 在 BacktestRequest 上加 splitter 配置。
+
+    继承 strategy_id/candidate_id 二选一校验 + 数据窗口字段；``validation_split`` 在 CV
+    路径无意义（被忽略）。
+    """
+
+    splitter: Literal["cpcv", "walk_forward", "purged_kfold"] = Field(
+        default="cpcv",
+        description="时序 CV 切分器：cpcv（组合式 purged，多路径，最强）/ walk_forward / "
+        "purged_kfold。bar < 200 时 cpcv 自动回落 walk_forward。",
+    )
+    n_folds: int = Field(default=6, ge=2, le=20, description="cpcv/kfold 分组数")
+    n_test_folds: int = Field(
+        default=2, ge=1, description="cpcv 每组合取作 test 的组数（须 < n_folds）"
+    )
+    embargo_pct: float = Field(
+        default=0.05, ge=0.0, lt=1.0, description="purge+embargo 占总 bar 比例（按 bar 数）"
+    )
+    wf_test_size: int = Field(default=21, ge=1, description="walk_forward 每折 test bar 数")
+    wf_train_size: int = Field(
+        default=252, ge=1, description="walk_forward train 窗口 bar 数"
+    )
+
+    @model_validator(mode="after")
+    def _check_cpcv_test_folds(self) -> CVBacktestRequest:
+        """cpcv 要求 n_test_folds < n_folds（> 1 才是组合式）。"""
+        if self.splitter == "cpcv" and not 1 <= self.n_test_folds < self.n_folds:
+            raise PydanticCustomError(
+                "cpcv_test_folds",
+                "n_test_folds must be in [1, n_folds) for cpcv",
+            )
+        return self
+
+
+class CVBacktestResponse(BaseModel):
+    """``POST /backtest/cv`` 响应（ADR-0028）—— 多路径 OOS Sharpe 分布 + DSR。"""
+
+    symbol: str
+    timeframe: str
+    n_bars: int
+    splitter_used: str = Field(description="实际用的 splitter（cpcv 不足回落时 != 请求值）")
+    n_paths: int
+    n_splits: int
+    sharpe_per_path: list[float]
+    max_dd_per_path: list[float]
+    sharpe_p5: float
+    sharpe_p50: float
+    sharpe_p95: float
+    sharpe_mean: float
+    dsr: float | None = None
+    dsr_p_value: float | None = None
+    note: str | None = Field(
+        default=None, description="回落 / 降级说明（如 cpcv → walk_forward）"
+    )
+
+
 class PositionSnapshot(BaseModel):
     instrument_id: str  # "BTC/USDT@binance"
     quantity: float
