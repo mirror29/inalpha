@@ -2,6 +2,7 @@
 
 import { ArrowUpRight } from "lucide-react";
 import { motion } from "motion/react";
+import Image from "next/image";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 
@@ -128,7 +129,18 @@ export function CTAFooter({ stats = null }: CTAFooterProps = {}) {
       </div>
 
       {/* Footer colophon */}
-      <footer className="border-t border-fg/12">
+      <footer className="relative isolate overflow-hidden border-t border-fg/12">
+        {/* 朱印 logo —— 低透角标水印，仅氛围（DESIGN §3.4 允许 footer colophon 的朱印 motif）；
+            取自 tab favicon 同款，透明 PNG */}
+        <Image
+          src="/seal-wm.png"
+          alt=""
+          aria-hidden
+          width={400}
+          height={400}
+          unoptimized
+          className="pointer-events-none absolute -bottom-10 -right-4 -z-10 w-40 select-none opacity-[0.1] md:w-52"
+        />
         <div className="mx-auto grid max-w-[96rem] grid-cols-12 gap-x-6 gap-y-4 px-6 py-10 font-mono text-[10px] uppercase tracking-[0.26em] text-fg-muted/70 md:px-14">
           <div className="col-span-6 md:col-span-3">
             <p className="text-fg/40">file</p>
