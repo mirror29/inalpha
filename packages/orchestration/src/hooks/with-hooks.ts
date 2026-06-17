@@ -52,6 +52,16 @@ type GenericTool = {
 };
 
 /**
+ * mastra ``server.middleware`` 从 Bearer JWT 解出的已认证主体（sub）写进 RequestContext
+ * 的 key（#91）。getSessionId 最高优先读它 → askCache 按已认证主体 scope（替代 __global__）。
+ * 单租户 = console subject（稳定唯一）；多租户 = 每用户隔离，自动生效。
+ */
+export const AUTH_SUB_KEY = "inalpha__authSub";
+
+/** Module-level flag：进程内仅 warn 一次 runId fallback / 完全失败，避免每次 tool 调用刷屏。 */
+let _warnedRunIdFallback = false;
+
+/**
  * 默认 sessionId 抽取器：按优先级从 Mastra runtime context 取**conversation 级**
  * 稳定的 ID。
  *
@@ -74,16 +84,6 @@ type GenericTool = {
  * 多租户隔离：dashboard 给每用户发各自 JWT（现发 CONSOLE_SUBJECT 常量）后，askSub 即按
  * 用户隔离，promote 审批不再跨用户越权——askCache 侧无需再改（#91）。
  */
-/**
- * mastra ``server.middleware`` 从 Bearer JWT 解出的已认证主体（sub）写进 RequestContext
- * 的 key（#91）。getSessionId 最高优先读它 → askCache 按已认证主体 scope（替代 __global__）。
- * 单租户 = console subject（稳定唯一）；多租户 = 每用户隔离，自动生效。
- */
-export const AUTH_SUB_KEY = "inalpha__authSub";
-
-/** Module-level flag：进程内仅 warn 一次 runId fallback / 完全失败，避免每次 tool 调用刷屏。 */
-let _warnedRunIdFallback = false;
-
 export function defaultGetSessionId(ctx: unknown): string | undefined {
   if (!ctx || typeof ctx !== "object") return undefined;
   const c = ctx as Record<string, unknown>;
