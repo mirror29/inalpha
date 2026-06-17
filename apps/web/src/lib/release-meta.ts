@@ -12,9 +12,9 @@ export const RELEASE = {
   rev: "0.12",
   phase: "D-12",
   /** Broadsheet 点号写法，供 UI 展示。 */
-  dateDot: "2026.06.12",
+  dateDot: "2026.06.17",
   /** ISO，供 <time dateTime> 或后续 schema.org。 */
-  dateIso: "2026-06-12",
+  dateIso: "2026-06-17",
 } as const;
 
 /** 复合短串，如 "rev 0.11 · D-11"。 */

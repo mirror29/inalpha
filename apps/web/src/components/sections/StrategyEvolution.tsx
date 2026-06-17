@@ -60,6 +60,23 @@ export function StrategyEvolution() {
         variants={gridStagger}
         className="mt-14"
       >
+        {/* 原型库种子 —— agent 不从零写，从经验证骨架起步 */}
+        <motion.div variants={fadeUp} className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-fg-muted/60">
+            {t("archetypeLabel")}
+          </span>
+          <span className="flex flex-wrap gap-1.5">
+            {(t.raw("archetypes") as string[]).map((a) => (
+              <span
+                key={a}
+                className="rounded-sm border border-seal/30 bg-seal/[0.06] px-2 py-0.5 font-mono text-[11px] text-seal/90"
+              >
+                {a}
+              </span>
+            ))}
+          </span>
+        </motion.div>
+
         {/* 写代码 */}
         <motion.div variants={fadeUp} className="rounded-md border border-border-subtle bg-bg-elev p-5">
           <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-fg-muted/60">
@@ -111,6 +128,19 @@ export function StrategyEvolution() {
             {t("loop")}
             <ArrowRight className="size-3.5 text-seal/40" aria-hidden />
           </div>
+        </motion.div>
+
+        {/* 质量门 —— 上线前打分，不达标自动 pivot 重写一版 */}
+        <motion.div
+          variants={fadeUp}
+          className="mt-6 flex items-start gap-3 border-l-2 border-gold/60 pl-4"
+        >
+          <span className="mt-0.5 shrink-0 font-mono text-[10.5px] uppercase tracking-[0.18em] text-gold">
+            {t("gateLabel")}
+          </span>
+          <p className="max-w-[60ch] text-[13.5px] leading-relaxed text-fg-muted">
+            {t("gate")}
+          </p>
         </motion.div>
       </motion.div>
     </section>

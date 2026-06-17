@@ -16,27 +16,31 @@ import { fadeUp, gridStagger } from "@/lib/motion";
  * 数值为示例（illustrative），只表达 factor.timing 的输出形态。
  */
 
-type Factor = { name: string; ic: number };
+/** `ic` = 60d 滚动 Rank IC（基线）；`recent` = rank_ic_recent（近窗，演示衰减巡检）。 */
+type Factor = { name: string; ic: number; recent: number };
 
 const INITIAL: Factor[] = [
-  { name: "momentum_60d", ic: 0.082 },
-  { name: "residual_reversal", ic: 0.061 },
-  { name: "vol_carry", ic: 0.047 },
-  { name: "amihud_illiq", ic: 0.024 },
-  { name: "pead_drift", ic: 0.012 },
-  { name: "value_bm", ic: -0.007 },
+  { name: "momentum_60d", ic: 0.082, recent: 0.071 },
+  { name: "residual_reversal", ic: 0.061, recent: 0.066 },
+  { name: "vol_carry", ic: 0.047, recent: 0.039 },
+  { name: "amihud_illiq", ic: 0.024, recent: 0.021 },
+  { name: "pead_drift", ic: 0.012, recent: 0.018 },
+  { name: "value_bm", ic: -0.007, recent: -0.012 },
 ];
 const IC_MAX = 0.09;
 const IC_MIN = -0.02;
 
-/** 小幅随机游走 + 重排（每帧只动一点，像行情里因子有效性缓慢变化）。 */
+const clampIc = (v: number) => Math.min(IC_MAX, Math.max(IC_MIN, v));
+
+/** 小幅随机游走 + 重排（每帧只动一点，像行情里因子有效性缓慢变化）。
+ *  base 与 recent 各自独立游走 —— recent 跌破 base 即「衰减」。 */
 function step(prev: Factor[]): Factor[] {
   return prev
-    .map((f) => {
-      const delta = (Math.random() - 0.5) * 0.014;
-      const ic = Math.min(IC_MAX, Math.max(IC_MIN, f.ic + delta));
-      return { ...f, ic };
-    })
+    .map((f) => ({
+      ...f,
+      ic: clampIc(f.ic + (Math.random() - 0.5) * 0.014),
+      recent: clampIc(f.recent + (Math.random() - 0.5) * 0.018),
+    }))
     .sort((a, b) => b.ic - a.ic);
 }
 
@@ -98,6 +102,24 @@ export function AgentIntelligence() {
           >
             {t("timing.caption")}
           </motion.div>
+
+          {/* 因子库治理事实 —— D2 临床面，等宽精确 */}
+          <motion.div variants={fadeUp} className="mt-9">
+            <div className="font-mono text-[10.5px] uppercase tracking-[0.2em] text-fg-muted/60">
+              ── {t("lib.heading")}
+            </div>
+            <ul className="mt-3 space-y-2">
+              {(t.raw("lib.facts") as string[]).map((fact) => (
+                <li
+                  key={fact}
+                  className="flex items-baseline gap-2.5 font-mono text-[12px] leading-relaxed text-fg-muted"
+                >
+                  <span className="mt-px inline-block size-1 shrink-0 translate-y-[0.4em] rounded-full bg-seal/70" aria-hidden />
+                  <span>{fact}</span>
+                </li>
+              ))}
+            </ul>
+          </motion.div>
         </motion.div>
 
         {/* 右：因子排名面板（自动重排器物） */}
@@ -153,18 +175,35 @@ export function AgentIntelligence() {
                         />
                       </div>
                     </div>
-                    <span
-                      className={
-                        "font-mono text-[13px] tabular-nums transition-colors " +
-                        (neg ? "text-fox-red/80" : on ? "text-cyan" : "text-fg-muted/60")
-                      }
-                    >
-                      {f.ic >= 0 ? "+" : ""}
-                      {f.ic.toFixed(3)}
-                    </span>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span
+                        className={
+                          "font-mono text-[13px] tabular-nums transition-colors " +
+                          (neg ? "text-fox-red/80" : on ? "text-cyan" : "text-fg-muted/60")
+                        }
+                      >
+                        {f.ic >= 0 ? "+" : ""}
+                        {f.ic.toFixed(3)}
+                      </span>
+                      {/* rank_ic_recent —— 近窗 IC，跌破基线即衰减（↘ 红），守住/抬升（↗ 绿） */}
+                      <span
+                        className={
+                          "font-mono text-[10px] tabular-nums " +
+                          (f.recent < f.ic ? "text-fox-red/55" : "text-bull/55")
+                        }
+                      >
+                        {f.recent < f.ic ? "↘" : "↗"} {f.recent >= 0 ? "+" : ""}
+                        {f.recent.toFixed(3)}
+                      </span>
+                    </div>
                   </motion.div>
                 );
               })}
+            </div>
+
+            {/* 因子库治理脚注 —— 70 因子 / 去相关 / 衰减巡检（不转大小写：保 ρ 与 IC 原样） */}
+            <div className="border-t border-border-subtle px-5 py-2.5 font-mono text-[10.5px] normal-case tracking-[0.08em] text-fg-muted/55">
+              {t("lib.panelFoot")}
             </div>
           </div>
         </motion.div>

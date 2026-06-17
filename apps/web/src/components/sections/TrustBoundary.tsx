@@ -290,6 +290,19 @@ export function TrustBoundary() {
           )}
         </motion.div>
 
+        {/* 框架级持仓保护 —— 审批之外的兜底止损，D2 临床面（gold = risk gate） */}
+        <motion.div
+          variants={fadeUp}
+          className="mt-10 flex flex-col gap-3 border-l-2 border-gold/60 pl-4 md:flex-row md:items-baseline md:gap-5"
+        >
+          <span className="shrink-0 font-mono text-[10.5px] uppercase tracking-[0.18em] text-gold">
+            {t("guard.tag")} · {t("guard.label")}
+          </span>
+          <p className="max-w-[64ch] text-[13.5px] leading-relaxed text-fg-muted">
+            {t("guard.body")}
+          </p>
+        </motion.div>
+
         {/* LLM 直连被 deny 拦截：红点加速撞墙、✕ 闪烁抖动、弹回
             移动端两段式（标签一行 + 拦截线一行），md 起恢复 agent—✕—order 单行 */}
         <motion.div

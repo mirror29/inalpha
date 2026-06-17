@@ -105,7 +105,7 @@
         "inalpha": "The AI only proposes. A rule you set places the order — it can't pull the trigger itself."
       }
     },
-    "close": "An AI that explains itself — and never trades behind your back."
+    "close": "Every step explained. Every trade, your call."
   },
   "intelligence": {
     "eyebrow": "03 / Intelligence",
@@ -113,13 +113,23 @@
     "sub": "Not a hard-coded indicator set. Agents rank factors by time-series Rank IC, surface the ones working right now, and convene opposing analysts before a single line of strategy is written.",
     "timing": {
       "heading": "Factor timing",
-      "body": "factor.timing ranks the factor zoo by rolling Rank IC and surfaces the currently-effective signals — every factor formalized, IC-tested, multiple-testing-checked, and logged with author, timestamp, and the economic-story gate decision.",
+      "body": "factor.timing ranks a 70-factor zoo — price, volume, fundamental, and FRED macro families — by rolling Rank IC, and surfaces the signals working right now. Every factor is formalized, IC-tested, multiple-testing-checked, de-correlated, and logged with author, timestamp, and the economic-story gate decision.",
       "caption": "factor.timing · rolling Rank IC"
     },
     "panel": {
       "heading": "A panel of investing legends",
       "body": "A deep dive convenes technical, fundamental, and sentiment analysts — plus an optional panel of investing legends — for opposing views that feed a synthesis, never a single oracle voice.",
       "legendsLabel": "opposing lenses"
+    },
+    "lib": {
+      "heading": "A governed factor library",
+      "facts": [
+        "70 factors · 7 families · incl. FRED macro (yields · DXY · VIX · CPI)",
+        "decay watch · rank_ic_recent vs rank_ic, surfaced per factor",
+        "top-N de-correlated at ρ < 0.85 — never ten copies of one signal",
+        "discovery L1 · whitelisted DSL (no eval/exec) → auto-eval + dup-check + register"
+      ],
+      "panelFoot": "70 factors · de-correlated ρ<0.85 · decay-watched · recent IC vs base"
     }
   },
   "research": {
@@ -142,7 +152,11 @@
     "tallyBear": "bears",
     "verdict": "decision_record",
     "verdictText": "long NVDA · conviction 0.41 · every stance logged",
-    "legendsLabel": "Optional · a panel of investing legends"
+    "legendsLabel": "Optional · a panel of investing legends",
+    "skills": {
+      "label": "Pluggable methods · agent skills",
+      "body": "Beyond the panel, agents load research playbooks as skills — a supply-chain lens, a methodology you bring in — read only when a case calls for it. Knowledge plugs in; tokens aren't spent on what isn't in play."
+    }
   },
   "evolution": {
     "title": "Agents write the strategy — then rewrite it to beat itself.",
@@ -158,9 +172,13 @@
       "contract": "Strategy contract",
       "contractNote": "must subclass + implement on_bar"
     },
+    "archetypeLabel": "Seeded from proven archetypes",
+    "archetypes": ["trend", "mean-reversion", "volatility", "multi-factor"],
     "fitnessLabel": "Multi-objective fitness",
     "fitness": "sharpe + 0.3·calmar − 0.1·turnover − 1.0·(maxDD > 30%)",
-    "loop": "mutate · evaluate · keep what beats the baseline"
+    "loop": "mutate · evaluate · keep what beats the baseline",
+    "gateLabel": "Quality gate",
+    "gate": "Before promotion a gate scores the candidate against the baseline; below bar, the agent auto-pivots and rewrites once — only what clears ships."
   },
   "demo": {
     "eyebrow": "04 / Demo",
@@ -259,7 +277,12 @@
     },
     "agentLabel": "LLM agent",
     "orderLabel": "Order book",
-    "wall": "denied — no direct path for the LLM"
+    "wall": "denied — no direct path for the LLM",
+    "guard": {
+      "tag": "guard-stop",
+      "label": "Framework backstop",
+      "body": "Independent of strategy logic, the framework caps every position at a −20% hard stop — applied in backtest too, so the drawdown you see is the drawdown you'd live. Its liquidations clear the risk gate only when triple-signed (SELL · guard tag · guard- order prefix), so nothing can spoof its way past the boundary."
+    }
   },
   "harness": {
     "eyebrow": "06 / Harness",
@@ -332,7 +355,9 @@
     "currentState": {
       "title": "Where we are honest with you",
       "items": [
-        "D-11 shipped: cross-currency cash + an autonomous paper runner — promoted strategies trade a simulated account on live bars, machine-approved through plan/exec, with full decision replay",
+        "Autonomous paper runner + cross-currency cash: promoted strategies trade a simulated multi-currency account on live bars, machine-approved through plan/exec, with full decision replay",
+        "A 70-factor library with lineage tracking and decay alerts — factors are IC-monitored and de-correlated; alerts only warn, they never move your book",
+        "Framework position guard: a −20% hard stop applied in backtest and paper alike, independent of strategy logic",
         "RiskEngine enforced at the paper HTTP boundary: notional cap / price deviation / drawdown veto / real exchange calendars across every market",
         "No real-capital deployment — the runner trades a paper account, orders matched locally; every step passes plan/exec approval and lands on disk"
       ]
