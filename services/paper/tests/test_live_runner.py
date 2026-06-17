@@ -230,7 +230,7 @@ async def test_run_loop_circuit_break_auto_stops(
     monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
     monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", lambda _s: asyncio.sleep(0))
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -460,7 +460,7 @@ async def test_run_loop_non_retryable_error_immediate_errored(
     monkeypatch.setattr(manager, "_build_session", fake_build)
     monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -491,7 +491,7 @@ async def test_run_loop_retryable_error_accumulates_to_errored(
     monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
     monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", no_sleep)
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -565,7 +565,7 @@ async def test_done_callback_marks_loop_crashed(
     manager.start(run)
     task = manager._tasks[run["id"]]
     with pytest.raises(RuntimeError):  # 证明异常确实逃出了 _run_loop
-        await asyncio.wait_for(task, timeout=2.0)
+        await asyncio.wait_for(task, timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     # 兜底写库在 done_callback 另起的 task 里：轮询等它落库
     fresh = None
@@ -605,7 +605,7 @@ async def test_build_errored_path_survives_log_write_failure(
         "inalpha_paper.live_runner.runs_store.append_error_log", always_fail_append
     )
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)  # 不抛 = 异常没逃出
+    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)  # 不抛 = 异常没逃出
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -702,7 +702,7 @@ async def test_run_loop_build_session_failure_errored(app_with_lifespan: Any) ->
     # → _build_session 加载/审计/契约校验抛错
     run = await _insert_run(uuid4())
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=2.0)
+    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
