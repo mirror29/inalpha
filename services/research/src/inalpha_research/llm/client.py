@@ -639,7 +639,10 @@ class LanguageScopedClient:
 
     def __init__(self, inner: LLMClient, language: str) -> None:
         self._inner = inner
-        self._language = language
+        # 防 prompt 注入(CR #92 安全项):language 最终源自 LLM 对用户消息的提取,会被拼进
+        # 全部 analyst/辩论/manager 的 system prompt 尾部。去换行(打散"另起一行新指令")+
+        # 截断,作为 schema max_length 之外的末端兜底(也护 infer 路径)。
+        self._language = language.replace("\n", " ").replace("\r", " ").strip()[:60]
 
     async def complete_json(
         self,
