@@ -77,14 +77,21 @@ const observability = new Observability({
  * 身份注入 middleware（#91 多租户审批隔离根治）。
  *
  * 从 ``Authorization: Bearer <jwt>`` 解出 ``sub`` → 写进 Mastra ``requestContext`` 的
- * ``MASTRA_RESOURCE_ID_KEY`` → Mastra 把它注入工具的 ``ctx.agent.resourceId`` →
- * ``withHooks.defaultGetSessionId`` 本就优先读 resourceId → askCache 按**已认证主体**
- * scope，替代不稳定的 ``__global__`` fallback（promote 审批不再跨用户越权）。
+ * **自定义 key ``AUTH_SUB_KEY``** → ``withHooks.defaultGetSessionId`` 最高优先读
+ * ``requestContext[AUTH_SUB_KEY]`` → askCache 按**已认证主体** scope，替代不稳定的
+ * ``__global__`` fallback（promote 审批不再跨用户越权）。
+ *
+ * **为何用自定义 key 而非 ``MASTRA_RESOURCE_ID_KEY``**：后者会牵动 Mastra Memory
+ * （要求 resourceId+threadId 成对，单设 resourceId 会让无 threadId 的 generate 直接 500，
+ * spike 实测踩到）。自定义 key 只供 askCache scope，与 Memory 的 resourceId 机制**完全解耦**。
  *
  * - 单租户 dev：sub 恒为 console subject → scope 稳定且唯一（行为等价 __global__，但显式）。
  * - 多租户：dashboard 给每用户发各自 JWT → 自动按用户隔离，无需再改 askCache。
  * - 无 / 非法 / 过期 token：不注入，沿用既有 fallback，绝不阻断请求（审批门有后端硬校验兜底）。
  */
+/** 进程内仅 warn 一次 requestContext 缺失（避免每请求刷屏），见 identityMiddleware。 */
+let _warnedNoRequestContext = false;
+
 const identityMiddleware: MiddlewareHandler = async (c, next) => {
   try {
     const authz = c.req.header("Authorization");
@@ -93,11 +100,18 @@ const identityMiddleware: MiddlewareHandler = async (c, next) => {
       const payload = await verifyToken(token);
       const sub = typeof payload.sub === "string" && payload.sub ? payload.sub : undefined;
       if (sub) {
-        // 用自定义 key 而非 MASTRA_RESOURCE_ID_KEY：后者会牵动 Mastra Memory（要求
-        // resourceId+threadId 成对，单设 resourceId 会让无 threadId 的 generate 直接 500）。
-        // 自定义 key 只供 askCache scope 用，与 Memory 解耦。
         const rc = c.get("requestContext") as { set?: (k: string, v: unknown) => void } | undefined;
-        rc?.set?.(AUTH_SUB_KEY, sub);
+        if (typeof rc?.set === "function") {
+          rc.set(AUTH_SUB_KEY, sub);
+        } else if (!_warnedNoRequestContext) {
+          // 防御性可观测：rc 缺失则已验证的 sub 被丢、askCache 静默落回 __global__、#91 隔离
+          // 悄然复现。Mastra 升级若改了中间件初始化顺序最可能触发——进程内 warn 一次即够定位。
+          _warnedNoRequestContext = true;
+          console.warn(
+            "[identity-mw] requestContext 不可用（无 .set）——authSub 未注入，askCache 落回 " +
+              "__global__；Mastra 升级后请复查中间件与 requestContext 初始化顺序（#91 隔离失效）。",
+          );
+        }
       }
     }
   } catch {
