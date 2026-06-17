@@ -206,6 +206,24 @@ def test_no_duplicate_exit_while_pending_fill() -> None:
     assert len(captured) == 1  # 没多发第二笔
 
 
+def test_cancel_pending_exit_rearms_guard_after_reject() -> None:
+    """出场单被拒（live 路由失败）→ cancel_pending_exit 解除去重 → 下一根重新触发可再发。
+
+    防 #94 死锁：否则出场没成交、持仓不 flat，guard 永久跳过该 inst → 灾难止损静默失效。
+    """
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, captured = _guard_with_capture(pf, msgbus, stop_loss_pct=0.20)
+
+    guard.evaluate(_bar(79.0, ts_ns=1))  # 出 1 单 + 标 pending
+    assert len(captured) == 1
+    guard.evaluate(_bar(78.0, ts_ns=2))  # pending → 跳过
+    assert len(captured) == 1
+    guard.cancel_pending_exit(_btc())  # 出场被拒 → 解除去重
+    guard.evaluate(_bar(77.0, ts_ns=3))  # 重新评估、仍穿阈 → 再发（不再死锁）
+    assert len(captured) == 2
+
+
 # ─── 工厂 / 关闭 / 边界 ───
 
 

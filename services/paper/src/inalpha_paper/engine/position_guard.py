@@ -165,6 +165,14 @@ class PositionGuard:
         self._pending_exit_insts.add(inst)
         return [order]
 
+    def cancel_pending_exit(self, inst: InstrumentId) -> None:
+        """保护性出场单被 reject / cancel（如 live 路由 DB 失败）时调用，解除去重标记。
+
+        否则出场没成交 → 持仓不 flat → evaluate 永久命中 ``_pending_exit_insts`` 跳过该
+        instrument → 灾难止损静默失效（#94 CR）。解除后下一根 bar 重新评估，仍穿阈则重发。
+        """
+        self._pending_exit_insts.discard(inst)
+
     # ─── 内部 ───
 
     def _triggered_tag(
