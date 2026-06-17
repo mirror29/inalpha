@@ -166,8 +166,7 @@ class PositionGuard:
         # 用自峰值价格的回撤幅度判定（peak_mark - mark) / peak_mark），不掺成本基准。
         if (
             self._trailing_stop_pct is not None
-            and peak_mark > avg
-            and peak_mark > 0
+            and peak_mark > avg  # 曾进盈利区(avg>0 已在 evaluate 守门,故 peak_mark>0 恒真)
             and (peak_mark - mark) / peak_mark >= self._trailing_stop_pct
         ):
             return "trailing_stop_loss"
