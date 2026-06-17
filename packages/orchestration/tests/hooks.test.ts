@@ -10,6 +10,7 @@ import {
   DEFAULT_GRID_MAX,
   HookRunner,
   createAuditLogHandler,
+  AUTH_SUB_KEY,
   createGridSizeCapHandler,
   createToolIdempotencyHandlers,
   defaultAuditRegistration,
@@ -683,6 +684,19 @@ describe("audit-log handler", () => {
 // ────────────────────────────────────────────────────────────────────
 
 describe("defaultGetSessionId", () => {
+  it("prefers requestContext authSub — mastra middleware 注入的已认证主体 (#91 多租户 scope)", () => {
+    // RequestContext 是 Map（.get）；authSub 高于 agent.threadId
+    const rc = new Map<string, unknown>([[AUTH_SUB_KEY, "user-42"]]);
+    expect(defaultGetSessionId({ requestContext: rc, agent: { threadId: "t-1" } })).toBe(
+      "user-42",
+    );
+  });
+
+  it("authSub 缺失 → 落回既有优先级（不影响无中间件的路径）", () => {
+    const rc = new Map<string, unknown>();
+    expect(defaultGetSessionId({ requestContext: rc, agent: { threadId: "t-1" } })).toBe("t-1");
+  });
+
   it("prefers threadId (Mastra native)", () => {
     expect(defaultGetSessionId({ threadId: "t-1", runId: "r-1" })).toBe("t-1");
   });

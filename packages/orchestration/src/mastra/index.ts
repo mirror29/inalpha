@@ -26,6 +26,7 @@ if (existsSync(envPath)) {
 
 import { Mastra } from "@mastra/core/mastra";
 import { LibSQLStore } from "@mastra/libsql";
+import type { MiddlewareHandler } from "hono";
 import { PinoLogger } from "@mastra/loggers";
 import {
   ConsoleExporter,
@@ -34,7 +35,9 @@ import {
   SamplingStrategyType,
 } from "@mastra/observability";
 
+import { verifyToken } from "../auth.js";
 import { getSettings } from "../config.js";
+import { AUTH_SUB_KEY } from "../hooks/with-hooks.js";
 import { divinationApiRoutes } from "../divination/api.js";
 import { closePool as closeDivinationPool } from "../divination/repo.js";
 import { permissionsApiRoutes } from "../permissions/api.js";
@@ -70,6 +73,39 @@ const observability = new Observability({
   },
 });
 
+/**
+ * 身份注入 middleware（#91 多租户审批隔离根治）。
+ *
+ * 从 ``Authorization: Bearer <jwt>`` 解出 ``sub`` → 写进 Mastra ``requestContext`` 的
+ * ``MASTRA_RESOURCE_ID_KEY`` → Mastra 把它注入工具的 ``ctx.agent.resourceId`` →
+ * ``withHooks.defaultGetSessionId`` 本就优先读 resourceId → askCache 按**已认证主体**
+ * scope，替代不稳定的 ``__global__`` fallback（promote 审批不再跨用户越权）。
+ *
+ * - 单租户 dev：sub 恒为 console subject → scope 稳定且唯一（行为等价 __global__，但显式）。
+ * - 多租户：dashboard 给每用户发各自 JWT → 自动按用户隔离，无需再改 askCache。
+ * - 无 / 非法 / 过期 token：不注入，沿用既有 fallback，绝不阻断请求（审批门有后端硬校验兜底）。
+ */
+const identityMiddleware: MiddlewareHandler = async (c, next) => {
+  try {
+    const authz = c.req.header("Authorization");
+    const token = authz?.startsWith("Bearer ") ? authz.slice(7).trim() : undefined;
+    if (token) {
+      const payload = await verifyToken(token);
+      const sub = typeof payload.sub === "string" && payload.sub ? payload.sub : undefined;
+      if (sub) {
+        // 用自定义 key 而非 MASTRA_RESOURCE_ID_KEY：后者会牵动 Mastra Memory（要求
+        // resourceId+threadId 成对，单设 resourceId 会让无 threadId 的 generate 直接 500）。
+        // 自定义 key 只供 askCache scope 用，与 Memory 解耦。
+        const rc = c.get("requestContext") as { set?: (k: string, v: unknown) => void } | undefined;
+        rc?.set?.(AUTH_SUB_KEY, sub);
+      }
+    }
+  } catch {
+    // 非法 / 过期 token → 不注入身份，沿用 fallback（不阻断；审批门后端硬校验兜底）
+  }
+  await next();
+};
+
 export const mastra = new Mastra({
   storage: observabilityStore,
   // D-8a'：只剩 orchestrator 一个 agent；trader/risk subagent 已废弃
@@ -94,6 +130,7 @@ export const mastra = new Mastra({
   // （ADR-0037 调试记录）。
   server: {
     timeout: 600_000,
+    middleware: identityMiddleware,
     apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes, ...divinationApiRoutes],
   },
 });
