@@ -89,8 +89,9 @@ const observability = new Observability({
  * - 多租户：dashboard 给每用户发各自 JWT → 自动按用户隔离，无需再改 askCache。
  * - 无 / 非法 / 过期 token：不注入，沿用既有 fallback，绝不阻断请求（审批门有后端硬校验兜底）。
  */
-/** 进程内仅 warn 一次 requestContext 缺失（避免每请求刷屏），见 identityMiddleware。 */
+/** 进程内仅 warn 一次 requestContext 缺失 / Bearer 校验失败（避免每请求刷屏），见 identityMiddleware。 */
 let _warnedNoRequestContext = false;
+let _warnedAuthFailure = false;
 
 const identityMiddleware: MiddlewareHandler = async (c, next) => {
   try {
@@ -114,8 +115,18 @@ const identityMiddleware: MiddlewareHandler = async (c, next) => {
         }
       }
     }
-  } catch {
-    // 非法 / 过期 token → 不注入身份，沿用 fallback（不阻断；审批门后端硬校验兜底）
+  } catch (err) {
+    // 单次校验失败正常会发生（用户带过期 / 无效 token）→ 静默沿用 fallback，不阻断。
+    // 但若**每个**请求都失败（JWT_SECRET 配错 / getSettings 异常等），#91 隔离会零日志
+    // 静默失效；进程内 warn 一次提示排查（与 requestContext 缺失告警对称，CR #96）。
+    if (!_warnedAuthFailure) {
+      _warnedAuthFailure = true;
+      console.warn(
+        "[identity-mw] Bearer 校验失败，本次不注入 authSub（沿用 __global__）；" +
+          "若每个请求都报此条，多半 JWT_SECRET 配错 → 多租户 #91 隔离静默失效，请排查：",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
   await next();
 };
