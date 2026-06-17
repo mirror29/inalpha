@@ -81,25 +81,25 @@ def _spec(factor_id: str, name: str, fred: str, *, freq: str = "daily") -> Facto
 
 
 _SPECS: list[FactorSpec] = [
-    _spec("macro.dff_chg_20", "联邦基金利率 20 日变化", "DFF"),
-    _spec("macro.dgs10_level", "10Y 美债收益率水平", "DGS10"),
-    _spec("macro.dgs10_chg_20", "10Y 美债收益率 20 日变化", "DGS10"),
-    _spec("macro.curve_slope", "期限利差 10Y-2Y", "DGS10,DGS2"),
-    _spec("macro.curve_slope_chg_20", "期限利差 20 日变化", "DGS10,DGS2"),
-    _spec("macro.dollar_roc_20", "广义美元指数 20 日动量", "DTWEXBGS"),
-    _spec("macro.dollar_roc_60", "广义美元指数 60 日动量", "DTWEXBGS"),
-    _spec("macro.vix_level", "VIX 水平", "VIXCLS"),
-    _spec("macro.vix_chg_20", "VIX 20 日变化", "VIXCLS"),
+    _spec("macro.dff_chg_20", "Fed funds rate 20-day change", "DFF"),
+    _spec("macro.dgs10_level", "10Y Treasury yield level", "DGS10"),
+    _spec("macro.dgs10_chg_20", "10Y Treasury yield 20-day change", "DGS10"),
+    _spec("macro.curve_slope", "Term spread 10Y-2Y", "DGS10,DGS2"),
+    _spec("macro.curve_slope_chg_20", "Term spread 20-day change", "DGS10,DGS2"),
+    _spec("macro.dollar_roc_20", "Broad dollar index 20-day momentum", "DTWEXBGS"),
+    _spec("macro.dollar_roc_60", "Broad dollar index 60-day momentum", "DTWEXBGS"),
+    _spec("macro.vix_level", "VIX level", "VIXCLS"),
+    _spec("macro.vix_chg_20", "VIX 20-day change", "VIXCLS"),
     # ── monthly（ADR-0044 Phase 2）。刻意不做二阶衍生（m2_yoy_chg_3 等），
     #    控制候选数（ADR-0043 多重检验纪律）──
-    _spec("macro.cpi_yoy", "CPI 同比", "CPIAUCSL", freq="monthly"),
-    _spec("macro.cpi_mom", "CPI 环比", "CPIAUCSL", freq="monthly"),
-    _spec("macro.cpi_yoy_chg_3", "CPI 同比 3 月动量", "CPIAUCSL", freq="monthly"),
-    _spec("macro.core_cpi_yoy", "核心 CPI 同比", "CPILFESL", freq="monthly"),
-    _spec("macro.unrate_level", "失业率水平", "UNRATE", freq="monthly"),
-    _spec("macro.unrate_chg_3", "失业率 3 月变动", "UNRATE", freq="monthly"),
-    _spec("macro.payems_chg_1", "非农就业月增（千人）", "PAYEMS", freq="monthly"),
-    _spec("macro.m2_yoy", "M2 同比增速", "M2SL", freq="monthly"),
+    _spec("macro.cpi_yoy", "CPI YoY", "CPIAUCSL", freq="monthly"),
+    _spec("macro.cpi_mom", "CPI MoM", "CPIAUCSL", freq="monthly"),
+    _spec("macro.cpi_yoy_chg_3", "CPI YoY 3-month momentum", "CPIAUCSL", freq="monthly"),
+    _spec("macro.core_cpi_yoy", "Core CPI YoY", "CPILFESL", freq="monthly"),
+    _spec("macro.unrate_level", "Unemployment rate level", "UNRATE", freq="monthly"),
+    _spec("macro.unrate_chg_3", "Unemployment rate 3-month change", "UNRATE", freq="monthly"),
+    _spec("macro.payems_chg_1", "Nonfarm payrolls monthly change (thousands)", "PAYEMS", freq="monthly"),
+    _spec("macro.m2_yoy", "M2 YoY growth", "M2SL", freq="monthly"),
 ]
 
 _SPEC_BY_ID: dict[str, FactorSpec] = {s.factor_id: s for s in _SPECS}

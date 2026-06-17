@@ -44,6 +44,13 @@ class DeepDiveRequest(BaseModel):
         "burry / druckenmiller / marks，详见 analysts/personas）。None 或空 = 不跑 "
         "persona，核心 analyst 行为不变；指定时每个 persona 多一次 LLM 调用。",
     )
+    language: str | None = Field(
+        default=None,
+        max_length=60,
+        description="可选：期望输出语言（自然语言名，如 'English' / '中文'）。传入时所有 "
+        "analyst / 辩论 / manager 的自然语言输出都用该语言（Fix C）；None = 保持模型默认。"
+        "max_length 防 prompt 注入（语言名极短，超 60 必是攻击载荷）。",
+    )
 
     @field_validator("as_of", mode="after")
     @classmethod

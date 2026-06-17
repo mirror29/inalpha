@@ -111,6 +111,13 @@ export const researchDeepDiveTool = createTool({
         "可选：额外启用的投资大师人格视角（每个多一次 LLM 调用）。" +
           "想要多投资风格 / 对立观点对照时传；普通研究省略",
       ),
+    language: z
+      .string()
+      .optional()
+      .describe(
+        "期望输出语言（自然语言名，如 'English' / '中文'）。**应设为用户最近一条消息的语言**，" +
+          "让 analyst / 多空辩论 / 综合结论直接用该语言返回；省略则随模型默认（可能不符）",
+      ),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
@@ -123,6 +130,7 @@ export const researchDeepDiveTool = createTool({
       lookbackDays: inputData.lookbackDays ?? 30,
       userQuestion: inputData.userQuestion,
       personas: inputData.personas as PersonaKey[] | undefined,
+      language: inputData.language,
     });
   },
 });

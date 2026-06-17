@@ -16,17 +16,17 @@ from .base import FactorSpec
 # 可时序计算子集 ──────────────────────────────────────────────────────
 _TS_SPECS: list[FactorSpec] = [
     FactorSpec("alpha101.a101", "alpha101", "Alpha#101 (close-open)/(high-low)", "momentum", direction_hint=1),
-    FactorSpec("alpha101.a54", "alpha101", "Alpha#54 价位结构", "mean_reversion", direction_hint=1),
-    FactorSpec("alpha101.a23", "alpha101", "Alpha#23 高点反转", "mean_reversion", direction_hint=-1),
-    FactorSpec("alpha101.a12", "alpha101", "Alpha#12 量驱动反转", "momentum", direction_hint=1),
-    FactorSpec("alpha101.a49", "alpha101", "Alpha#49 趋势/反转切换", "momentum", direction_hint=1),
+    FactorSpec("alpha101.a54", "alpha101", "Alpha#54 price-position structure", "mean_reversion", direction_hint=1),
+    FactorSpec("alpha101.a23", "alpha101", "Alpha#23 high reversal", "mean_reversion", direction_hint=-1),
+    FactorSpec("alpha101.a12", "alpha101", "Alpha#12 volume-driven reversal", "momentum", direction_hint=1),
+    FactorSpec("alpha101.a49", "alpha101", "Alpha#49 trend/reversal switch", "momentum", direction_hint=1),
 ]
 
 # 横截面项（本期不算，仅在 catalog 露出，标 needs_universe）
 _XS_SPECS: list[FactorSpec] = [
-    FactorSpec("alpha101.a1", "alpha101", "Alpha#1 横截面 rank", "momentum", needs_universe=True),
-    FactorSpec("alpha101.a3", "alpha101", "Alpha#3 横截面相关", "volume", needs_universe=True),
-    FactorSpec("alpha101.a6", "alpha101", "Alpha#6 横截面相关", "volume", needs_universe=True),
+    FactorSpec("alpha101.a1", "alpha101", "Alpha#1 cross-sectional rank", "momentum", needs_universe=True),
+    FactorSpec("alpha101.a3", "alpha101", "Alpha#3 cross-sectional correlation", "volume", needs_universe=True),
+    FactorSpec("alpha101.a6", "alpha101", "Alpha#6 cross-sectional correlation", "volume", needs_universe=True),
 ]
 
 

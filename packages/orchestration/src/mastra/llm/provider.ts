@@ -52,20 +52,20 @@ export const SUPPORTED_PROVIDERS: readonly LLMProvider[] = [
  * | provider | model | 说明 |
  * |---|---|---|
  * | deepseek | deepseek-v4-pro | V4 主旗舰（1.6T MoE）；老 alias deepseek-chat 将在 2026-07-24 下线 |
- * | anthropic | claude-opus-4-7 | Opus 4.7 旗舰（2026-04 发布）；省钱用 claude-sonnet-4-6 / haiku-4-5 |
+ * | anthropic | claude-opus-4-8 | Opus 4.8 旗舰；省钱用 claude-sonnet-4-6 / haiku-4-5 |
  * | openai | gpt-5.5 | 最新 frontier；快速用 gpt-5.4-mini / gpt-5.4-nano；reasoning 走 gpt-5.2-pro |
  * | gemini | gemini-3-pro | Gemini 3 Pro（2025-11 GA，替代 2.5 Pro）；快速廉价用 gemini-3.5-flash |
  * | kimi | kimi-k2.6 | K2.6（2026-04-20 发布）；老 kimi-k2-0905 将在 2026-05-25 下线 |
- * | zhipu | glm-5.1 | GLM-5 系列旗舰；轻量用 glm-4.5-air |
+ * | zhipu | glm-5.2 | GLM-5 系列旗舰；轻量用 glm-4.5-air |
  * | ollama | llama4 | Llama 4 默认 tag = Scout（17B/109B MoE）；大显存用 llama4:128x17b（Maverick）|
  */
 const DEFAULT_MODELS: Record<LLMProvider, string> = {
   deepseek: "deepseek-v4-pro",
-  anthropic: "claude-opus-4-7",
+  anthropic: "claude-opus-4-8",
   openai: "gpt-5.5",
   gemini: "gemini-3-pro",
   kimi: "kimi-k2.6",
-  zhipu: "glm-5.1",
+  zhipu: "glm-5.2",
   ollama: "llama4",
 };
 
@@ -88,7 +88,7 @@ function requireKey(envName: string, provider: string): string {
  * 按 `LLM_PROVIDER` env 构造 Mastra `LanguageModel`。
  *
  * @example
- *   // .env: LLM_PROVIDER=anthropic  LLM_MODEL=claude-opus-4-7  ANTHROPIC_API_KEY=sk-...
+ *   // .env: LLM_PROVIDER=anthropic  LLM_MODEL=claude-opus-4-8  ANTHROPIC_API_KEY=sk-...
  *   const model = buildLLM();
  *   new Agent({ id, instructions, model, tools });
  */

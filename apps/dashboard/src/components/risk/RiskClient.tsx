@@ -171,14 +171,14 @@ function EventsPanel({
                         {e.reason}
                       </span>
                     </Td>
-                    <Td>
+                    <Td className="whitespace-nowrap">
                       <span
                         className={`font-mono text-[10px] uppercase tracking-wider ${STATUS_TONE[e.status]}`}
                       >
                         {t(`status.${e.status}`)}
                       </span>
                     </Td>
-                    <Td right mono muted>
+                    <Td right mono muted className="whitespace-nowrap">
                       <span title={fmtDateTime(e.ts, locale)}>
                         {fmtRelative(e.ts, now.getTime(), locale)}
                       </span>

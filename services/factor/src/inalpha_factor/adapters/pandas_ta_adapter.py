@@ -44,17 +44,17 @@ def _true_range(df: pd.DataFrame) -> pd.Series:
 # 核心因子定义（纯 pandas，永远可用）──────────────────────────────────
 _CORE: list[FactorSpec] = [
     FactorSpec("pandas_ta.rsi_14", "pandas_ta", "RSI(14)", "mean_reversion", direction_hint=-1),
-    FactorSpec("pandas_ta.macd_hist", "pandas_ta", "MACD 柱(12,26,9)/close", "momentum", direction_hint=1),
+    FactorSpec("pandas_ta.macd_hist", "pandas_ta", "MACD hist(12,26,9)/close", "momentum", direction_hint=1),
     FactorSpec("pandas_ta.atr_pct_14", "pandas_ta", "ATR(14)/close", "volatility"),
-    FactorSpec("pandas_ta.bb_pctb_20", "pandas_ta", "布林带 %B(20,2)", "mean_reversion", direction_hint=-1),
-    FactorSpec("pandas_ta.adx_14", "pandas_ta", "ADX(14) 趋势强度", "trend"),
+    FactorSpec("pandas_ta.bb_pctb_20", "pandas_ta", "Bollinger %B(20,2)", "mean_reversion", direction_hint=-1),
+    FactorSpec("pandas_ta.adx_14", "pandas_ta", "ADX(14) trend strength", "trend"),
     FactorSpec("pandas_ta.stoch_k_14", "pandas_ta", "Stochastic %K(14)", "mean_reversion", direction_hint=-1),
     FactorSpec("pandas_ta.roc_10", "pandas_ta", "ROC(10)", "momentum", direction_hint=1),
     FactorSpec("pandas_ta.sma_ratio_20_50", "pandas_ta", "SMA20/SMA50-1", "trend", direction_hint=1),
     FactorSpec("pandas_ta.cci_20", "pandas_ta", "CCI(20)", "mean_reversion", direction_hint=-1),
-    FactorSpec("pandas_ta.mom_20", "pandas_ta", "动量(20) close 收益", "momentum", direction_hint=1),
-    FactorSpec("pandas_ta.vol_ratio_20", "pandas_ta", "量比 volume/MA20", "volume", direction_hint=1),
-    FactorSpec("pandas_ta.obv_mom_20", "pandas_ta", "OBV 20 期动量", "volume", direction_hint=1),
+    FactorSpec("pandas_ta.mom_20", "pandas_ta", "Momentum(20) close return", "momentum", direction_hint=1),
+    FactorSpec("pandas_ta.vol_ratio_20", "pandas_ta", "Volume ratio volume/MA20", "volume", direction_hint=1),
+    FactorSpec("pandas_ta.obv_mom_20", "pandas_ta", "OBV 20-period momentum", "volume", direction_hint=1),
 ]
 
 # 库特有的额外指标（仅 pandas_ta 装上时出现）

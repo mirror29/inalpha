@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 from collections.abc import Mapping
 from typing import Any, Protocol
 
@@ -262,7 +263,7 @@ class AnthropicLLMClient:
         self,
         *,
         api_key: str,
-        model: str = "claude-opus-4-7",
+        model: str = "claude-opus-4-8",
         timeout_seconds: float = 60.0,
         max_concurrent: int = 5,
         max_retries: int = 3,
@@ -514,6 +515,7 @@ class FakeLLMClient:
         self._responses = dict(responses or {})
         self._on_call = on_call
         self.calls: list[dict[str, Any]] = []
+        self.aclose_called = 0  # 供 LanguageScopedClient 委托测试断言透传
 
     def set_response(self, key: str, value: dict[str, Any]) -> None:
         """运行时改 / 加响应。"""
@@ -547,7 +549,7 @@ class FakeLLMClient:
         )
 
     async def aclose(self) -> None:
-        return None
+        self.aclose_called += 1
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -563,13 +565,13 @@ _OPENAI_COMPAT_DEFAULTS: dict[str, tuple[str, str]] = {
     "deepseek": ("https://api.deepseek.com/v1", "deepseek-v4-pro"),
     "openai": ("https://api.openai.com/v1", "gpt-5.5"),
     "kimi": ("https://api.moonshot.cn/v1", "kimi-k2.6"),
-    "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "glm-5.1"),
+    "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "glm-5.2"),
     "ollama": ("http://localhost:11434/v1", "llama4"),
 }
 
 # 非 OpenAI-compat provider 的默认模型
 _NATIVE_DEFAULTS: dict[str, str] = {
-    "anthropic": "claude-opus-4-7",
+    "anthropic": "claude-opus-4-8",
     "gemini": "gemini-3-pro",
 }
 
@@ -583,6 +585,85 @@ SUPPORTED_PROVIDERS = (
     "ollama",
     "fake",
 )
+
+
+#: 脚本区段（粗判输出语言用）。假名/谚文先判，避免日韩文被当中文或英文。
+_KANA_RE = re.compile(r"[\u3040-\u30ff]")  # 平假名 + 片假名
+_HANGUL_RE = re.compile(r"[\uac00-\ud7a3]")  # 韩文谚文音节
+_HAN_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")  # CJK 统一表意文字 + 兼容区
+_LATIN_RE = re.compile(r"[A-Za-z]")  # 拉丁字母（粗当英文兜底）
+
+
+def infer_output_language(text: str | None) -> str | None:
+    """从一段文本粗判输出语言：日文假名→"日本語"，韩文→"한국어"，汉字→"中文"，
+    含拉丁字母→"English"，其余脚本（阿/俄/泰/希伯来…）与空→None。
+
+    用作 deep_dive 的语言兜底（Fix C 第二层）：orchestrator 没显式传 language 时，从
+    user_question 推断，让研究结果跟随提问语言——确定性、不靠模型自觉。
+
+    返回 None = 不注入语言指令、交给模型随输入：对无法可靠从脚本判定的语言（阿/俄/泰…），
+    强塞 "English" 是主动 degradation（阿语用户拿到英文报告），不如不强制（CR #92）。
+    粗判局限：纯汉字无假名的日文判成"中文"（漢字共用）；拉丁语言（法/德/西…）落 "English"
+    ——这类用户须由 orchestrator 显式传 language（Fix A）；要更全可换 langdetect / lingua。
+    """
+    if not text or not text.strip():
+        return None
+    if _KANA_RE.search(text):
+        return "日本語"
+    if _HANGUL_RE.search(text):
+        return "한국어"
+    if _HAN_RE.search(text):
+        return "中文"
+    if _LATIN_RE.search(text):
+        return "English"
+    return None
+
+
+def _with_language_directive(system: str, language: str) -> str:
+    """在 system prompt 末尾追加输出语言指令（recency 位置，最显眼）。
+
+    analyst / researcher / manager 的 system prompt 都是中文写的，默认模型会跟着
+    输出中文（Fix C）。这里强制所有自然语言字段用用户语言；JSON key / ticker / 数值不动。
+    """
+    return (
+        f"{system}\n\n[OUTPUT LANGUAGE] Write every natural-language string value in "
+        f"your JSON response (summary, rationale, argument, reasoning, recommendation, "
+        f"thesis, etc.) in {language}. Do NOT translate or change JSON keys, tickers, "
+        f"symbols, numbers, or factor IDs."
+    )
+
+
+class LanguageScopedClient:
+    """包装任意 LLMClient，对每次 ``complete_json`` 的 system 注入输出语言指令。
+
+    per-request 构造（deep_dive 路由按 ``req.language`` 包装），不共享可变状态、并发
+    安全；``aclose`` 透传内层 client。language 为空时调用方不应包装（保持模型默认行为）。
+    """
+
+    def __init__(self, inner: LLMClient, language: str) -> None:
+        self._inner = inner
+        # 防 prompt 注入(CR #92 安全项):language 最终源自 LLM 对用户消息的提取,会被拼进
+        # 全部 analyst/辩论/manager 的 system prompt 尾部。去换行(打散"另起一行新指令")+
+        # 截断,作为 schema max_length 之外的末端兜底(也护 infer 路径)。
+        self._language = language.replace("\n", " ").replace("\r", " ").strip()[:60]
+
+    async def complete_json(
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.2,
+    ) -> dict[str, Any]:
+        return await self._inner.complete_json(
+            system=_with_language_directive(system, self._language),
+            user=user,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 def build_llm_client(

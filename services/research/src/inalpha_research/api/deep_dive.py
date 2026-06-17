@@ -14,7 +14,11 @@ from inalpha_shared.errors import UnauthorizedError
 from ..config import ResearchSettings, get_research_settings
 from ..data_client import DataClient
 from ..factor_client import FactorClient
-from ..llm.client import build_llm_client
+from ..llm.client import (
+    LanguageScopedClient,
+    build_llm_client,
+    infer_output_language,
+)
 from ..runner import run_deep_dive
 from ..schemas import DeepDiveRequest, ResearchPlan
 
@@ -43,6 +47,11 @@ async def post_deep_dive(
         max_retries=settings.llm_max_retries,
         retry_base_seconds=settings.llm_retry_base_seconds,
     )
+    # Fix C：输出语言 = 显式 language 优先，否则从 user_question 兜底推断（防 orchestrator
+    # 漏传 language 时研究结果跑去英文、再把最终报告带跑）。两者都缺才保持模型默认。
+    output_language = req.language or infer_output_language(req.user_question)
+    if output_language:
+        llm = LanguageScopedClient(llm, output_language)
 
     try:
         # factor-service 透传同一 user_token（factor 再转发给 data /bars）；
