@@ -17,11 +17,14 @@ from inalpha_shared.errors import UnauthorizedError, ValidationError
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
 from ..runner import run_backtest as _run_backtest
+from ..runner import run_cv as _run_cv
 from ..schemas import (
     BacktestRequest,
     BacktestResponse,
     BacktestRunSummary,
     BacktestTradeRecord,
+    CVBacktestRequest,
+    CVBacktestResponse,
     SensitivityRequest,
     SensitivityResponse,
 )
@@ -71,6 +74,40 @@ async def post_backtest(
 
     async with DataClient(settings.data_service_url, user_token) as data_client:
         return await _run_backtest(req, data_client, conn=db)
+
+
+@router.post("/backtest/cv", response_model=CVBacktestResponse)
+async def post_backtest_cv(
+    req: CVBacktestRequest,
+    db: DBConn,
+    settings: Annotated[PaperSettings, Depends(get_paper_settings)],
+    _user: Annotated[User, Depends(get_current_user)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> CVBacktestResponse:
+    """多路径时序交叉验证回测（ADR-0028）：输出样本外 Sharpe 分布 + DSR。
+
+    用途：深度 / 稳健性评估（单段回测好看的 forward-looking 策略，CPCV 多路径中位会塌）。
+    成本 N×，**不该用于探索性首轮回测**；bar < 200 时 cpcv 自动回落 walk_forward。
+    """
+    if req.from_ts >= req.to_ts:
+        raise ValidationError(
+            "from_ts must be < to_ts",
+            details={"from_ts": req.from_ts.isoformat(), "to_ts": req.to_ts.isoformat()},
+        )
+    if req.strategy_id is not None:
+        available = list_strategies()
+        if req.strategy_id not in available:
+            raise ValidationError(
+                f"unknown strategy_id {req.strategy_id!r}",
+                details={"available": available},
+            )
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise UnauthorizedError("missing Authorization header")
+    user_token = authorization.removeprefix("Bearer ").strip()
+
+    async with DataClient(settings.data_service_url, user_token) as data_client:
+        return await _run_cv(req, data_client, conn=db)
 
 
 @router.post("/backtest/sensitivity", response_model=SensitivityResponse)

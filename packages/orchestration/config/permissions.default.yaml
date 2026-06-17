@@ -27,6 +27,8 @@ allow:
   - "paper.run_backtest"
   # D-12 · 参数邻域敏感性（promote 前必跑）：只读回测扇出，无下单路径
   - "paper.check_sensitivity"
+  # ADR-0028 · 多路径时序 CV（深度稳健评估）：只读回测扇出，无下单路径
+  - "paper.cv_backtest"
   - "paper.compose_strategy"
   - "paper.author_strategy"
   - "paper.health"

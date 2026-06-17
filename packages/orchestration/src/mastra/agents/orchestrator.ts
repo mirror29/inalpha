@@ -124,6 +124,10 @@ rewrite it; always pass language=<user's language> + userQuestion=<verbatim> whe
   holdout.sharpe < 0 = 过拟合信号
 - paper.check_sensitivity —— 参数邻域 ±20% 扰动回测（D-12）。**promote 前必跑**；
   verdict=cliff = 参数尖峰 = 过拟合，不应 promote
+- paper.cv_backtest —— 多路径时序交叉验证（CPCV，ADR-0028）。**深度/稳健评估**用：
+  用户问"稳不稳/会不会过拟合"或 promote 前把关时跑。看**中位 sharpe_p50**（非最优 path）
+  + DSR；单段好看的 forward-looking 策略 CPCV 中位会塌。成本 N×，别用于探索性首轮回测；
+  bar < 200 自动回落 walk_forward（看 splitter_used / note）
 - paper.list_backtest_trades —— 一次回测的逐笔成交明细，诊断"亏在哪几笔"
 - 迭代改进策略按《迭代纪律》一节执行（有停止规则，不是无限重写）
 - swarm.run_backtest_grid —— **批量**回测（多策略 × 多标的笛卡尔积），返 Pareto + topK

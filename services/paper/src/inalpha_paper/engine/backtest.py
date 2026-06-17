@@ -21,7 +21,8 @@ D-5 阶段简化：
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import datetime
 
 from ..execution.exchange import SimulatedExchange
@@ -32,9 +33,12 @@ from ..kernel.clock import TestClock
 from ..kernel.msgbus import MessageBus
 from ..model.data import Bar
 from ..strategy.base import Strategy
+from .cv import CombinatorialPurgedCV, PurgedKFold, WalkForward
+from .metrics import max_drawdown_pct, periods_per_year, sharpe_ratio
 from .portfolio import Portfolio
 from .position_guard import PositionGuard
 from .report import BacktestReport
+from .robustness import deflated_sharpe_ratio
 
 
 class BacktestEngine:
@@ -190,3 +194,150 @@ def _ts_to_dt(ts_ns: int) -> datetime:
     from datetime import UTC
 
     return datetime.fromtimestamp(ts_ns / 1_000_000_000, tz=UTC)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CV 多路径回测（ADR-0028 D2）
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class CVReport:
+    """多路径时序交叉验证回测结果（ADR-0028）。
+
+    把一个策略在多条样本外路径上的表现汇成分布——单段回测好看的 forward-looking 策略，
+    在 CPCV 多路径下中位 Sharpe 会塌下来，这正是它要抓的过拟合信号。
+
+    Attributes:
+        n_paths: 重构出的 OOS 路径数（CPCV = C(n_folds-1, n_test_folds-1)；WF/KFold = 1）。
+        n_splits: splitter 产出的 train/test 组合数。
+        sharpe_per_path: 每条路径的**年化** Sharpe。
+        max_dd_per_path: 每条路径的最大回撤（%）。
+        sharpe_p5 / p50 / p95: 路径 Sharpe 分布的 5 / 50 / 95 分位。
+        sharpe_mean: 路径 Sharpe 均值。
+        dsr: 最优路径 Sharpe 在 ``n_paths`` 次试验下的 Deflated Sharpe（None = 不可算）。
+        dsr_p_value: DSR 单边 p 值（< 0.05 提示多重检验下仍显著）。
+    """
+
+    n_paths: int
+    n_splits: int
+    sharpe_per_path: list[float]
+    max_dd_per_path: list[float]
+    sharpe_p5: float
+    sharpe_p50: float
+    sharpe_p95: float
+    sharpe_mean: float
+    dsr: float | None
+    dsr_p_value: float | None
+
+
+def run_cv_backtest(
+    *,
+    build_strategy: Callable[[BacktestEngine], Strategy],
+    bars: list[Bar],
+    splitter: WalkForward | PurgedKFold | CombinatorialPurgedCV,
+    initial_cash: float = 10_000.0,
+    fee_rate: float = 0.001,
+) -> CVReport:
+    """在 ``splitter`` 切出的多条 train/test 上跑回测，聚合成样本外 Sharpe 分布 + DSR。
+
+    每个 Split：起一个**全新** ``BacktestEngine`` + 由 ``build_strategy`` 造的**全新策略**，
+    在 ``train ∪ test`` 的 bar 上按时间跑（train 提供 warmup / 上下文），只取 **test 段**的
+    bar 收益。同 ``path_id`` 的 test 段按时间拼接成一条完整 OOS 路径再算 Sharpe（保留复利）。
+
+    Args:
+        build_strategy: 工厂——接 engine、返一个挂好 clock/msgbus 的新策略实例
+            （每个 Split 都重新造，避免跨 split 状态泄漏）。
+        bars: 完整 bar 序列（按时间升序）。
+        splitter: ``cv.py`` 的三种 splitter 之一。
+        initial_cash / fee_rate: 每个 split 引擎的起始现金 / 手续费率。
+
+    Returns:
+        ``CVReport``。CV 引擎跑**裸策略**（不挂 RiskRule / PositionGuard，专注 alpha 稳健性
+        评估，与执行层风控解耦）。路径并行化（ADR-0028 复用 ProcessPool）留后续优化，v1 顺序跑。
+    """
+    n = len(bars)
+    if n < 2:
+        raise ValueError("run_cv_backtest needs at least 2 bars")
+    timeframe = bars[0].timeframe
+    ppy = periods_per_year(timeframe)
+
+    # path_id → [(原始索引, test 段 bar 收益)]
+    returns_by_path: dict[int, list[tuple[int, float]]] = {}
+    for sp in splitter.split(n):
+        run_idx = sorted(set(sp.train_idx) | set(sp.test_idx))
+        if len(run_idx) < 2:
+            continue
+        test_set = set(sp.test_idx)
+        engine = BacktestEngine(initial_cash=initial_cash, fee_rate=fee_rate)
+        engine.add_strategy(build_strategy(engine))
+        report = engine.run([bars[i] for i in run_idx])
+        eq = [e for _ts, e in report.equity_curve]
+        # 每根 bar 一个 equity 快照；k 位收益归属 run_idx[k] 这根 bar
+        for k in range(1, len(eq)):
+            orig = run_idx[k]
+            if orig in test_set and eq[k - 1] > 0:
+                returns_by_path.setdefault(sp.path_id, []).append(
+                    (orig, eq[k] / eq[k - 1] - 1.0)
+                )
+
+    sharpe_per_path: list[float] = []
+    max_dd_per_path: list[float] = []
+    raw_sharpes: list[float] = []  # 非年化，喂 DSR（与 n_returns 频率对齐）
+    path_lens: list[int] = []
+    for pid in sorted(returns_by_path):
+        seq = [r for _i, r in sorted(returns_by_path[pid])]
+        if len(seq) < 2:
+            continue
+        ann = sharpe_ratio(seq, ppy)
+        raw = sharpe_ratio(seq, 1)
+        sharpe_per_path.append(ann if ann is not None else 0.0)
+        raw_sharpes.append(raw if raw is not None else 0.0)
+        path_lens.append(len(seq))
+        eqc = [1.0]
+        for r in seq:
+            eqc.append(eqc[-1] * (1.0 + r))
+        max_dd_per_path.append(max_drawdown_pct(eqc))
+
+    n_paths = len(sharpe_per_path)
+    dsr: float | None = None
+    dsr_p_value: float | None = None
+    if n_paths >= 1:
+        try:
+            res = deflated_sharpe_ratio(
+                observed_sharpe=max(raw_sharpes),
+                n_returns=max(path_lens),
+                n_strategies=n_paths,
+            )
+            dsr = res.dsr
+            dsr_p_value = res.p_value
+        except (ValueError, ZeroDivisionError):
+            dsr = None
+            dsr_p_value = None
+
+    return CVReport(
+        n_paths=n_paths,
+        n_splits=splitter.get_n_splits(n),
+        sharpe_per_path=sharpe_per_path,
+        max_dd_per_path=max_dd_per_path,
+        sharpe_p5=_percentile(sharpe_per_path, 0.05),
+        sharpe_p50=_percentile(sharpe_per_path, 0.50),
+        sharpe_p95=_percentile(sharpe_per_path, 0.95),
+        sharpe_mean=sum(sharpe_per_path) / n_paths if n_paths else 0.0,
+        dsr=dsr,
+        dsr_p_value=dsr_p_value,
+    )
+
+
+def _percentile(values: list[float], q: float) -> float:
+    """线性插值分位数（``q ∈ [0, 1]``）；空 → 0.0，单元素 → 该值。"""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    pos = q * (len(ordered) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(ordered) - 1)
+    frac = pos - lo
+    return ordered[lo] + (ordered[hi] - ordered[lo]) * frac

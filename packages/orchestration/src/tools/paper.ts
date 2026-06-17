@@ -348,6 +348,95 @@ export const paperCheckSensitivityTool = createTool({
   },
 });
 
+export const paperCvBacktestTool = createTool({
+  id: "paper.cv_backtest",
+  description: `
+    多路径时序交叉验证回测（ADR-0028）：把策略在多条样本外路径上跑一遍，返回 OOS Sharpe
+    分布（p5/p50/p95）+ Deflated Sharpe（DSR）。单段回测好看的 forward-looking / 过拟合
+    策略，CPCV 多路径下中位 Sharpe 会塌——这是用来抓过拟合的。
+
+    何时用：
+    - **深度 / 稳健性评估**：用户说"稳不稳 / 会不会过拟合 / 深度评估"，或 promote 前把关
+    - Swarm grid TopK 候选晋级的二阶段验证
+
+    何时不用：
+    - 探索性首轮回测（成本 N×，先用 paper.run_backtest 看方向）
+    - 只想看单条收益曲线 → run_backtest
+
+    坑：
+    - cpcv 需 bar >= 200；不足**自动回落 walk_forward**（看返回的 splitter_used / note）
+    - 看**中位 sharpe_p50** 而非最优 path：挑最好那条 = cherry-pick
+    - splitter=cpcv 时 nTestFolds 必须 < nFolds
+  `.trim(),
+  inputSchema: z
+    .object({
+      strategyId: z.string().optional().describe("内置策略 ID；与 candidateId 互斥"),
+      candidateId: z.string().uuid().optional().describe("候选 UUID；与 strategyId 互斥"),
+      params: z.record(z.string(), z.unknown()).default({}).describe("策略参数 dict"),
+      venue: z.string().default("binance"),
+      symbol: SymbolSchema,
+      timeframe: TimeframeSchema.default("1h"),
+      fromTs: z.string().datetime().describe("ISO 8601 起始时间"),
+      toTs: z.string().datetime().describe("ISO 8601 结束时间"),
+      initialCash: z.number().positive().default(10_000),
+      feeRate: z.number().min(0).lt(1).default(0.001),
+      splitter: z
+        .enum(["cpcv", "walk_forward", "purged_kfold"])
+        .default("cpcv")
+        .describe("时序 CV 切分器；cpcv 最强（多路径）"),
+      nFolds: z.number().int().min(2).max(20).default(6).describe("cpcv/kfold 分组数"),
+      nTestFolds: z
+        .number()
+        .int()
+        .min(1)
+        .default(2)
+        .describe("cpcv 每组合取作 test 的组数（须 < nFolds）"),
+      embargoPct: z.number().min(0).lt(1).default(0.05),
+      wfTestSize: z.number().int().min(1).default(21),
+      wfTrainSize: z.number().int().min(1).default(252),
+    })
+    .superRefine((data, ctx) => {
+      const hasId = typeof data.strategyId === "string" && data.strategyId.length > 0;
+      const hasCand = typeof data.candidateId === "string" && data.candidateId.length > 0;
+      if (hasId === hasCand) {
+        ctx.addIssue({
+          code: "custom",
+          message: "必须给 strategyId 或 candidateId，二选一",
+          path: ["strategyId"],
+        });
+      }
+      if (data.splitter === "cpcv" && !(data.nTestFolds < data.nFolds)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "cpcv 要求 nTestFolds < nFolds",
+          path: ["nTestFolds"],
+        });
+      }
+    }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.cvBacktest({
+      strategyId: inputData.strategyId,
+      candidateId: inputData.candidateId,
+      params: inputData.params ?? {},
+      venue: inputData.venue ?? "binance",
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe ?? "1h",
+      fromTs: inputData.fromTs,
+      toTs: inputData.toTs,
+      initialCash: inputData.initialCash ?? 10_000,
+      feeRate: inputData.feeRate ?? 0.001,
+      splitter: inputData.splitter ?? "cpcv",
+      nFolds: inputData.nFolds ?? 6,
+      nTestFolds: inputData.nTestFolds ?? 2,
+      embargoPct: inputData.embargoPct ?? 0.05,
+      wfTestSize: inputData.wfTestSize ?? 21,
+      wfTrainSize: inputData.wfTrainSize ?? 252,
+    });
+  },
+});
+
 // ────────────────────────────────────────────────────────────────────
 // D-8c · paper.compose_strategy + paper.list_backtest_runs
 // ────────────────────────────────────────────────────────────────────
@@ -741,6 +830,7 @@ export const paperTools = [
   paperListStrategiesTool,
   paperRunBacktestTool,
   paperCheckSensitivityTool,
+  paperCvBacktestTool,
   paperHealthTool,
   paperListOrdersTool,
   paperListPositionsTool,

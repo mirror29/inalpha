@@ -19,6 +19,7 @@ import {
 import {
   paperCheckSensitivityTool,
   paperComposeStrategyTool,
+  paperCvBacktestTool,
   paperGetAccountTool,
   paperHealthTool,
   paperListArchetypesTool,
@@ -118,6 +119,7 @@ export {
   paperAuthorStrategyTool,
   paperCheckSensitivityTool,
   paperComposeStrategyTool,
+  paperCvBacktestTool,
   paperGetAccountTool,
   paperGetCandidateTool,
   paperHealthTool,
@@ -238,6 +240,8 @@ export const orchestratorToolList = [
   paperRunBacktestTool,
   // D-12 · 参数邻域敏感性（promote 前必跑，cliff = 过拟合信号）
   paperCheckSensitivityTool,
+  // ADR-0028 · 多路径时序 CV（深度/稳健评估，看 CPCV 中位 Sharpe + DSR）
+  paperCvBacktestTool,
   paperHealthTool,
   // 研究
   researchDeepDiveTool,
