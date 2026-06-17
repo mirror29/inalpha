@@ -21,7 +21,7 @@ def test_fundamentals_akshare_venue(
 
     original = ak._connector.fetch_financials
 
-    async def mock_fin(symbol):
+    async def mock_fin(symbol, as_of=None):
         return {
             "venue": "akshare",
             "symbol": symbol,
@@ -60,7 +60,7 @@ def test_fundamentals_yfinance_venue(
 
     original = yf._connector.fetch_financials
 
-    async def mock_fin(symbol):
+    async def mock_fin(symbol, as_of=None):
         return {
             "venue": "yfinance",
             "symbol": symbol,
@@ -106,7 +106,7 @@ def test_fundamentals_unavailable_data(
 
     original = ak._connector.fetch_financials
 
-    async def mock_fin(symbol):
+    async def mock_fin(symbol, as_of=None):
         return {
             "venue": "akshare",
             "symbol": symbol,
