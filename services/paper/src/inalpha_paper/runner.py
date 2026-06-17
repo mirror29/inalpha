@@ -583,7 +583,7 @@ async def _run_engine(
 
     # ADR-0052：从 Settings 解析框架级持仓保护止损阈值（main 进程读，传给子进程；
     # 回测与 live 共用同一阈值，保证行为一致）。
-    sl, tp, ts = _protective_thresholds()
+    sl, tp, ts, ch_mult, ch_period = _protective_thresholds()
 
     if pool is None:
         # 兜底：同进程跑（不真正 CPU 并行，但函数语义一致）
@@ -599,6 +599,8 @@ async def _run_engine(
             protective_stop_loss_pct=sl,
             protective_take_profit_pct=tp,
             protective_trailing_stop_pct=ts,
+            protective_chandelier_atr_mult=ch_mult,
+            protective_chandelier_atr_period=ch_period,
         )
 
     loop = asyncio.get_running_loop()
@@ -616,17 +618,24 @@ async def _run_engine(
         protective_stop_loss_pct=sl,
         protective_take_profit_pct=tp,
         protective_trailing_stop_pct=ts,
+        protective_chandelier_atr_mult=ch_mult,
+        protective_chandelier_atr_period=ch_period,
     )
     return await loop.run_in_executor(pool, fn)
 
 
-def _protective_thresholds() -> tuple[float | None, float | None, float | None]:
-    """从 Settings 读 ADR-0052 框架级持仓保护止损三阈值 ``(stop_loss, take_profit, trailing)``。"""
+def _protective_thresholds() -> tuple[
+    float | None, float | None, float | None, float | None, int
+]:
+    """从 Settings 读 ADR-0052 框架级持仓保护止损阈值
+    ``(stop_loss, take_profit, trailing, chandelier_atr_mult, chandelier_atr_period)``。"""
     s = get_paper_settings()
     return (
         s.protective_stop_loss_pct,
         s.protective_take_profit_pct,
         s.protective_trailing_stop_pct,
+        s.protective_chandelier_atr_mult,
+        s.protective_chandelier_atr_period,
     )
 
 
@@ -643,6 +652,8 @@ def _make_pool_call(
     protective_stop_loss_pct: float | None = None,
     protective_take_profit_pct: float | None = None,
     protective_trailing_stop_pct: float | None = None,
+    protective_chandelier_atr_mult: float | None = None,
+    protective_chandelier_atr_period: int = 22,
 ) -> Any:
     """生成一个无参 callable，丢给 ``run_in_executor``。
 
@@ -664,6 +675,8 @@ def _make_pool_call(
         protective_stop_loss_pct=protective_stop_loss_pct,
         protective_take_profit_pct=protective_take_profit_pct,
         protective_trailing_stop_pct=protective_trailing_stop_pct,
+        protective_chandelier_atr_mult=protective_chandelier_atr_mult,
+        protective_chandelier_atr_period=protective_chandelier_atr_period,
     )
 
 
@@ -680,6 +693,8 @@ def run_engine_in_subprocess(
     protective_stop_loss_pct: float | None = None,
     protective_take_profit_pct: float | None = None,
     protective_trailing_stop_pct: float | None = None,
+    protective_chandelier_atr_mult: float | None = None,
+    protective_chandelier_atr_period: int = 22,
 ) -> BacktestReport:
     """**Top-level 函数 = 可 pickle**：实例化 engine + strategy + 跑 bars，返 ``BacktestReport``。
 
@@ -706,6 +721,8 @@ def run_engine_in_subprocess(
         protective_stop_loss_pct=protective_stop_loss_pct,
         protective_take_profit_pct=protective_take_profit_pct,
         protective_trailing_stop_pct=protective_trailing_stop_pct,
+        protective_chandelier_atr_mult=protective_chandelier_atr_mult,
+        protective_chandelier_atr_period=protective_chandelier_atr_period,
     )
 
     if candidate_code is not None:

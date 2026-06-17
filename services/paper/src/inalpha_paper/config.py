@@ -173,6 +173,21 @@ class PaperSettings(BaseSettings):
         description="框架级移动止损：仓位进入盈利区后，自【峰值价格】回撤 X → 全平（锁大利润，"
         "口径是价格自峰值的跌幅，非成本收益率降幅）。默认 None = 关（设 0 不合法，gt=0）。",
     )
+    protective_chandelier_atr_mult: float | None = Field(
+        default=None,
+        alias="INALPHA_PROTECTIVE_CHANDELIER_ATR_MULT",
+        gt=0.0,
+        description="框架级 Chandelier（吊灯）ATR 移动止损（ADR-0052 增补 A）：止损位 = 开仓"
+        "以来最高价 − X×ATR，随波动自适应（高波动品种止损位自动放宽）。默认 None = 关（设 0 "
+        "不合法，gt=0）。与 trailing_stop_pct 通常二选一；动量策略搭配 chandelier 是经典打法。",
+    )
+    protective_chandelier_atr_period: int = Field(
+        default=22,
+        alias="INALPHA_PROTECTIVE_CHANDELIER_ATR_PERIOD",
+        ge=2,
+        description="Chandelier ATR 周期（Wilder RMA），默认 22（经典 chandelier 取值）。"
+        "仅在 protective_chandelier_atr_mult 启用时生效。",
+    )
 
     # ─── D-12 · 因子衰减巡检（ADR-0047）────────────────────────────────
 

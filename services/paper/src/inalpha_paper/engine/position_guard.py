@@ -9,6 +9,9 @@
 - **宽兜底,不是紧止损**：默认硬止损放宽（0.20），封尾部风险而非切正常波动；贴行情的
   紧止损是策略层 alpha 的事，框架层只做灾难兜底。
 - **默认只做亏损侧**：硬止损默认开；移动止损 / 止盈默认关（封上行偏 alpha，会伤趋势）。
+- **Chandelier（吊灯）ATR 移动止损（ADR-0052 增补 A）**：除固定百分比 trailing，另有一档
+  基于 ATR 的吊灯移动止损（``mark ≤ 最高价 − atr_mult × ATR``），止损位随波动自适应；
+  **复用 ``trailing_stop_loss`` tag**（语义同为移动止损，避免新增 exit_reason 迁移），默认关。
 - **不偷未来**：在 bar close 的 mark 判定，出场单**下一根 bar 撮合**（与策略下单同语义），
   与 live 只能在收盘 bar 行动完全对齐。
 - **绕过开仓闸**：保护性出场直接走 ``EXECUTION_ENGINE_ENDPOINT``，**不经 RiskEngine**——
@@ -22,6 +25,7 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -37,6 +41,41 @@ if TYPE_CHECKING:
     from .portfolio import Portfolio
 
 
+@dataclass
+class _ChandelierState:
+    """单 instrument 的 chandelier 状态：Wilder RMA ATR + 开仓以来最高价。
+
+    ATR 递推与 ``strategies/atr_channel.py`` 同口径：前 ``period`` 根 TR 均值做种子，之后
+    指数式平滑。``update`` 在 bar close 调用——已知当根完整 OHLC，无 lookahead（与 guard
+    "收盘判定、下一根撮合"语义一致）。持仓转 flat 时整个 state 被丢弃，下次开仓重新累积。
+    """
+
+    period: int
+    atr: float | None = None
+    highest_high: float = 0.0
+    _prev_close: float | None = None
+    _tr_count: int = 0
+    _tr_seed_sum: float = 0.0
+
+    def update(self, bar: Bar) -> None:
+        """用当根 bar 推进最高价与 ATR（Wilder RMA）。"""
+        self.highest_high = max(self.highest_high, bar.high)
+        if self._prev_close is not None:
+            tr = max(
+                bar.high - bar.low,
+                abs(bar.high - self._prev_close),
+                abs(bar.low - self._prev_close),
+            )
+            if self.atr is None:
+                self._tr_count += 1
+                self._tr_seed_sum += tr
+                if self._tr_count >= self.period:
+                    self.atr = self._tr_seed_sum / self.period
+            else:
+                self.atr = (self.atr * (self.period - 1) + tr) / self.period
+        self._prev_close = bar.close
+
+
 class PositionGuard:
     """框架级持仓保护止损。被回测引擎与 live session 实例化。
 
@@ -47,6 +86,8 @@ class PositionGuard:
         stop_loss_pct: 单仓浮亏穿 ``-stop_loss_pct`` → 全平（None = 关）
         take_profit_pct: 单仓浮盈穿 ``+take_profit_pct`` → 全平（None = 关）
         trailing_stop_pct: 自峰值浮盈回撤 ``trailing_stop_pct`` → 全平（None = 关）
+        chandelier_atr_mult: 吊灯移动止损倍数，``mark ≤ 最高价 − mult×ATR`` → 全平（None = 关）
+        chandelier_atr_period: 吊灯 ATR 周期（默认 22，经典 chandelier 取值）
     """
 
     def __init__(
@@ -58,14 +99,21 @@ class PositionGuard:
         stop_loss_pct: float | None = None,
         take_profit_pct: float | None = None,
         trailing_stop_pct: float | None = None,
+        chandelier_atr_mult: float | None = None,
+        chandelier_atr_period: int = 22,
     ) -> None:
         for name, val in (
             ("stop_loss_pct", stop_loss_pct),
             ("take_profit_pct", take_profit_pct),
             ("trailing_stop_pct", trailing_stop_pct),
+            ("chandelier_atr_mult", chandelier_atr_mult),
         ):
             if val is not None and val <= 0:
                 raise ValueError(f"{name} must be positive or None, got {val}")
+        if chandelier_atr_mult is not None and chandelier_atr_period < 2:
+            raise ValueError(
+                f"chandelier_atr_period must be >= 2, got {chandelier_atr_period}"
+            )
 
         self._msgbus = msgbus
         self._clock = clock
@@ -73,9 +121,13 @@ class PositionGuard:
         self._stop_loss_pct = stop_loss_pct
         self._take_profit_pct = take_profit_pct
         self._trailing_stop_pct = trailing_stop_pct
+        self._chandelier_atr_mult = chandelier_atr_mult
+        self._chandelier_atr_period = chandelier_atr_period
         self._strategy_id: StrategyId | None = None
         # 每 instrument 的峰值 mark 价（trailing 用，自峰值价格回撤口径）；持仓转 flat 时清除
         self._peak_mark: dict[InstrumentId, float] = {}
+        # 每 instrument 的 chandelier 状态（ATR + 最高价，增补 A）；持仓转 flat 时清除
+        self._chandelier_state: dict[InstrumentId, _ChandelierState] = {}
         # 已提交保护性出场、但持仓尚未平掉的 instrument（出场单下一根才撮合）。
         # 防 live 撮合延迟 / batch 行情下 evaluate 在持仓仍在时重复提交出场单（#91）。
         # 持仓转 flat（出场成交）时清除。
@@ -90,9 +142,16 @@ class PositionGuard:
         stop_loss_pct: float | None,
         take_profit_pct: float | None,
         trailing_stop_pct: float | None,
+        chandelier_atr_mult: float | None = None,
+        chandelier_atr_period: int = 22,
     ) -> PositionGuard | None:
-        """工厂：三个阈值全为 None → 返 None（引擎据此退化为无 guard，向后兼容）。"""
-        if stop_loss_pct is None and take_profit_pct is None and trailing_stop_pct is None:
+        """工厂：所有闸阈值全为 None → 返 None（引擎据此退化为无 guard，向后兼容）。"""
+        if (
+            stop_loss_pct is None
+            and take_profit_pct is None
+            and trailing_stop_pct is None
+            and chandelier_atr_mult is None
+        ):
             return None
         return PositionGuard(
             msgbus,
@@ -101,6 +160,8 @@ class PositionGuard:
             stop_loss_pct=stop_loss_pct,
             take_profit_pct=take_profit_pct,
             trailing_stop_pct=trailing_stop_pct,
+            chandelier_atr_mult=chandelier_atr_mult,
+            chandelier_atr_period=chandelier_atr_period,
         )
 
     def bind_strategy(self, strategy_id: StrategyId) -> None:
@@ -131,6 +192,7 @@ class PositionGuard:
         pos = self._portfolio.position(inst)
         if pos is None or pos.is_flat:
             self._peak_mark.pop(inst, None)
+            self._chandelier_state.pop(inst, None)
             self._pending_exit_insts.discard(inst)  # 出场已成交（持仓平），解除去重标记
             return []
 
@@ -153,15 +215,25 @@ class PositionGuard:
         peak_mark = max(self._peak_mark.get(inst, mark), mark)
         self._peak_mark[inst] = peak_mark
 
-        tag = self._triggered_tag(pct, mark, peak_mark, avg)
+        # chandelier：用当根 bar 推进 ATR + 最高价（增补 A，None 时不建状态、零开销）
+        chan: _ChandelierState | None = None
+        if self._chandelier_atr_mult is not None:
+            chan = self._chandelier_state.get(inst)
+            if chan is None:
+                chan = _ChandelierState(period=self._chandelier_atr_period)
+                self._chandelier_state[inst] = chan
+            chan.update(bar)
+
+        tag = self._triggered_tag(pct, mark, peak_mark, avg, chan)
         if tag is None:
             return []
 
         order = self._build_exit(inst, pos.quantity, tag)
         self._submit(order, bar.ts_event)
-        # 出场单已下，清峰值（持仓将于下一根平掉；防同 instrument 状态泄漏）。
+        # 出场单已下，清峰值 + chandelier 状态（持仓将于下一根平掉；防同 instrument 状态泄漏）。
         # 标记 pending：撮合前若再被 evaluate（live 延迟）不重复下单，待持仓平掉再解除。
         self._peak_mark.pop(inst, None)
+        self._chandelier_state.pop(inst, None)
         self._pending_exit_insts.add(inst)
         return [order]
 
@@ -176,12 +248,30 @@ class PositionGuard:
     # ─── 内部 ───
 
     def _triggered_tag(
-        self, pct: float, mark: float, peak_mark: float, avg: float
+        self,
+        pct: float,
+        mark: float,
+        peak_mark: float,
+        avg: float,
+        chan: _ChandelierState | None,
     ) -> str | None:
-        """按优先级判定触发的保护性 tag：硬止损 > 移动止损 > 止盈（None = 不触发）。"""
+        """按优先级判定触发的保护性 tag：硬止损 > chandelier > 百分比移动止损 > 止盈
+        （None = 不触发）。chandelier 与百分比 trailing 通常二选一配置，同配时按此序谁先穿阈谁先触发。
+        """
         if self._stop_loss_pct is not None and pct <= -self._stop_loss_pct:
             return "stop_loss"
-        # 移动止损：仅在仓位「曾进入盈利区」（峰值价 > 成本）后才生效——锁的是已有利润；
+        # chandelier（吊灯）ATR 移动止损（增补 A）：止损位 = 开仓以来最高价 − mult×ATR，随波动
+        # 自适应。仅在「曾进盈利区」（最高价 > 成本）+ ATR 种子就绪后生效；复用 trailing_stop_loss
+        # tag（语义同为移动止损，避免新增 exit_reason 迁移）。
+        if (
+            self._chandelier_atr_mult is not None
+            and chan is not None
+            and chan.atr is not None
+            and chan.highest_high > avg
+            and mark <= chan.highest_high - self._chandelier_atr_mult * chan.atr
+        ):
+            return "trailing_stop_loss"
+        # 百分比移动止损：仅在仓位「曾进入盈利区」（峰值价 > 成本）后才生效——锁的是已有利润；
         # 用自峰值价格的回撤幅度判定（peak_mark - mark) / peak_mark），不掺成本基准。
         if (
             self._trailing_stop_pct is not None
