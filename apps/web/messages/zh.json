@@ -105,7 +105,7 @@
         "inalpha": "AI 只负责提议，真正下单由你设好的规则执行——它自己扣不动扳机。"
       }
     },
-    "close": "一个会解释自己、也绝不背着你下单的 AI。"
+    "close": "每一步都讲得清，每一单都要你点头。"
   },
   "intelligence": {
     "eyebrow": "03 / 智能",
@@ -113,13 +113,23 @@
     "sub": "不是写死的一套指标。Agent 按时序 Rank IC 给因子排名，挑出当下最灵的那几个；在写下一行策略之前，先让多位分析师对立辩论。",
     "timing": {
       "heading": "因子择时",
-      "body": "factor.timing 用滚动 Rank IC 给因子库排名，浮出当前有效的信号——每个因子都经形式化、IC 检验、多重检验校正，并记录提出人、时点与经济学故事门的判定。",
+      "body": "factor.timing 用滚动 Rank IC 给一个 70 因子库排名——价 / 量 / 基本面 / FRED 宏观四大族——浮出当前有效的信号。每个因子都经形式化、IC 检验、多重检验校正、去相关，并记录提出人、时点与经济学故事门的判定。",
       "caption": "factor.timing · 滚动 Rank IC"
     },
     "panel": {
       "heading": "投资大师团",
       "body": "一次 deep dive 会召集技术、基本面、情绪分析师，外加可选的投资大师团，对立观点再综合，绝不只听一个声音。",
       "legendsLabel": "对立视角"
+    },
+    "lib": {
+      "heading": "一座被治理的因子库",
+      "facts": [
+        "70 因子 · 7 大族 · 含 FRED 宏观（美债收益率 · 美元指数 · VIX · CPI）",
+        "衰减巡检 · 逐因子透出 rank_ic_recent vs rank_ic",
+        "top-N 在 ρ < 0.85 去相关——绝不是同一信号的十份拷贝",
+        "因子发现 L1 · 白名单 DSL（无 eval/exec）→ 自动评估 + 查重 + 推荐注册"
+      ],
+      "panelFoot": "70 因子 · ρ<0.85 去相关 · 衰减巡检 · 近期 IC vs 基线"
     }
   },
   "research": {
@@ -142,7 +152,11 @@
     "tallyBear": "空方",
     "verdict": "decision_record",
     "verdictText": "做多 NVDA · 信念 0.41 · 每个立场都留底",
-    "legendsLabel": "可选 · 一桌投资大师团"
+    "legendsLabel": "可选 · 一桌投资大师团",
+    "skills": {
+      "label": "可插拔方法论 · agent skills",
+      "body": "大师团之外，agent 还能把投研方法论当 skill 即插即用——比如一套供应链分析法、你自带的一套打法——只在用得上时才读取。知识插进来，token 不花在没用上的地方。"
+    }
   },
   "evolution": {
     "title": "Agent 写策略——再改写策略，去打败自己。",
@@ -158,9 +172,13 @@
       "contract": "Strategy 契约",
       "contractNote": "必须继承 + 实现 on_bar"
     },
+    "archetypeLabel": "从经验证的原型起步",
+    "archetypes": ["趋势", "均值回归", "波动", "多因子"],
     "fitnessLabel": "多目标 fitness",
     "fitness": "sharpe + 0.3·calmar − 0.1·turnover − 1.0·(maxDD > 30%)",
-    "loop": "变异 · 评估 · 留下跑赢基线的"
+    "loop": "变异 · 评估 · 留下跑赢基线的",
+    "gateLabel": "质量门",
+    "gate": "上线前，质量门拿候选与基线打分；不达标，agent 自动改一版重写——只有过线的才发布。"
   },
   "demo": {
     "eyebrow": "04 / 演示",
@@ -259,7 +277,12 @@
     },
     "agentLabel": "LLM agent",
     "orderLabel": "订单簿",
-    "wall": "deny —— LLM 没有直达路径"
+    "wall": "deny —— LLM 没有直达路径",
+    "guard": {
+      "tag": "guard-stop",
+      "label": "框架级兜底",
+      "body": "独立于策略逻辑，框架给每个持仓罩一道 −20% 硬止损——回测里也一样施加，所以你看到的回撤就是你会真实经历的回撤。它的平仓只有在三重签名（SELL · guard 标签 · guard- 订单前缀）下才豁免风控门，任何东西都仿冒不过这道边界。"
+    }
   },
   "harness": {
     "eyebrow": "06 / 工程绑带",
@@ -332,7 +355,9 @@
     "currentState": {
       "title": "诚实告知 ——",
       "items": [
-        "D-11 已落地：跨币种 cash + 无人值守模拟盘 runner——promoted 策略在真实 bar 上自动跑模拟账户，经 plan/exec 机器审批，留完整决策复盘",
+        "无人值守模拟盘 runner + 跨币种 cash：promoted 策略在真实 bar 上自动跑一个多币种模拟账户，经 plan/exec 机器审批，留完整决策复盘",
+        "70 因子库，带血缘追踪与衰减告警——因子经 IC 监控并去相关；告警只提示，绝不替你动仓",
+        "框架级持仓保护：−20% 硬止损，回测与模拟盘一视同仁，独立于策略逻辑",
         "RiskEngine 在 paper HTTP 边界生效：仓位上限 / 价格偏离 / 回撤一票否决 / 全市场真实交易日历",
         "暂不接真金——runner 跑的是模拟账户，订单本地撮合；每步走 plan/exec 审批并落盘"
       ]

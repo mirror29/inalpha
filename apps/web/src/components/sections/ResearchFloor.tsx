@@ -225,6 +225,22 @@ export function ResearchFloor() {
               ))}
             </div>
           </div>
+
+          {/* Agent skills —— 投研方法论即插即用，按需读取 */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.6, delay: 0.15 }}
+            className="mt-8 border-l-2 border-seal/40 pl-4"
+          >
+            <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-seal/90">
+              {t("skills.label")}
+            </span>
+            <p className="mt-2 max-w-[44ch] text-[13.5px] leading-relaxed text-fg-muted">
+              {t("skills.body")}
+            </p>
+          </motion.div>
         </div>
       </div>
     </section>
