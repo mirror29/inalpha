@@ -127,6 +127,8 @@ class MomentumTrendStrategy(Strategy):
             self._position_pct is not None and self._position_pct > 0
             and self._initial_cash > 0 and bar.close > 0
         ):
+            # /1.05 ≈ 5% 缓冲:信号 bar.close 算 qty、下一根 open 才撮合,留余量抗 bar 间
+            # 价格 jitter + 手续费 + 滑点,避免 can_afford 守门拒单(故 position_pct=1.0 约 95% 仓)
             return (self._initial_cash * self._position_pct) / bar.close / 1.05
         return self._trade_size
 
@@ -229,6 +231,8 @@ class MeanReversionStrategy(Strategy):
             self._position_pct is not None and self._position_pct > 0
             and self._initial_cash > 0 and bar.close > 0
         ):
+            # /1.05 ≈ 5% 缓冲:信号 bar.close 算 qty、下一根 open 才撮合,留余量抗 bar 间
+            # 价格 jitter + 手续费 + 滑点,避免 can_afford 守门拒单(故 position_pct=1.0 约 95% 仓)
             return (self._initial_cash * self._position_pct) / bar.close / 1.05
         return self._trade_size
 
@@ -342,6 +346,8 @@ class VolatilityContractionStrategy(Strategy):
             self._position_pct is not None and self._position_pct > 0
             and self._initial_cash > 0 and bar.close > 0
         ):
+            # /1.05 ≈ 5% 缓冲:信号 bar.close 算 qty、下一根 open 才撮合,留余量抗 bar 间
+            # 价格 jitter + 手续费 + 滑点,避免 can_afford 守门拒单(故 position_pct=1.0 约 95% 仓)
             return (self._initial_cash * self._position_pct) / bar.close / 1.05
         return self._trade_size
 
@@ -470,6 +476,8 @@ class MultiFactorStrategy(Strategy):
             self._position_pct is not None and self._position_pct > 0
             and self._initial_cash > 0 and bar.close > 0
         ):
+            # /1.05 ≈ 5% 缓冲:信号 bar.close 算 qty、下一根 open 才撮合,留余量抗 bar 间
+            # 价格 jitter + 手续费 + 滑点,避免 can_afford 守门拒单(故 position_pct=1.0 约 95% 仓)
             return (self._initial_cash * self._position_pct) / bar.close / 1.05
         return self._trade_size
 

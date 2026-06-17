@@ -123,6 +123,7 @@ approval_token 状态机（D-8/D-9）→ LLM 自创策略沙盒 + 风控引擎 +
 - ❌ 不在 `services/_shared/` 加项目特有逻辑（破坏复用）
 - ❌ 不写跳过测试 / 跳过 hook 的 commit（`--no-verify` 等）——遇阻先 ask user
 - ❌ 不在不公开源码的前提下把 Inalpha（或其修改版）当作网络服务对外提供（LICENSE: AGPL-3.0；需闭源 / 托管 SaaS 请提 issue 谈双重许可）
+- ❌ 多租户上线前不验证 promote 审批已按用户隔离：现 askCache 在缺稳定会话 id 时落 `__global__`（单租户兜底），需先让 Mastra 把 `threadId`/`resourceId` 注入 tool ctx，否则 A 的审批会被 B 复用（越权）。详 #91 / `hooks/with-hooks.ts` 注释
 
 ---
 
