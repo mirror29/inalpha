@@ -20,7 +20,8 @@ agent 流程（orchestrator 第 2 步）：
 **出处（MIT 借鉴，ADR-0051 §许可与出处）**：原型结构 + 失效模式 + 可转向目标种子自
 [tradermonty/claude-trading-skills](https://github.com/tradermonty/claude-trading-skills)
 （MIT License）``strategy-pivot-designer/references/strategy_archetypes.md``——**只提炼结构
-原则，不复制其脚本源码**。``multi_factor_combine`` 为 Inalpha 因子库特有，无外部对应。
+原则，不复制其脚本源码**。``multi_factor_combine`` 与 ``single_factor_assistive``
+（ADR-0051 增补 A · 克制型单因子低频）为 Inalpha 特有，无外部对应。
 """
 from __future__ import annotations
 
@@ -521,6 +522,144 @@ _MULTI_FACTOR = ArchetypeMeta(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 5. single_factor_assistive （Inalpha 特有，无外部源 · ADR-0051 增补 A）
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SINGLE_FACTOR_ASSISTIVE_CODE = '''
+class SingleFactorAssistiveStrategy(Strategy):
+    # 克制型单因子低频：单主因子(动量)阈值定方向 + 少量辅助过滤(量能确认 + 波动率上限)；
+    # 入场/出场只在信号 flip 时出手 => 天然低频(日/周/月级)。不自写止损，灾难兜底交框架级
+    # Position Guard(尤其与 chandelier ATR 移动止损天然组合)。long-only 现货。
+    # 注：BTC/USDT 等 ticker 仅为格式示例，不预设市场/品种(全球 ticker 都该能跑)。
+    def __init__(
+        self, name, clock, msgbus, instrument_id, timeframe="1d",
+        mom_period=20, entry_threshold=0.0,
+        vol_confirm_mult=1.0, vol_cap=0.0, min_hold_bars=0,
+        trade_size=0.01, position_pct=None, initial_cash=0.0,
+    ):
+        if mom_period < 2:
+            raise ValueError("mom_period must be >= 2")
+        super().__init__(name, clock, msgbus)
+        self._instrument_id = instrument_id
+        self._timeframe = timeframe
+        self._mom_period = mom_period
+        self._entry_threshold = entry_threshold
+        self._vol_confirm_mult = vol_confirm_mult
+        self._vol_cap = vol_cap
+        self._min_hold_bars = min_hold_bars
+        self._trade_size = trade_size
+        self._position_pct = position_pct
+        self._initial_cash = initial_cash
+        self._closes = deque(maxlen=mom_period + 1)
+        self._vols = deque(maxlen=mom_period)
+        self._rets = deque(maxlen=mom_period)
+        self._prev_close = None
+        self._is_long = False
+        self._open_qty = 0.0
+        self._bar_idx = 0
+        self._entry_idx = -1
+
+    def on_start(self):
+        self.subscribe_bars(self._instrument_id, self._timeframe)
+
+    def on_bar(self, bar):
+        if bar.instrument_id != self._instrument_id:
+            return
+        if bar.timeframe != self._timeframe:
+            return
+        self._bar_idx += 1
+        if self._prev_close is not None and self._prev_close > 0:
+            self._rets.append((bar.close - self._prev_close) / self._prev_close)
+        self._prev_close = bar.close
+        self._closes.append(bar.close)
+        self._vols.append(bar.volume)
+        cl = list(self._closes)
+        if len(cl) <= self._mom_period:
+            return
+        # 主因子：近 mom_period 根动量（单因子打底，方向由阈值定）
+        base = cl[0]
+        mom = (bar.close - base) / base if base > 0 else 0.0
+        want_long = mom >= self._entry_threshold
+        # 辅助过滤 1：量能确认（vol_confirm_mult <= 1 即关闭该过滤）
+        if want_long and self._vol_confirm_mult > 1.0:
+            vmean = sum(self._vols) / len(self._vols)
+            if vmean > 0 and bar.volume < vmean * self._vol_confirm_mult:
+                want_long = False
+        # 辅助过滤 2：波动率上限（vol_cap <= 0 即关闭）——近 mom_period 根收益率 std 超限不入场
+        if want_long and self._vol_cap > 0.0 and len(self._rets) >= 2:
+            rmean = sum(self._rets) / len(self._rets)
+            rvar = sum((x - rmean) ** 2 for x in self._rets) / len(self._rets)
+            if rvar ** 0.5 > self._vol_cap:
+                want_long = False
+        # flip 驱动：只在信号变化时出手 => 天然低频、低换手
+        if want_long and not self._is_long:
+            self._submit(OrderSide.BUY, bar)
+            self._entry_idx = self._bar_idx
+        elif not want_long and self._is_long:
+            # 最小持仓约束：未到期不平（进一步降换手），到期再按 flip 出场
+            held = self._bar_idx - self._entry_idx
+            if self._min_hold_bars <= 0 or held >= self._min_hold_bars:
+                self._submit(OrderSide.SELL, bar)
+
+    def on_position_opened(self, event):
+        self._is_long = event.quantity > 0
+        self._open_qty = abs(event.quantity)
+
+    def on_position_closed(self, event):
+        self._is_long = False
+        self._open_qty = 0.0
+
+    def _qty(self, bar):
+        if (
+            self._position_pct is not None and self._position_pct > 0
+            and self._initial_cash > 0 and bar.close > 0
+        ):
+            # /1.05 ≈ 5% 缓冲:信号 bar.close 算 qty、下一根 open 才撮合,留余量抗 bar 间
+            # 价格 jitter + 手续费 + 滑点,避免 can_afford 守门拒单(故 position_pct=1.0 约 95% 仓)
+            return (self._initial_cash * self._position_pct) / bar.close / 1.05
+        return self._trade_size
+
+    def _submit(self, side, bar):
+        if side == OrderSide.SELL and self._open_qty > 0:
+            qty = self._open_qty
+        else:
+            qty = self._qty(bar)
+        order = Order(
+            client_order_id=ClientOrderId("sfa-" + uuid4().hex[:8]),
+            instrument_id=self._instrument_id,
+            side=side,
+            type=OrderType.MARKET,
+            quantity=qty,
+        )
+        self.submit_order(order)
+'''.strip()
+
+_SINGLE_FACTOR_ASSISTIVE = ArchetypeMeta(
+    name="single_factor_assistive",
+    source_archetype="",
+    applies_to_kinds=("momentum", "trend"),
+    description="单主因子(动量)阈值定方向 + 少量辅助过滤(量能确认 + 波动率上限)；信号 flip "
+    "才出手，天然低频。不自写止损，交框架级 Position Guard 兜底（与 chandelier 天然组合）。",
+    when_to_use="想要克制、低换手的单因子策略（日/周/月级调仓）；主因子证据强、不想堆因子时",
+    when_not_to_use="想合成多个 stable 因子（用 multi_factor_combine）；要高频 / 日内（本骨架偏低频）",
+    failure_modes=(
+        "主因子 decaying 时辅助过滤救不回来",
+        "辅助过滤过严 → 长期不出手（欠拟合 / 漏过机会）",
+        "阈值卡太死 = 隐性过拟合该段历史（应留回测调，别钉死）",
+    ),
+    compatible_pivots=("momentum_trend", "multi_factor_combine"),
+    params=(
+        ArchetypeParam("mom_period", 20, "主因子动量回看周期；按因子 horizon 调"),
+        ArchetypeParam("entry_threshold", 0.0, "动量入场阈值（动量 >= 此值才做多方向）"),
+        ArchetypeParam("vol_confirm_mult", 1.0, "辅助：量能确认倍数（<= 1 关闭该过滤）"),
+        ArchetypeParam("vol_cap", 0.0, "辅助：收益率波动率上限（<= 0 关闭；超过则不入场）"),
+        ArchetypeParam("min_hold_bars", 0, "最小持仓 bar 数（降换手，0 = 不约束）"),
+    ),
+    code=_SINGLE_FACTOR_ASSISTIVE_CODE,
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -530,6 +669,7 @@ ARCHETYPES: Final[tuple[ArchetypeMeta, ...]] = (
     _MEAN_REVERSION,
     _VOLATILITY_CONTRACTION,
     _MULTI_FACTOR,
+    _SINGLE_FACTOR_ASSISTIVE,
 )
 
 _BY_NAME: Final[dict[str, ArchetypeMeta]] = {a.name: a for a in ARCHETYPES}

@@ -123,3 +123,34 @@ def test_archetype_meta_fields_present() -> None:
         assert a.applies_to_kinds
         assert a.params  # 每个骨架至少 1 个可调参数槽
         assert a.code.startswith("class ")
+
+
+def test_single_factor_assistive_is_low_frequency() -> None:
+    """单因子骨架 flip 驱动：信号持续为真（单边上行）时只入场一次，不反复下单（ADR-0051 增补 A）。"""
+    meta = get_archetype("single_factor_assistive")
+    assert meta is not None
+    cls = load_strategy_class(meta.code)
+    # 严格单调上行 → 动量恒正、want_long 恒真 → warmup 后仅一次买入，之后信号不 flip 不再下单
+    bars = _gen_bars([100.0 + i for i in range(60)])
+    engine = BacktestEngine(initial_cash=10_000.0, fee_rate=0.001)
+    strat = cls(
+        name="sfa-lowfreq",
+        clock=engine.clock,
+        msgbus=engine.msgbus,
+        instrument_id=_btc(),
+        timeframe="1h",
+        position_pct=1.0,
+        initial_cash=10_000.0,
+    )
+    engine.add_strategy(strat)
+    report = engine.run(bars)
+    # 只有一笔入场成交（无 churn）：信号恒真 → 不重复下单，证明 flip 驱动的低频特性
+    assert len(report.fills) == 1
+    assert report.fills[0].side == "BUY"
+
+
+def test_single_factor_assistive_in_momentum_ranking() -> None:
+    """momentum kind 查询应同时命中 momentum_trend 与 single_factor_assistive（D5/增补 A）。"""
+    names = {m.name for m in list_archetypes(["momentum"])}
+    assert "single_factor_assistive" in names
+    assert "momentum_trend" in names
