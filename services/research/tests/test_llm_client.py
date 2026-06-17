@@ -442,6 +442,12 @@ def test_infer_language_korean() -> None:
     assert infer_output_language("이 종목 지금 어때요") == "한국어"
 
 
+def test_infer_language_non_latin_non_cjk_is_none() -> None:
+    # 阿/俄等无法可靠从脚本判语言 → None(不强制英文,交给模型随输入)(CR #92)
+    assert infer_output_language("تحليل سهم أبل") is None  # 阿拉伯语
+    assert infer_output_language("проанализируй акции") is None  # 俄语(纯西里尔)
+
+
 def test_infer_language_empty_or_none_is_none() -> None:
     assert infer_output_language("") is None
     assert infer_output_language("   ") is None

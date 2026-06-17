@@ -591,19 +591,20 @@ SUPPORTED_PROVIDERS = (
 _KANA_RE = re.compile(r"[\u3040-\u30ff]")  # 平假名 + 片假名
 _HANGUL_RE = re.compile(r"[\uac00-\ud7a3]")  # 韩文谚文音节
 _HAN_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")  # CJK 统一表意文字 + 兼容区
+_LATIN_RE = re.compile(r"[A-Za-z]")  # 拉丁字母（粗当英文兜底）
 
 
 def infer_output_language(text: str | None) -> str | None:
     """从一段文本粗判输出语言：日文假名→"日本語"，韩文→"한국어"，汉字→"中文"，
-    非空非以上→"English"，空→None。
+    含拉丁字母→"English"，其余脚本（阿/俄/泰/希伯来…）与空→None。
 
     用作 deep_dive 的语言兜底（Fix C 第二层）：orchestrator 没显式传 language 时，从
     user_question 推断，让研究结果跟随提问语言——确定性、不靠模型自觉。
 
-    粗判局限（脚本级，非真正语言识别）：纯汉字无假名的日文会判成"中文"（漢字共用）；
-    拉丁字母语言（法 / 德 / 西…）与未覆盖的非拉丁脚本（阿 / 俄 / 泰…）都落到 "English"。
-    这只是兜底——非英语用户必须由 orchestrator 显式传 language（Fix A），不要依赖本函数
-    识别小语种；要更全可换 langdetect / lingua，但当前不引额外依赖。
+    返回 None = 不注入语言指令、交给模型随输入：对无法可靠从脚本判定的语言（阿/俄/泰…），
+    强塞 "English" 是主动 degradation（阿语用户拿到英文报告），不如不强制（CR #92）。
+    粗判局限：纯汉字无假名的日文判成"中文"（漢字共用）；拉丁语言（法/德/西…）落 "English"
+    ——这类用户须由 orchestrator 显式传 language（Fix A）；要更全可换 langdetect / lingua。
     """
     if not text or not text.strip():
         return None
@@ -613,7 +614,9 @@ def infer_output_language(text: str | None) -> str | None:
         return "한국어"
     if _HAN_RE.search(text):
         return "中文"
-    return "English"
+    if _LATIN_RE.search(text):
+        return "English"
+    return None
 
 
 def _with_language_directive(system: str, language: str) -> str:
