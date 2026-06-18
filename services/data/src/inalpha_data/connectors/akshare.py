@@ -81,24 +81,38 @@ class AkshareConnector:
     """akshare 包装 —— 同步库走 ``asyncio.to_thread``。"""
 
     def __init__(self) -> None:
-        # akshare 无 client 对象,import 即用。fundamentals 进程内 TTL 缓存:
-        # {symbol: (expires_monotonic, result_dict)},只缓存成功结果。
-        self._fin_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+        # akshare 无 client 对象,import 即用。fundamentals 进程内 TTL 缓存,**PIT-aware**:
+        # key = (symbol, as_of 截断到天 | None)。财报日级粒度,按天 key 安全——同一天的
+        # PIT 查询(含 as_of≈now 的实时研究,三 analyst 并行)命中同一格,不再各自打 akshare
+        # (#102 CR:原"PIT 绕过缓存"会让 live deep-dive 对同 ticker 打 3× 网络)。只缓存成功。
+        self._fin_cache: dict[tuple[str, str | None], tuple[float, dict[str, Any]]] = {}
 
-    def _fin_cache_get(self, symbol: str) -> dict[str, Any] | None:
-        hit = self._fin_cache.get(symbol)
+    @staticmethod
+    def _fin_cache_key(symbol: str, as_of: datetime | None) -> tuple[str, str | None]:
+        return (symbol, as_of.date().isoformat() if as_of is not None else None)
+
+    def _fin_cache_get(
+        self, symbol: str, as_of: datetime | None = None
+    ) -> dict[str, Any] | None:
+        key = self._fin_cache_key(symbol, as_of)
+        hit = self._fin_cache.get(key)
         if hit is None:
             return None
         expires, value = hit
         if time.monotonic() > expires:
-            self._fin_cache.pop(symbol, None)
+            self._fin_cache.pop(key, None)
             return None
         return value
 
-    def _fin_cache_put(self, symbol: str, value: dict[str, Any]) -> None:
+    def _fin_cache_put(
+        self, symbol: str, value: dict[str, Any], as_of: datetime | None = None
+    ) -> None:
         if len(self._fin_cache) > 128:  # 进程内软上限,超了清空(同 cn_market)
             self._fin_cache.clear()
-        self._fin_cache[symbol] = (time.monotonic() + _FIN_CACHE_TTL_S, value)
+        self._fin_cache[self._fin_cache_key(symbol, as_of)] = (
+            time.monotonic() + _FIN_CACHE_TTL_S,
+            value,
+        )
 
     async def fetch_bars(
         self,
@@ -205,11 +219,11 @@ class AkshareConnector:
                     "reason": f"invalid as_of datetime: {as_of!r}",
                 }
 
-        # 非 PIT 走缓存；PIT 查询绕过缓存（按 as_of 截断结果不可与默认结果共用一格）
-        if as_of_dt is None:
-            cached = self._fin_cache_get(symbol)
-            if cached is not None:
-                return cached
+        # PIT-aware 缓存：按 (symbol, as_of 截断到天) 命中——非 PIT(None)与各 as_of 各自一格，
+        # 同一天的 PIT 查询(含实时研究)复用，不再绕过缓存（#102 CR）。
+        cached = self._fin_cache_get(symbol, as_of_dt)
+        if cached is not None:
+            return cached
 
         _logger.debug(
             "akshare_fetch_financials", symbol=symbol, prefix=prefix, code=code, as_of=as_of
@@ -325,9 +339,8 @@ class AkshareConnector:
             "indicators": indicators,
             "raw": raw,
         }
-        # 只缓存非 PIT 成功结果;PIT 结果按 as_of 截断、不可与默认结果共格,失败路径不缓存
-        if as_of_dt is None:
-            self._fin_cache_put(symbol, result)
+        # 缓存成功结果（PIT-aware，按 (symbol, as_of 天) 分格）；失败路径不缓存,留待重试
+        self._fin_cache_put(symbol, result, as_of_dt)
         return result
 
     async def fetch_news(self, symbol: str, limit: int = 20) -> list[dict[str, Any]]:

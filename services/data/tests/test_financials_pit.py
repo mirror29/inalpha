@@ -94,6 +94,28 @@ async def test_yfinance_as_of_marks_pit_not_supported(monkeypatch) -> None:
     assert "PIT" not in (out2.get("reason") or "")
 
 
+async def test_financials_cache_is_pit_aware(monkeypatch) -> None:
+    """#102 CR：PIT 缓存按 (symbol, as_of 天) 分格——同一天复用、不同天各打一次。"""
+    from inalpha_data.connectors import akshare as ak
+
+    calls = {"n": 0}
+
+    def fake_sync(*, prefix, code, as_of=None, publish_lag_days=120):
+        calls["n"] += 1
+        return {"净资产收益率(ROE)": 18.0}
+
+    monkeypatch.setattr(ak, "_fetch_financials_sync", fake_sync)
+    conn = ak.AkshareConnector()  # hk → 跳过 sh/sz 的 Baidu 估值网络调用
+
+    a1 = await conn.fetch_financials("hk.00700", as_of="2020-06-30T00:00:00Z")
+    a2 = await conn.fetch_financials("hk.00700", as_of="2020-06-30T23:00:00Z")  # 同一天
+    assert a1["available"] is True and a2["available"] is True
+    assert calls["n"] == 1  # 同 (symbol, 天) → 第二次命中缓存,不再打 akshare
+
+    await conn.fetch_financials("hk.00700", as_of="2020-09-30T00:00:00Z")  # 另一天
+    assert calls["n"] == 2  # 不同天 → 另一格,再打一次
+
+
 def test_fundamentals_endpoint_threads_as_of(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
