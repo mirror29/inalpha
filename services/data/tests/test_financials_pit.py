@@ -147,6 +147,25 @@ async def test_ashare_valuation_skipped_for_historical_as_of(monkeypatch) -> Non
     assert live["indicators"].get("pe_ratio") == 30.0
 
 
+async def test_cache_key_normalizes_tz_to_utc(monkeypatch) -> None:
+    """#102 CR：as_of 归一到 UTC——+08:00 与其 UTC 等价串落同一缓存格（同 UTC 日）。"""
+    from inalpha_data.connectors import akshare as ak
+
+    calls = {"n": 0}
+
+    def fake_sync(**kw):
+        calls["n"] += 1
+        return {"净资产收益率(ROE)": 18.0}
+
+    monkeypatch.setattr(ak, "_fetch_financials_sync", fake_sync)
+    conn = ak.AkshareConnector()
+
+    # 两者都 = UTC 2020-06-29；未归一时 +08:00 的本地日期是 06-30 会落到另一格
+    await conn.fetch_financials("hk.00700", as_of="2020-06-30T07:00:00+08:00")
+    await conn.fetch_financials("hk.00700", as_of="2020-06-29T23:00:00Z")
+    assert calls["n"] == 1  # 同 UTC 日 → 同缓存格,只打一次
+
+
 def test_fundamentals_endpoint_threads_as_of(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
