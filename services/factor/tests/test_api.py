@@ -126,6 +126,46 @@ def test_snapshot_decorrelates_top_n() -> None:
         app.dependency_overrides.clear()
 
 
+class _PerSymbolEngine(FactorEngine):
+    """每个 symbol 返回不同合成数据（横截面要标的间有区分度）。"""
+
+    def __init__(self) -> None:
+        super().__init__(get_factor_settings())
+
+    async def _fetch_df(self, *, symbol: str, **_kw: object) -> pd.DataFrame:  # type: ignore[override]
+        seed = sum(ord(ch) for ch in symbol)
+        return make_ohlcv(300, seed=seed)
+
+
+def test_panel_score_endpoint() -> None:
+    """POST /panel/score 端到端：横截面因子结果 + non-PIT 标注 + 选标的排名。"""
+    app.dependency_overrides[get_engine] = lambda: _PerSymbolEngine()
+    try:
+        client = TestClient(app)
+        r = client.post(
+            "/panel/score",
+            json={
+                "symbols": ["AAA", "BBB", "CCC", "DDD", "EEE"],
+                "timeframe": "1d",
+                "lookback_bars": 200,
+                "horizon_bars": 5,
+            },
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["is_pit"] is False  # 非 PIT 显式标注（ADR-0055 D4）
+        assert "non-PIT" in body["universe_note"]
+        assert len(body["factors"]) > 0
+        f0 = body["factors"][0]
+        assert f0["ic_kind"] == "cross_sectional"
+        assert {"cross_sectional_ic", "n_periods", "latest_ranking"} <= set(f0)
+        assert 0 < len(f0["latest_ranking"]) <= 5
+        # macro 不参与横截面
+        assert not any(f["factor_id"].startswith("macro.") for f in body["factors"])
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_snapshot_empty_when_no_bars() -> None:
     app.dependency_overrides[get_engine] = lambda: _FakeEngine(
         pd.DataFrame(columns=["open", "high", "low", "close", "volume"])

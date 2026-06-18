@@ -53,6 +53,10 @@ def test_alpha101_timeseries_subset(ohlcv: pd.DataFrame) -> None:
     # 但出现在 catalog 里且标 needs_universe
     specs = {s.factor_id: s for s in a.specs()}
     assert specs["alpha101.a1"].needs_universe is True
+    # a6 = -corr(open,volume,10) 是纯时序（ADR-0055 纠误标）：可算、非横截面
+    assert specs["alpha101.a6"].needs_universe is False
+    assert "alpha101.a6" in series
+    assert _finite_tail(series["alpha101.a6"])
 
 
 def test_qlib_disabled_returns_empty(ohlcv: pd.DataFrame) -> None:
