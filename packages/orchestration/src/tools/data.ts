@@ -326,8 +326,11 @@ export const dataGetFundamentalsTool = createTool({
     venue: z.string().default("akshare"),
     symbol: SymbolSchema,
     asOf: z
+      // offset:true 必须——akshare 响应回显 / Python isoformat 都用 +00:00，不带 offset
+      // 的 .datetime() 只认 Z 结尾会拒 +00:00，导致 agent 把上轮 as_of 复制回来即失败
+      // （与 factor.ts 同名字段一致，#102 CR）。
       .string()
-      .datetime()
+      .datetime({ offset: true })
       .optional()
       .describe("point-in-time 截断（ISO 8601）；只返回该时点已披露的财报，防未来函数"),
   }),

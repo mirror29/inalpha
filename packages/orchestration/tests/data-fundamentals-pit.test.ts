@@ -64,6 +64,15 @@ describe("data.get_fundamentals · asOf PIT 透传", () => {
     expect(decodeURIComponent(capturedUrl)).toContain("2020-01-01T00:00:00Z");
   });
 
+  it("schema 接受 +00:00 与 Z 两种偏移格式（akshare/Python isoformat 回显，#102 CR）", () => {
+    // agent 把上一轮响应里的 as_of(+00:00)复制回来——schema 必须收，否则 round-trip 失败
+    const schema = dataGetFundamentalsTool.inputSchema!;
+    for (const asOf of ["2020-01-01T00:00:00+00:00", "2020-01-01T00:00:00Z"]) {
+      const r = schema.safeParse({ venue: "akshare", symbol: "sh.600519", asOf });
+      expect(r.success).toBe(true);
+    }
+  });
+
   it("不传 asOf → URL 不带 as_of（研究当下不做 PIT 截断）", async () => {
     let capturedUrl = "";
     mockFetch(async (url) => {
