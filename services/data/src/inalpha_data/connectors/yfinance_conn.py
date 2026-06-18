@@ -224,6 +224,14 @@ class YfinanceConnector:
                 "available": False,
                 "reason": "yfinance returned empty financial data",
             }
+        # PIT 防误用（#100 CR）：yfinance v1 不按 as_of 截断，但响应 as_of 字段回显的是
+        # 取数时刻(now)——调用方若对 yfinance 传 as_of 做回测,会把当前快照当历史用 = 静默
+        # 未来函数。给 as_of 时显式写 reason 提示 PIT 未生效,让调用方能据此察觉、别误信。
+        if as_of is not None and isinstance(result, dict):
+            result["reason"] = (
+                "yfinance PIT not supported in v1; indicators reflect current snapshot, "
+                "not requested as_of"
+            )
         return result
 
     async def close(self) -> None:

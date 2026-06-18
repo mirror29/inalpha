@@ -220,6 +220,9 @@ class DataClient:
         - 客户端侧再按 ``as_of - publish_lag`` 兜底过滤（多数 venue 的 K 线 publish_lag=0：
           bar 在自身 ts 收盘即已知；带发布滞后的非 bar 数据走各自 connector 的 PIT 口径）。
         """
+        # tz-naive as_of 兜底转 UTC（#100 CR）：否则与 UTC-aware 的 bar ts 比较抛 TypeError
+        if as_of.tzinfo is None:
+            as_of = as_of.replace(tzinfo=UTC)
         cutoff = as_of - publish_lag
         bars = await self.get_bars(
             venue=venue,
