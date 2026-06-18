@@ -193,8 +193,13 @@ class AkshareConnector:
         akshare 返回字段因市场不同有差异，做防御性字段映射；缺失字段置 None 不抛异常。
 
         ``as_of``（ISO 时间串，ADR-0053 阶段 A）：point-in-time 截断——只取"报告期末 +
-        发布滞后 <= as_of"的财报期，防回测看到当时还没披露的财报（未来函数）。给 as_of 时
-        **绕过缓存**（PIT 查询较少，避免与非 PIT 结果串味）。
+        发布滞后 <= as_of"的财报期，防回测看到当时还没披露的财报（未来函数）。缓存为
+        **PIT-aware**：按 ``(symbol, as_of 截断到天)`` 分格，同一天的 PIT 查询复用、非 PIT
+        (None) 自成一格（#102 CR）。
+
+        **限制（A股估值字段无 PIT）**：``sh/sz`` 的 ``market_cap/pe_ratio/pb_ratio`` 来自 Baidu
+        **实时**源，无历史回溯。故**历史 as_of**（早于今天）查询时**跳过估值**（留空），避免把当日
+        估值混进历史财报造成时序错配（未来函数）；``as_of=今天/None`` 的实时研究照常取（即时正确）。
         """
         prefix, code = _parse_symbol(symbol)
         if prefix not in ("sh", "sz", "hk"):
@@ -314,8 +319,17 @@ class AkshareConnector:
 
         # 估值(总市值/PE/PB)不在财报摘要里 → A股另走 Baidu 源补齐(best-effort,
         # 失败只记日志不阻断已拿到的盈利/成长/财务指标)。
-        if prefix in ("sh", "sz") and not all(
-            indicators.get(k) is not None for k in ("market_cap", "pe_ratio", "pb_ratio")
+        # **PIT 守门(#102 CR)**：Baidu 估值是**实时**源、无历史回溯。历史 as_of(早于今天)查询
+        # 时**跳过**——否则把当日估值混进 PIT 过滤后的历史财报 = 时序错配/未来函数(2020 的 ROE
+        # 配当日 PE 会让相对估值反向)。as_of=今天/None 的实时研究照取(即时正确)。
+        _is_historical = as_of_dt is not None and as_of_dt.date() < dt_dt.now(tz=UTC).date()
+        if (
+            prefix in ("sh", "sz")
+            and not _is_historical
+            and not all(
+                indicators.get(k) is not None
+                for k in ("market_cap", "pe_ratio", "pb_ratio")
+            )
         ):
             try:
                 valuation = await asyncio.to_thread(_fetch_valuation_sync, code)

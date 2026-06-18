@@ -321,6 +321,9 @@ export const dataGetFundamentalsTool = createTool({
     - asOf（point-in-time，ADR-0053）：研究历史某时点时传入，只返回那时已披露的财报，
       防未来函数（读到当时还没发布的报告期）；仅 akshare 生效，yfinance 不做 PIT、
       响应 reason 会标注。研究"当下"不必传。
+    - A股（sh/sz）的 market_cap/pe_ratio/pb_ratio 来自**实时** Baidu 源、无历史回溯：传
+      **历史 asOf** 时这些估值字段留空（只有 ROE/毛利率等财报指标做 PIT），避免把当日估值
+      混进历史财报；asOf=今天/不传 时估值正常返回。
   `.trim(),
   inputSchema: z.object({
     venue: z.string().default("akshare"),
