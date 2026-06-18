@@ -216,6 +216,9 @@ class AkshareConnector:
                 as_of_dt = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
                 if as_of_dt.tzinfo is None:
                     as_of_dt = as_of_dt.replace(tzinfo=UTC)
+                # 归一到 UTC：否则带非 UTC offset(+08:00)时 .date() 是本地日期,与
+                # now(UTC).date() 比 / 缓存按天分格都会错位(#102 CR)。
+                as_of_dt = as_of_dt.astimezone(UTC)
             except ValueError:
                 return {
                     "venue": VENUE,
