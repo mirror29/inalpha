@@ -580,6 +580,9 @@ async def run_cv(
     cpcv 在 bar 不足（< 200 或 < 2×n_folds）时**自动回落 walk_forward**（CLAUDE.md §3.1
     末段含最新 bar 由 splitter 保证）。
     """
+    # 拉数据——默认 fresh=True：先 backfill 再读，确保 to_ts 前数据完整（与 run_backtest 同
+    # 口径，CLAUDE.md §3.1）。CV 多为历史窗口但仍主动选 fresh，避免新 symbol / 新窗口
+    # 缺数据；如需纯历史不回填须显式说明再改 fresh=False（别误当遗忘默认）。
     raw_bars = await data_client.get_bars(
         venue=req.venue,
         symbol=req.symbol,
@@ -650,6 +653,12 @@ async def run_cv(
         except RuntimeError:
             pool = None
         if pool is None:
+            # pool 不可用（容器禁 fork / 启动失败 / 旧测试同步入口）→ 同进程兜底跑。
+            # 生产环境这是从"offload"降级回"阻塞事件循环",运维需可感知（#99 CR）。
+            logger.warning(
+                "cv_offload_pool_unavailable_running_sync",
+                extra={"n_bars": len(bars), "splitter": type(spl).__name__},
+            )
             return fn()
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(pool, fn)
