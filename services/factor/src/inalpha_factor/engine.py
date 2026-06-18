@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -28,6 +29,13 @@ from .config import FactorSettings
 from .data_client import DataClient
 from .effectiveness import EffResult, ic_pvalue, null_ic_benchmark, score_factor
 from .expression import evaluate, parse_expression
+from .panel import (
+    MIN_XS_PERIODS,
+    align_field,
+    cross_sectional_ic,
+    forward_return_panel,
+    latest_cross_section,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -564,6 +572,114 @@ class FactorEngine:
             "candidates_evaluated": len(factors),
             "low_confidence_count": len(factors) - len(confident),
             "ic_null_benchmark": scored["ic_null_benchmark"],
+        }
+
+    # ── 横截面 panel（ADR-0055 首个纵切）──────────────────────────────
+    async def panel_score(
+        self,
+        *,
+        symbols: list[str],
+        venue: str,
+        timeframe: str,
+        as_of: datetime | None,
+        lookback_bars: int,
+        horizon_bars: int,
+        factor_ids: list[str] | None,
+        min_symbols: int,
+    ) -> dict[str, Any]:
+        """横截面因子评估：多标的对齐 → 每因子横截面 rank-IC + 最新横截面排名。
+
+        把因子从"单标的择时信号"用作"横截面选股信号"（ADR-0055 D1 ②路径 + D2）：
+        在 universe 上每期按因子排序，与跨标的前瞻收益求横截面 rank-IC；并给出最近
+        一期的排名供选标的（如取 PB 最低者，对应聚宽式轮动）。
+
+        约束：
+        - **macro 因子不参与**——全市场单值，某时刻对所有标的相同，无横截面区分度。
+        - **universe 非 PIT**（is_pit=False）：用调用方给的固定标的集，ADR-0053 C 成分
+          快照未建，带存活者偏差风险，显式标注不静默（§3.1 / ADR-0055 D4）。
+        - 对齐缺口留 NaN 不 ffill；某期有效标的 < min_symbols 不排名（D1.1）。
+        """
+        now = datetime.now(UTC)
+        is_live = as_of is None or as_of >= now - timedelta(
+            seconds=_tf_seconds(timeframe) * 2
+        )
+        as_of = as_of or now
+        span_bars = lookback_bars + horizon_bars + 60
+        from_ts = as_of - timedelta(seconds=_tf_seconds(timeframe) * span_bars)
+
+        # 横截面只用价量/自定义因子，显式排除 macro（无横截面区分度）
+        ids = factor_ids or self._computable_ids(timeframe, exclude_macro=True)
+        ids = [fid for fid in ids if not fid.startswith("macro.")]
+
+        async def _one(sym: str) -> tuple[str, pd.DataFrame]:
+            df = await self._fetch_df(
+                venue=venue, symbol=sym, timeframe=timeframe,
+                from_ts=from_ts, to_ts=as_of, fresh=is_live,
+            )
+            if not df.empty and isinstance(df.index, pd.DatetimeIndex):
+                df = df[df.index <= pd.Timestamp(as_of)]
+            return sym, df
+
+        frames = dict(await asyncio.gather(*[_one(s) for s in symbols]))
+        bars_used = {sym: len(df) for sym, df in frames.items()}
+        close_panel = align_field(frames, "close")
+
+        universe_note = (
+            "fixed non-PIT universe（调用方给定标的集；ADR-0053 C 成分快照未建，"
+            "横截面存活者偏差未挡，证据强度打折）"
+        )
+        if close_panel.empty:
+            return {
+                "as_of": as_of, "symbols": symbols, "bars_used": bars_used,
+                "is_pit": False, "universe_note": universe_note,
+                "factors": [], "ic_null_benchmark": 0.0,
+                "reason": "no bars for any symbol in universe",
+            }
+
+        fwd_panel = forward_return_panel(close_panel, horizon_bars)
+        per_symbol = {
+            sym: self.compute_on_df(df, ids)
+            for sym, df in frames.items()
+            if not df.empty
+        }
+        specs = self._spec_index()
+        results: list[dict[str, Any]] = []
+        for fid in ids:
+            cols = {
+                sym: fac[fid] for sym, fac in per_symbol.items() if fid in fac
+            }
+            if len(cols) < min_symbols:
+                continue
+            fpanel = pd.DataFrame(cols).reindex(close_panel.index)
+            mean_ic, icir, n_periods, mean_valid = cross_sectional_ic(
+                fpanel, fwd_panel, min_symbols=min_symbols
+            )
+            _t, ranking = latest_cross_section(fpanel, min_symbols=min_symbols)
+            spec = specs.get(fid)
+            results.append({
+                "factor_id": fid,
+                "source": spec.source if spec else "",
+                "name": spec.name if spec else fid,
+                "kind": spec.kind if spec else "",
+                "ic_kind": "cross_sectional",
+                "cross_sectional_ic": mean_ic,
+                "icir": icir,
+                "n_periods": n_periods,
+                "mean_valid_symbols": mean_valid,
+                "low_confidence": n_periods < MIN_XS_PERIODS,
+                "latest_ranking": [
+                    {"symbol": s, "value": v, "rank_pct": rp}
+                    for (s, v, rp) in ranking
+                ],
+            })
+        results.sort(key=lambda r: abs(r["cross_sectional_ic"]), reverse=True)
+        max_periods = max((r["n_periods"] for r in results), default=0)
+        benchmark = null_ic_benchmark(len(results), max_periods, horizon_bars)
+        return {
+            "as_of": as_of, "symbols": symbols, "bars_used": bars_used,
+            "is_pit": False, "universe_note": universe_note,
+            "factors": results, "ic_null_benchmark": benchmark,
+            "reason": None,
         }
 
 

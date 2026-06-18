@@ -22,7 +22,16 @@ from inalpha_shared import (
 from inalpha_shared.db import close_pool, init_pool
 
 from . import __version__, custom_registry
-from .api import candidates, catalog, compute, custom, health, score, snapshot
+from .api import (
+    candidates,
+    catalog,
+    compute,
+    custom,
+    health,
+    panel,
+    score,
+    snapshot,
+)
 from .config import get_factor_settings
 
 _settings = get_factor_settings()
@@ -84,5 +93,6 @@ app.include_router(catalog.router)
 app.include_router(compute.router)
 app.include_router(score.router)
 app.include_router(snapshot.router)
+app.include_router(panel.router)
 app.include_router(custom.router)
 app.include_router(candidates.router)

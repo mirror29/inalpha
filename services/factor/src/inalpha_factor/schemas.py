@@ -230,6 +230,96 @@ class ComputeErrorResponse(BaseModel):
     raw: dict[str, Any] | None = None
 
 
+# ────────────────────────────────────────────────────────────────────
+# Panel / 横截面（ADR-0055 首个纵切）
+# ────────────────────────────────────────────────────────────────────
+
+
+class PanelScoreRequest(BaseModel):
+    """``POST /panel/score`` —— 一篮子标的的横截面因子评估（选标的 + 横截面有效性）。
+
+    与单标的 ``/score`` 正交：那边判"一个标的的因子时序有没有择时力"，这里判"在
+    universe 里按因子排序能不能选出好标的"（横截面 rank-IC + 最新排名）。
+    """
+
+    venue: str = Field(default="binance")
+    symbols: list[str] = Field(
+        ...,
+        min_length=2,
+        max_length=50,
+        description="universe 标的集（同 venue/timeframe）。**非 PIT**——调用方给定的固定"
+        "集，ADR-0053 C 成分快照未建，响应 is_pit=false 显式标注存活者偏差风险",
+        examples=[["AAPL", "MSFT", "GOOGL", "AMZN", "META"]],
+    )
+    timeframe: str = Field(default="1d")
+    as_of: datetime | None = Field(
+        default=None, description="评估截止时刻（只用 <= as_of 的 bar）；None = 现在"
+    )
+    lookback_bars: int = Field(default=720, ge=120, le=10000)
+    horizon_bars: int = Field(default=5, ge=1, le=60)
+    min_symbols: int = Field(
+        default=3,
+        ge=2,
+        le=50,
+        description="某期参与横截面排名的最少有效标的数；不足则该期不排名（残缺池排名是伪信号）",
+    )
+    factor_ids: list[str] | None = Field(
+        default=None, description="None = 全部价量/自定义因子（macro 不参与横截面，无区分度）"
+    )
+
+    @field_validator("as_of", mode="after")
+    @classmethod
+    def _aware(cls, v: datetime | None) -> datetime | None:
+        return _assume_utc_if_naive(v) if v is not None else None
+
+
+class PanelRankEntry(BaseModel):
+    symbol: str
+    value: float = Field(description="该标的最近有效横截面时点的因子值")
+    rank_pct: float = Field(description="该值在 universe 内的分位排名 (0,1]，升序")
+
+
+class PanelFactorResult(BaseModel):
+    """单因子在 universe 上的横截面有效性 + 最新排名。"""
+
+    factor_id: str
+    source: str
+    name: str
+    kind: str
+    ic_kind: str = Field(default="cross_sectional", description="与单标的 timeseries IC 区分")
+    cross_sectional_ic: float = Field(
+        description="逐期横截面 rank-IC 的均值：每期对全池按因子排序 vs 跨标的前瞻收益"
+    )
+    icir: float = Field(description="横截面 IC 序列的 mean/std（稳定性）")
+    n_periods: int = Field(description="参与的横截面期数（有效标的≥min_symbols 的 t）")
+    mean_valid_symbols: float = Field(description="每期平均有效标的数")
+    low_confidence: bool = Field(description="有效期数不足，横截面 IC 不可靠")
+    latest_ranking: list[PanelRankEntry] = Field(
+        default_factory=list,
+        description="最近有效横截面的排名（按因子值升序）——选标的直接用：取最低=列表首，最高=列表尾",
+    )
+
+
+class PanelScoreResponse(BaseModel):
+    venue: str
+    timeframe: str
+    as_of: datetime
+    horizon_bars: int
+    symbols: list[str]
+    bars_used: dict[str, int] = Field(description="每标的取到的 bar 数")
+    is_pit: bool = Field(
+        default=False,
+        description="universe 是否 point-in-time。**当前恒 false**（ADR-0053 C 成分快照未建）"
+        "——用固定标的集，带存活者偏差，横截面证据强度打折，勿当 PIT 结论引用",
+    )
+    universe_note: str = Field(description="universe 口径说明（含降级原因）")
+    factors: list[PanelFactorResult] = Field(default_factory=list)
+    ic_null_benchmark: float = Field(
+        default=0.0, description="选择效应基准（读法/局限见 ScoreResponse 同名字段）"
+    )
+    reason: str | None = Field(default=None, description="factors 为空时的原因")
+
+
 # ── 自定义因子表达式（D-12 · 因子发现 L1）────────────────────────────
 
 
