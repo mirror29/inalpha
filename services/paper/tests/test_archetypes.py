@@ -154,3 +154,35 @@ def test_single_factor_assistive_in_momentum_ranking() -> None:
     names = {m.name for m in list_archetypes(["momentum"])}
     assert "single_factor_assistive" in names
     assert "momentum_trend" in names
+
+
+def test_single_factor_assistive_min_hold_bars_suppresses_early_exit() -> None:
+    """#98 CR：min_hold_bars 抑制未到期的 flip 出场——同序列下大 min_hold 不出 SELL。"""
+    meta = get_archetype("single_factor_assistive")
+    assert meta is not None
+    cls = load_strategy_class(meta.code)
+    # 先涨(入场)后急跌(动量翻负 → 想平)；mom_period=3 缩短 warmup
+    prices = [100.0, 102, 104, 106, 112, 118, 124, 118, 108, 96, 84, 72]
+
+    def _run(min_hold: int) -> list[str]:
+        engine = BacktestEngine(initial_cash=10_000.0, fee_rate=0.001)
+        strat = cls(
+            name=f"sfa-hold-{min_hold}",
+            clock=engine.clock,
+            msgbus=engine.msgbus,
+            instrument_id=_btc(),
+            timeframe="1h",
+            mom_period=3,
+            min_hold_bars=min_hold,
+            position_pct=1.0,
+            initial_cash=10_000.0,
+        )
+        engine.add_strategy(strat)
+        return [f.side for f in engine.run(_gen_bars(prices)).fills]
+
+    # min_hold=0：跌穿后 flip 出场 → 含 SELL
+    assert "SELL" in _run(0)
+    # min_hold 大于窗口长度：入场后无论怎么跌都不到期 → 只有 BUY、不出 SELL
+    no_exit = _run(999)
+    assert "BUY" in no_exit
+    assert "SELL" not in no_exit
