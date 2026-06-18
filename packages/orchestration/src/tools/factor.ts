@@ -75,6 +75,9 @@ export const factorTimingTool = createTool({
       |IC|。top1 的 |rank_ic| 没显著高于它 ⇒ 可能只是选择效应，措辞要降级（"未显著强于
       噪声基准"）；它是地板不是检验，高于它也不等于必然有效
     - lookbackBars 太小 → low_confidence；horizonBars 决定"预测多远的收益"（默认 5 根）
+    - 宏观因子（macro.*：利率 / 期限利差 / 信用利差 / CPI / 就业 / 实体经济 / 情绪等）
+      **仅在 timeframe=1d/1wk 返回**；默认 1h 不含 macro。要看标的相对宏观环境的因子，
+      显式传 timeframe="1d"（股票 / 指数本就按市场表用 1d，自动含 macro）
   `.trim(),
   inputSchema: z.object({
     venue: z.string().default("binance"),
@@ -146,6 +149,8 @@ export const factorScoreTool = createTool({
       建议先 catalog 选，再指定
     - low_confidence=true 的因子读数不可据此择时（样本不足）
     - asOf 是"真现在"或用户指定的评估时点，不要用训练记忆里的行情推断
+    - 宏观因子（macro.*）**仅在 timeframe=1d/1wk 才会计算**；默认 1h 时即使 factorIds 点名
+      macro.* 也会被跳过。要评估宏观因子，传 timeframe="1d"
   `.trim(),
   inputSchema: z.object({
     venue: z.string().default("binance"),
