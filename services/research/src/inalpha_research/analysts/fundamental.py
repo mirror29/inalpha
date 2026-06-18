@@ -119,7 +119,7 @@ class FundamentalAnalyst(Analyst):
                 "Rely on on-chain / supply-schedule / web evidence below instead."
             )
         else:
-            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol)
+            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol, as_of=as_of)
             financials_block = _render_financials(financials)
 
         # 双档 confidence cap（run() 里代码级 clamp）：有 live 财报 0.75，无 0.55

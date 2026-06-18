@@ -92,11 +92,16 @@ export class DataClient {
     });
   }
 
-  async getFundamentals(params: { venue: string; symbol: string }): Promise<Record<string, unknown>> {
+  async getFundamentals(params: {
+    venue: string;
+    symbol: string;
+    asOf?: string;
+  }): Promise<Record<string, unknown>> {
     try {
       return await this.http.get<Record<string, unknown>>("/fundamentals", {
         venue: params.venue,
         symbol: params.symbol,
+        ...(params.asOf ? { as_of: params.asOf } : {}),
       });
     } catch (err) {
       if (err instanceof HttpClientError) {

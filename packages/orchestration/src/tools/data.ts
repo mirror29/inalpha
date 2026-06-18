@@ -316,11 +316,20 @@ export const dataGetFundamentalsTool = createTool({
     何时用：研究个股基本面 / 看估值是否合理 / deep_dive 前预拉数据
     何时不用：加密货币（无传统财报）/ 指数和宏观（走 FRED 或专用数据源）
 
-    坑：akshare 返回字段因市场不同有差异；缺失字段为 null 不抛错
+    坑：
+    - akshare 返回字段因市场不同有差异；缺失字段为 null 不抛错
+    - asOf（point-in-time，ADR-0053）：研究历史某时点时传入，只返回那时已披露的财报，
+      防未来函数（读到当时还没发布的报告期）；仅 akshare 生效，yfinance 不做 PIT、
+      响应 reason 会标注。研究"当下"不必传。
   `.trim(),
   inputSchema: z.object({
     venue: z.string().default("akshare"),
     symbol: SymbolSchema,
+    asOf: z
+      .string()
+      .datetime()
+      .optional()
+      .describe("point-in-time 截断（ISO 8601）；只返回该时点已披露的财报，防未来函数"),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
@@ -328,6 +337,7 @@ export const dataGetFundamentalsTool = createTool({
     return await client.getFundamentals({
       venue: inputData.venue ?? "akshare",
       symbol: inputData.symbol,
+      asOf: inputData.asOf,
     });
   },
 });
