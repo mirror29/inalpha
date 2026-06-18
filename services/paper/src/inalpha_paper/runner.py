@@ -23,7 +23,7 @@ from psycopg import AsyncConnection
 
 from .config import get_paper_settings
 from .data_client import DataClient
-from .engine.backtest import BacktestEngine, run_cv_backtest
+from .engine.backtest import BacktestEngine, CVReport, run_cv_backtest
 from .engine.cv import (
     CombinatorialPurgedCV,
     InsufficientDataError,
@@ -595,7 +595,9 @@ async def run_cv(
             code="NO_BARS_AVAILABLE",
         )
 
-    # 策略类解析（内置 id 或 LLM 候选；候选二次过 ast_audit）
+    # 策略源解析（内置 id 或 LLM 候选源码字符串）。候选在 main 二次过 ast_audit；
+    # 策略**类的构建放到子进程 worker**（类对象不可 pickle，且 CPU 重活不应在事件循环里）。
+    candidate_code: str | None = None
     if req.candidate_id is not None:
         if conn is None:
             raise ValidationError(
@@ -612,27 +614,7 @@ async def run_cv(
                 f"candidate {req.candidate_id} failed re-audit: {reaudit.reason()}",
                 code="CANDIDATE_REAUDIT_FAILED",
             )
-        strategy_cls = load_strategy_class(row["code"])
-        strategy_name = f"candidate-{req.symbol}"
-    else:
-        strategy_cls = get_strategy_class(req.strategy_id)  # type: ignore[arg-type]
-        strategy_name = f"{req.strategy_id}-{req.symbol}"
-
-    def build_strategy(engine: BacktestEngine) -> Strategy:
-        kwargs: dict[str, Any] = dict(req.params)
-        sig = inspect.signature(strategy_cls.__init__)
-        if "initial_cash" in sig.parameters and "initial_cash" not in kwargs:
-            kwargs["initial_cash"] = req.initial_cash
-        if "position_pct" in sig.parameters and "position_pct" not in kwargs:
-            kwargs["position_pct"] = 1.0
-        return strategy_cls(  # type: ignore[call-arg]
-            name=strategy_name,
-            clock=engine.clock,
-            msgbus=engine.msgbus,
-            instrument_id=instrument_id,
-            timeframe=req.timeframe,
-            **kwargs,
-        )
+        candidate_code = row["code"]
 
     splitter: CombinatorialPurgedCV | PurgedKFold | WalkForward
     if req.splitter == "cpcv":
@@ -644,16 +626,38 @@ async def run_cv(
     else:
         splitter = WalkForward(req.wf_test_size, req.wf_train_size)
 
+    async def _offload(spl: CombinatorialPurgedCV | PurgedKFold | WalkForward) -> CVReport:
+        """把 N 路 CV 整体甩进 ProcessPool（#99 CR：别在事件循环里同步跑 30 条引擎）。
+
+        pool 未起（旧测试 / 同步入口）→ 同进程兜底跑（语义一致）。
+        """
+        from functools import partial
+
+        fn = partial(
+            run_cv_in_subprocess,
+            bars=bars,
+            instrument_id=instrument_id,
+            timeframe=req.timeframe,
+            strategy_id=req.strategy_id,
+            candidate_code=candidate_code,
+            params=req.params,
+            initial_cash=req.initial_cash,
+            fee_rate=req.fee_rate,
+            splitter=spl,
+        )
+        try:
+            pool = get_pool()
+        except RuntimeError:
+            pool = None
+        if pool is None:
+            return fn()
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(pool, fn)
+
     splitter_used = req.splitter
     note: str | None = None
     try:
-        report = run_cv_backtest(
-            build_strategy=build_strategy,
-            bars=bars,
-            splitter=splitter,
-            initial_cash=req.initial_cash,
-            fee_rate=req.fee_rate,
-        )
+        report = await _offload(splitter)
     except InsufficientDataError as exc:
         if req.splitter != "cpcv":
             raise ValidationError(
@@ -663,13 +667,7 @@ async def run_cv(
         splitter_used = "walk_forward"
         note = f"cpcv 数据不足（{len(bars)} bars），已回落 walk_forward：{exc}"
         try:
-            report = run_cv_backtest(
-                build_strategy=build_strategy,
-                bars=bars,
-                splitter=WalkForward(req.wf_test_size, req.wf_train_size),
-                initial_cash=req.initial_cash,
-                fee_rate=req.fee_rate,
-            )
+            report = await _offload(WalkForward(req.wf_test_size, req.wf_train_size))
         except InsufficientDataError as exc2:
             raise ValidationError(
                 f"CV data insufficient even for walk_forward: {exc2}",
@@ -692,6 +690,61 @@ async def run_cv(
         dsr=report.dsr,
         dsr_p_value=report.dsr_p_value,
         note=note,
+    )
+
+
+def run_cv_in_subprocess(
+    *,
+    bars: list[Bar],
+    instrument_id: InstrumentId,
+    timeframe: str,
+    strategy_id: str | None,
+    candidate_code: str | None,
+    params: dict[str, Any],
+    initial_cash: float,
+    fee_rate: float,
+    splitter: CombinatorialPurgedCV | PurgedKFold | WalkForward,
+) -> CVReport:
+    """**Top-level 可 pickle 函数**：在子进程里解析策略类 + 跑多路 CV，返 ``CVReport``。
+
+    与 ``run_engine_in_subprocess`` 同源（ADR-0025）：CPU 重活留子进程、main 协程不阻塞
+    （#99 CR）。``InsufficientDataError`` 经 future 原样传回 main 决定回落。candidate 路径的
+    AST 审计已在 main 做过，这里只 load。
+    """
+    if candidate_code is not None:
+        strategy_cls = load_strategy_class(candidate_code)
+        strategy_name = f"candidate-{instrument_id.symbol}"
+    elif strategy_id is not None:
+        strategy_cls = get_strategy_class(strategy_id)
+        strategy_name = f"{strategy_id}-{instrument_id.symbol}"
+    else:
+        raise ValidationError(
+            "internal: neither strategy_id nor candidate_code provided",
+            code="STRATEGY_MISSING",
+        )
+
+    def build_strategy(engine: BacktestEngine) -> Strategy:
+        kwargs: dict[str, Any] = dict(params)
+        sig = inspect.signature(strategy_cls.__init__)
+        if "initial_cash" in sig.parameters and "initial_cash" not in kwargs:
+            kwargs["initial_cash"] = initial_cash
+        if "position_pct" in sig.parameters and "position_pct" not in kwargs:
+            kwargs["position_pct"] = 1.0
+        return strategy_cls(  # type: ignore[call-arg]
+            name=strategy_name,
+            clock=engine.clock,
+            msgbus=engine.msgbus,
+            instrument_id=instrument_id,
+            timeframe=timeframe,
+            **kwargs,
+        )
+
+    return run_cv_backtest(
+        build_strategy=build_strategy,
+        bars=bars,
+        splitter=splitter,
+        initial_cash=initial_cash,
+        fee_rate=fee_rate,
     )
 
 

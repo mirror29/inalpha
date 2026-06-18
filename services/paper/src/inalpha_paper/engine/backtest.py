@@ -289,8 +289,9 @@ def run_cv_backtest(
 
     sharpe_per_path: list[float] = []
     max_dd_per_path: list[float] = []
-    raw_sharpes: list[float] = []  # 非年化，喂 DSR（与 n_returns 频率对齐）
-    path_lens: list[int] = []
+    # (非年化 Sharpe, 路径长度) 成对——DSR 必须用**同一条路径**的 sharpe 与 n_returns，
+    # 否则多重检验修正错配（#99 CR：fold 不能整除时各 path 长度不一即触发）。
+    raw_pairs: list[tuple[float, int]] = []
     for pid in sorted(returns_by_path):
         seq = [r for _i, r in sorted(returns_by_path[pid])]
         if len(seq) < 2:
@@ -298,8 +299,7 @@ def run_cv_backtest(
         ann = sharpe_ratio(seq, ppy)
         raw = sharpe_ratio(seq, 1)
         sharpe_per_path.append(ann if ann is not None else 0.0)
-        raw_sharpes.append(raw if raw is not None else 0.0)
-        path_lens.append(len(seq))
+        raw_pairs.append((raw if raw is not None else 0.0, len(seq)))
         eqc = [1.0]
         for r in seq:
             eqc.append(eqc[-1] * (1.0 + r))
@@ -308,11 +308,13 @@ def run_cv_backtest(
     n_paths = len(sharpe_per_path)
     dsr: float | None = None
     dsr_p_value: float | None = None
-    if n_paths >= 1:
+    if raw_pairs:
+        # 取最高 Sharpe 的那条路径 + 它自己的 n_returns（成对，不跨路径取 max）
+        best_sharpe, best_len = max(raw_pairs, key=lambda p: p[0])
         try:
             res = deflated_sharpe_ratio(
-                observed_sharpe=max(raw_sharpes),
-                n_returns=max(path_lens),
+                observed_sharpe=best_sharpe,
+                n_returns=best_len,
                 n_strategies=n_paths,
             )
             dsr = res.dsr
