@@ -169,15 +169,22 @@ class DataClient:
         items = payload.get("items") if isinstance(payload, dict) else None
         return items if isinstance(items, list) else []
 
-    async def get_fundamentals(self, venue: str, symbol: str) -> dict[str, Any]:
+    async def get_fundamentals(
+        self, venue: str, symbol: str, as_of: datetime | None = None
+    ) -> dict[str, Any]:
         """``GET /fundamentals`` —— 拉财报基本面数据。
+
+        ``as_of``（ADR-0053 阶段 A）：传入则做 point-in-time 截断——只返回该时点已披露的
+        财报，防 analyst 在 as_of 研究时刻读到当时还没发布的财报（未来函数）。仅 akshare
+        生效；yfinance v1 不做 PIT 但响应 reason 会标注。
 
         失败时返 ``{"available": False, ...}``（不阻断整条链路）。
         """
+        params: dict[str, str] = {"venue": venue, "symbol": symbol}
+        if as_of is not None:
+            params["as_of"] = as_of.isoformat()
         try:
-            r = await self._client.get(
-                "/fundamentals", params={"venue": venue, "symbol": symbol}
-            )
+            r = await self._client.get("/fundamentals", params=params)
         except Exception:
             return {"available": False, "reason": "request failed"}
         if r.status_code >= 400:

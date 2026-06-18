@@ -120,7 +120,7 @@ class ValuationAnalyst(Analyst):
                 "reason": "crypto has no financial statements — use NVT/MVRV-style reasoning",
             }
         else:
-            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol)
+            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol, as_of=as_of)
         financials_block = _render_valuation_inputs(financials)
 
         # 双档 confidence cap（run() 里代码级 clamp）：有 live 指标 0.75，无 0.55

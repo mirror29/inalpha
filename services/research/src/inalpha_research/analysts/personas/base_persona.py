@@ -124,7 +124,7 @@ class PersonaAnalyst(Analyst):
         if fund_venue is None:
             financials = {"available": False, "reason": "crypto has no financial statements"}
         else:
-            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol)
+            financials = await self._data.get_fundamentals(venue=fund_venue, symbol=symbol, as_of=as_of)
         financials_block = _render_fundamentals(financials)
 
         # 双档 confidence cap（run() 里代码级 clamp）：与 fundamental/valuation 同纪律——
