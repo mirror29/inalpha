@@ -14,7 +14,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from inalpha_shared import get_logger
 from inalpha_shared.errors import InalphaError
+
+_logger = get_logger(__name__)
 
 
 class DataServiceError(InalphaError):
@@ -237,6 +240,8 @@ class DataClient:
         for b in bars:
             ts_raw = b.get("ts")
             if ts_raw is None:
+                # 残损记录(venue 返回缺 ts)——告警而非静默吞,否则掩盖数据质量问题(#100 CR)
+                _logger.warning("get_bars_pit_missing_ts", bar=b)
                 continue
             ts = (
                 datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
