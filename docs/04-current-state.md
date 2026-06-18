@@ -353,6 +353,11 @@ live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩
   M2 60d——统一 shift 对 M2 是 lookahead bug）；staleness 按频率分档（monthly
   45d，发布严重延迟如实 NaN）；修 warmup 硬编码 120 天缺口（monthly YoY 需
   ~520d）；取数按原生频率走 `1mo`。
+- **FRED 宏观 Phase 3 扩容**（2026-06-18）：补**正交新信息维度**——信用利差
+  （HY/IG OAS）、曲线短端（10Y-3M）、实体经济（PPI / 工业产出 / 零售 / 新屋开工
+  YoY）、消费者信心,共 9 因子（70→79）。每序列只取 1-2 个一阶因子,延续"控候选数 /
+  防多重检验"纪律（**因子非越多越好,优先正交信息**）；新序列均录入 per-series 滞后表
+  （daily T+1 / monthly 30~50d）。同源同族多窗口（如 qlib 扩窗口）刻意不做。
 - **null IC 选择效应基准**：score/snapshot 加 `ic_null_benchmark`（Bailey–LdP
   E[max|null] 近似）——N 个候选、当前样本量下纯噪声能跑出的期望最大 |IC|；
   top1 不显著高于它 = 选择效应预警。只透出供判断，不剔除。
