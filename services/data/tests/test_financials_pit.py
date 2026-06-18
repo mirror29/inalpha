@@ -61,6 +61,16 @@ def test_flatten_as_of_before_any_publication_returns_empty() -> None:
     assert out == {}
 
 
+def test_flatten_as_of_no_indicator_column_does_not_leak() -> None:
+    """#100：PIT 模式 + 缺「指标」列(格式异常)→ 返空，绝不走 iloc[-1] 后门泄漏未来列。"""
+    # 缺「指标」列的异常表（含未披露报告期 20260331）
+    df = pd.DataFrame({"name": ["x"], "20251231": [10.0], "20260331": [12.0]})
+    # 非 PIT：维持旧兜底（返 iloc[-1] 全列）
+    assert _flatten_financial_abstract(df) != {}
+    # PIT：即便 as_of 后有已发布期，缺「指标」列也返空（不泄漏全列）
+    assert _flatten_financial_abstract(df, as_of=_as_of("2026-08-01")) == {}
+
+
 def test_fundamentals_endpoint_threads_as_of(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:

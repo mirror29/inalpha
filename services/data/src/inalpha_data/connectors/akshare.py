@@ -465,6 +465,10 @@ def _flatten_financial_abstract(
             return {}
     if "指标" not in cols or not date_cols:
         # 不是预期的转置表 → 退回最后一行(旧行为)兜底,至少不丢数据。
+        # 但 PIT 模式下**绝不走 iloc[-1] 后门**：它返回全部列(含未披露报告期),会让
+        # 格式异常时偷看未来财报、PIT 约束失效(#100 CR)。宁可返空也不泄漏。
+        if as_of is not None:
+            return {}
         if len(raw) == 0:
             return {}
         row = raw.iloc[-1]
