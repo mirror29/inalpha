@@ -116,6 +116,37 @@ async def test_financials_cache_is_pit_aware(monkeypatch) -> None:
     assert calls["n"] == 2  # 不同天 → 另一格,再打一次
 
 
+async def test_ashare_valuation_skipped_for_historical_as_of(monkeypatch) -> None:
+    """#102 CR M2：历史 as_of 跳过 Baidu 实时估值（防时序混用）；今天/None 照取。"""
+    from datetime import UTC, datetime
+
+    from inalpha_data.connectors import akshare as ak
+
+    monkeypatch.setattr(
+        ak, "_fetch_financials_sync", lambda **kw: {"净资产收益率(ROE)": 18.0}
+    )
+    val_calls = {"n": 0}
+
+    def fake_val(code):
+        val_calls["n"] += 1
+        return {"market_cap": 1.0e12, "pe_ratio": 30.0, "pb_ratio": 5.0}
+
+    monkeypatch.setattr(ak, "_fetch_valuation_sync", fake_val)
+    conn = ak.AkshareConnector()
+
+    # 历史 as_of（去年）→ 跳过实时估值,估值字段留空
+    hist = await conn.fetch_financials("sh.600519", as_of="2020-01-01T00:00:00Z")
+    assert val_calls["n"] == 0
+    assert hist["indicators"].get("pe_ratio") is None
+    assert hist["indicators"].get("roe") == 0.18  # 财报指标仍在（18.0/100 归一）
+
+    # as_of=今天 → 实时估值照取
+    today = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    live = await conn.fetch_financials("sz.000001", as_of=today)
+    assert val_calls["n"] == 1
+    assert live["indicators"].get("pe_ratio") == 30.0
+
+
 def test_fundamentals_endpoint_threads_as_of(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
