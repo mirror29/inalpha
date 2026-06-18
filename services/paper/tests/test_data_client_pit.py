@@ -61,3 +61,22 @@ async def test_get_bars_pit_applies_publish_lag() -> None:
         publish_lag=timedelta(days=3),
     )
     assert [b["ts"] for b in out] == ["2026-01-01T00:00:00Z"]
+
+
+async def test_get_bars_pit_accepts_naive_as_of() -> None:
+    """#100：tz-naive as_of 入口兜底转 UTC，不与 UTC-aware bar ts 比较抛 TypeError。"""
+    dc = DataClient("http://data.test", "tok")
+    all_bars = [_bar("2026-01-01T00:00:00Z"), _bar("2026-01-10T00:00:00Z")]
+
+    async def fake_get_bars(**kwargs: Any) -> list[dict[str, Any]]:
+        return all_bars
+
+    dc.get_bars = fake_get_bars  # type: ignore[method-assign]
+    out = await dc.get_bars_pit(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1d",
+        from_ts=datetime(2026, 1, 1),  # naive
+        as_of=datetime(2026, 1, 6),  # naive → 应兜底转 UTC，不抛 TypeError
+    )
+    assert [b["ts"] for b in out] == ["2026-01-01T00:00:00Z"]

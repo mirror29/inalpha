@@ -71,6 +71,29 @@ def test_flatten_as_of_no_indicator_column_does_not_leak() -> None:
     assert _flatten_financial_abstract(df, as_of=_as_of("2026-08-01")) == {}
 
 
+async def test_yfinance_as_of_marks_pit_not_supported(monkeypatch) -> None:
+    """#100：yfinance 接 as_of 但不截断 → 响应 reason 写明 PIT 未生效，防调用方误信。"""
+    from inalpha_data.connectors import yfinance_conn as yf
+
+    def fake_sync(symbol):
+        return {
+            "venue": "yfinance",
+            "symbol": symbol,
+            "available": True,
+            "as_of": "2026-06-18T00:00:00Z",  # 取数时刻(now)，非请求 as_of
+            "indicators": {"pe_ratio": 30.0},
+        }
+
+    monkeypatch.setattr(yf, "_fetch_financials_sync", fake_sync)
+    conn = yf.YfinanceConnector()
+    # 给 as_of → reason 提示 PIT 未生效
+    out = await conn.fetch_financials("AAPL", as_of="2020-01-01T00:00:00Z")
+    assert "PIT not supported" in (out.get("reason") or "")
+    # 不给 as_of → 不注入 reason（维持原行为）
+    out2 = await conn.fetch_financials("AAPL")
+    assert "PIT" not in (out2.get("reason") or "")
+
+
 def test_fundamentals_endpoint_threads_as_of(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
