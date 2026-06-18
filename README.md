@@ -271,6 +271,8 @@ Override the default model by setting `LLM_MODEL=...` in the same file. Mastra a
 
 > Already have keys in `services/*/.env` or `packages/orchestration/.env` from earlier? Those still work as cwd-level overrides while you migrate. Once you copy them up into the root `.env`, the per-service files can be deleted.
 
+**Optional · FRED key for macro factors.** The factor library's macro factors (`macro.*` — rates, term & credit spreads, CPI, payrolls, real-economy, sentiment) read FRED data via `venue=fred`. Set `FRED_API_KEY` in `.env` to enable them — it's [free and instant](https://fred.stlouisfed.org/docs/api/api_key.html). Without a key the connector simply isn't registered and macro factors degrade gracefully (price/volume factors are unaffected). Note: macro factors are computed **only at `timeframe=1d/1wk`** — they're filtered out on intraday bars (monthly series would be a step function), so request `1d` to see them.
+
 ### 3 · Start everything
 
 ```bash

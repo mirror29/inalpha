@@ -269,6 +269,8 @@ cp .env.example .env
 
 > 旧用户 `services/*/.env` / `packages/orchestration/.env` 里已填的值仍作为 cwd-level fallback 生效（迁移期友好）。把它们合并到根 `.env` 后即可删掉。
 
+**可选 · 宏观因子需要 FRED key。** 因子库的宏观因子（`macro.*`——利率、期限/信用利差、CPI、就业、实体经济、情绪）通过 `venue=fred` 读 FRED 数据。在 `.env` 里设 `FRED_API_KEY` 即可启用，[免费、秒发](https://fred.stlouisfed.org/docs/api/api_key.html)。不配 key 时 connector 不注册，宏观因子优雅降级（价量因子不受影响）。注意：宏观因子**仅在 `timeframe=1d/1wk` 计算**——intraday bar 上会被过滤（月频序列会变成阶梯函数），所以要看宏观因子请用 `1d`。
+
 ### 3 · 启动全部 service
 
 ```bash
