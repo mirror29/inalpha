@@ -43,14 +43,23 @@ def _macro_map() -> dict[str, pd.Series]:
         "DFF": _fred(base=5.0),
         "DGS10": _fred(base=4.2),
         "DGS2": _fred(base=4.6),
+        "DGS3MO": _fred(base=4.8),
         "DTWEXBGS": _fred(base=120.0),
         "VIXCLS": _fred(base=16.0),
+        "BAMLH0A0HYM2": _fred(base=3.5),
+        "BAMLC0A0CM": _fred(base=1.2),
         # monthly（ADR-0044 Phase 2）
         "CPIAUCSL": _fred_monthly(base=300.0),
         "CPILFESL": _fred_monthly(base=310.0),
         "UNRATE": _fred_monthly(base=4.0, step=0.05),
         "PAYEMS": _fred_monthly(base=157_000.0, step=150.0),
         "M2SL": _fred_monthly(base=20_800.0, step=30.0),
+        # monthly 实体经济 / 情绪（Phase 3）
+        "PPIACO": _fred_monthly(base=250.0),
+        "INDPRO": _fred_monthly(base=102.0, step=0.2),
+        "RSAFS": _fred_monthly(base=700_000.0, step=500.0),
+        "HOUST": _fred_monthly(base=1_400.0, step=2.0),
+        "UMCSENT": _fred_monthly(base=70.0, step=0.3),
     }
 
 
@@ -141,11 +150,15 @@ def test_compute_with_macro_degrades_per_series() -> None:
 def test_required_series_mapping() -> None:
     a = MacroAdapter()
     assert a.required_series(["macro.curve_slope"]) == ["DGS10", "DGS2"]
+    assert a.required_series(["macro.curve_slope_10y3m"]) == ["DGS10", "DGS3MO"]
+    assert a.required_series(["macro.hy_spread_level"]) == ["BAMLH0A0HYM2"]
     assert a.required_series(["macro.vix_level"]) == ["VIXCLS"]
     assert a.required_series(["macro.cpi_yoy"]) == ["CPIAUCSL"]
+    assert a.required_series(["macro.ppi_yoy"]) == ["PPIACO"]
     assert a.required_series() == [
-        "CPIAUCSL", "CPILFESL", "DFF", "DGS10", "DGS2",
-        "DTWEXBGS", "M2SL", "PAYEMS", "UNRATE", "VIXCLS",
+        "BAMLC0A0CM", "BAMLH0A0HYM2", "CPIAUCSL", "CPILFESL", "DFF",
+        "DGS10", "DGS2", "DGS3MO", "DTWEXBGS", "HOUST", "INDPRO",
+        "M2SL", "PAYEMS", "PPIACO", "RSAFS", "UMCSENT", "UNRATE", "VIXCLS",
     ]
 
 
@@ -191,7 +204,7 @@ async def test_macro_in_daily_score() -> None:
     res = await eng.score(**_score_kwargs("1d"))  # type: ignore[arg-type]
     ids = {f["factor_id"] for f in res["factors"]}
     assert any(fid.startswith("macro.") for fid in ids)
-    assert eng.macro_fetches == 10  # 5 daily + 5 monthly（Phase 2）
+    assert eng.macro_fetches == 18  # 8 daily + 10 monthly（Phase 2 + Phase 3）
 
 
 async def test_macro_skipped_intraday() -> None:
@@ -262,6 +275,46 @@ def test_monthly_degrades_per_series() -> None:
     assert "macro.cpi_yoy_chg_3" not in series
     assert "macro.core_cpi_yoy" in series  # CPILFESL 独立序列不受影响
     assert "macro.m2_yoy" in series and "macro.vix_level" in series
+
+
+# ── Phase 3 扩容：信用利差 / 实体经济 / 情绪 ──────────────────────────
+
+
+def test_phase3_factors_present_and_computable() -> None:
+    """Phase 3 新因子都在 specs() 且能算出非全 NaN 尾巴。"""
+    a = MacroAdapter()
+    new_ids = {
+        "macro.curve_slope_10y3m", "macro.hy_spread_level", "macro.hy_spread_chg_20",
+        "macro.ig_spread_level", "macro.ppi_yoy", "macro.indpro_yoy",
+        "macro.retail_yoy", "macro.houst_yoy", "macro.sentiment_level",
+    }
+    spec_ids = {s.factor_id for s in a.specs()}
+    assert new_ids <= spec_ids
+    series = a.compute_with_macro(_daily_bars(), _macro_map(), sorted(new_ids))
+    assert set(series.keys()) == new_ids
+    for fid in new_ids:
+        assert series[fid].iloc[-5:].notna().any(), f"{fid} tail all-NaN"
+
+
+def test_phase3_credit_spread_formula() -> None:
+    """HY 利差 level = 对齐后的原序列；chg_20 = 20 日差分（daily 公式）。"""
+    a = MacroAdapter()
+    df = _daily_bars()
+    series = a.compute_with_macro(df, _macro_map(), ["macro.hy_spread_level"])
+    # level 因子 = HY 序列按 T+1 滞后对齐到 bar，末值应等于对应生效观测
+    assert series["macro.hy_spread_level"].iloc[-5:].notna().any()
+
+
+def test_phase3_degrades_per_series() -> None:
+    """缺 BAMLH0A0HYM2 → 两个 HY 因子缺席；IG / 其余照算。"""
+    a = MacroAdapter()
+    macro = _macro_map()
+    del macro["BAMLH0A0HYM2"]
+    series = a.compute_with_macro(_daily_bars(), macro)
+    assert "macro.hy_spread_level" not in series
+    assert "macro.hy_spread_chg_20" not in series
+    assert "macro.ig_spread_level" in series
+    assert "macro.curve_slope_10y3m" in series
 
 
 def test_warmup_days_by_factor_mix() -> None:

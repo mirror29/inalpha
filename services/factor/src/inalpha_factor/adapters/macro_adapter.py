@@ -1,7 +1,10 @@
-"""宏观因子适配器（FRED 序列 → 因子，ADR-0044 Phase 1 daily + Phase 2 monthly）。
+"""宏观因子适配器（FRED 序列 → 因子，ADR-0044 Phase 1 daily + Phase 2 monthly + Phase 3 扩容）。
 
-因子库第一类**外生信息源**：利率 / 期限利差 / 美元指数 / VIX（daily）+ 通胀 /
-就业 / 货币（monthly）。数据走 data-service 的 ``venue="fred"``（值在 bar 的
+因子库第一类**外生信息源**：利率 / 期限利差（10Y-2Y、10Y-3M）/ 美元指数 / VIX /
+信用利差（HY、IG OAS）（daily）+ 通胀 / 就业 / 货币 / 实体经济（PPI、工业产出、
+零售、新屋开工）/ 情绪（消费者信心）（monthly）。Phase 3 选序列的标准：与现有
+利率/价量因子**正交**（信用风险、实体景气、风险偏好），非已有序列的换皮。
+数据走 data-service 的 ``venue="fred"``（值在 bar 的
 ``close`` 字段），**engine 负责取数**（D1），本 adapter 只做纯计算：吃
 "FRED series id → 序列"的 dict，吐对齐到标的 bar index 的因子时序。
 
@@ -44,14 +47,23 @@ _SERIES_META: dict[str, tuple[str, int]] = {
     "DFF": ("d", 1),
     "DGS10": ("d", 1),
     "DGS2": ("d", 1),
+    "DGS3MO": ("d", 1),  # 3M 国债收益率（曲线短端，Phase 3）
     "DTWEXBGS": ("d", 1),
     "VIXCLS": ("d", 1),
+    "BAMLH0A0HYM2": ("d", 1),  # ICE BofA 高收益债 OAS 信用利差（Phase 3）
+    "BAMLC0A0CM": ("d", 1),  # ICE BofA 投资级公司债 OAS 信用利差（Phase 3）
     # monthly 统计序列（Phase 2）：月长 + 发布延迟
     "CPIAUCSL": ("m", 45),
     "CPILFESL": ("m", 45),
     "UNRATE": ("m", 40),
     "PAYEMS": ("m", 40),
     "M2SL": ("m", 60),
+    # monthly 实体经济 / 情绪（Phase 3）：obs date = 参考月 1 日 + 发布延迟
+    "PPIACO": ("m", 45),  # PPI 全商品（次月中旬）
+    "INDPRO": ("m", 45),  # 工业产出（次月中旬）
+    "RSAFS": ("m", 50),  # 零售销售（次月中旬，advance estimate）
+    "HOUST": ("m", 50),  # 新屋开工（次月中下旬）
+    "UMCSENT": ("m", 30),  # 密歇根消费者信心（当月终值次月初，~30d 保守）
 }
 
 #: 未知序列的兜底滞后（保守取 monthly 最大档）
@@ -86,10 +98,15 @@ _SPECS: list[FactorSpec] = [
     _spec("macro.dgs10_chg_20", "10Y Treasury yield 20-day change", "DGS10"),
     _spec("macro.curve_slope", "Term spread 10Y-2Y", "DGS10,DGS2"),
     _spec("macro.curve_slope_chg_20", "Term spread 20-day change", "DGS10,DGS2"),
+    _spec("macro.curve_slope_10y3m", "Term spread 10Y-3M", "DGS10,DGS3MO"),
     _spec("macro.dollar_roc_20", "Broad dollar index 20-day momentum", "DTWEXBGS"),
     _spec("macro.dollar_roc_60", "Broad dollar index 60-day momentum", "DTWEXBGS"),
     _spec("macro.vix_level", "VIX level", "VIXCLS"),
     _spec("macro.vix_chg_20", "VIX 20-day change", "VIXCLS"),
+    # ── 信用利差（Phase 3）。与利率/价量正交的风险偏好维度 ──
+    _spec("macro.hy_spread_level", "High-yield OAS credit spread level", "BAMLH0A0HYM2"),
+    _spec("macro.hy_spread_chg_20", "High-yield OAS 20-day change", "BAMLH0A0HYM2"),
+    _spec("macro.ig_spread_level", "Investment-grade OAS credit spread level", "BAMLC0A0CM"),
     # ── monthly（ADR-0044 Phase 2）。刻意不做二阶衍生（m2_yoy_chg_3 等），
     #    控制候选数（ADR-0043 多重检验纪律）──
     _spec("macro.cpi_yoy", "CPI YoY", "CPIAUCSL", freq="monthly"),
@@ -100,6 +117,12 @@ _SPECS: list[FactorSpec] = [
     _spec("macro.unrate_chg_3", "Unemployment rate 3-month change", "UNRATE", freq="monthly"),
     _spec("macro.payems_chg_1", "Nonfarm payrolls monthly change (thousands)", "PAYEMS", freq="monthly"),
     _spec("macro.m2_yoy", "M2 YoY growth", "M2SL", freq="monthly"),
+    # ── 实体经济 / 情绪（Phase 3）。每序列只取一个一阶 YoY/level，控候选数 ──
+    _spec("macro.ppi_yoy", "PPI all-commodities YoY", "PPIACO", freq="monthly"),
+    _spec("macro.indpro_yoy", "Industrial production YoY", "INDPRO", freq="monthly"),
+    _spec("macro.retail_yoy", "Retail sales YoY", "RSAFS", freq="monthly"),
+    _spec("macro.houst_yoy", "Housing starts YoY", "HOUST", freq="monthly"),
+    _spec("macro.sentiment_level", "Consumer sentiment level (UMich)", "UMCSENT", freq="monthly"),
 ]
 
 _SPEC_BY_ID: dict[str, FactorSpec] = {s.factor_id: s for s in _SPECS}
@@ -206,10 +229,19 @@ class MacroAdapter:
             return s if len(s) else None
 
         dff, dgs10, dgs2 = get("DFF"), get("DGS10"), get("DGS2")
+        dgs3mo = get("DGS3MO")
         dxy, vix = get("DTWEXBGS"), get("VIXCLS")
+        hy, ig = get("BAMLH0A0HYM2"), get("BAMLC0A0CM")
         slope = (dgs10 - dgs2).dropna() if dgs10 is not None and dgs2 is not None else None
+        slope_10y3m = (
+            (dgs10 - dgs3mo).dropna()
+            if dgs10 is not None and dgs3mo is not None
+            else None
+        )
         cpi, core_cpi = get("CPIAUCSL"), get("CPILFESL")
         unrate, payems, m2 = get("UNRATE"), get("PAYEMS"), get("M2SL")
+        ppi, indpro = get("PPIACO"), get("INDPRO")
+        retail, houst, sentiment = get("RSAFS"), get("HOUST"), get("UMCSENT")
 
         def _yoy(s: pd.Series) -> pd.Series:
             # shift 按观测数计：monthly 原生序列上 shift(12) = 12 个月
@@ -237,8 +269,15 @@ class MacroAdapter:
                 if dxy is not None
                 else None
             ),
+            "macro.curve_slope_10y3m": lambda: slope_10y3m,
             "macro.vix_level": lambda: vix,
             "macro.vix_chg_20": lambda: vix - vix.shift(20) if vix is not None else None,
+            # 信用利差（Phase 3）
+            "macro.hy_spread_level": lambda: hy,
+            "macro.hy_spread_chg_20": (
+                lambda: hy - hy.shift(20) if hy is not None else None
+            ),
+            "macro.ig_spread_level": lambda: ig,
             # monthly（ADR-0044 Phase 2）
             "macro.cpi_yoy": lambda: _yoy(cpi) if cpi is not None else None,
             "macro.cpi_mom": (
@@ -256,6 +295,12 @@ class MacroAdapter:
             ),
             "macro.payems_chg_1": lambda: payems.diff(1) if payems is not None else None,
             "macro.m2_yoy": lambda: _yoy(m2) if m2 is not None else None,
+            # 实体经济 / 情绪（Phase 3）
+            "macro.ppi_yoy": lambda: _yoy(ppi) if ppi is not None else None,
+            "macro.indpro_yoy": lambda: _yoy(indpro) if indpro is not None else None,
+            "macro.retail_yoy": lambda: _yoy(retail) if retail is not None else None,
+            "macro.houst_yoy": lambda: _yoy(houst) if houst is not None else None,
+            "macro.sentiment_level": lambda: sentiment,
         }
 
         out: dict[str, pd.Series] = {}
