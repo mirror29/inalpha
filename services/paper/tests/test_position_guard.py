@@ -237,6 +237,25 @@ def test_chandelier_no_trigger_before_atr_seeded() -> None:
     assert guard.evaluate(_ohlc(128.0, 129.0, 80.0, 80.0, 2)) == []
 
 
+def test_chandelier_activation_is_close_based_not_wick() -> None:
+    """#97：上影线穿成本（high>avg）但收盘从未站上成本（close<avg）→ chandelier 不激活。
+
+    钉住激活门用 highest_close（close-based，与百分比 trailing 同口径），而非 highest_high；
+    否则单根上影线即误激活、与 trailing 口径不一致。
+    """
+    msgbus = MessageBus()
+    pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
+    guard, _ = _guard_with_capture(
+        msgbus=msgbus, pf=pf, chandelier_atr_mult=1.0, chandelier_atr_period=2
+    )
+
+    # 每根 high 都上影穿 100，但 close 始终 < 100（从未收盘进盈利区）
+    assert guard.evaluate(_ohlc(98.0, 101.0, 97.0, 99.0, 1)) == []
+    assert guard.evaluate(_ohlc(99.0, 102.0, 96.0, 98.0, 2)) == []  # ATR 种子凑齐
+    # mark 大跌：highest_high=102 止损位会被穿，但 highest_close=99 < 成本 100 → 未激活
+    assert guard.evaluate(_ohlc(98.0, 100.0, 85.0, 86.0, 3)) == []
+
+
 def test_chandelier_inactive_when_never_profitable() -> None:
     """chandelier 仅在「曾进盈利区」（最高价 > 成本）后生效；从未盈利不触发。"""
     msgbus = MessageBus()

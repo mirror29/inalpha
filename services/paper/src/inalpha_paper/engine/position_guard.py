@@ -52,14 +52,16 @@ class _ChandelierState:
 
     period: int
     atr: float | None = None
-    highest_high: float = 0.0
+    highest_high: float = 0.0  # 止损距离基准（chandelier 标准用最高价）
+    highest_close: float = 0.0  # 激活门基准（close-based，与百分比 trailing 同口径）
     _prev_close: float | None = None
     _tr_count: int = 0
     _tr_seed_sum: float = 0.0
 
     def update(self, bar: Bar) -> None:
-        """用当根 bar 推进最高价与 ATR（Wilder RMA）。"""
+        """用当根 bar 推进最高价 / 最高收盘 / ATR（Wilder RMA）。"""
         self.highest_high = max(self.highest_high, bar.high)
+        self.highest_close = max(self.highest_close, bar.close)
         if self._prev_close is not None:
             tr = max(
                 bar.high - bar.low,
@@ -261,13 +263,15 @@ class PositionGuard:
         if self._stop_loss_pct is not None and pct <= -self._stop_loss_pct:
             return "stop_loss"
         # chandelier（吊灯）ATR 移动止损（增补 A）：止损位 = 开仓以来最高价 − mult×ATR，随波动
-        # 自适应。仅在「曾进盈利区」（最高价 > 成本）+ ATR 种子就绪后生效；复用 trailing_stop_loss
-        # tag（语义同为移动止损，避免新增 exit_reason 迁移）。
+        # 自适应。激活门用「曾收盘进盈利区」（highest_close > 成本）——与百分比 trailing 的
+        # close-based peak_mark>avg 同口径，避免单根上影线（high>avg 但 close<avg）误激活
+        # （#97 CR）；止损距离仍用 highest_high（chandelier 标准）。ATR 种子就绪后才判；复用
+        # trailing_stop_loss tag（语义同为移动止损，避免新增 exit_reason 迁移）。
         if (
             self._chandelier_atr_mult is not None
             and chan is not None
             and chan.atr is not None
-            and chan.highest_high > avg
+            and chan.highest_close > avg
             and mark <= chan.highest_high - self._chandelier_atr_mult * chan.atr
         ):
             return "trailing_stop_loss"
