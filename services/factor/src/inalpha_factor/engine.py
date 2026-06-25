@@ -620,10 +620,14 @@ class FactorEngine:
         ids = [fid for fid in ids if not fid.startswith("macro.")]
 
         async def _one(sym: str) -> tuple[str, pd.DataFrame]:
-            df = await self._fetch_df(
-                venue=venue, symbol=sym, timeframe=timeframe,
-                from_ts=from_ts, to_ts=as_of, fresh=is_live,
-            )
+            try:
+                df = await self._fetch_df(
+                    venue=venue, symbol=sym, timeframe=timeframe,
+                    from_ts=from_ts, to_ts=as_of, fresh=is_live,
+                )
+            except Exception as exc:  # 单标的 fetch 失败 → 降级为空，其余标的照算横截面
+                logger.warning("panel symbol %s fetch failed: %r", sym, exc)
+                return sym, pd.DataFrame()
             if not df.empty and isinstance(df.index, pd.DatetimeIndex):
                 df = df[df.index <= pd.Timestamp(as_of)]
             return sym, df
@@ -633,8 +637,9 @@ class FactorEngine:
         close_panel = align_field(frames, "close")
 
         universe_note = (
-            "fixed non-PIT universe（调用方给定标的集；历史成分快照未建，"
-            "横截面存活者偏差未挡，证据强度打折）"
+            "fixed non-PIT universe (caller-supplied symbol set; no historical "
+            "constituent snapshot, so cross-sectional survivorship bias is not "
+            "controlled — discount the evidence accordingly)"
         )
         if close_panel.empty:
             return {

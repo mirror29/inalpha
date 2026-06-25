@@ -240,6 +240,29 @@ async def test_panel_score_end_to_end() -> None:
     assert "alpha101.a1" in fids and "alpha101.a3" in fids
 
 
+class _FlakyPanelEngine(_PanelEngine):
+    """指定标的的 _fetch_df 抛错，模拟单标的临时 HTTP 失败。"""
+
+    def __init__(self, frames: dict[str, pd.DataFrame], fail: str) -> None:
+        super().__init__(frames)
+        self._fail = fail
+
+    async def _fetch_df(self, *, symbol: str, **_kw: object) -> pd.DataFrame:  # type: ignore[override]
+        if symbol == self._fail:
+            raise RuntimeError("simulated data-service error")
+        return await super()._fetch_df(symbol=symbol, **_kw)
+
+
+async def test_panel_score_degrades_on_single_symbol_fetch_failure() -> None:
+    """一个标的 fetch 抛错 → 降级为空，其余标的照常出横截面结果（不整体 500）。"""
+    frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
+    eng = _FlakyPanelEngine(frames, fail="C")
+    res = await eng.panel_score(**_kwargs(_SYMS))  # type: ignore[arg-type]
+    assert res["factors"], "其余标的应仍产出横截面因子"
+    assert res["bars_used"]["C"] == 0  # 失败标的记 0 bar
+    assert all(res["bars_used"][s] > 0 for s in _SYMS if s != "C")
+
+
 async def test_panel_score_below_min_symbols_empty() -> None:
     """universe 标的数 < min_symbols → 无因子可横截面评估,显式 reason。"""
     frames = {"A": _bars(seed=1), "B": _bars(seed=2)}
