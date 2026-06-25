@@ -36,6 +36,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -46,6 +47,13 @@ from ._base import register_connector, unregister_connector
 _logger = get_logger(__name__)
 
 VENUE = "yfinance"
+
+# Yahoo 反爬：一波并发 history 请求会触发 429，部分标的静默返残缺/空数据（实测串行
+# 全 24 根、5 标的并发 gather 时 MSFT/META 只回 4 根）。进程级串行 + 最小间隔把并发
+# 突发摊成节流串行，避免 429 残缺（akshare 同类防封思路）。其它 venue 不受影响。
+_FETCH_LOCK = asyncio.Lock()
+_MIN_FETCH_INTERVAL_S = 0.3
+_last_fetch_mono = 0.0
 
 #: yfinance 的 interval 字符串 → 估算秒数（backfill 限速估算用）
 TIMEFRAME_SECONDS: dict[str, int] = {
@@ -111,11 +119,8 @@ class YfinanceConnector:
         )
 
         try:
-            rows = await asyncio.to_thread(
-                _fetch_sync,
-                symbol=symbol,
-                interval=interval,
-                since=since,
+            rows = await self._throttled_fetch_sync(
+                symbol=symbol, interval=interval, since=since
             )
         except Exception as exc:
             _logger.warning(
@@ -143,6 +148,28 @@ class YfinanceConnector:
         if limit and len(out) > limit:
             out = out[-limit:]
         return out
+
+    @staticmethod
+    async def _throttled_fetch_sync(
+        *, symbol: str, interval: str, since: datetime
+    ) -> list[tuple[Any, Any, Any, Any, Any, Any]]:
+        """串行 + 最小间隔跑 yfinance history，防并发突发触发 Yahoo 429 返残缺数据。
+
+        进程级 ``_FETCH_LOCK`` 保证同一时刻只有一个 history 在飞；锁内再补足
+        ``_MIN_FETCH_INTERVAL_S`` 的最小间隔。panel 多标的并发 gather 时各标的会在此
+        排队节流，换回完整 bar（正确性优先于这点串行延迟）。
+        """
+        global _last_fetch_mono
+        async with _FETCH_LOCK:
+            wait = _MIN_FETCH_INTERVAL_S - (time.monotonic() - _last_fetch_mono)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            try:
+                return await asyncio.to_thread(
+                    _fetch_sync, symbol=symbol, interval=interval, since=since
+                )
+            finally:
+                _last_fetch_mono = time.monotonic()
 
     async def fetch_ticker(self, symbol: str) -> tuple[datetime, float]:
         """实时拉 ``symbol`` 的最新成交（1m history 最后一根 bar）。
