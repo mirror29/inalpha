@@ -11,6 +11,7 @@ import {
   dataBackfillBarsTool,
   dataGetBarsTool,
   factorCatalogTool,
+  factorPanelScoreTool,
   factorScoreTool,
   factorTimingTool,
   paperListStrategiesTool,
@@ -565,6 +566,83 @@ describe("factor.timing / score / catalog", () => {
 
     expect(capturedUrl).toContain("/score");
     expect(JSON.parse(capturedBody).factor_ids).toEqual(["pandas_ta.rsi_14", "qlib.kmid"]);
+  });
+
+  it("factor.panel_score POSTs to /panel/score with symbols + snake_case body", async () => {
+    let capturedUrl = "";
+    let capturedBody = "";
+    mockFetch(async (url, init) => {
+      capturedUrl = url;
+      capturedBody = (init?.body as string) ?? "";
+      return new Response(
+        JSON.stringify({
+          venue: "us",
+          timeframe: "1d",
+          as_of: "2026-06-01T00:00:00Z",
+          horizon_bars: 5,
+          symbols: ["AAPL", "MSFT", "GOOGL"],
+          bars_used: { AAPL: 700, MSFT: 700, GOOGL: 700 },
+          is_pit: false,
+          universe_note: "fixed non-PIT universe",
+          factors: [
+            {
+              factor_id: "qlib.roc_20",
+              source: "qlib_alpha158",
+              name: "ROC(20)",
+              kind: "momentum",
+              ic_kind: "cross_sectional",
+              cross_sectional_ic: 0.06,
+              icir: 0.5,
+              n_periods: 130,
+              mean_valid_symbols: 3,
+              low_confidence: false,
+              latest_ranking: [
+                { symbol: "GOOGL", value: -0.02, rank_pct: 0.33 },
+                { symbol: "AAPL", value: 0.01, rank_pct: 0.67 },
+                { symbol: "MSFT", value: 0.05, rank_pct: 1.0 },
+              ],
+            },
+          ],
+          ic_null_benchmark: 0.03,
+          reason: null,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const result = (await factorPanelScoreTool.execute!(
+      {
+        venue: "us",
+        symbols: ["AAPL", "MSFT", "GOOGL"],
+        timeframe: "1d",
+        lookbackBars: 720,
+        horizonBars: 5,
+        minSymbols: 3,
+      } as never,
+      ctx(),
+    )) as {
+      is_pit: boolean;
+      factors: { ic_kind: string; latest_ranking: { symbol: string }[] }[];
+    };
+
+    expect(capturedUrl).toContain("/panel/score");
+    expect(capturedUrl).toContain("factor-mock.test");
+    const body = JSON.parse(capturedBody);
+    expect(body.symbols).toEqual(["AAPL", "MSFT", "GOOGL"]);
+    expect(body.min_symbols).toBe(3);
+    expect(body.lookback_bars).toBe(720);
+    expect(result.is_pit).toBe(false);
+    expect(result.factors[0].ic_kind).toBe("cross_sectional");
+    expect(result.factors[0].latest_ranking[0].symbol).toBe("GOOGL");
+  });
+
+  it("factor.panel_score rejects <2 symbols via schema", () => {
+    const r = factorPanelScoreTool.inputSchema!.safeParse({
+      venue: "us",
+      symbols: ["AAPL"],
+      timeframe: "1d",
+    });
+    expect(r.success).toBe(false);
   });
 
   it("factor.catalog GETs /catalog", async () => {

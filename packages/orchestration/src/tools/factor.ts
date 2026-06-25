@@ -182,6 +182,84 @@ export const factorScoreTool = createTool({
 });
 
 // ────────────────────────────────────────────────────────────────────
+// factor.panel_score —— 横截面选股：一篮子标的按因子排序 + 横截面有效性（ADR-0055）
+// ────────────────────────────────────────────────────────────────────
+
+export const factorPanelScoreTool = createTool({
+  id: "factor.panel_score",
+  description: `
+    给**一篮子标的（universe）**算每个因子的**横截面有效性**（横截面 rank-IC）+ 最近
+    一期的**横截面排名**。这是"在一组标的里按因子选标的"的入口（如"沪深银行里 PB 最低的"
+    "这几只里动量最强的"），与 factor.timing/score 的**单标的择时**正交：那边判"这一只
+    该不该买"，这里判"这一篮子里挑哪只"。
+
+    何时用：
+    - 用户给一组标的问"哪只最值得买/最便宜/动量最强/按某因子排个序""轮动选哪只"
+    - 想知道某因子在这组标的上**横截面**有没有选股力（每期排序 vs 跨标的后市收益）
+    - 聚宽式"成分股里按因子轮动"的策略选标的步
+
+    何时不用：
+    - 只有一个标的、判方向/时机 → factor.timing（横截面要 ≥2 个标的）
+    - 全市场自动扫描/筛选标的池 → 没有这能力，universe 要调用方显式给（symbols 列表）
+    - 要完整研究单个标的 → research.deep_dive
+
+    返回 factors[]（按 |cross_sectional_ic| 排序）：每个含 cross_sectional_ic（横截面 rank-IC，
+    正=因子值高的标的后市更强）/ icir / n_periods / low_confidence / latest_ranking[]
+    （最近一期排名,按因子值**升序**：取最低=列表首,最高=列表尾——直接拿来选标的）。
+
+    坑：
+    - **universe 非 PIT**（is_pit=false 恒成立）：用的是你给的"今天这组标的",历史成分快照
+      未建,带**存活者偏差**——别拿历史横截面 IC 当确定性结论,措辞要带这层降级
+    - macro 因子不参与（全市场单值,某时刻对所有标的相同,无横截面区分度）
+    - symbols 应同 venue/timeframe；不同市场交易时段不同,缺口留 NaN、某期有效标的不足
+      min_symbols 时该期不排名
+    - cross_sectional_ic 同样受多重检验影响（ic_null_benchmark 是噪声地板,读法同 factor.score）
+    - 股票/指数选股按市场表用 timeframe=1d（默认）
+  `.trim(),
+  inputSchema: z.object({
+    venue: z.string().min(1).describe("数据源（按市场分类选，不预设默认市场）"),
+    symbols: z
+      .array(SymbolSchema)
+      .min(2)
+      .max(50)
+      .describe("universe 标的集（同 venue/timeframe，2-50 个）。非 PIT——调用方给定"),
+    timeframe: TimeframeSchema.default("1d"),
+    asOf: z
+      .string()
+      .datetime({ offset: true })
+      .optional()
+      .describe("评估截止时刻（只用 <= asOf 的 bar）；省略=现在"),
+    lookbackBars: z.number().int().min(120).max(10000).default(720),
+    horizonBars: z.number().int().min(1).max(60).default(5),
+    minSymbols: z
+      .number()
+      .int()
+      .min(2)
+      .max(50)
+      .default(3)
+      .describe("某期参与横截面排名的最少有效标的数；不足则该期不排名"),
+    factorIds: z
+      .array(z.string())
+      .optional()
+      .describe("要算的因子 id（来自 factor.catalog）；省略=全部价量/横截面因子（macro 不参与）"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.panelScore({
+      venue: inputData.venue,
+      symbols: inputData.symbols,
+      timeframe: inputData.timeframe ?? "1d",
+      asOf: inputData.asOf,
+      lookbackBars: inputData.lookbackBars ?? 720,
+      horizonBars: inputData.horizonBars ?? 5,
+      minSymbols: inputData.minSymbols ?? 3,
+      factorIds: inputData.factorIds,
+    });
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────
 // factor.catalog —— 列出可用因子
 // ────────────────────────────────────────────────────────────────────
 
@@ -447,6 +525,7 @@ export const factorRunDiscoveryTool = createTool({
 export const factorTools = [
   factorTimingTool,
   factorScoreTool,
+  factorPanelScoreTool,
   factorCatalogTool,
   factorEvaluateCandidateTool,
   factorProposeTool,
