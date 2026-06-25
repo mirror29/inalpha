@@ -19,6 +19,7 @@ def test_archetypes_lists_all(client: TestClient, auth_headers: dict[str, str]) 
         "volatility_contraction",
         "multi_factor_combine",
         "single_factor_assistive",
+        "perp_short_reversion",
     ]
     # 每条带可跑源码 + 元数据
     first = r.json()["archetypes"][0]
@@ -37,4 +38,4 @@ def test_archetypes_ranks_by_factor_kind(
     archs = r.json()["archetypes"]
     assert archs[0]["name"] == "mean_reversion"
     # 只排序不过滤
-    assert len(archs) == 5
+    assert len(archs) == 6
