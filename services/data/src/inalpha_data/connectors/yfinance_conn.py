@@ -36,7 +36,9 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
@@ -56,6 +58,10 @@ _MIN_FETCH_INTERVAL_S = 0.3
 #: 锁内单次 history 超时上限——TCP 挂起时快速放锁,不把整个 panel 拖到 60s
 _FETCH_TIMEOUT_S = 30.0
 _last_fetch_mono = 0.0
+#: yfinance 专属有界线程池。wait_for 超时只取消 asyncio task,底层同步线程**不可取消**、
+#: 会继续持 Yahoo 连接到 TCP 真正超时——用独立有界池隔离这些"孤儿线程",避免耗尽 asyncio
+#: 默认共享 executor(FRED / 其它 to_thread 不受影响);配合 _FETCH_LOCK(同时只 1 个在飞)足够。
+_FETCH_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="yfinance")
 
 #: yfinance 的 interval 字符串 → 估算秒数（backfill 限速估算用）
 TIMEFRAME_SECONDS: dict[str, int] = {
@@ -172,9 +178,13 @@ class YfinanceConnector:
             if wait > 0:
                 await asyncio.sleep(wait)
             try:
+                loop = asyncio.get_running_loop()
                 return await asyncio.wait_for(
-                    asyncio.to_thread(
-                        _fetch_sync, symbol=symbol, interval=interval, since=since
+                    loop.run_in_executor(
+                        _FETCH_EXECUTOR,
+                        functools.partial(
+                            _fetch_sync, symbol=symbol, interval=interval, since=since
+                        ),
                     ),
                     timeout=_FETCH_TIMEOUT_S,
                 )
