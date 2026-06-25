@@ -220,3 +220,29 @@ def test_submit_negative_quantity_rejected(
         },
     )
     assert r.status_code == 400
+
+
+def test_submit_naked_short_rejected(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """空仓现货 SELL → 409 INSUFFICIENT_POSITION（spot 模式禁裸 SHORT），不落账。
+
+    用独立 symbol(ETH/USDT)确保该账户在此品种上无持仓。
+    """
+    r = client.post(
+        "/orders/submit",
+        headers=auth_headers,
+        json={
+            "symbol": "ETH/USDT",
+            "side": "SELL",
+            "type": "MARKET",
+            "quantity": 0.01,
+            "ref_price": 3_000.0,
+        },
+    )
+    assert r.status_code == 409, r.json()
+    assert r.json()["code"] == "INSUFFICIENT_POSITION"
+    # 不落账：该品种不应出现订单
+    listed = client.get("/orders", headers=auth_headers, params={"symbol": "ETH/USDT"})
+    assert listed.status_code == 200
+    assert listed.json() == []

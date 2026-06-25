@@ -33,6 +33,7 @@ from .execution import risk_guard as risk_guard_mod
 from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
 from .execution.risk_guard_factory import RiskGuardFactory
+from .execution.spot_guard import violates_spot_long_only
 from .factor_patrol import capture_factor_baseline
 from .fills import apply_fill_to_positions_and_cash
 from .fx import BaseCurrencyConverter, needs_network
@@ -802,6 +803,38 @@ class LiveRunnerManager:
             # notional 上限（MaxOrderNotional）无 lock_scope，故 .get 返 None，不误判。
             scope = e.details.get("lock_scope") if e.details else None
             return "circuit_break" if scope == "global" else "risk_rejected"
+
+        # 1.5 现货 long-only 网关守门（与回测 Portfolio.can_afford_sell 同口径）：
+        # OrderExecutor 是无状态纯函数、撮合前不查持仓，apply_fill 又允许负仓——若不在此
+        # 拦截，long-only 策略空仓时的 SELL 会被照单成交成裸空、滚出策略平不掉的空头（漂移）。
+        # 读 DB 持仓（权威：apply_fill 落账的真实持仓，且能防 session/DB 视图分叉）。
+        # 框架保护性出场卖的是真实持仓（quantity <= current）→ 自然放行，无需额外豁免。
+        if side == "SELL":
+            async with get_conn() as conn:
+                cur_pos = await positions_store.get(
+                    conn, account_id=account_id, venue=venue, symbol=symbol
+                )
+            current_qty = Decimal(str(cur_pos["quantity"])) if cur_pos else Decimal(0)
+            if violates_spot_long_only(
+                side=side, quantity=order.quantity, current_qty=current_qty
+            ):
+                reason = (
+                    f"INSUFFICIENT_POSITION: 卖出 {order.quantity} 超持仓 {current_qty}"
+                    f"（spot 模式禁裸 SHORT）"
+                )
+                session.reject_order(
+                    order=order, strategy_id=strategy_id,
+                    reason=reason, ts_event=bar.ts_event,
+                )
+                async with get_conn() as conn:
+                    await runs_store.append_log(
+                        conn, run_id, "warn", f"order rejected by spot guard: {reason}"
+                    )
+                    await self._record_decision(
+                        conn, run, order, bar, outcome="rejected", intent=intent,
+                        reason=reason,
+                    )
+                return "rejected"
 
         # 2. 撮合（纯函数，ref_price = bar.close）
         result = OrderExecutor.execute(
