@@ -247,9 +247,10 @@ export const orchestratorToolList = [
   paperHealthTool,
   // 研究
   researchDeepDiveTool,
-  // 接现成因子库（docs/miro/11）：有效因子择时 + 目录 + 深挖打分
+  // 接现成因子库（docs/miro/11）：有效因子择时 + 横截面选股 + 目录 + 深挖打分
   factorTimingTool,
   factorScoreTool,
+  factorPanelScoreTool,
   factorCatalogTool,
   // D-12 · 因子发现 L1：自定义表达式因子评估（白名单 DSL）+ 候选池
   // （register 门只在 dashboard——agent 物理上没有转正工具）
