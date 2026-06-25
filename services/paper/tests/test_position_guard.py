@@ -433,7 +433,7 @@ def test_is_protective_order_requires_sell_tag_and_guard_prefix() -> None:
     - guard 真出场单（SELL + tag ∈ 保护集 + 'guard-' 前缀）→ True
     - 仅改 tag（普通 client_order_id）→ False
     - guard 前缀但非保护性 tag → False
-    - **BUY 单即便 tag + 前缀都伪造 → False**（guard 永不做 BUY；挡借豁免下超大开仓单）
+    - **方向无关**：BUY 也可能是保护单（perp 平空 = BUY）→ True（接 perp 双向后放开 side 限制）
     """
     # guard 真单
     assert is_protective_order(_order("stop_loss", "guard-BTC/USDT-abc123")) is True
@@ -441,9 +441,11 @@ def test_is_protective_order_requires_sell_tag_and_guard_prefix() -> None:
     assert is_protective_order(_order("stop_loss", "sma-BTC/USDT-deadbeef")) is False
     # guard 前缀但 tag 不在保护集
     assert is_protective_order(_order("signal", "guard-BTC/USDT-xyz")) is False
-    # 双因子全伪造但 side=BUY → 仍 False（side 守门挡掉借豁免开超大单）
+    # 方向无关:perp 平空保护单是 BUY → guard 前缀 + 保护 tag 即 True。
+    # 注:借豁免开超大单的防护改由风控豁免点的 reduce-only 校验承担(perp 接 live 时补),
+    # 真正防伪边界仍是 AST 审计 / 沙箱（见 is_protective_signature docstring）。
     forged_buy = _order("stop_loss", "guard-BTC/USDT-evil", side=OrderSide.BUY)
-    assert is_protective_order(forged_buy) is False
+    assert is_protective_order(forged_buy) is True
     # guard 自己产的出场单恒满足（与生产构造一致）
     msgbus = MessageBus()
     pf = _long_portfolio(msgbus, qty=1.0, avg_price=100.0)
@@ -451,3 +453,75 @@ def test_is_protective_order_requires_sell_tag_and_guard_prefix() -> None:
     orders = guard.evaluate(_bar(70.0))
     assert len(orders) == 1
     assert is_protective_order(orders[0]) is True
+
+
+# ─── perp 双向化 + 维持保证金强平 ───
+
+
+def _perp_portfolio(
+    msgbus: MessageBus, qty_signed: float, avg_price: float, leverage: int
+) -> Portfolio:
+    """建 perp Portfolio 并开仓（qty_signed>0 多 / <0 空,走 fill 正常路径）。"""
+    pf = Portfolio(
+        msgbus, initial_cash=1_000_000.0, fee_rate=0.0,
+        trading_mode="perp", leverage=leverage,
+    )
+    side = OrderSide.BUY if qty_signed > 0 else OrderSide.SELL
+    fill = OrderFilled(
+        client_order_id=ClientOrderId("setup"), strategy_id=_SID, ts_event=0, ts_init=0,
+        instrument_id=_btc(), side=side, fill_quantity=abs(qty_signed),
+        fill_price=avg_price, is_last_fill=True,
+    )
+    msgbus.publish(f"events.fills.{_btc()}", fill)
+    pos = pf.position(_btc())
+    assert pos is not None and pos.quantity == qty_signed
+    return pf
+
+
+def test_perp_short_hard_stop_buys_to_close() -> None:
+    """perp 空头浮亏穿 -20% → 一笔 BUY 全平（平空），tag=stop_loss。"""
+    msgbus = MessageBus()
+    pf = _perp_portfolio(msgbus, qty_signed=-1.0, avg_price=100.0, leverage=1)
+    guard, captured = _guard_with_capture(pf, msgbus, stop_loss_pct=0.20)
+    # 空头:mark 涨到 121 → 浮亏 -21% 穿 -20%(lev=1 强平价远在 ~189,不触发强平)
+    orders = guard.evaluate(_bar(121.0))
+    assert len(orders) == 1
+    o = orders[0]
+    assert o.side == OrderSide.BUY  # 平空 = 买
+    assert o.quantity == 1.0
+    assert o.tag == "stop_loss"
+    assert is_protective_order(o)  # 双向后 BUY guard 单也算保护(享豁免)
+    assert len(captured) == 1
+
+
+def test_perp_short_liquidation_buys_to_close() -> None:
+    """10x 空头 mark 穿含 buffer 强平价 → tag=liquidation(早于 -20% 止损)。"""
+    msgbus = MessageBus()
+    pf = _perp_portfolio(msgbus, qty_signed=-1.0, avg_price=100.0, leverage=10)
+    guard, _ = _guard_with_capture(pf, msgbus, stop_loss_pct=0.20)
+    # 10x 空头 liq≈109.56,buffer 5% → 触发 ~104.08;mark 105 强平(此时止损 pct 仅 -5% 不触发)
+    orders = guard.evaluate(_bar(105.0))
+    assert len(orders) == 1
+    assert orders[0].side == OrderSide.BUY
+    assert orders[0].tag == "liquidation"
+
+
+def test_perp_long_liquidation_sells_to_close() -> None:
+    """10x 多头 mark 跌穿含 buffer 强平价 → tag=liquidation。"""
+    msgbus = MessageBus()
+    pf = _perp_portfolio(msgbus, qty_signed=1.0, avg_price=100.0, leverage=10)
+    guard, _ = _guard_with_capture(pf, msgbus, stop_loss_pct=0.20)
+    # 10x 多头 liq≈90.36,buffer → ~94.88;mark 94 强平(止损 pct 仅 -6% 不触发)
+    orders = guard.evaluate(_bar(94.0))
+    assert len(orders) == 1
+    assert orders[0].side == OrderSide.SELL
+    assert orders[0].tag == "liquidation"
+
+
+def test_perp_short_no_trigger_when_safe() -> None:
+    """空头小幅浮亏且未近强平 → 不触发。"""
+    msgbus = MessageBus()
+    pf = _perp_portfolio(msgbus, qty_signed=-1.0, avg_price=100.0, leverage=1)
+    guard, captured = _guard_with_capture(pf, msgbus, stop_loss_pct=0.20)
+    assert guard.evaluate(_bar(110.0)) == []  # 空头 -10%,未穿 -20%、未近强平
+    assert captured == []

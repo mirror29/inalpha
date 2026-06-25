@@ -47,7 +47,7 @@ class OrderStatus(Enum):
 #: （PositionGuard）与 execution（SimulatedExchange）都引它，避免 engine↔execution
 #: 循环依赖（与下方 ``Order.tag`` 约定值同源）。
 PROTECTIVE_EXIT_TAGS: frozenset[str] = frozenset(
-    {"stop_loss", "take_profit", "trailing_stop_loss"}
+    {"stop_loss", "take_profit", "trailing_stop_loss", "liquidation"}
 )
 
 #: ``PositionGuard`` 出场单 ``client_order_id`` 的专属前缀。与 ``PROTECTIVE_EXIT_TAGS``
@@ -198,18 +198,20 @@ class Order:
 def is_protective_signature(
     side: OrderSide, tag: str | None, client_order_id: object
 ) -> bool:
-    """三因子判定原语：``side==SELL`` + ``tag`` ∈ ``PROTECTIVE_EXIT_TAGS`` + ``client_order_id``
-    以 ``GUARD_ORDER_PREFIX`` 开头。供 :func:`is_protective_order`（拿 Order）与成交侧
+    """双因子判定原语：``tag`` ∈ ``PROTECTIVE_EXIT_TAGS`` + ``client_order_id`` 以
+    ``GUARD_ORDER_PREFIX`` 开头。供 :func:`is_protective_order`（拿 Order）与成交侧
     （Portfolio 拿 OrderFilled 字段，无 Order 对象）共用，避免重复逻辑。
 
-    **安全前提（CR #88 medium）**：三个字段策略代码均可自设，故这层判定**不是**对抗性防伪，
-    用途是把「框架 guard 出场」与「策略普通单 / 策略自带 stop_loss」区分开（给 guard 出场
-    风控豁免 + 单独计数）。真正防伪依赖**策略源码 AST 审计 + 运行隔离**（audit_strategy_code；
-    当前策略不在 runtime 沙箱内，是已知攻击面，待后续补沙箱时收口——见 ADR-0052）。
+    **方向无关**：spot 平多是 SELL,perp 平空是 BUY——保护性出场两个方向都可能,故**不再
+    限定 side**（早期 spot-long-only 写死 ``side==SELL``,接 perp 双向后会漏判平空的 guard 单
+    → 该单拿不到风控豁免 / 不被计为 guard 出场）。``guard-`` 前缀 + 保护性 tag 已足够区分。
+
+    **安全前提（CR #88 medium）**：字段策略代码均可自设，故这层判定**不是**对抗性防伪,用途是
+    把「框架 guard 出场」与「策略普通单」区分开（给 guard 出场风控豁免 + 单独计数）。真正防伪
+    依赖**策略源码 AST 审计 + 运行隔离**（audit_strategy_code）。
     """
     return (
-        side == OrderSide.SELL
-        and tag in PROTECTIVE_EXIT_TAGS
+        tag in PROTECTIVE_EXIT_TAGS
         and str(client_order_id).startswith(GUARD_ORDER_PREFIX)
     )
 
