@@ -181,6 +181,36 @@
     "gateLabel": "Quality gate",
     "gate": "Before promotion a gate scores the candidate against the baseline; below bar, the agent auto-pivots and rewrites once — only what clears ships. Survivors can be cross-validated — WalkForward / Purged / Combinatorial CV with a Deflated Sharpe — so an edge has to hold across many out-of-sample paths, not one lucky window."
   },
+  "robustness": {
+    "title": "Survive the gauntlet,",
+    "titleAlt": "or it isn't an edge.",
+    "sub": "Picking the best of many trials is itself how you overfit. So every stage — factor selection, strategy selection, parameters, out-of-sample — carries its own statistical correction, not a single backtest you fell in love with.",
+    "coreLabel": "core enemy",
+    "core": "multiple-testing bias",
+    "killLabel": "kills",
+    "layers": [
+      {
+        "tag": "Backtest",
+        "kills": "a lucky window can't pose as an edge",
+        "items": ["CPCV · purge + embargo", "Deflated Sharpe · N-trial corrected", "Bootstrap Sharpe 95% CI", "parameter-neighborhood sensitivity"]
+      },
+      {
+        "tag": "Factors",
+        "kills": "a data-mined ghost can't reach the library",
+        "items": ["null-IC selection benchmark", "Benjamini–Hochberg FDR", "economic-story gate", "ρ < 0.85 de-correlation"]
+      },
+      {
+        "tag": "Evolution",
+        "kills": "no single metric can be gamed",
+        "items": ["multi-objective fitness", "drawdown veto", "turnover penalty", "buy-and-hold baseline race"]
+      },
+      {
+        "tag": "Look-ahead",
+        "kills": "a backtest never sees tomorrow",
+        "items": ["point-in-time fundamentals", "FRED release-lag table", "bars truncated to as_of", "test fold ends on the latest bar"]
+      }
+    ]
+  },
   "demo": {
     "eyebrow": "04 / Demo",
     "title": "Watch them disagree in real time.",
@@ -367,7 +397,7 @@
   },
   "faq": {
     "eyebrow": {
-      "index": "08",
+      "index": "09",
       "label": "FAQ"
     },
     "title": "What you're probably wondering.",

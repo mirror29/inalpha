@@ -206,6 +206,21 @@ Real money invites real hesitation. When you're stuck, let the Inari priestess �
 
 ---
 
+## Guarding against overfitting
+
+The hardest adversary in quant research isn't the market — it's *multiple-testing bias*. Pick the best of many trials and you'll find a Sharpe of 2.0 in pure noise. So Inalpha never leans on one clever backtest; every stage where a "best" gets selected carries its own statistical correction.
+
+| Stage | Defenses | What it prevents |
+|---|---|---|
+| **Backtest validation** | Combinatorial Purged CV (purge + embargo) · Deflated Sharpe (corrects for N trials) · bootstrap Sharpe 95% CI · parameter-neighborhood sensitivity — `POST /backtest/cv`, `POST /backtest/sensitivity` | A lucky window, or a fragile parameter peak, passing as a real edge |
+| **Factor screening** | null-IC selection benchmark · Benjamini–Hochberg FDR correction · economic-story gate · ρ < 0.85 de-correlation | A data-mined ghost factor reaching the library |
+| **Strategy evolution** | multi-objective fitness (return − turnover − drawdown veto) · buy-and-hold baseline race | A candidate gaming a single metric to look good |
+| **Look-ahead defense** | point-in-time fundamentals · FRED release-lag table · bars truncated to `as_of` · CV test fold ends on the latest bar | A backtest seeing data that wasn't public yet |
+
+> DSR and the bootstrap Sharpe CI are surfaced in the CV / backtest reports today; PBO (Probability of Backtest Overfitting, CSCV) lives in `services/paper/.../engine/robustness.py`, ready for swarm-grid comparison.
+
+---
+
 ## Roadmap
 
 Where each capability stands today. Live module inventory and the end-to-end decision sequence diagram live in [`docs/04-current-state.md`](docs/04-current-state.md).

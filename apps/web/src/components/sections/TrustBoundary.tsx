@@ -66,10 +66,10 @@ export function TrustBoundary() {
     <section className="group relative isolate overflow-hidden">
       <span
         aria-hidden
-        className="pointer-events-none absolute -right-2 -top-16 -z-10 select-none font-display italic leading-none text-fg/[0.04] transition-colors duration-500 group-hover:text-gold/25"
+        className="pointer-events-none absolute -left-2 -top-16 -z-10 select-none font-display italic leading-none text-fg/[0.04] transition-colors duration-500 group-hover:text-gold/25"
         style={{ fontSize: "clamp(8rem, 24vw, 22rem)" }}
       >
-        06
+        07
       </span>
       {/* dateline */}
       <div className="border-y border-fg/15">
@@ -85,7 +85,7 @@ export function TrustBoundary() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.6 }}
-          className="display-italic col-span-12 text-fg md:col-span-7"
+          className="display-italic col-span-12 text-fg md:col-span-7 md:col-start-6 md:text-right"
           style={{ fontSize: "clamp(2.25rem, 4.6vw, 3.6rem)", lineHeight: 1.0 }}
         >
           {t("title")}
@@ -97,7 +97,7 @@ export function TrustBoundary() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.6, delay: 0.1 }}
-          className="col-span-12 max-w-[52ch] self-end text-[15.5px] leading-relaxed text-fg-muted md:col-span-5"
+          className="col-span-12 max-w-[52ch] self-end text-[15.5px] leading-relaxed text-fg-muted md:col-span-5 md:col-start-1 md:row-start-1"
         >
           {t("body")}
         </motion.p>
