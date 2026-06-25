@@ -17,7 +17,9 @@ from inalpha_shared.errors import InalphaError
 
 from inalpha_paper.config import get_paper_settings
 from inalpha_paper.engine.live_session import LiveEngineSession
+from inalpha_paper.kernel.identifiers import ClientOrderId
 from inalpha_paper.live_runner import LiveRunnerManager, _closed_bars
+from inalpha_paper.model.orders import Order, OrderSide, OrderType
 from inalpha_paper.storage import accounts as accounts_store
 from inalpha_paper.storage import closed_trades as closed_trades_store
 from inalpha_paper.storage import orders as orders_store
@@ -1061,3 +1063,99 @@ async def test_list_all_running_returns_running_only(app_with_lifespan: Any) -> 
     ids = {r["id"] for r in running}
     assert r_running["id"] in ids
     assert r_stopped["id"] not in ids
+
+
+# ─── 现货 long-only 网关守门（禁裸空 / 禁超卖翻空）───
+
+
+class _SellOnceStrategy(Strategy):
+    """第一根 bar 市价卖 ``sell_qty`` 单位（测 spot long-only 守门用）。"""
+
+    def __init__(  # type: ignore[no-untyped-def]
+        self, name, clock, msgbus, instrument_id, timeframe, sell_qty=1.0, **_kw
+    ) -> None:
+        super().__init__(name, clock, msgbus)
+        self._instrument_id = instrument_id
+        self._timeframe = timeframe
+        self._sell_qty = sell_qty
+        self._sent = False
+
+    def on_start(self) -> None:
+        self.subscribe_bars(self._instrument_id, self._timeframe)
+
+    def on_bar(self, bar: Any) -> None:
+        if not self._sent:
+            self._sent = True
+            self.submit_order(
+                Order(
+                    client_order_id=ClientOrderId(f"sell-{uuid4().hex[:8]}"),
+                    instrument_id=self._instrument_id,
+                    side=OrderSide.SELL,
+                    type=OrderType.MARKET,
+                    quantity=self._sell_qty,
+                )
+            )
+
+
+def _sell_session(sell_qty: float) -> LiveEngineSession:
+    return LiveEngineSession(
+        strategy_cls=_SellOnceStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={"sell_qty": sell_qty}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+
+
+async def test_process_bar_naked_short_rejected(app_with_lifespan: Any) -> None:
+    """空仓现货 SELL → spot long-only 守门拒（禁裸空）：不落单 / 不建空仓 / 记 rejected / run 不挂。
+
+    复现 d4404933 漂移根因:OrderExecutor 无状态不查持仓,若不守门则空仓 SELL 会成交成裸空。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    session = _sell_session(1.0)
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    await manager._process_bar(session, run, _bar(1_700_000_000_000_000_000, close=50_000.0))
+
+    async with get_conn() as conn:
+        orders = await orders_store.list_by_account(conn, account_id)
+        positions = await positions_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+        run_fresh = await runs_store.get(conn, run["id"])
+
+    assert orders == []  # 裸空不落账
+    assert positions == []  # 不建空仓
+    assert len(decisions) == 1
+    d = decisions[0]
+    assert d["outcome"] == "rejected"
+    assert d["side"] == "SELL"
+    assert d["intent"] == "open_short"  # 空仓 SELL 判 open_short，但被守门拒
+    assert "INSUFFICIENT_POSITION" in d["reason"]
+    assert d["order_id"] is None and d["plan_id"] is None  # 没真下单 → 无交叉引用
+    assert run_fresh is not None and run_fresh["status"] == "running"  # 不杀 run
+
+
+async def test_process_bar_oversell_no_flip_to_short(app_with_lifespan: Any) -> None:
+    """持多 1.0 后 SELL 2.0（超卖）→ 守门拒，持仓维持 +1.0 不翻空（d4404933 漂移不变量）。
+
+    守门读 DB 持仓(权威),即便新 session 视图为空仓也按真实 +1.0 判,拒掉会翻空的那笔。
+    对齐回测 ``test_backtest_e2e.py`` 的 ``pos.quantity >= 0`` 不变量。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    # bar1：_BuyOnceStrategy 建多 1.0
+    await manager._process_bar(
+        _make_session(), run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+    # bar2：另起 session 提交 SELL 2.0（超过 DB 实际持仓 1.0）
+    await manager._process_bar(
+        _sell_session(2.0), run, _bar(1_700_000_003_600_000_000, close=49_000.0)
+    )
+
+    async with get_conn() as conn:
+        pos = await positions_store.get(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT"
+        )
+    assert pos is not None
+    assert Decimal(str(pos["quantity"])) == Decimal("1.0")  # 维持多仓，未翻空
