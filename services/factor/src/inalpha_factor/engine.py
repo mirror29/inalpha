@@ -574,7 +574,7 @@ class FactorEngine:
             "ic_null_benchmark": scored["ic_null_benchmark"],
         }
 
-    # ── 横截面 panel（ADR-0055 首个纵切）──────────────────────────────
+    # ── 横截面 panel──────────────────────────────
     async def panel_score(
         self,
         *,
@@ -589,14 +589,14 @@ class FactorEngine:
     ) -> dict[str, Any]:
         """横截面因子评估：多标的对齐 → 每因子横截面 rank-IC + 最新横截面排名。
 
-        把因子从"单标的择时信号"用作"横截面选股信号"（ADR-0055 D1 ②路径 + D2）：
+        把因子从"单标的择时信号"用作"横截面选股信号"：
         在 universe 上每期按因子排序，与跨标的前瞻收益求横截面 rank-IC；并给出最近
         一期的排名供选标的（如取 PB 最低者，对应聚宽式轮动）。
 
         约束：
         - **macro 因子不参与**——全市场单值，某时刻对所有标的相同，无横截面区分度。
-        - **universe 非 PIT**（is_pit=False）：用调用方给的固定标的集，ADR-0053 C 成分
-          快照未建，带存活者偏差风险，显式标注不静默（§3.1 / ADR-0055 D4）。
+        - **universe 非 PIT**（is_pit=False）：用调用方给的固定标的集，历史成分
+          快照未建，带存活者偏差风险，显式标注不静默（§3.1）。
         - 对齐缺口留 NaN 不 ffill；某期有效标的 < min_symbols 不排名（D1.1）。
         """
         now = datetime.now(UTC)
@@ -625,7 +625,7 @@ class FactorEngine:
         close_panel = align_field(frames, "close")
 
         universe_note = (
-            "fixed non-PIT universe（调用方给定标的集；ADR-0053 C 成分快照未建，"
+            "fixed non-PIT universe（调用方给定标的集；历史成分快照未建，"
             "横截面存活者偏差未挡，证据强度打折）"
         )
         if close_panel.empty:
@@ -669,7 +669,7 @@ class FactorEngine:
                 ],
             }
 
-        # ② 普通时序因子的横截面化（ADR-0055 D1 ②）：每期把单标的因子值横向排名
+        # ② 普通时序因子的横截面化：每期把单标的因子值横向排名
         for fid in ids:
             cols = {sym: fac[fid] for sym, fac in per_symbol.items() if fid in fac}
             if len(cols) < min_symbols:

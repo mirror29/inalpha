@@ -107,7 +107,7 @@ export type CustomScoreResult = {
   is_likely_redundant: boolean;
 };
 
-/** POST /panel/score —— 横截面因子结果（ADR-0055）。 */
+/** POST /panel/score —— 横截面因子结果。 */
 export type PanelRankEntry = {
   symbol: string;
   /** 该标的最近有效横截面时点的因子值 */
@@ -247,7 +247,7 @@ export class FactorClient {
     });
   }
 
-  /** ADR-0055：一篮子标的的横截面因子评估（横截面 rank-IC + 最新排名,选标的用）。 */
+  /** 一篮子标的的横截面因子评估（横截面 rank-IC + 最新排名,选标的用）。 */
   async panelScore(params: {
     venue: string;
     symbols: string[];

@@ -1,4 +1,4 @@
-"""宏观因子适配器（FRED 序列 → 因子，ADR-0044 Phase 1 daily + Phase 2 monthly + Phase 3 扩容）。
+"""宏观因子适配器（FRED 序列 → 因子，Phase 1 daily + Phase 2 monthly + Phase 3 扩容）。
 
 因子库第一类**外生信息源**：利率 / 期限利差（10Y-2Y、10Y-3M）/ 美元指数 / VIX /
 信用利差（HY、IG OAS）（daily）+ 通胀 / 就业 / 货币 / 实体经济（PPI、工业产出、

@@ -231,7 +231,7 @@ class ComputeErrorResponse(BaseModel):
 
 
 # ────────────────────────────────────────────────────────────────────
-# Panel / 横截面（ADR-0055 首个纵切）
+# Panel / 横截面
 # ────────────────────────────────────────────────────────────────────
 
 
@@ -248,7 +248,7 @@ class PanelScoreRequest(BaseModel):
         min_length=2,
         max_length=50,
         description="universe 标的集（同 venue/timeframe）。**非 PIT**——调用方给定的固定"
-        "集，ADR-0053 C 成分快照未建，响应 is_pit=false 显式标注存活者偏差风险",
+        "集，历史成分快照未建，响应 is_pit=false 显式标注存活者偏差风险",
         examples=[["AAPL", "MSFT", "GOOGL", "AMZN", "META"]],
     )
     timeframe: str = Field(default="1d")
@@ -309,7 +309,7 @@ class PanelScoreResponse(BaseModel):
     bars_used: dict[str, int] = Field(description="每标的取到的 bar 数")
     is_pit: bool = Field(
         default=False,
-        description="universe 是否 point-in-time。**当前恒 false**（ADR-0053 C 成分快照未建）"
+        description="universe 是否 point-in-time。**当前恒 false**（历史成分快照未建）"
         "——用固定标的集，带存活者偏差，横截面证据强度打折，勿当 PIT 结论引用",
     )
     universe_note: str = Field(description="universe 口径说明（含降级原因）")

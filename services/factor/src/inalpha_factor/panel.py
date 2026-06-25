@@ -1,19 +1,19 @@
-"""横截面 Panel 工具（ADR-0055 首个纵切）。
+"""横截面 Panel 工具。
 
 多标的对齐 + 横截面 rank-IC + 最新横截面排名。**纯函数**（不取数），engine 负责
 逐标的拉 bar 后喂进来。与 effectiveness.py 的**单标的时序** rank-IC 是正交的另一维：
 那边是"一个标的的因子时序 vs 它自己的前瞻收益"，这里是"某时刻全池按因子排序 vs
-跨标的前瞻收益"（量化界因子有效性的标准口径，ADR-0055 D2）。
+跨标的前瞻收益"（量化界因子有效性的标准口径）。
 
 金融时效性（§3.1）：前瞻收益 ``close[t+H]/close[t]-1`` 只用历史 bar，末 H 行 NaN，
-绝不用未来数据当现在；横向对齐缺口留 NaN，**不前向填充制造假成交**（ADR-0054 D1）。
+绝不用未来数据当现在；横向对齐缺口留 NaN，**不前向填充制造假成交**。
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-#: 某期横截面有效（非 NaN）标的数低于此 → 该期不排名（残缺池排名是伪信号，ADR-0055 D1.1）
+#: 某期横截面有效（非 NaN）标的数低于此 → 该期不排名（残缺池排名是伪信号）
 DEFAULT_MIN_SYMBOLS = 3
 #: 横截面 IC 的有效期数低于此 → low_confidence（均值/ICIR 不可靠）
 MIN_XS_PERIODS = 20
@@ -68,7 +68,7 @@ def cross_sectional_ic(
     Args:
         factor_panel: time × symbol 因子值。
         fwd_panel: time × symbol 前瞻收益。
-        min_symbols: 某期有效标的数下限；不足则跳过该期（ADR-0055 D1.1）。
+        min_symbols: 某期有效标的数下限；不足则跳过该期。
 
     Returns:
         ``(mean_ic, icir, n_periods, mean_valid_symbols)`` —— 横截面 IC 均值、
