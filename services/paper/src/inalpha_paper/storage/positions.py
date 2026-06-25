@@ -259,15 +259,23 @@ async def get(
     account_id: UUID,
     venue: str,
     symbol: str,
+    for_update: bool = False,
 ) -> dict[str, Any] | None:
-    """读单个 (account, venue, symbol) 持仓行；不存在返 None（live PnL / resume 重建用）。"""
+    """读单个 (account, venue, symbol) 持仓行；不存在返 None（live PnL / resume 重建用）。
+
+    ``for_update=True``：``SELECT ... FOR UPDATE`` 锁住该行——spot long-only 守门的
+    "读-检-写"必须在同一事务里 FOR UPDATE，否则并发 SELL 各自读到旧持仓双双过闸、
+    apply_fill 把持仓打成负仓（TOCTOU）。**仅在事务内使用**（行锁随事务释放）。
+    """
+    sql = (
+        "SELECT venue, symbol, quantity, avg_open_price, realized_pnl, "
+        "generation, ts_opened, open_order_id, currency, updated_at "
+        "FROM positions WHERE account_id = %s AND venue = %s AND symbol = %s"
+    )
+    if for_update:
+        sql += " FOR UPDATE"
     async with conn.cursor() as cur:
-        await cur.execute(
-            "SELECT venue, symbol, quantity, avg_open_price, realized_pnl, "
-            "generation, ts_opened, open_order_id, currency, updated_at "
-            "FROM positions WHERE account_id = %s AND venue = %s AND symbol = %s",
-            (str(account_id), venue, symbol),
-        )
+        await cur.execute(sql, (str(account_id), venue, symbol))
         row = await cur.fetchone()
     return row  # type: ignore[return-value]
 

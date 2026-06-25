@@ -86,24 +86,6 @@ async def post_submit_order(
         venue=req.venue, symbol=req.symbol,
     )
 
-    # 现货 long-only 网关守门（与回测 Portfolio.can_afford_sell 同口径）：OrderExecutor
-    # 无状态、撮合前不查持仓，apply_fill 又允许负仓——不在此拦则裸空 / 超卖翻空会落账成
-    # 凭空做空的负仓。SELL 量超当前 LONG 持仓 → 409 INSUFFICIENT_POSITION，不落账。
-    if req.side == "SELL":
-        cur_pos = await positions_store.get(
-            db, account_id=account_id, venue=req.venue, symbol=req.symbol
-        )
-        current_qty = Decimal(str(cur_pos["quantity"])) if cur_pos else Decimal(0)
-        if violates_spot_long_only(
-            side=req.side, quantity=req.quantity, current_qty=current_qty
-        ):
-            raise InsufficientPositionError(
-                f"SELL {req.quantity} exceeds current position {current_qty} "
-                "(spot long-only: short-selling not permitted)",
-                details={"venue": req.venue, "symbol": req.symbol,
-                         "requested": req.quantity, "current_qty": str(current_qty)},
-            )
-
     # 算成交（纯函数，不依赖 DB）
     result = OrderExecutor.execute(
         venue=req.venue,
@@ -119,6 +101,26 @@ async def post_submit_order(
     # 落盘 + 持仓 + 现金（事务）
     async with db.transaction():
         await accounts_store.get_or_create(db, account_id)
+
+        # 现货 long-only 守门（与回测 Portfolio.can_afford_sell 同口径）：OrderExecutor
+        # 无状态、apply_fill 又允许负仓——不拦则裸空 / 超卖翻空落账成凭空做空的负仓。
+        # **必须在本事务内 FOR UPDATE 锁行再校验**：否则两个并发 SELL 各读旧持仓双双过闸
+        # （TOCTOU）→ 把持仓打成负仓。raise 触发事务回滚 → 不落单/不落账（409 不变）。
+        if req.side == "SELL":
+            cur_pos = await positions_store.get(
+                db, account_id=account_id, venue=req.venue, symbol=req.symbol,
+                for_update=True,
+            )
+            current_qty = Decimal(str(cur_pos["quantity"])) if cur_pos else Decimal(0)
+            if violates_spot_long_only(
+                side=req.side, quantity=req.quantity, current_qty=current_qty
+            ):
+                raise InsufficientPositionError(
+                    f"SELL {req.quantity} exceeds current position {current_qty} "
+                    "(spot long-only: short-selling not permitted)",
+                    details={"venue": req.venue, "symbol": req.symbol,
+                             "requested": req.quantity, "current_qty": str(current_qty)},
+                )
 
         await orders_store.insert(
             db,
