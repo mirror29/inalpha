@@ -38,11 +38,15 @@ def violates_spot_long_only(
     side: str,
     quantity: float | Decimal,
     current_qty: float | Decimal,
+    trading_mode: str = "spot",
 ) -> bool:
     """判一笔订单是否违反现货 long-only(禁裸空 / 禁超卖翻空)。
 
     与 :meth:`Portfolio.can_afford_sell` 同口径:``side=="SELL"`` 且卖出量
     **严格大于**当前 LONG 持仓量时违规(等量平仓放行)。BUY 恒不违规。
+
+    ``trading_mode != "spot"``(如 ``"perp"`` 永续)→ **恒不违规**:做空合法,是否放行
+    改由保证金购买力校验(``Portfolio.can_afford_sell`` perp 分支 / 上层 margin 守门)决定。
 
     Parameters
     ----------
@@ -52,12 +56,16 @@ def violates_spot_long_only(
         本笔订单数量(正数)。
     current_qty : float | Decimal
         当前持仓**带符号**数量(LONG 为正、SHORT 为负、flat 为 0)。
+    trading_mode : str
+        ``"spot"``(默认,强制 long-only)或 ``"perp"``(放开做空,本守门短路返 False)。
 
     Returns
     -------
     bool
         ``True`` = 违反 spot long-only,调用方应拒单。
     """
+    if trading_mode != "spot":
+        return False
     if side != "SELL":
         return False
     return Decimal(str(quantity)) > Decimal(str(current_qty))
