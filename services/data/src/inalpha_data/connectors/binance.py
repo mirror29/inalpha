@@ -53,6 +53,59 @@ class BinanceConnector:
                 },
             }
         )
+        self._api_key = api_key
+        self._api_secret = api_secret
+        # USDT-M 永续(linear)用独立 ccxt 实例懒加载:与现货分开,避免拉 fapi markets 失败
+        # 时连累现货 loadMarkets(部分网络对 fapi.binance.com 不通)。仅在请求 perp 数据时建。
+        self._futures_exchange: Any = None
+
+    def _futures(self) -> Any:
+        """懒建 USDT-M 永续(linear)ccxt 实例。"""
+        if self._futures_exchange is None:
+            self._futures_exchange = ccxt.binance(
+                {
+                    "apiKey": self._api_key or None,
+                    "secret": self._api_secret or None,
+                    "enableRateLimit": True,
+                    "options": {"defaultType": "future"},
+                }
+            )
+        return self._futures_exchange
+
+    async def fetch_perp_funding_rate(self, symbol: str) -> dict[str, Any]:
+        """拉 USDT-M 永续的 **mark price + 当期 funding rate**（ccxt ``fetch_funding_rate``）。
+
+        ``symbol`` 用 ccxt 永续记法 ``BTC/USDT:USDT``。``fapi.binance.com`` 不通时 ccxt 抛
+        ``NetworkError`` / ``ExchangeError`` —— 让上层翻 5xx 或 fallback（funding=0 + 标注失真）。
+
+        Returns:
+            ``{symbol, mark_price, funding_rate, ts, next_funding_ts}``。
+        """
+        ex = self._futures()
+        fr = await ex.fetch_funding_rate(symbol)
+        mark = fr.get("markPrice")
+        rate = fr.get("fundingRate")
+        if mark is None or rate is None:
+            raise ValueError(
+                f"binance funding rate for {symbol} missing markPrice/fundingRate"
+            )
+        ts_ms = fr.get("timestamp")
+        next_ms = fr.get("fundingTimestamp")
+        return {
+            "symbol": symbol,
+            "mark_price": float(mark),
+            "funding_rate": float(rate),
+            "ts": (
+                datetime.fromtimestamp(int(ts_ms) / 1000, tz=UTC)
+                if ts_ms is not None
+                else datetime.now(UTC)
+            ),
+            "next_funding_ts": (
+                datetime.fromtimestamp(int(next_ms) / 1000, tz=UTC)
+                if next_ms is not None
+                else None
+            ),
+        }
 
     async def fetch_bars(
         self,
@@ -122,6 +175,8 @@ class BinanceConnector:
 
     async def close(self) -> None:
         await self._exchange.close()
+        if self._futures_exchange is not None:
+            await self._futures_exchange.close()
 
 
 # ---------- module-level singleton（跟 inalpha_shared.db 同模式） ----------
