@@ -623,16 +623,23 @@ class FactorEngine:
             "lag as_of — pre-backfill the universe if you need to-now freshness"
         )
 
-        # ② 普通时序因子横截面化：价量/自定义因子，显式排除 macro（无横截面区分度）
-        ids = factor_ids or self._computable_ids(timeframe, exclude_macro=True)
-        ids = [fid for fid in ids if not fid.startswith("macro.")]
-        # ① 内禀横截面因子（needs_universe，含 rank()）
-        xs_ids = [s.factor_id for s in self.catalog() if s.needs_universe]
+        # 因子分流（② / ①）。两者**构造上不相交**：② = 普通时序因子横截面化（非 macro、
+        # 非 needs_universe）；① = 内禀横截面因子（needs_universe，含 rank()）。同一 id 不会
+        # 双份落入 ids 和 xs_ids（防 compute_on_df 万一对某 needs_universe 因子产值时重复计）。
+        all_universe = {s.factor_id for s in self.catalog() if s.needs_universe}
         if factor_ids is not None:
-            req = set(factor_ids)
-            xs_ids = [fid for fid in xs_ids if fid in req]
+            # 显式列表按原样分流——``[]`` 是"空请求"，**不**用 `or` 把它当 falsy 回退全量
+            # （那是 bug：调用方/agent 漏元素会静默多算一堆因子）。
+            ids = [
+                fid for fid in factor_ids
+                if not fid.startswith("macro.") and fid not in all_universe
+            ]
+            xs_ids = [fid for fid in factor_ids if fid in all_universe]
+        else:
+            ids = self._computable_ids(timeframe, exclude_macro=True)  # 已含 not needs_universe
+            xs_ids = sorted(all_universe)
 
-        # 请求里全是 macro（或未知 id）→ 没有可横截面评估的因子。显式降级不静默（§3.1）：
+        # 没有任何可横截面评估的因子（空列表 / 全 macro / 未知 id）→ 显式降级不静默（§3.1）：
         # 否则与"评估了但全部低置信"的正常空响应无法区分，agent 会误读成"此 universe 无信号"
         if factor_ids is not None and not ids and not xs_ids:
             return {
@@ -641,10 +648,10 @@ class FactorEngine:
                 "is_pit": False, "universe_note": universe_note,
                 "factors": [], "ic_null_benchmark": 0.0,
                 "reason": (
-                    "all requested factor_ids are macro (or unknown): macro factors have no "
-                    "cross-sectional differentiation (single value across all symbols) and "
-                    "are excluded from panel ranking — pass price/volume or needs_universe "
-                    "factor ids, or omit factor_ids to evaluate all"
+                    "no usable cross-sectional factor in factor_ids (empty list, all-macro, "
+                    "or unknown ids): macro factors have no cross-sectional differentiation "
+                    "(single value across all symbols) and are excluded — pass price/volume "
+                    "or needs_universe factor ids, or omit factor_ids to evaluate all"
                 ),
             }
 
