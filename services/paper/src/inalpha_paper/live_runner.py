@@ -471,6 +471,9 @@ class LiveRunnerManager:
             protective_trailing_stop_pct=self._settings.protective_trailing_stop_pct,
             protective_chandelier_atr_mult=self._settings.protective_chandelier_atr_mult,
             protective_chandelier_atr_period=self._settings.protective_chandelier_atr_period,
+            # perp 透传(默认 spot/1):让 session 内存 Portfolio 走永续保证金记账,与回测/HTTP 同口径
+            trading_mode=run.get("trading_mode") or "spot",
+            leverage=int(run.get("leverage") or 1),
         )
         warmup_ts = await self._warmup_session(session, run)
         # resume（last_bar_ts 非空 = 本 run 之前跑过）：把 DB 当前持仓灌回 session，让续跑
@@ -824,7 +827,8 @@ class LiveRunnerManager:
                 )
             current_qty = Decimal(str(cur_pos["quantity"])) if cur_pos else Decimal(0)
             if violates_spot_long_only(
-                side=side, quantity=order.quantity, current_qty=current_qty
+                side=side, quantity=order.quantity, current_qty=current_qty,
+                trading_mode=run.get("trading_mode") or "spot",
             ):
                 reason = (
                     f"INSUFFICIENT_POSITION: sell {order.quantity} exceeds position "
@@ -884,7 +888,8 @@ class LiveRunnerManager:
                     )
                     locked_qty = Decimal(str(locked["quantity"])) if locked else Decimal(0)
                     if violates_spot_long_only(
-                        side=side, quantity=exec_qty, current_qty=locked_qty
+                        side=side, quantity=exec_qty, current_qty=locked_qty,
+                        trading_mode=run.get("trading_mode") or "spot",
                     ):
                         if is_protective_exit and locked_qty > 0:
                             # 框架保护性出场遇 session/DB 视图分叉（DB 实仓 < 策略视图，例如
@@ -928,6 +933,8 @@ class LiveRunnerManager:
                     avg_fill_price=result["avg_fill_price"], fee=result["fee"],
                     notional=result["notional"], ts_event=result["ts_event"],
                     trade_plan_id=plan_id,
+                    trading_mode=run.get("trading_mode") or "spot",
+                    leverage=int(run.get("leverage") or 1),
                 )
                 if result["status"] == "FILLED":
                     fill_qty_decimal = (
@@ -940,6 +947,8 @@ class LiveRunnerManager:
                         fill_price=Decimal(str(result["avg_fill_price"])),
                         fee=Decimal(str(result["fee"])),
                         ts_event=result["ts_event"], order_id=result["client_order_id"],
+                        trading_mode=run.get("trading_mode") or "spot",
+                        leverage=int(run.get("leverage") or 1),
                     )
                     # 回写该笔已实现盈亏(开仓 0 / 平仓实现值)——与 api/orders 提交路径
                     # 同口径;漏写会让控制台「最近订单」的本笔盈亏恒为空。

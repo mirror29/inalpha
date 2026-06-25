@@ -36,6 +36,8 @@ async def insert(
     symbol: str,
     timeframe: str,
     params: dict[str, Any] | None = None,
+    trading_mode: str = "spot",
+    leverage: int = 1,
 ) -> dict[str, Any]:
     """创建一行 status='running' 的 run。同 candidate 已有 running → StrategyRunConflict。"""
     try:
@@ -43,15 +45,17 @@ async def insert(
             await cur.execute(
                 """
                 INSERT INTO strategy_runs (
-                    candidate_id, account_id, status, venue, symbol, timeframe, params
-                ) VALUES (%s, %s, 'running', %s, %s, %s, %s::jsonb)
+                    candidate_id, account_id, status, venue, symbol, timeframe, params,
+                    trading_mode, leverage
+                ) VALUES (%s, %s, 'running', %s, %s, %s, %s::jsonb, %s, %s)
                 RETURNING id, candidate_id, account_id, status, venue, symbol,
-                          timeframe, params, last_bar_ts, cumulative_pnl, run_log,
+                          timeframe, params, trading_mode, leverage,
+                          last_bar_ts, cumulative_pnl, run_log,
                           started_at, stopped_at
                 """,
                 (
                     str(candidate_id), str(account_id), venue, symbol, timeframe,
-                    json.dumps(params or {}),
+                    json.dumps(params or {}), trading_mode, leverage,
                 ),
             )
             row = await cur.fetchone()
@@ -69,8 +73,8 @@ async def get(conn: AsyncConnection, run_id: UUID) -> dict[str, Any] | None:
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-            "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at, "
-            "factor_baseline, factor_alerts "
+            "params, trading_mode, leverage, last_bar_ts, cumulative_pnl, run_log, "
+            "started_at, stopped_at, factor_baseline, factor_alerts "
             "FROM strategy_runs WHERE id = %s",
             (str(run_id),),
         )

@@ -831,6 +831,12 @@ class StartStrategyRunRequest(BaseModel):
         default_factory=dict,
         description="策略参数（candidate 源码 __init__ 接受的 kwargs）；缺省用策略默认值",
     )
+    trading_mode: Literal["spot", "perp"] = Field(
+        default="spot",
+        description="spot(默认,现货 long-only)或 perp(USDT-M 永续 + 逐仓,放开做空/杠杆;"
+        "仅 crypto 永续标的 BTC/USDT:USDT 生效)。perp 须配做空逻辑的策略,否则会告警。",
+    )
+    leverage: int = Field(default=1, ge=1, le=20, description="杠杆倍数(perp 用,1..20);spot 恒 1")
 
 
 class StrategyRunRecord(BaseModel):
@@ -844,6 +850,8 @@ class StrategyRunRecord(BaseModel):
     symbol: str
     timeframe: str
     params: dict[str, Any] = Field(default_factory=dict)
+    trading_mode: str = "spot"
+    leverage: int = 1
     last_bar_ts: datetime | None = None
     cumulative_pnl: float = 0.0
     run_log: list[dict[str, Any]] = Field(

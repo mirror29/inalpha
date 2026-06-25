@@ -91,6 +91,76 @@ async def test_start_requires_promoted_candidate(
     assert r.json()["code"] == "CANDIDATE_NOT_PROMOTED"
 
 
+def _stub_manager_async(app: Any) -> list[dict[str, Any]]:
+    """把 manager.start_async 换成记录调用的 no-op async。"""
+    started: list[dict[str, Any]] = []
+
+    async def _rec(run: dict[str, Any]) -> None:
+        started.append(run)
+
+    app.state.live_runner_manager.start_async = _rec
+    app.state.live_runner_manager.start = lambda run: started.append(run)
+    return started
+
+
+async def test_start_perp_on_non_crypto_rejected(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """perp 仅 crypto:非 crypto venue 起 perp run → 422 PERP_NOT_ELIGIBLE。"""
+    _stub_manager_async(app_with_lifespan)
+    cid = await _make_promoted_candidate()
+    r = client.post(
+        "/strategy_runs",
+        headers=_headers(client),
+        json={"candidate_id": str(cid), "venue": "yfinance", "symbol": "AAPL",
+              "timeframe": "1h", "trading_mode": "perp", "leverage": 2},
+    )
+    assert r.status_code == 422
+    assert r.json()["code"] == "PERP_NOT_ELIGIBLE"
+
+
+async def test_start_perp_eligible_carries_mode(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """crypto 永续 perp run → 200,响应带 trading_mode=perp/leverage,且透传给 manager。"""
+    started = _stub_manager_async(app_with_lifespan)
+    cid = await _make_promoted_candidate()
+    r = client.post(
+        "/strategy_runs",
+        headers=_headers(client),
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT:USDT",
+              "timeframe": "1h", "trading_mode": "perp", "leverage": 5},
+    )
+    assert r.status_code == 200, r.json()
+    body = r.json()
+    assert body["trading_mode"] == "perp"
+    assert body["leverage"] == 5
+    assert len(started) == 1 and started[0]["trading_mode"] == "perp"
+
+
+async def test_start_perp_long_only_strategy_warns(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """perp + 疑似 long-only 策略(_is_long 无 _is_short)→ 放行但 run_log 软告警。"""
+    _stub_manager_async(app_with_lifespan)
+    async with get_conn() as conn:
+        cid, _ = await candidates_store.insert_candidate(
+            conn, code='self._is_long = False\n"long-only salt ' + uuid4().hex + '"\n'
+        )
+        await candidates_store.set_status(conn, cid, "promoted")
+    r = client.post(
+        "/strategy_runs",
+        headers=_headers(client),
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT:USDT",
+              "timeframe": "1h", "trading_mode": "perp", "leverage": 3},
+    )
+    assert r.status_code == 200, r.json()
+    async with get_conn() as conn:
+        run = await runs_store.get(conn, UUID(r.json()["id"]))
+    msgs = " ".join(e.get("msg", "") for e in (run["run_log"] or []))
+    assert "long-only" in msgs and "做空" in msgs
+
+
 async def test_start_requires_venue(client: TestClient, app_with_lifespan: Any) -> None:
     """venue 必填（不预设市场，CLAUDE.md §3）：缺 venue → 422 请求校验错误。"""
     _stub_manager(app_with_lifespan)
