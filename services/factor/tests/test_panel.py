@@ -298,6 +298,18 @@ async def test_panel_score_unknown_factor_id_explicit_reason() -> None:
     )
     assert res["factors"] == []
     assert res["reason"] is not None and "unknown" in res["reason"].lower()
+    assert res["unknown_factor_ids"] == ["qlib.roc_20_typo"]
+
+
+async def test_panel_score_mixed_valid_and_unknown_surfaces_unknown() -> None:
+    """有效 + 拼错 id 混传：factors 非空(有效因子照算),unknown_factor_ids 仍透出 typo。"""
+    frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
+    eng = _PanelEngine(frames)
+    res = await eng.panel_score(
+        **_kwargs(_SYMS, factor_ids=["qlib.roc_20", "qlib.roc_20_typo"])  # type: ignore[arg-type]
+    )
+    assert any(f["factor_id"] == "qlib.roc_20" for f in res["factors"])  # 有效因子算了
+    assert res["unknown_factor_ids"] == ["qlib.roc_20_typo"]  # typo 不被静默丢弃
 
 
 async def test_panel_score_below_min_symbols_empty() -> None:

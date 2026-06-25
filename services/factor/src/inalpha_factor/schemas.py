@@ -328,6 +328,11 @@ class PanelScoreResponse(BaseModel):
         default=0.0, description="选择效应基准（读法/局限见 ScoreResponse 同名字段）"
     )
     reason: str | None = Field(default=None, description="factors 为空时的原因")
+    unknown_factor_ids: list[str] = Field(
+        default_factory=list,
+        description="传入的 factor_ids 里不在 catalog 的（拼错/过期）。**恒透出**：即使有效"
+        "因子并存（factors 非空）也列出被拒的 id，避免静默丢弃；空 = 全部 id 有效",
+    )
 
 
 # ── 自定义因子表达式（D-12 · 因子发现 L1）────────────────────────────
