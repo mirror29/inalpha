@@ -21,14 +21,18 @@
   经 ``close_detector`` → ``exit_reason``，自动喂给 StoplossGuard / Cooldown，天然实现
   "止损后不立刻回场"，无需新建再入场抑制。
 
-局限：仅 spot long；short / 合约对称版留待后续（short 当前 no-op）。
+双向化（perp）:spot 仍只保护多头;perp 多 / 空对称——硬止损按**带方向浮盈率**判,平多发
+SELL、平空发 BUY;并叠加**维持保证金强平**（mark 穿越含 buffer 的强平价 → tag=liquidation）。
+v1 局限:空头的移动止损 / 吊灯 / 止盈,以及强平罚金 / 逐仓破产 clamp（现金侧）留 Phase 2。
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from ..execution import perp_margin
 from ..execution.exchange import EXECUTION_ENGINE_ENDPOINT
 from ..kernel.identifiers import ClientOrderId, InstrumentId, StrategyId
 from ..kernel.msgbus import MessageBus
@@ -103,6 +107,7 @@ class PositionGuard:
         trailing_stop_pct: float | None = None,
         chandelier_atr_mult: float | None = None,
         chandelier_atr_period: int = 22,
+        liquidation_buffer: float = perp_margin.DEFAULT_LIQUIDATION_BUFFER,
     ) -> None:
         for name, val in (
             ("stop_loss_pct", stop_loss_pct),
@@ -125,6 +130,7 @@ class PositionGuard:
         self._trailing_stop_pct = trailing_stop_pct
         self._chandelier_atr_mult = chandelier_atr_mult
         self._chandelier_atr_period = chandelier_atr_period
+        self._liquidation_buffer = liquidation_buffer
         self._strategy_id: StrategyId | None = None
         # 每 instrument 的峰值 mark 价（trailing 用，自峰值价格回撤口径）；持仓转 flat 时清除
         self._peak_mark: dict[InstrumentId, float] = {}
@@ -198,8 +204,10 @@ class PositionGuard:
             self._pending_exit_insts.discard(inst)  # 出场已成交（持仓平），解除去重标记
             return []
 
-        # 仅 spot long；short 留待合约阶段（no-op，避免对 short 误平）
-        if pos.quantity <= 0:
+        qty = pos.quantity
+        is_perp = self._portfolio.trading_mode == "perp"
+        # spot 只保护多头（spot 结构上无空头）；perp 双向（多 / 空都保护 + 强平）
+        if qty < 0 and not is_perp:
             return []
 
         # 已下保护性出场但持仓未平（撮合延迟）→ 跳过，不重复提交第二笔出场单（#91）
@@ -211,33 +219,61 @@ class PositionGuard:
             return []
 
         mark = bar.close
-        pct = (mark - avg) / avg
-        # trailing 用「自峰值价格的回撤」口径（不是自成本基准的收益率降幅）：避免大盈利下
-        # 触发远比 trailing_stop_pct 直觉更激进（CR #88 medium）。峰值价跟 mark 走。
+        signed = 1.0 if qty > 0 else -1.0
+        # 带方向的浮盈率（正 = 盈）：多头 (mark-avg)/avg；空头取反（价跌则盈）
+        pct = (mark - avg) / avg * signed
+
+        # 维持保证金强平（perp，最高优先）：mark 穿越含 buffer 的强平价 → 全平，tag=liquidation
+        if is_perp and self._liquidation_triggered(qty, avg, mark):
+            return self._fire_exit(inst, qty, "liquidation", bar.ts_event)
+
+        # trailing / chandelier 的「峰值价」口径按多头（最高价）实现；v1 仅对多头算，空头的
+        # 移动止损 / 吊灯留 Phase 2（空头硬止损 + 强平已覆盖灾难兜底）。
         peak_mark = max(self._peak_mark.get(inst, mark), mark)
         self._peak_mark[inst] = peak_mark
-
-        # chandelier：用当根 bar 推进 ATR + 最高价（增补 A，None 时不建状态、零开销）
         chan: _ChandelierState | None = None
-        if self._chandelier_atr_mult is not None:
+        if self._chandelier_atr_mult is not None and qty > 0:
             chan = self._chandelier_state.get(inst)
             if chan is None:
                 chan = _ChandelierState(period=self._chandelier_atr_period)
                 self._chandelier_state[inst] = chan
             chan.update(bar)
 
-        tag = self._triggered_tag(pct, mark, peak_mark, avg, chan)
+        # stop_loss / take_profit 用带方向 pct（多空通用）；trailing / chandelier 仅多头
+        tag = self._triggered_tag(pct, mark, peak_mark, avg, chan, is_long=qty > 0)
         if tag is None:
             return []
 
-        order = self._build_exit(inst, pos.quantity, tag)
-        self._submit(order, bar.ts_event)
-        # 出场单已下，清峰值 + chandelier 状态（持仓将于下一根平掉；防同 instrument 状态泄漏）。
-        # 标记 pending：撮合前若再被 evaluate（live 延迟）不重复下单，待持仓平掉再解除。
+        return self._fire_exit(inst, qty, tag, bar.ts_event)
+
+    def _fire_exit(
+        self, inst: InstrumentId, qty: float, tag: str, ts_event: int
+    ) -> list[Order]:
+        """提交全仓保护性出场（平多 SELL / 平空 BUY），标记 pending + 清状态，返回该单。"""
+        side = OrderSide.SELL if qty > 0 else OrderSide.BUY
+        order = self._build_exit(inst, abs(qty), tag, side)
+        self._submit(order, ts_event)
         self._peak_mark.pop(inst, None)
         self._chandelier_state.pop(inst, None)
         self._pending_exit_insts.add(inst)
         return [order]
+
+    def _liquidation_triggered(self, qty: float, avg: float, mark: float) -> bool:
+        """perp 维持保证金强平判定:mark 穿越含 buffer 的强平价(用 mark,非成交价)。
+
+        逐仓简化:用分配保证金 IM 作 isolated wallet 估算强平价(与 fills 落库口径一致)。
+        buffer 让触发**提前于**真实强平价(更保守):多头 liq×(1+buffer) 上抬、空头 ×(1−buffer) 下压。
+        """
+        side_i = 1 if qty > 0 else -1
+        lev = self._portfolio.leverage
+        im = abs(qty) * avg / lev
+        liq = perp_margin.liquidation_price(
+            side=side_i, qty_abs=abs(qty), entry_price=avg, wallet_balance=im,
+        )
+        if not math.isfinite(liq):
+            return False
+        liq_buffered = liq * (1 + side_i * self._liquidation_buffer)
+        return perp_margin.is_liquidated(side=side_i, mark_price=mark, liq_price=liq_buffered)
 
     def cancel_pending_exit(self, inst: InstrumentId) -> None:
         """保护性出场单被 reject / cancel（如 live 路由 DB 失败）时调用，解除去重标记。
@@ -256,12 +292,22 @@ class PositionGuard:
         peak_mark: float,
         avg: float,
         chan: _ChandelierState | None,
+        *,
+        is_long: bool = True,
     ) -> str | None:
         """按优先级判定触发的保护性 tag：硬止损 > chandelier > 百分比移动止损 > 止盈
         （None = 不触发）。chandelier 与百分比 trailing 通常二选一配置，同配时按此序谁先穿阈谁先触发。
+
+        ``pct`` 已是**带方向的浮盈率**（空头取过反）,故硬止损 / 止盈多空通用;trailing / chandelier
+        的峰值口径目前按多头实现,``is_long=False``（空头）时跳过这两档（Phase 2）。
         """
         if self._stop_loss_pct is not None and pct <= -self._stop_loss_pct:
             return "stop_loss"
+        if not is_long:
+            # 空头 v1 只走硬止损（+ 上层强平）;移动止损 / 吊灯 / 止盈留 Phase 2
+            if self._take_profit_pct is not None and pct >= self._take_profit_pct:
+                return "take_profit"
+            return None
         # chandelier（吊灯）ATR 移动止损（增补 A）：止损位 = 开仓以来最高价 − mult×ATR，随波动
         # 自适应。激活门用「曾收盘进盈利区」（highest_close > 成本）——与百分比 trailing 的
         # close-based peak_mark>avg 同口径，避免单根上影线（high>avg 但 close<avg）误激活
@@ -287,12 +333,14 @@ class PositionGuard:
             return "take_profit"
         return None
 
-    def _build_exit(self, inst: InstrumentId, quantity: float, tag: str) -> Order:
+    def _build_exit(
+        self, inst: InstrumentId, quantity: float, tag: str, side: OrderSide,
+    ) -> Order:
         return Order(
             # GUARD_ORDER_PREFIX 是风控豁免的「不可仿冒」第二因子（见 is_protective_order）
             client_order_id=ClientOrderId(f"{GUARD_ORDER_PREFIX}{inst.symbol}-{uuid4().hex[:8]}"),
             instrument_id=inst,
-            side=OrderSide.SELL,  # spot long-only：平多 = 卖出
+            side=side,  # 平多 = SELL / 平空 = BUY
             type=OrderType.MARKET,
             quantity=quantity,
             tag=tag,
