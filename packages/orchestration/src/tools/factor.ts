@@ -210,6 +210,10 @@ export const factorPanelScoreTool = createTool({
     坑：
     - **universe 非 PIT**（is_pit=false 恒成立）：用的是你给的"今天这组标的",历史成分快照
       未建,带**存活者偏差**——别拿历史横截面 IC 当确定性结论,措辞要带这层降级
+    - **数据走缓存(fresh=false,不逐标的 backfill)**：判新鲜看 latest_bar_ts[symbol] 距 now 的
+      间隔,**不要看 bars_used 数量**(5 根可能全是上周的)。某标的 latest_bar_ts 明显滞后时,
+      横截面排名含陈数据,如实说明或让用户先补数据;factors=[] 且 reason 提到 min_symbols =
+      有效标的不够(补标的/降 minSymbols),不是"无信号"
     - macro 因子不参与（全市场单值,某时刻对所有标的相同,无横截面区分度）
     - symbols 应同 venue/timeframe；不同市场交易时段不同,缺口留 NaN、某期有效标的不足
       min_symbols 时该期不排名

@@ -141,6 +141,8 @@ export type PanelScoreResult = {
   horizon_bars: number;
   symbols: string[];
   bars_used: Record<string, number>;
+  /** 每标的最后一根 bar 的 ISO ts（null=无数据）。**判新鲜看它距 as_of 的间隔,不看 bar 数** */
+  latest_bar_ts: Record<string, string | null>;
   /** universe 是否 PIT。**当前恒 false**（成分快照未建，带存活者偏差，证据打折） */
   is_pit: boolean;
   universe_note: string;
