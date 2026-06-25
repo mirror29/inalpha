@@ -61,6 +61,10 @@ _last_fetch_mono = 0.0
 #: yfinance 专属有界线程池。wait_for 超时只取消 asyncio task,底层同步线程**不可取消**、
 #: 会继续持 Yahoo 连接到 TCP 真正超时——用独立有界池隔离这些"孤儿线程",避免耗尽 asyncio
 #: 默认共享 executor(FRED / 其它 to_thread 不受影响);配合 _FETCH_LOCK(同时只 1 个在飞)足够。
+#: **池满降级(已知,可接受)**:Yahoo 整体不响应(IP 被封)时,孤儿线程逐个累积(锁串行 →
+#: 每 _FETCH_TIMEOUT_S 一个),填满 4 槽后新的 run_in_executor 会排队,panel 取数退化到分钟级
+#: ——但**仅影响 yfinance panel 这条失败路径**,FRED / 单标的 / 其它 venue 仍健康。真要消除
+#: 需 _fetch_sync 内置 socket timeout 让线程自行退出(yfinance.history 未暴露,留后续)。
 _FETCH_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="yfinance")
 
 #: yfinance 的 interval 字符串 → 估算秒数（backfill 限速估算用）
