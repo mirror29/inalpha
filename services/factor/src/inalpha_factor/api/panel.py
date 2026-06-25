@@ -37,6 +37,7 @@ async def panel_score(req: PanelScoreRequest, engine: EngineDep) -> PanelScoreRe
         horizon_bars=req.horizon_bars,
         symbols=result["symbols"],
         bars_used=result["bars_used"],
+        latest_bar_ts=result["latest_bar_ts"],
         is_pit=result["is_pit"],
         universe_note=result["universe_note"],
         factors=[PanelFactorResult(**f) for f in result["factors"]],

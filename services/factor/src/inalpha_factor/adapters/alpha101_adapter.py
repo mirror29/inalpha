@@ -127,6 +127,7 @@ class Alpha101Adapter:
             and open_ is not None
             and not open_.empty
             and vol is not None
+            and not vol.empty
         ):
             out["alpha101.a3"] = self._alpha3(open_, vol)
         return out
