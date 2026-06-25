@@ -130,6 +130,8 @@ export type PanelFactorResult = {
   n_periods: number;
   mean_valid_symbols: number;
   low_confidence: boolean;
+  /** latest_ranking 基于哪一期横截面的 ISO ts（fresh=False 下可能比 as_of 旧几天） */
+  latest_ranking_ts: string | null;
   /** 最近有效横截面排名（按因子值升序）——选标的直接用：取最低=首，最高=尾 */
   latest_ranking: PanelRankEntry[];
 };

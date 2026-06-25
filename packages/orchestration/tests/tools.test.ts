@@ -601,6 +601,7 @@ describe("factor.timing / score / catalog", () => {
               n_periods: 130,
               mean_valid_symbols: 3,
               low_confidence: false,
+              latest_ranking_ts: "2026-06-24T00:00:00Z",
               latest_ranking: [
                 { symbol: "GOOGL", value: -0.02, rank_pct: 0.33 },
                 { symbol: "AAPL", value: 0.01, rank_pct: 0.67 },
