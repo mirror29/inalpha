@@ -280,6 +280,15 @@ async def test_panel_score_macro_only_factor_ids_explicit_reason() -> None:
     assert res["reason"] is not None and "macro" in res["reason"]
 
 
+async def test_panel_score_empty_factor_ids_not_all() -> None:
+    """factor_ids=[] 是"空请求"，不能 falsy 回退成全量因子（显式 reason，不静默）。"""
+    frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
+    eng = _PanelEngine(frames)
+    res = await eng.panel_score(**_kwargs(_SYMS, factor_ids=[]))  # type: ignore[arg-type]
+    assert res["factors"] == []  # 不是"全量因子"
+    assert res["reason"] is not None
+
+
 async def test_panel_score_below_min_symbols_empty() -> None:
     """universe 标的数 < min_symbols → 无因子可横截面评估,显式 reason。"""
     frames = {"A": _bars(seed=1), "B": _bars(seed=2)}
