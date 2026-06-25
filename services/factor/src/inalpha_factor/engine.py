@@ -685,75 +685,82 @@ class FactorEngine:
                 "reason": "no bars for any symbol in universe",
             }
 
-        fwd_panel = forward_return_panel(close_panel, horizon_bars)
-        per_symbol = {
-            sym: self.compute_on_df(df, ids)
-            for sym, df in frames.items()
-            if not df.empty
-        }
         specs = self._spec_index()
-        results: list[dict[str, Any]] = []
 
-        def _xs_result(fid: str, fpanel: pd.DataFrame) -> dict[str, Any]:
-            """从一个 time × symbol 因子矩阵算横截面 IC + 最新排名 → 结果行。"""
-            mean_ic, icir, n_periods, mean_valid = cross_sectional_ic(
-                fpanel, fwd_panel, min_symbols=min_symbols
-            )
-            _t, ranking = latest_cross_section(fpanel, min_symbols=min_symbols)
-            spec = specs.get(fid)
-            return {
-                "factor_id": fid,
-                "source": spec.source if spec else "",
-                "name": spec.name if spec else fid,
-                "kind": spec.kind if spec else "",
-                "ic_kind": "cross_sectional",
-                "cross_sectional_ic": mean_ic,
-                "icir": icir,
-                "n_periods": n_periods,
-                "mean_valid_symbols": mean_valid,
-                "low_confidence": n_periods < MIN_XS_PERIODS,
-                "latest_ranking": [
-                    {"symbol": s, "value": v, "rank_pct": rp}
-                    for (s, v, rp) in ranking
-                ],
+        def _compute() -> tuple[list[dict[str, Any]], float]:
+            """CPU 密集的横截面计算（compute_on_df × N 标的 + IC + 排名）。
+
+            整块用 ``asyncio.to_thread`` 离线跑：panel 最大 50 标的 × 52 因子 × 720 bar
+            的纯 pandas 运算同步执行会阻塞 event loop（数秒），拖垮 factor 服务其他请求。
+            """
+            fwd_panel = forward_return_panel(close_panel, horizon_bars)
+            per_symbol = {
+                sym: self.compute_on_df(df, ids)
+                for sym, df in frames.items()
+                if not df.empty
             }
+            out: list[dict[str, Any]] = []
 
-        # ② 普通时序因子的横截面化：每期把单标的因子值横向排名
-        for fid in ids:
-            cols = {sym: fac[fid] for sym, fac in per_symbol.items() if fid in fac}
-            if len(cols) < min_symbols:
-                continue
-            results.append(
-                _xs_result(fid, pd.DataFrame(cols).reindex(close_panel.index))
-            )
+            def _xs_result(fid: str, fpanel: pd.DataFrame) -> dict[str, Any]:
+                """从一个 time × symbol 因子矩阵算横截面 IC + 最新排名 → 结果行。"""
+                mean_ic, icir, n_periods, mean_valid = cross_sectional_ic(
+                    fpanel, fwd_panel, min_symbols=min_symbols
+                )
+                _t, ranking = latest_cross_section(fpanel, min_symbols=min_symbols)
+                spec = specs.get(fid)
+                return {
+                    "factor_id": fid,
+                    "source": spec.source if spec else "",
+                    "name": spec.name if spec else fid,
+                    "kind": spec.kind if spec else "",
+                    "ic_kind": "cross_sectional",
+                    "cross_sectional_ic": mean_ic,
+                    "icir": icir,
+                    "n_periods": n_periods,
+                    "mean_valid_symbols": mean_valid,
+                    "low_confidence": n_periods < MIN_XS_PERIODS,
+                    "latest_ranking": [
+                        {"symbol": s, "value": v, "rank_pct": rp}
+                        for (s, v, rp) in ranking
+                    ],
+                }
 
-        # ① 内禀横截面因子（needs_universe，含 rank()）：在 OHLCV 面板上原生算
-        # （xs_ids 已在上方按 factor_ids 过滤）
-        if xs_ids:
-            fields = {
-                "open": align_field(frames, "open"),
-                "high": align_field(frames, "high"),
-                "low": align_field(frames, "low"),
-                "close": close_panel,
-                "volume": align_field(frames, "volume"),
-            }
-            for a in self._adapters:
-                # 与单标的 compute_on_df 一致守门：disabled 源不算（当前只有 Alpha101
-                # 实现 compute_cross_sectional 且恒可用，但防后续 disabled 源加此方法）
-                if not a.available():
+            # ② 普通时序因子的横截面化：每期把单标的因子值横向排名
+            for fid in ids:
+                cols = {sym: fac[fid] for sym, fac in per_symbol.items() if fid in fac}
+                if len(cols) < min_symbols:
                     continue
-                fn = getattr(a, "compute_cross_sectional", None)
-                if fn is None:
-                    continue
-                for fid, matrix in fn(fields, xs_ids).items():
-                    aligned = matrix.reindex(close_panel.index)
-                    if int(aligned.notna().any().sum()) < min_symbols:
+                out.append(_xs_result(fid, pd.DataFrame(cols).reindex(close_panel.index)))
+
+            # ① 内禀横截面因子（needs_universe，含 rank()）：在 OHLCV 面板上原生算
+            # （xs_ids 已在上方按 factor_ids 过滤）
+            if xs_ids:
+                fields = {
+                    "open": align_field(frames, "open"),
+                    "high": align_field(frames, "high"),
+                    "low": align_field(frames, "low"),
+                    "close": close_panel,
+                    "volume": align_field(frames, "volume"),
+                }
+                for a in self._adapters:
+                    # 与单标的 compute_on_df 一致守门：disabled 源不算（当前只有 Alpha101
+                    # 实现 compute_cross_sectional 且恒可用，但防后续 disabled 源加此方法）
+                    if not a.available():
                         continue
-                    results.append(_xs_result(fid, aligned))
+                    fn = getattr(a, "compute_cross_sectional", None)
+                    if fn is None:
+                        continue
+                    for fid, matrix in fn(fields, xs_ids).items():
+                        aligned = matrix.reindex(close_panel.index)
+                        if int(aligned.notna().any().sum()) < min_symbols:
+                            continue
+                        out.append(_xs_result(fid, aligned))
 
-        results.sort(key=lambda r: abs(r["cross_sectional_ic"]), reverse=True)
-        max_periods = max((r["n_periods"] for r in results), default=0)
-        benchmark = null_ic_benchmark(len(results), max_periods, horizon_bars)
+            out.sort(key=lambda r: abs(r["cross_sectional_ic"]), reverse=True)
+            max_periods = max((r["n_periods"] for r in out), default=0)
+            return out, null_ic_benchmark(len(out), max_periods, horizon_bars)
+
+        results, benchmark = await asyncio.to_thread(_compute)
         # 全部因子因有效标的 < min_symbols 被剔光 → 显式区分"数据不足以横截面"与"无信号"
         # （§3.1 不静默）：前者 caller 应补标的/调低 min_symbols，后者才是换因子（reason=null）
         reason: str | None = None
