@@ -661,6 +661,7 @@ class FactorEngine:
                     "(single value across all symbols) and are excluded — pass price/volume "
                     "or needs_universe factor ids, or omit factor_ids to evaluate all"
                 ),
+                "unknown_factor_ids": unknown_ids,
             }
 
         async def _one(sym: str) -> tuple[str, pd.DataFrame]:
@@ -698,6 +699,7 @@ class FactorEngine:
                 "is_pit": False, "universe_note": universe_note,
                 "factors": [], "ic_null_benchmark": 0.0,
                 "reason": "no bars for any symbol in universe",
+                "unknown_factor_ids": unknown_ids,
             }
 
         specs = self._spec_index()
@@ -802,6 +804,9 @@ class FactorEngine:
             "is_pit": False, "universe_note": universe_note,
             "factors": results, "ic_null_benchmark": benchmark,
             "reason": reason,
+            # 恒透出（空 = 全部 id 有效）：混合调用里有效因子并存时，typo id 也能被看到，
+            # 不被静默丢弃（reason 只在全空时给，覆盖不到 results 非空的混合情况）。
+            "unknown_factor_ids": unknown_ids,
         }
 
 

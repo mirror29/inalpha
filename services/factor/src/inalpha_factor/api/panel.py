@@ -43,4 +43,5 @@ async def panel_score(req: PanelScoreRequest, engine: EngineDep) -> PanelScoreRe
         factors=[PanelFactorResult(**f) for f in result["factors"]],
         ic_null_benchmark=result["ic_null_benchmark"],
         reason=result["reason"],
+        unknown_factor_ids=result["unknown_factor_ids"],
     )
