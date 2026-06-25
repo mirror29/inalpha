@@ -582,6 +582,11 @@ describe("factor.timing / score / catalog", () => {
           horizon_bars: 5,
           symbols: ["AAPL", "MSFT", "GOOGL"],
           bars_used: { AAPL: 700, MSFT: 700, GOOGL: 700 },
+          latest_bar_ts: {
+            AAPL: "2026-06-24T00:00:00Z",
+            MSFT: "2026-06-24T00:00:00Z",
+            GOOGL: "2026-06-24T00:00:00Z",
+          },
           is_pit: false,
           universe_note: "fixed non-PIT universe",
           factors: [
