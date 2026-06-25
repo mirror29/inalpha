@@ -128,14 +128,16 @@ class TestClosedTradesHttpFlow:
         import asyncio
         asyncio.get_event_loop().run_until_complete(_check())
 
-    def test_sell_then_buy_reverse_writes_closed_trade(
+    def test_partial_sell_closes_long_writes_closed_trade(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:
-        """BUY 0.03 → SELL 0.05 超平：平掉 0.03 多头再开 0.02 空头。
-        closed_trades 应有一条 side='long' 的平仓记录。
+        """BUY 0.05 → SELL 0.03 部分平仓：closed_trades 应有一条 side='long' 量 0.03 的平仓记录。
+
+        （现货 long-only：SELL 不能超持仓反手做空，超平场景由 perp 分支覆盖；此处验部分平多
+        写出正确 side/quantity 的 closed_trade。）
         """
-        _submit(client, auth_headers, side="BUY", quantity=0.03)
-        sell = _submit(client, auth_headers, side="SELL", quantity=0.05)
+        _submit(client, auth_headers, side="BUY", quantity=0.05)
+        sell = _submit(client, auth_headers, side="SELL", quantity=0.03)
         assert sell["status"] == "FILLED"
 
         async def _check() -> None:
