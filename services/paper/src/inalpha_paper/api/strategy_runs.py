@@ -21,6 +21,7 @@ from inalpha_shared.errors import InalphaError, NotFoundError
 
 from ..account_id import account_id_from_user
 from ..config import PaperSettings, get_paper_settings
+from ..execution import perp_margin
 from ..schemas import (
     StartStrategyRunRequest,
     StrategyRunDecisionRecord,
@@ -64,6 +65,12 @@ async def start_strategy_run(
 ) -> StrategyRunRecord:
     """给一个 promoted candidate 起 live run（后台按 timeframe 自动跑）。"""
     account_id = account_id_from_user(user)
+
+    # perp 资格硬 gate(perp 须 crypto + USDT-M 永续标的 + 杠杆 1..20,否则 422)。spot 放行。
+    perp_margin.validate_perp_eligibility(
+        venue=req.venue, symbol=req.symbol,
+        trading_mode=req.trading_mode, leverage=req.leverage,
+    )
 
     candidate = await candidates_store.get_candidate(db, req.candidate_id)
     if candidate is None:
@@ -116,7 +123,21 @@ async def start_strategy_run(
         symbol=req.symbol,
         timeframe=req.timeframe,
         params=req.params,
+        trading_mode=req.trading_mode,
+        leverage=req.leverage,
     )
+
+    # 策略误投软告警(不硬拦):perp 模式下若策略疑似 long-only(有 _is_long、无做空标记),
+    # 其出场 SELL 会被当开空,可能漂移(d4404933 同型)。只 warn 让用户知情,放行。
+    if req.trading_mode == "perp":
+        code = candidate.get("code") or ""
+        looks_long_only = "_is_long" in code and "_is_short" not in code and "is_short" not in code
+        if looks_long_only:
+            await runs_store.append_log(
+                db, run["id"], "warn",
+                "perp 模式但策略疑似 long-only(无做空/cover 逻辑):出场 SELL 会被当开空、"
+                "可能漂移成平不掉的空头。请确认该策略含做空入场/出场/cover 逻辑。",
+            )
 
     # 后台 task 在**响应发出 + DBConn 事务提交后**才起（M-4）：避免在 insert 尚未
     # 提交时就拉起 loop——否则若 handler 在 start 后抛错回滚 run 行，task 会变成写无主
@@ -242,6 +263,8 @@ def _row_to_record(row: dict[str, Any]) -> StrategyRunRecord:
         symbol=row["symbol"],
         timeframe=row["timeframe"],
         params=row.get("params") or {},
+        trading_mode=row.get("trading_mode") or "spot",
+        leverage=int(row.get("leverage") or 1),
         last_bar_ts=row.get("last_bar_ts"),
         cumulative_pnl=float(row["cumulative_pnl"]),
         run_log=row.get("run_log") or [],
