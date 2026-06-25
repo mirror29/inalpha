@@ -156,3 +156,20 @@ def test_validate_perp_rejects_leverage_out_of_range() -> None:
         pm.validate_perp_eligibility(
             venue="binance", symbol="BTC/USDT:USDT", trading_mode="perp", leverage=999
         )
+
+
+# ─── 资金费结算时点 ───
+
+_H = 3600 * 1_000_000_000  # 1 小时的纳秒
+
+
+def test_funding_settlements_8h_boundaries() -> None:
+    assert pm.funding_settlements_between(0, 8 * _H) == 1  # 00:00→08:00 跨 1(08:00)
+    assert pm.funding_settlements_between(0, 7 * _H) == 0  # 不跨
+    assert pm.funding_settlements_between(0, 16 * _H) == 2  # 跨 2(08:00,16:00)
+    assert pm.funding_settlements_between(9 * _H, 17 * _H) == 1  # 跨 1(16:00)
+
+
+def test_funding_settlements_reverse_or_equal_is_zero() -> None:
+    assert pm.funding_settlements_between(8 * _H, 0) == 0
+    assert pm.funding_settlements_between(8 * _H, 8 * _H) == 0

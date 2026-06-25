@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from ..execution import perp_margin
 from ..kernel.identifiers import InstrumentId
 from ..kernel.msgbus import MessageBus
 from ..model.events import OrderFilled, PositionChanged, PositionClosed, PositionOpened
@@ -196,6 +197,27 @@ class Portfolio:
     def update_mark(self, instrument_id: InstrumentId, mark_price: float) -> None:
         """BacktestEngine 每根 bar 调一次，更新 mark-to-market 估值用的最新价。"""
         self._marks[instrument_id] = mark_price
+
+    def apply_funding(
+        self, instrument_id: InstrumentId, funding_rate: float, *, mark: float | None = None
+    ) -> float:
+        """perp:在结算时点对当前持仓计提资金费,进 **cash 已实现现金流**(不并入 UPNL)。
+
+        ``funding = qty_signed × mark × rate``(正费率多头付出、空头收取);从 cash 扣该
+        支付额(负支付 = 入账)。spot 或 flat → no-op 返 0。调用方(回测 / live bar 循环)按
+        :func:`perp_margin.funding_settlements_between` 的结算次数决定调几次。返回本次支付额。
+        """
+        if self._trading_mode != "perp":
+            return 0.0
+        pos = self._positions.get(instrument_id)
+        if pos is None or pos.is_flat:
+            return 0.0
+        m = mark if mark is not None else self._marks.get(instrument_id, pos.avg_open_price)
+        payment = perp_margin.funding_payment(
+            qty_signed=pos.quantity, mark_price=m, funding_rate=funding_rate
+        )
+        self._cash -= payment  # 正支付 = 扣钱包;负 = 入账
+        return payment
 
     def equity(self) -> float:
         """总权益。

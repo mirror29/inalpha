@@ -33,6 +33,10 @@ DEFAULT_LIQUIDATION_PENALTY_RATE: float = 0.01
 #: 强平安全垫(把保护性止损抬到强平价上方的比例,留 buffer 避免贴着强平价才动)
 DEFAULT_LIQUIDATION_BUFFER: float = 0.05
 
+#: 资金费默认结算间隔(小时)。Binance 历史 8h(UTC 00/08/16),近年部分合约动态 1h/4h——
+#: 实现期按合约实际间隔覆盖;此处默认 8h(epoch 对齐 → 边界落 00/08/16 UTC)。
+DEFAULT_FUNDING_INTERVAL_HOURS: int = 8
+
 #: 简化维持保证金分档表 ``(下界, 上界, MMR, cum)``,名义价值单位 USDT。
 #: 取自 Binance BTCUSDT 真实前 3 档,档边界连续(见模块测试的连续性断言)。
 #: 作 crypto 默认,后续可 per-symbol 覆盖。
@@ -129,6 +133,20 @@ def funding_payment(*, qty_signed: float, mark_price: float, funding_rate: float
 def unrealized_pnl(*, qty_signed: float, entry_price: float, mark_price: float) -> float:
     """未实现盈亏 ``= (mark − entry) × qty_signed``(qty 带符号,做空为负 → 价跌则盈)。"""
     return (mark_price - entry_price) * qty_signed
+
+
+def funding_settlements_between(
+    prev_ts_ns: int, ts_ns: int, *, interval_hours: int = DEFAULT_FUNDING_INTERVAL_HOURS
+) -> int:
+    """``(prev_ts, ts]`` 区间内资金费结算次数。
+
+    结算点 = ``interval_hours`` 的整数倍(自 epoch;8h 时对齐 UTC 00/08/16)。仅在结算时点
+    持仓才计提——调用方据此 ``apply_funding`` 对应次数(通常一根 bar 0 或 1 次,bar 粒度 > 间隔时可多次)。
+    """
+    interval_ns = interval_hours * 3600 * 1_000_000_000
+    if interval_ns <= 0 or ts_ns <= prev_ts_ns:
+        return 0
+    return ts_ns // interval_ns - prev_ts_ns // interval_ns
 
 
 def is_perp_symbol(symbol: str) -> bool:
