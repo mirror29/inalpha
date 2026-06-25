@@ -819,8 +819,8 @@ class LiveRunnerManager:
                 side=side, quantity=order.quantity, current_qty=current_qty
             ):
                 reason = (
-                    f"INSUFFICIENT_POSITION: 卖出 {order.quantity} 超持仓 {current_qty}"
-                    f"（spot 模式禁裸 SHORT）"
+                    f"INSUFFICIENT_POSITION: sell {order.quantity} exceeds position "
+                    f"{current_qty} (spot long-only guard)"
                 )
                 session.reject_order(
                     order=order, strategy_id=strategy_id,
