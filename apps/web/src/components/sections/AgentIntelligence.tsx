@@ -201,7 +201,7 @@ export function AgentIntelligence() {
               })}
             </div>
 
-            {/* 因子库治理脚注 —— 70 因子 / 去相关 / 衰减巡检（不转大小写：保 ρ 与 IC 原样） */}
+            {/* 因子库治理脚注 —— 79 因子 / 去相关 / 衰减巡检（不转大小写：保 ρ 与 IC 原样） */}
             <div className="border-t border-border-subtle px-5 py-2.5 font-mono text-[10.5px] normal-case tracking-[0.08em] text-fg-muted/55">
               {t("lib.panelFoot")}
             </div>
