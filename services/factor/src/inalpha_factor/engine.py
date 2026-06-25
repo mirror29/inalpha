@@ -606,24 +606,53 @@ class FactorEngine:
         - **universe 非 PIT**（is_pit=False）：用调用方给的固定标的集，历史成分
           快照未建，带存活者偏差风险，显式标注不静默（§3.1）。
         - 对齐缺口留 NaN 不 ffill；某期有效标的 < min_symbols 不排名（D1.1）。
+        - **取数 fresh=False（读 DB 缓存，不逐标的 backfill）**：N 标的并发 backfill 会
+          叠成雪崩（yfinance 串行 + 60s 超时 → 后段标的回填超时静默用陈数据，横截面混
+          时效）。横截面是选股/研究语义（历史回放），统一读缓存保证内部一致；要 to-now
+          鲜度由调用方先 backfill（§3.1 历史回放显式 fresh=False，已在 universe_note 留痕）。
         """
-        now = datetime.now(UTC)
-        is_live = as_of is None or as_of >= now - timedelta(
-            seconds=_tf_seconds(timeframe) * 2
-        )
-        as_of = as_of or now
+        as_of = as_of or datetime.now(UTC)
         span_bars = lookback_bars + horizon_bars + 60
         from_ts = as_of - timedelta(seconds=_tf_seconds(timeframe) * span_bars)
 
-        # 横截面只用价量/自定义因子，显式排除 macro（无横截面区分度）
+        universe_note = (
+            "fixed non-PIT universe (caller-supplied symbol set; no historical "
+            "constituent snapshot, so cross-sectional survivorship bias is not "
+            "controlled — discount the evidence accordingly). Bars are read from the "
+            "data-service cache (not force-refreshed); the latest bar per symbol may "
+            "lag as_of — pre-backfill the universe if you need to-now freshness"
+        )
+
+        # ② 普通时序因子横截面化：价量/自定义因子，显式排除 macro（无横截面区分度）
         ids = factor_ids or self._computable_ids(timeframe, exclude_macro=True)
         ids = [fid for fid in ids if not fid.startswith("macro.")]
+        # ① 内禀横截面因子（needs_universe，含 rank()）
+        xs_ids = [s.factor_id for s in self.catalog() if s.needs_universe]
+        if factor_ids is not None:
+            req = set(factor_ids)
+            xs_ids = [fid for fid in xs_ids if fid in req]
+
+        # 请求里全是 macro（或未知 id）→ 没有可横截面评估的因子。显式降级不静默（§3.1）：
+        # 否则与"评估了但全部低置信"的正常空响应无法区分，agent 会误读成"此 universe 无信号"
+        if factor_ids is not None and not ids and not xs_ids:
+            return {
+                "as_of": as_of, "symbols": symbols, "bars_used": {},
+                "is_pit": False, "universe_note": universe_note,
+                "factors": [], "ic_null_benchmark": 0.0,
+                "reason": (
+                    "all requested factor_ids are macro (or unknown): macro factors have no "
+                    "cross-sectional differentiation (single value across all symbols) and "
+                    "are excluded from panel ranking — pass price/volume or needs_universe "
+                    "factor ids, or omit factor_ids to evaluate all"
+                ),
+            }
 
         async def _one(sym: str) -> tuple[str, pd.DataFrame]:
             try:
+                # fresh=False：横截面读 DB 缓存，不逐标的 backfill（见 docstring 约束）
                 df = await self._fetch_df(
                     venue=venue, symbol=sym, timeframe=timeframe,
-                    from_ts=from_ts, to_ts=as_of, fresh=is_live,
+                    from_ts=from_ts, to_ts=as_of, fresh=False,
                 )
             except Exception as exc:  # 单标的 fetch 失败 → 降级为空，其余标的照算横截面
                 logger.warning("panel symbol %s fetch failed: %r", sym, exc)
@@ -636,11 +665,6 @@ class FactorEngine:
         bars_used = {sym: len(df) for sym, df in frames.items()}
         close_panel = align_field(frames, "close")
 
-        universe_note = (
-            "fixed non-PIT universe (caller-supplied symbol set; no historical "
-            "constituent snapshot, so cross-sectional survivorship bias is not "
-            "controlled — discount the evidence accordingly)"
-        )
         if close_panel.empty:
             return {
                 "as_of": as_of, "symbols": symbols, "bars_used": bars_used,
@@ -692,10 +716,7 @@ class FactorEngine:
             )
 
         # ① 内禀横截面因子（needs_universe，含 rank()）：在 OHLCV 面板上原生算
-        xs_ids = [s.factor_id for s in self.catalog() if s.needs_universe]
-        if factor_ids is not None:
-            req = set(factor_ids)
-            xs_ids = [fid for fid in xs_ids if fid in req]
+        # （xs_ids 已在上方按 factor_ids 过滤）
         if xs_ids:
             fields = {
                 "open": align_field(frames, "open"),
@@ -705,6 +726,10 @@ class FactorEngine:
                 "volume": align_field(frames, "volume"),
             }
             for a in self._adapters:
+                # 与单标的 compute_on_df 一致守门：disabled 源不算（当前只有 Alpha101
+                # 实现 compute_cross_sectional 且恒可用，但防后续 disabled 源加此方法）
+                if not a.available():
+                    continue
                 fn = getattr(a, "compute_cross_sectional", None)
                 if fn is None:
                     continue
