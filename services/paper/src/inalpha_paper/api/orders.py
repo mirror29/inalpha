@@ -98,7 +98,8 @@ async def post_submit_order(
             side=req.side, quantity=req.quantity, current_qty=current_qty
         ):
             raise InsufficientPositionError(
-                f"卖出 {req.quantity} 超持仓 {current_qty}（spot 模式禁裸 SHORT）",
+                f"SELL {req.quantity} exceeds current position {current_qty} "
+                "(spot long-only: short-selling not permitted)",
                 details={"venue": req.venue, "symbol": req.symbol,
                          "requested": req.quantity, "current_qty": str(current_qty)},
             )

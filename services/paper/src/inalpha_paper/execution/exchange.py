@@ -255,7 +255,7 @@ class SimulatedExchange(Gateway):
                         order,
                         strategy_id,
                         f"INSUFFICIENT_POSITION: need {fill_qty}, have {current} "
-                        f"(spot 模式禁裸 SHORT)",
+                        f"(spot long-only guard)",
                     )
                     return None
 
