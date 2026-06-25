@@ -25,6 +25,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
+from ..execution import perp_margin
 from ..execution.exchange import SimulatedExchange
 from ..execution.execution_engine import ExecutionEngine
 from ..execution.risk_engine import RiskEngine
@@ -58,6 +59,7 @@ class BacktestEngine:
         protective_chandelier_atr_period: int = 22,
         trading_mode: str = "spot",
         leverage: int = 1,
+        funding_rate: float = 0.0,
     ) -> None:
         """初始化。
 
@@ -96,6 +98,10 @@ class BacktestEngine:
             self.msgbus, initial_cash=initial_cash, fee_rate=fee_rate,
             trading_mode=trading_mode, leverage=leverage,
         )
+        # perp 资金费驱动用:每根 bar 在结算时点按此(常数)费率计提。v1 用常数;接历史
+        # funding 序列见 data.fetch_perp_funding_rate(后续把逐根真 rate 喂进来)。
+        self._trading_mode = trading_mode
+        self._funding_rate = funding_rate
         # spot 守门：让 SimulatedExchange 撮合前能 query portfolio cash / position
         # （ADR-0032 BuyingPowerRule 撮合层兜底实现，旧 BTC -98% bug 同源防御）
         self.exchange.bind_portfolio(self.portfolio)
@@ -147,6 +153,7 @@ class BacktestEngine:
         for s in self._strategies:
             s.on_start()
 
+        prev_ts_ns = first_ts
         for bar in bars_list:
             # 1. 撮合上一根 bar 之后提交的 pending orders（在当前 bar 撮合）
             self.exchange.process_bar(bar)
@@ -155,6 +162,14 @@ class BacktestEngine:
                 self.clock.set_time(bar.ts_event)
             # 3. 更新 mark price（让 portfolio.equity() 准确）
             self.portfolio.update_mark(bar.instrument_id, bar.close)
+            # 3.x perp 资金费:跨过的每个结算时点对当前持仓计提一次(进 cash 现金流,不污染 UPNL)。
+            if self._trading_mode == "perp" and self._funding_rate != 0.0:
+                n_settle = perp_margin.funding_settlements_between(prev_ts_ns, bar.ts_event)
+                for _ in range(n_settle):
+                    self.portfolio.apply_funding(
+                        bar.instrument_id, self._funding_rate, mark=bar.close
+                    )
+            prev_ts_ns = bar.ts_event
             # 3.5 ADR-0052：框架级持仓保护止损在 mark 更新后判定（与 live session 同点），
             #     触发的保护性出场单进 pending，下一根 process_bar 撮合（不偷未来）。
             #     已知限制（CR #88，仅显式传 rules 的回测受影响、生产 runner rules=None 不触达、
