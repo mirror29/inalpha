@@ -53,6 +53,8 @@ VENUE = "yfinance"
 # 突发摊成节流串行，避免 429 残缺（akshare 同类防封思路）。其它 venue 不受影响。
 _FETCH_LOCK = asyncio.Lock()
 _MIN_FETCH_INTERVAL_S = 0.3
+#: 锁内单次 history 超时上限——TCP 挂起时快速放锁,不把整个 panel 拖到 60s
+_FETCH_TIMEOUT_S = 30.0
 _last_fetch_mono = 0.0
 
 #: yfinance 的 interval 字符串 → 估算秒数（backfill 限速估算用）
@@ -158,6 +160,11 @@ class YfinanceConnector:
         进程级 ``_FETCH_LOCK`` 保证同一时刻只有一个 history 在飞；锁内再补足
         ``_MIN_FETCH_INTERVAL_S`` 的最小间隔。panel 多标的并发 gather 时各标的会在此
         排队节流，换回完整 bar（正确性优先于这点串行延迟）。
+
+        **锁内每请求超时 ``_FETCH_TIMEOUT_S``**：``raise_errors=False`` 对 HTTP 4xx/5xx
+        免疫，但 TCP 层无响应（Yahoo 封 IP / 网络分区）会让 to_thread 挂起、锁被持有，
+        把整个 panel 拖到 HTTP client 60s 超时才释放。这里加 wait_for 上限，单标的卡住
+        只丢它自己、快速放锁让队列继续（被取消的线程自然收尾，不再阻塞后续标的）。
         """
         global _last_fetch_mono
         async with _FETCH_LOCK:
@@ -165,8 +172,11 @@ class YfinanceConnector:
             if wait > 0:
                 await asyncio.sleep(wait)
             try:
-                return await asyncio.to_thread(
-                    _fetch_sync, symbol=symbol, interval=interval, since=since
+                return await asyncio.wait_for(
+                    asyncio.to_thread(
+                        _fetch_sync, symbol=symbol, interval=interval, since=since
+                    ),
+                    timeout=_FETCH_TIMEOUT_S,
                 )
             finally:
                 _last_fetch_mono = time.monotonic()

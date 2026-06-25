@@ -242,6 +242,27 @@ async def test_yfinance_fetch_bars_serialized(monkeypatch) -> None:  # type: ign
     assert max_in_flight == 1, f"yfinance fetch 未串行（max_in_flight={max_in_flight}）"
 
 
+async def test_yfinance_fetch_bars_per_request_timeout(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """锁内单次 history TCP 挂起 → wait_for 超时快速放锁、fetch_bars 降级返 []，不拖死 panel。"""
+    from inalpha_data.connectors import yfinance_conn
+    from inalpha_data.connectors.yfinance_conn import YfinanceConnector
+
+    monkeypatch.setattr(yfinance_conn, "_FETCH_TIMEOUT_S", 0.1)
+    monkeypatch.setattr(yfinance_conn, "_last_fetch_mono", 0.0)
+
+    def _hang(*, symbol: str, interval: str, since: datetime):  # type: ignore[no-untyped-def]
+        time.sleep(2.0)  # 模拟 TCP 无响应挂起
+        return []
+
+    monkeypatch.setattr(yfinance_conn, "_fetch_sync", _hang)
+    conn = YfinanceConnector()
+    t = time.monotonic()
+    out = await conn.fetch_bars("AAPL", "1d", datetime(2026, 5, 20, tzinfo=UTC))
+    elapsed = time.monotonic() - t
+    assert out == []  # 超时被 fetch_bars 的 except 吞 → 降级空
+    assert elapsed < 1.0  # 0.1s 超时而非等满 2s → 快速放锁
+
+
 def test_yfinance_fetch_ticker_sync_returns_real_bar_ts(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """_fetch_ticker_sync 返最后一根 1m bar 的真实成交时间，不再 now() 兜底（issue #62）。"""
     import pandas as pd
