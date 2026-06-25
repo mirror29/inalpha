@@ -294,6 +294,11 @@ class PanelFactorResult(BaseModel):
     n_periods: int = Field(description="参与的横截面期数（有效标的≥min_symbols 的 t）")
     mean_valid_symbols: float = Field(description="每期平均有效标的数")
     low_confidence: bool = Field(description="有效期数不足，横截面 IC 不可靠")
+    latest_ranking_ts: str | None = Field(
+        default=None,
+        description="latest_ranking 基于哪一期横截面的 ISO ts（fresh=False 下可能比 as_of 旧"
+        "几天）——agent 可直接说'此排名基于 T 日'，不用从 latest_bar_ts 间接推",
+    )
     latest_ranking: list[PanelRankEntry] = Field(
         default_factory=list,
         description="最近有效横截面的排名（按因子值升序）——选标的直接用：取最低=列表首，最高=列表尾",

@@ -706,7 +706,7 @@ class FactorEngine:
                 mean_ic, icir, n_periods, mean_valid = cross_sectional_ic(
                     fpanel, fwd_panel, min_symbols=min_symbols
                 )
-                _t, ranking = latest_cross_section(fpanel, min_symbols=min_symbols)
+                t_rank, ranking = latest_cross_section(fpanel, min_symbols=min_symbols)
                 spec = specs.get(fid)
                 return {
                     "factor_id": fid,
@@ -719,6 +719,8 @@ class FactorEngine:
                     "n_periods": n_periods,
                     "mean_valid_symbols": mean_valid,
                     "low_confidence": n_periods < MIN_XS_PERIODS,
+                    # 该排名基于哪一期横截面（fresh=False 下可能比 as_of 旧几天，§3.1 可观测）
+                    "latest_ranking_ts": t_rank.isoformat() if t_rank is not None else None,
                     "latest_ranking": [
                         {"symbol": s, "value": v, "rank_pct": rp}
                         for (s, v, rp) in ranking
