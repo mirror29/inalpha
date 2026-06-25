@@ -8,11 +8,19 @@ backfill），符合 CLAUDE.md §3.1 —— 历史回放显式 fresh=False。
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
 import httpx
 from inalpha_shared.errors import InalphaError
+
+#: GET /bars 连接级瞬时失败的重试：data-service 在 --reload 重启窗口或并发突发被打满时
+#: 会短暂连不上（httpx.RequestError，秒级恢复）。有界重试 + 短退避把瞬时抖动吸收掉，
+#: 避免一次 backfill 热路径或 panel 取数因一个连接 blip 整条失败。只重 RequestError
+#: （连接级，幂等 GET 安全重放）；HTTP 4xx/5xx 是真错误不重。
+_GET_RETRIES = 3
+_GET_BACKOFF_S = (0.25, 0.6)  # 第 1/2 次失败后等待；最后一次直接抛
 
 
 class DataServiceError(InalphaError):
@@ -64,23 +72,29 @@ class DataClient:
             await self._best_effort_backfill(
                 venue=venue, symbol=symbol, timeframe=timeframe, from_ts=from_ts, to_ts=to_ts
             )
-        try:
-            r = await self._client.get(
-                "/bars",
-                params={
-                    "venue": venue,
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "from_ts": from_ts.isoformat(),
-                    "to_ts": to_ts.isoformat(),
-                    "limit": limit,
-                },
-            )
-        except httpx.RequestError as e:
-            raise DataServiceError(
-                f"failed to reach data-service: {e}",
-                code="DATA_SERVICE_UNREACHABLE",
-            ) from e
+        params = {
+            "venue": venue,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "from_ts": from_ts.isoformat(),
+            "to_ts": to_ts.isoformat(),
+            "limit": limit,
+        }
+        r: httpx.Response | None = None
+        for attempt in range(_GET_RETRIES):
+            try:
+                r = await self._client.get("/bars", params=params)
+                break
+            except httpx.RequestError as e:
+                # 连接级瞬时失败：有界重试吸收 data-service 重启窗口 / 并发突发抖动
+                if attempt < _GET_RETRIES - 1:
+                    await asyncio.sleep(_GET_BACKOFF_S[attempt])
+                    continue
+                raise DataServiceError(
+                    f"failed to reach data-service after {_GET_RETRIES} attempts: {e}",
+                    code="DATA_SERVICE_UNREACHABLE",
+                ) from e
+        assert r is not None  # 循环要么 break 绑定 r，要么在末次抛出
 
         if r.status_code >= 400:
             try:
