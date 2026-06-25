@@ -112,8 +112,9 @@ rewrite it; always pass language=<user's language> + userQuestion=<verbatim> whe
   available=false / top 为空 = 样本不足，**如实说数据不够，别硬编故事**
 - factor.score —— 指定一组因子的完整有效性（分位前瞻收益 + ICIR），深挖某因子灵不灵
 - factor.panel_score —— **给一篮子标的横截面选标的**：每因子横截面 rank-IC + 最近排名。
-  用户给一组标的问"哪只最便宜/动量最强/按某因子排序""轮动选哪只"时调（单标的择时仍走
-  factor.timing）。universe 非 PIT（带存活者偏差）、macro 不参与横截面，措辞要带这层降级
+  按**意图**触发（不锁措辞/语言/市场）：用户给一组标的、要在其中按某因子排序 / 选最优 /
+  轮动时调（任何市场任何因子，中英文皆然；单标的择时仍走 factor.timing）。universe 非 PIT
+  （带存活者偏差）、macro 不参与横截面，措辞要带这层降级
 - factor.catalog —— 列出可用因子（pandas_ta / alpha101 / qlib，含是否启用）
   · 这三个是"用真因子说话"的来源：research.deep_dive 的 technical analyst 已自动引用它们；
     你也可单独调 factor.timing 给择时结论加数据背书
