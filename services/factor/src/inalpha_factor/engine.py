@@ -671,11 +671,14 @@ class FactorEngine:
                     venue=venue, symbol=sym, timeframe=timeframe,
                     from_ts=from_ts, to_ts=as_of, fresh=False,
                 )
-            except Exception as exc:  # 单标的 fetch 失败 → 降级为空，其余标的照算横截面
+                # ≤ as_of 过滤也放进 try：未来某 connector/mock 返 tz-naive index 时
+                # `df.index <= pd.Timestamp(as_of)`(UTC-aware) 会 TypeError——在此降级为空,
+                # 不让一个标的的 tz 不一致打断整个 panel（当前 bars_to_df 恒 utc,属防御）。
+                if not df.empty and isinstance(df.index, pd.DatetimeIndex):
+                    df = df[df.index <= pd.Timestamp(as_of)]
+            except Exception as exc:  # 单标的 fetch / 过滤失败 → 降级为空，其余标的照算横截面
                 logger.warning("panel symbol %s fetch failed: %r", sym, exc)
                 return sym, pd.DataFrame()
-            if not df.empty and isinstance(df.index, pd.DatetimeIndex):
-                df = df[df.index <= pd.Timestamp(as_of)]
             return sym, df
 
         frames = dict(await asyncio.gather(*[_one(s) for s in symbols]))
