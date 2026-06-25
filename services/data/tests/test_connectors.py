@@ -1,6 +1,8 @@
 """multi-venue connector 路由 + akshare symbol 解析单测（不打网络）。"""
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -201,6 +203,43 @@ def test_yfinance_unsupported_timeframe_raises() -> None:
 
     with pytest.raises(ValueError, match="unsupported timeframe"):
         asyncio.run(_run())
+
+
+async def test_yfinance_fetch_bars_serialized(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """并发 fetch_bars 必须串行打 Yahoo，防 429 返残缺数据。
+
+    根因：5 标的并发 gather 时 Yahoo 限速，部分标的只回几根 bar（实测串行全 24 根、
+    并发 MSFT/META 只回 4 根）。回归探针：并发跑 5 个 fetch_bars，断言同时在飞的
+    _fetch_sync 恒为 1（串行）。无锁 → max 会到 5。
+    """
+    import threading
+
+    from inalpha_data.connectors import yfinance_conn
+    from inalpha_data.connectors.yfinance_conn import YfinanceConnector
+
+    in_flight = 0
+    max_in_flight = 0
+    counter_lock = threading.Lock()
+
+    def _fake_fetch_sync(*, symbol: str, interval: str, since: datetime):  # type: ignore[no-untyped-def]
+        nonlocal in_flight, max_in_flight
+        with counter_lock:
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+        time.sleep(0.03)  # 制造重叠窗口（无锁时并发会重叠）
+        with counter_lock:
+            in_flight -= 1
+        return [(since, 1.0, 1.0, 1.0, 1.0, 100.0)]
+
+    monkeypatch.setattr(yfinance_conn, "_fetch_sync", _fake_fetch_sync)
+    monkeypatch.setattr(yfinance_conn, "_last_fetch_mono", 0.0)  # 重置节流时间戳
+
+    conn = YfinanceConnector()
+    syms = ["AAPL", "MSFT", "META", "GOOGL", "AMZN"]
+    await asyncio.gather(
+        *[conn.fetch_bars(s, "1d", datetime(2026, 5, 20, tzinfo=UTC)) for s in syms]
+    )
+    assert max_in_flight == 1, f"yfinance fetch 未串行（max_in_flight={max_in_flight}）"
 
 
 def test_yfinance_fetch_ticker_sync_returns_real_bar_ts(monkeypatch) -> None:  # type: ignore[no-untyped-def]
