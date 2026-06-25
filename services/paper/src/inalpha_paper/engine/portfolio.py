@@ -36,23 +36,35 @@ class Portfolio:
         fee_rate: float = 0.001,  # 0.1% 默认（Binance taker 量级）
         *,
         account_id: UUID | None = None,
+        trading_mode: str = "spot",
+        leverage: int = 1,
     ) -> None:
         """初始化。
 
         Args:
-            account_id: ADR-0007 close 检测的账户 ID。提供时 fill 触发 close 写入
-                内存队列（drain_closed_trades 拉数据写 DB）；None 时不入队（向后兼容）
+            account_id: close 检测的账户 ID。提供时 fill 触发 close 写入内存队列
+                （drain_closed_trades 拉数据写 DB）；None 时不入队（向后兼容）
+            trading_mode: ``"spot"``（默认，现货 long-only）或 ``"perp"``（USDT-M 永续 +
+                逐仓 + 单向）。perp 下开/加仓不收付名义、只占保证金，盈亏平仓时实现。
+            leverage: 杠杆倍数（perp 用；spot 恒 1）。影响初始保证金 IM=notional/leverage
+                与购买力 free×leverage，**不影响维持保证金**（见 perp_margin）。
         """
         if initial_cash <= 0:
             raise ValueError(f"initial_cash must be positive, got {initial_cash}")
         if not 0 <= fee_rate < 1:
             raise ValueError(f"fee_rate must be in [0, 1), got {fee_rate}")
+        if trading_mode not in ("spot", "perp"):
+            raise ValueError(f"trading_mode must be 'spot' or 'perp', got {trading_mode!r}")
 
         self._msgbus = msgbus
         self._initial_cash = initial_cash
         self._cash = initial_cash
         self._fee_rate = fee_rate
         self._account_id = account_id
+        self._trading_mode = trading_mode
+        self._leverage = max(1, int(leverage))
+        # perp 已占用保证金（Σ |qty|×avg_open/leverage），每笔成交后从持仓重算；spot 恒 0。
+        self._margin_used: float = 0.0
         self._positions: dict[InstrumentId, Position] = {}
         # ADR-0007：detect_close 入队，待 ClosedTradesWriter 异步写 DB
         self._close_trade_queue: list[ClosedTradeStaging] = []
@@ -96,48 +108,112 @@ class Portfolio:
         """撮合层撮合前算 notional+fee 守门用。"""
         return self._fee_rate
 
+    @property
+    def trading_mode(self) -> str:
+        return self._trading_mode
+
+    @property
+    def leverage(self) -> int:
+        return self._leverage
+
+    @property
+    def margin_used(self) -> float:
+        """perp 已占用保证金;spot 恒 0。"""
+        return self._margin_used
+
+    def free_margin(self) -> float:
+        """可用保证金 = wallet(cash) − 已占用保证金。spot 下 margin_used=0 → = cash。"""
+        return self._cash - self._margin_used
+
+    def buying_power(self) -> float:
+        """可用购买力（名义额）：perp = free_margin×leverage;spot = cash。"""
+        if self._trading_mode == "perp":
+            return self.free_margin() * self._leverage
+        return self._cash
+
+    def _recompute_margin_used(self) -> None:
+        """从当前持仓重算 perp 已占用保证金(增量不漂移);spot 恒 0。"""
+        if self._trading_mode != "perp":
+            self._margin_used = 0.0
+            return
+        total = 0.0
+        for pos in self._positions.values():
+            if pos.is_flat:
+                continue
+            total += abs(pos.quantity) * pos.avg_open_price / self._leverage
+        self._margin_used = total
+
     def position(self, instrument_id: InstrumentId) -> Position | None:
         return self._positions.get(instrument_id)
 
     def positions(self) -> dict[InstrumentId, Position]:
         return dict(self._positions)
 
-    # ─── 撮合前守门（spot 模式 · 禁透支 / 禁裸 SHORT） ───
+    # ─── 撮合前守门（spot:禁透支/禁裸 SHORT · perp:保证金购买力） ───
 
-    def can_afford_buy(self, qty: float, price: float) -> bool:
-        """BUY 前问 portfolio：现金够不够 ``notional + fee``。
+    def can_afford_buy(
+        self, qty: float, price: float, *, instrument_id: InstrumentId | None = None
+    ) -> bool:
+        """BUY 前守门。
 
-        撮合层（``SimulatedExchange._try_fill``）在确认 fill 价格后调用本方法；
-        返 False 则拒单，避免 cash 变负（旧 BTC -98% bug 同源）。
+        - spot:现金够不够 ``notional + fee``（避免 cash 变负，旧 BTC -98% bug 同源）。
+        - perp:成交后的**目标仓**所需初始保证金 + fee 不得超过 wallet(cash)。统一处理
+          开/加/减/平/反手:``prospective_margin = |new_qty|×price/leverage``（用成交价近似
+          整仓口径,守门足够保守）。perp 需 ``instrument_id`` 取当前仓。
         """
         if qty <= 0 or price <= 0:
             return False
-        notional = qty * price
-        fee = notional * self._fee_rate
-        return self._cash >= notional + fee
+        fee = qty * price * self._fee_rate
+        if self._trading_mode != "perp":
+            return self._cash >= qty * price + fee
+        cur = self._positions.get(instrument_id) if instrument_id is not None else None
+        cur_qty = cur.quantity if cur is not None else 0.0
+        prospective_margin = abs(cur_qty + qty) * price / self._leverage
+        return prospective_margin + fee <= self._cash
 
-    def can_afford_sell(self, instrument_id: InstrumentId, qty: float) -> bool:
-        """SELL 前问 portfolio：当前 LONG 仓位够不够卖出 ``qty``。
+    def can_afford_sell(
+        self, instrument_id: InstrumentId, qty: float, *, price: float | None = None
+    ) -> bool:
+        """SELL 前守门。
 
-        spot 模式禁裸 SHORT：``flat`` 仓位下 SELL 必拒（避免凭空增加 cash）。
-        D-11+ 接合约 / margin 后此约束可通过 risk rule 配置放宽。
+        - spot 禁裸 SHORT:当前 LONG 仓位够不够卖出 ``qty``（``flat`` 下 SELL 必拒）。
+        - perp 放开做空:按保证金校验——成交后目标仓所需 IM + fee 不超过 wallet(cash)。
         """
         if qty <= 0:
             return False
-        pos = self._positions.get(instrument_id)
-        current = pos.quantity if pos is not None else 0.0
-        return current >= qty
+        if self._trading_mode != "perp":
+            pos = self._positions.get(instrument_id)
+            current = pos.quantity if pos is not None else 0.0
+            return current >= qty
+        if price is None:
+            raise ValueError("perp can_afford_sell 需要 price 计算保证金")
+        fee = qty * price * self._fee_rate
+        cur = self._positions.get(instrument_id)
+        cur_qty = cur.quantity if cur is not None else 0.0
+        prospective_margin = abs(cur_qty - qty) * price / self._leverage
+        return prospective_margin + fee <= self._cash
 
     def update_mark(self, instrument_id: InstrumentId, mark_price: float) -> None:
         """BacktestEngine 每根 bar 调一次，更新 mark-to-market 估值用的最新价。"""
         self._marks[instrument_id] = mark_price
 
     def equity(self) -> float:
-        """总权益 = cash + 所有持仓的 mark-to-market 价值。
+        """总权益。
 
-        持仓估值约定：用最新 mark price 计算 ``quantity * mark``；
+        - spot:``cash + Σ quantity×mark``（持仓 mark-to-market 市值）。
+        - perp:``cash(wallet) + Σ 未实现盈亏``;开仓不动名义,cash 即钱包余额,
+          未实现盈亏 = ``(mark − avg_open)×quantity``(带符号,做空价跌则盈)。
+
         没 mark 的（极少见，bar 还没来过）用 ``avg_open_price`` 兜底。
         """
+        if self._trading_mode == "perp":
+            upnl = 0.0
+            for inst, pos in self._positions.items():
+                if pos.is_flat:
+                    continue
+                mark = self._marks.get(inst, pos.avg_open_price)
+                upnl += (mark - pos.avg_open_price) * pos.quantity
+            return self._cash + upnl
         market_value = 0.0
         for inst, pos in self._positions.items():
             if pos.is_flat:
@@ -236,7 +312,13 @@ class Portfolio:
         # 现金 + 手续费
         notional = msg.fill_quantity * msg.fill_price
         fee = notional * self._fee_rate
-        if msg.side == OrderSide.BUY:
+        if self._trading_mode == "perp":
+            # 永续:开/加仓不收付名义、只占保证金;cash 只随**已实现盈亏**(平/减/反手那部分)
+            # 与手续费变动。realized 增量 = apply_fill 后 pos.realized_pnl − 成交前快照。
+            realized_increment = pos.realized_pnl - prev_realized
+            self._cash += realized_increment - fee
+            self._recompute_margin_used()
+        elif msg.side == OrderSide.BUY:
             self._cash -= notional + fee
         else:
             self._cash += notional - fee
