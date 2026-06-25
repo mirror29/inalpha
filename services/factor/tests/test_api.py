@@ -153,7 +153,7 @@ def test_panel_score_endpoint() -> None:
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body["is_pit"] is False  # 非 PIT 显式标注（ADR-0055 D4）
+        assert body["is_pit"] is False  # 非 PIT 显式标注
         assert "non-PIT" in body["universe_note"]
         assert len(body["factors"]) > 0
         f0 = body["factors"][0]

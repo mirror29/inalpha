@@ -358,19 +358,19 @@ live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩
   YoY）、消费者信心,共 9 因子（70→79）。每序列只取 1-2 个一阶因子,延续"控候选数 /
   防多重检验"纪律（**因子非越多越好,优先正交信息**）；新序列均录入 per-series 滞后表
   （daily T+1 / monthly 30~50d）。同源同族多窗口（如 qlib 扩窗口）刻意不做。
-- **横截面因子引擎首个纵切**（2026-06-18,ADR-0055）：把因子从"单标的择时信号"用作
+- **横截面因子引擎首个纵切**（2026-06-18）：把因子从"单标的择时信号"用作
   "横截面选股信号"——`POST /panel/score` 收一篮子标的,算每因子**横截面 rank-IC**
   （每期对全池按因子排序 vs 跨标的前瞻收益,量化界因子有效性标准口径,正交于单标的
   时序 IC）+ 最近一期横截面排名（直接选标的,如取 PB 最低者轮动 = 聚宽式策略）。
   纪律:macro 不参与（全市场单值无横截面区分度）；对齐缺口留 NaN 不 ffill；某期有效
   标的 < min_symbols 不排名（残缺池排名是伪信号）。**降级标注**:universe 非 PIT
-  （is_pit=false,ADR-0053 C 成分快照未建,存活者偏差未挡,显式不静默）。顺带纠正
+  （is_pit=false,历史成分快照未建,存活者偏差未挡,显式不静默）。顺带纠正
   `alpha101.a6 = -corr(open,volume,10)` 误标 needs_universe（纯时序,已下放实装）。
-- **内禀横截面 alpha a1/a3 原生实装**（2026-06-25,ADR-0055 D1 ①）：`alpha101.a1
+- **内禀横截面 alpha a1/a3 原生实装**（2026-06-25）：`alpha101.a1
   = rank(Ts_ArgMax(SignedPower((ret<0?std:close),2),5))-0.5`、`a3 = -corr(rank(open),
   rank(volume),10)` —— 含 `rank()` 的真·横截面因子，在 Panel 上原生算（共享
   `cross_sectional_rank` 算子），`panel_score` 自动纳入 ①路径。a3 零方差窗的 ±inf 归 NaN。
-- **横截面选股 tool 接入 agent**（2026-06-25,ADR-0055 D5）：`factor.panel_score` orchestration
+- **横截面选股 tool 接入 agent**（2026-06-25）：`factor.panel_score` orchestration
   tool（FactorClient.panelScore → `POST /panel/score`）——对话里"给一组标的按因子选哪只 / 轮动"
   即走它；orchestrator prompt 加路由说明（单标的择时仍走 factor.timing,non-PIT 降级须转述）。
   **延后**（归后续 PR）:0054 完整 `run_panel_backtest`、PIT 成分（0053 C）、paper 多标的轮动 runner。

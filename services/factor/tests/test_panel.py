@@ -1,4 +1,4 @@
-"""横截面 Panel 单测（ADR-0055 首个纵切）：对齐 / 横截面 IC / 选标的排名 / engine 集成。"""
+"""横截面 Panel 单测：对齐 / 横截面 IC / 选标的排名 / engine 集成。"""
 from __future__ import annotations
 
 import numpy as np
@@ -43,7 +43,7 @@ def _bars(n: int = 220, seed: int = 1, start: str = "2025-01-01") -> pd.DataFram
 
 
 def test_align_field_union_index_no_ffill() -> None:
-    """不同标的索引并集对齐；缺口留 NaN，不前向填充（ADR-0054 D1）。"""
+    """不同标的索引并集对齐；缺口留 NaN，不前向填充。"""
     a = pd.DataFrame(
         {"close": [1.0, 2.0, 3.0]},
         index=pd.date_range("2025-01-01", periods=3, freq="1D", tz="UTC"),
@@ -138,7 +138,7 @@ def test_latest_cross_section_skips_incomplete_tail() -> None:
 
 
 def test_cross_sectional_rank_handcheck() -> None:
-    """每行横截面百分位 rank；NaN 不参与、保持 NaN（手算对照,Graduation 第2条）。
+    """每行横截面百分位 rank；NaN 不参与、保持 NaN（手算对照）。
 
     行 [10,30,20,nan,nan]：3 个有效值 → rank/3。10→1/3、20→2/3、30→3/3；NaN 保持。
     """
@@ -160,7 +160,7 @@ def test_cross_sectional_rank_three_values() -> None:
     assert abs(ranked["E"] - 1.0) < 1e-12
 
 
-# ── 内禀横截面 alpha101.a1 / a3（ADR-0055 D1 ①）──────────────────────
+# ── 内禀横截面 alpha101.a1 / a3──────────────────────
 
 
 def test_alpha1_intrinsic_cross_sectional() -> None:
@@ -226,16 +226,16 @@ async def test_panel_score_end_to_end() -> None:
     frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
     eng = _PanelEngine(frames)
     res = await eng.panel_score(**_kwargs(_SYMS))  # type: ignore[arg-type]
-    assert res["is_pit"] is False  # 非 PIT 显式标注（ADR-0055 D4）
+    assert res["is_pit"] is False  # 非 PIT 显式标注
     assert res["factors"], "应有横截面因子结果"
     assert set(res["bars_used"]) == set(_SYMS)
     for f in res["factors"]:
         assert f["ic_kind"] == "cross_sectional"
         assert isinstance(f["cross_sectional_ic"], float)
         assert 0 < len(f["latest_ranking"]) <= len(_SYMS)
-    # macro 不参与横截面（全市场单值无区分度，ADR-0055 D1）
+    # macro 不参与横截面（全市场单值无区分度）
     assert not any(f["factor_id"].startswith("macro.") for f in res["factors"])
-    # 内禀横截面 alpha（needs_universe）已原生算入（ADR-0055 D1 ①）
+    # 内禀横截面 alpha（needs_universe）已原生算入
     fids = {f["factor_id"] for f in res["factors"]}
     assert "alpha101.a1" in fids and "alpha101.a3" in fids
 

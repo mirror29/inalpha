@@ -182,7 +182,7 @@ export const factorScoreTool = createTool({
 });
 
 // ────────────────────────────────────────────────────────────────────
-// factor.panel_score —— 横截面选股：一篮子标的按因子排序 + 横截面有效性（ADR-0055）
+// factor.panel_score —— 横截面选股：一篮子标的按因子排序 + 横截面有效性
 // ────────────────────────────────────────────────────────────────────
 
 export const factorPanelScoreTool = createTool({

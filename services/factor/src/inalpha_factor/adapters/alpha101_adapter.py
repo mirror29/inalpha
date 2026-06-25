@@ -22,12 +22,12 @@ _TS_SPECS: list[FactorSpec] = [
     FactorSpec("alpha101.a12", "alpha101", "Alpha#12 volume-driven reversal", "momentum", direction_hint=1),
     FactorSpec("alpha101.a49", "alpha101", "Alpha#49 trend/reversal switch", "momentum", direction_hint=1),
     # Alpha#6 = -corr(open, volume, 10)：纯时序（无 rank），原误标 needs_universe，
-    # ADR-0055 评审纠正下放到时序子集并实装
+    # 纠正:下放到时序子集并实装
     FactorSpec("alpha101.a6", "alpha101", "Alpha#6 -corr(open,volume,10)", "volume", direction_hint=-1),
 ]
 
 # 横截面项（本期不算，仅在 catalog 露出，标 needs_universe）：a1 含 rank()、
-# a3 = -corr(rank(open),rank(volume),10) 含横截面 rank，二者确需 universe（ADR-0055）
+# a3 = -corr(rank(open),rank(volume),10) 含横截面 rank，二者确需 universe
 _XS_SPECS: list[FactorSpec] = [
     FactorSpec("alpha101.a1", "alpha101", "Alpha#1 cross-sectional rank", "momentum", needs_universe=True),
     FactorSpec("alpha101.a3", "alpha101", "Alpha#3 cross-sectional correlation", "volume", needs_universe=True),
@@ -95,7 +95,7 @@ class Alpha101Adapter:
 
         return out
 
-    # ── 内禀横截面因子（ADR-0055 D1 ①：含 rank()，必须喂多标的 Panel）──────
+    # ── 内禀横截面因子（含 rank()，必须喂多标的 Panel）──────
     def compute_cross_sectional(
         self,
         fields: dict[str, pd.DataFrame],
