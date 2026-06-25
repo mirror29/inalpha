@@ -639,6 +639,14 @@ class FactorEngine:
             ids = self._computable_ids(timeframe, exclude_macro=True)  # 已含 not needs_universe
             xs_ids = sorted(all_universe)
 
+        # 未知 / 拼错的 factor_id（不在 catalog）：单独透出——否则它进 ids 后 compute_on_df
+        # 对它恒返空、被 min_symbols 跳过，最终 reason 会把"id 不存在"伪装成"标的不够"。
+        unknown_ids = (
+            [fid for fid in factor_ids if fid not in self._spec_index()]
+            if factor_ids is not None
+            else []
+        )
+
         # 没有任何可横截面评估的因子（空列表 / 全 macro / 未知 id）→ 显式降级不静默（§3.1）：
         # 否则与"评估了但全部低置信"的正常空响应无法区分，agent 会误读成"此 universe 无信号"
         if factor_ids is not None and not ids and not xs_ids:
@@ -774,13 +782,20 @@ class FactorEngine:
         # （§3.1 不静默）：前者 caller 应补标的/调低 min_symbols，后者才是换因子（reason=null）
         reason: str | None = None
         if not results:
-            n_with_bars = sum(1 for df in frames.values() if not df.empty)
-            reason = (
-                f"no factor reached min_symbols={min_symbols} symbols with overlapping bars "
-                f"({n_with_bars}/{len(symbols)} symbols returned data) — insufficient for "
-                f"cross-sectional ranking (add symbols / lower min_symbols / pre-backfill), "
-                f"not 'no signal in this universe'"
-            )
+            if unknown_ids:
+                # id 不存在,不是数据不够——给准确根因,别让调用方去"补标的"白找
+                reason = (
+                    f"unknown factor_id(s) not in catalog: {sorted(unknown_ids)} — check "
+                    f"factor.catalog for valid ids (id typo / stale catalog, not insufficient data)"
+                )
+            else:
+                n_with_bars = sum(1 for df in frames.values() if not df.empty)
+                reason = (
+                    f"no factor reached min_symbols={min_symbols} symbols with overlapping bars "
+                    f"({n_with_bars}/{len(symbols)} symbols returned data) — insufficient for "
+                    f"cross-sectional ranking (add symbols / lower min_symbols / pre-backfill), "
+                    f"not 'no signal in this universe'"
+                )
         return {
             "as_of": as_of, "symbols": symbols, "bars_used": bars_used,
             "latest_bar_ts": latest_bar_ts,
