@@ -306,7 +306,12 @@ class PanelScoreResponse(BaseModel):
     as_of: datetime
     horizon_bars: int
     symbols: list[str]
-    bars_used: dict[str, int] = Field(description="每标的取到的 bar 数")
+    bars_used: dict[str, int] = Field(description="每标的取到的 bar 数（**不代表新鲜**，见 latest_bar_ts）")
+    latest_bar_ts: dict[str, str | None] = Field(
+        default_factory=dict,
+        description="每标的最后一根 bar 的 ISO ts（None=无数据）。**判 freshness 看它距 as_of "
+        "的间隔,不要看 bar 数量**（§3.1）——panel 走 fresh=False 读缓存,某标的可能是几天前的",
+    )
     is_pit: bool = Field(
         default=False,
         description="universe 是否 point-in-time。**当前恒 false**（历史成分快照未建）"

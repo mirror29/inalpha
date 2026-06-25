@@ -229,6 +229,9 @@ async def test_panel_score_end_to_end() -> None:
     assert res["is_pit"] is False  # 非 PIT 显式标注
     assert res["factors"], "应有横截面因子结果"
     assert set(res["bars_used"]) == set(_SYMS)
+    # §3.1 freshness 可观测：每标的最后一根 bar 的 ts(判新鲜看它,不看 bar 数)
+    assert set(res["latest_bar_ts"]) == set(_SYMS)
+    assert all(res["latest_bar_ts"][s] is not None for s in _SYMS)
     for f in res["factors"]:
         assert f["ic_kind"] == "cross_sectional"
         assert isinstance(f["cross_sectional_ic"], float)
@@ -283,3 +286,5 @@ async def test_panel_score_below_min_symbols_empty() -> None:
     eng = _PanelEngine(frames)
     res = await eng.panel_score(**_kwargs(["A", "B"], min_symbols=3))  # type: ignore[arg-type]
     assert res["factors"] == []
+    # 显式 reason 区分"数据不足以横截面"与"无信号"(§3.1),不能静默 reason=null
+    assert res["reason"] is not None and "min_symbols" in res["reason"]

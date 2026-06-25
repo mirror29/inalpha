@@ -637,6 +637,7 @@ class FactorEngine:
         if factor_ids is not None and not ids and not xs_ids:
             return {
                 "as_of": as_of, "symbols": symbols, "bars_used": {},
+                "latest_bar_ts": {},
                 "is_pit": False, "universe_note": universe_note,
                 "factors": [], "ic_null_benchmark": 0.0,
                 "reason": (
@@ -663,11 +664,22 @@ class FactorEngine:
 
         frames = dict(await asyncio.gather(*[_one(s) for s in symbols]))
         bars_used = {sym: len(df) for sym, df in frames.items()}
+        # §3.1 freshness 可观测：bar **数量**不代表新鲜（5 根可能全是上周的）。fresh=False
+        # 下尤其要透出每标的最后一根 bar 的 ts，让 caller 自己判 bars[-1].ts 距 as_of 的间隔。
+        latest_bar_ts = {
+            sym: (
+                df.index[-1].isoformat()
+                if not df.empty and isinstance(df.index, pd.DatetimeIndex)
+                else None
+            )
+            for sym, df in frames.items()
+        }
         close_panel = align_field(frames, "close")
 
         if close_panel.empty:
             return {
                 "as_of": as_of, "symbols": symbols, "bars_used": bars_used,
+                "latest_bar_ts": latest_bar_ts,
                 "is_pit": False, "universe_note": universe_note,
                 "factors": [], "ic_null_benchmark": 0.0,
                 "reason": "no bars for any symbol in universe",
@@ -742,11 +754,23 @@ class FactorEngine:
         results.sort(key=lambda r: abs(r["cross_sectional_ic"]), reverse=True)
         max_periods = max((r["n_periods"] for r in results), default=0)
         benchmark = null_ic_benchmark(len(results), max_periods, horizon_bars)
+        # 全部因子因有效标的 < min_symbols 被剔光 → 显式区分"数据不足以横截面"与"无信号"
+        # （§3.1 不静默）：前者 caller 应补标的/调低 min_symbols，后者才是换因子（reason=null）
+        reason: str | None = None
+        if not results:
+            n_with_bars = sum(1 for df in frames.values() if not df.empty)
+            reason = (
+                f"no factor reached min_symbols={min_symbols} symbols with overlapping bars "
+                f"({n_with_bars}/{len(symbols)} symbols returned data) — insufficient for "
+                f"cross-sectional ranking (add symbols / lower min_symbols / pre-backfill), "
+                f"not 'no signal in this universe'"
+            )
         return {
             "as_of": as_of, "symbols": symbols, "bars_used": bars_used,
+            "latest_bar_ts": latest_bar_ts,
             "is_pit": False, "universe_note": universe_note,
             "factors": results, "ic_null_benchmark": benchmark,
-            "reason": None,
+            "reason": reason,
         }
 
 
