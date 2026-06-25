@@ -231,10 +231,14 @@ class FactorEngine:
         from_ts = (
             df.index[0].to_pydatetime() if isinstance(df.index, pd.DatetimeIndex) else as_of
         ) - timedelta(days=self._macro.warmup_days(want))
-        macro: dict[str, pd.Series] = {}
-        for sid in self._macro.required_series(want):
+        # 并发拉所有 FRED 序列：1d snapshot 含 18 个宏观序列，串行 await（每个 backfill
+        # ~6s）会累积到 ~100s+ 越过客户端超时；并发后墙钟 ≈ 最慢单条。单条失败只丢该条
+        # （优雅降级，FRED key 缺失 / data 无 fred venue 仍不破坏价量结果）。
+        sids = self._macro.required_series(want)
+
+        async def _fetch_one(sid: str) -> tuple[str, pd.Series | None]:
             try:
-                macro[sid] = await self._fetch_macro_series(
+                return sid, await self._fetch_macro_series(
                     sid,
                     from_ts=from_ts,
                     to_ts=as_of,
@@ -243,10 +247,14 @@ class FactorEngine:
                 )
             except Exception as exc:  # FRED key 缺失 / data 无 fred venue → 优雅降级
                 logger.warning("macro series %s fetch failed: %r", sid, exc)
+                return sid, None
+
+        fetched = await asyncio.gather(*[_fetch_one(sid) for sid in sids])
+        macro: dict[str, pd.Series] = {sid: s for sid, s in fetched if s is not None}
         if not macro:
             logger.info(
                 "macro factors degraded: 0/%d FRED series fetched, %d macro factor(s) dropped",
-                len(self._macro.required_series(want)), len(want),
+                len(sids), len(want),
             )
             return {}
         try:
