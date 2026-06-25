@@ -122,3 +122,37 @@ def test_liquidation_price_zero_denominator_returns_nan() -> None:
     # 这里只验证函数对极端入参不崩(返回有限值或 nan,不抛)。
     liq = pm.liquidation_price(side=1, qty_abs=1.0, entry_price=100.0, wallet_balance=10.0)
     assert math.isfinite(liq)
+
+
+# ─── perp 资格 gate ───
+
+
+def test_validate_perp_spot_always_passes() -> None:
+    pm.validate_perp_eligibility(venue="yfinance", symbol="AAPL", trading_mode="spot", leverage=1)
+
+
+def test_validate_perp_crypto_perp_ok() -> None:
+    pm.validate_perp_eligibility(
+        venue="binance", symbol="BTC/USDT:USDT", trading_mode="perp", leverage=5
+    )
+
+
+def test_validate_perp_rejects_non_crypto_venue() -> None:
+    with pytest.raises(pm.PerpNotEligibleError):
+        pm.validate_perp_eligibility(
+            venue="yfinance", symbol="AAPL:USD", trading_mode="perp", leverage=2
+        )
+
+
+def test_validate_perp_rejects_spot_symbol() -> None:
+    with pytest.raises(pm.PerpNotEligibleError):
+        pm.validate_perp_eligibility(
+            venue="binance", symbol="BTC/USDT", trading_mode="perp", leverage=2
+        )
+
+
+def test_validate_perp_rejects_leverage_out_of_range() -> None:
+    with pytest.raises(pm.PerpNotEligibleError):
+        pm.validate_perp_eligibility(
+            venue="binance", symbol="BTC/USDT:USDT", trading_mode="perp", leverage=999
+        )

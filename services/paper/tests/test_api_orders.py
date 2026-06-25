@@ -246,3 +246,44 @@ def test_submit_naked_short_rejected(
     listed = client.get("/orders", headers=auth_headers, params={"symbol": "ETH/USDT"})
     assert listed.status_code == 200
     assert listed.json() == []
+
+
+def test_perp_on_non_crypto_venue_rejected(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """perp 仅 crypto:非 crypto venue 开杠杆 → 422 PERP_NOT_ELIGIBLE。"""
+    r = client.post(
+        "/orders/submit",
+        headers=auth_headers,
+        json={"symbol": "AAPL", "venue": "yfinance", "side": "BUY", "type": "MARKET",
+              "quantity": 1, "ref_price": 100.0, "trading_mode": "perp", "leverage": 2},
+    )
+    assert r.status_code == 422, r.json()
+    assert r.json()["code"] == "PERP_NOT_ELIGIBLE"
+
+
+def test_perp_on_spot_symbol_rejected(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """perp 标的须为 USDT-M 永续(ccxt 后缀 :USDT):现货 symbol → 422。"""
+    r = client.post(
+        "/orders/submit",
+        headers=auth_headers,
+        json={"symbol": "BTC/USDT", "venue": "binance", "side": "SELL", "type": "MARKET",
+              "quantity": 0.01, "ref_price": 50_000.0, "trading_mode": "perp", "leverage": 2},
+    )
+    assert r.status_code == 422, r.json()
+    assert r.json()["code"] == "PERP_NOT_ELIGIBLE"
+
+
+def test_perp_leverage_out_of_range_rejected(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """杠杆越界(>20)→ 422(pydantic 请求校验)。"""
+    r = client.post(
+        "/orders/submit",
+        headers=auth_headers,
+        json={"symbol": "BTC/USDT:USDT", "venue": "binance", "side": "SELL", "type": "MARKET",
+              "quantity": 0.01, "ref_price": 50_000.0, "trading_mode": "perp", "leverage": 50},
+    )
+    assert r.status_code == 400  # pydantic 请求校验失败,本服务统一返 400

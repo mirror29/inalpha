@@ -41,10 +41,14 @@ _DEFAULT_CRYPTO_QUOTE = "USDT"
 
 
 def _crypto_quote(symbol: str) -> str:
-    """从 crypto symbol 取 quote 货币：``BTC/USDT`` → ``USDT``；无 ``/`` 兜底 USDT。"""
+    """从 crypto symbol 取 quote 货币：``BTC/USDT`` → ``USDT``；无 ``/`` 兜底 USDT。
+
+    兼容 ccxt 永续记法 ``BTC/USDT:USDT``：``/`` 后是 ``USDT:USDT``,再剥 ``:`` 后的结算币
+    取计价币 → ``USDT``（否则会误得 ``USDT:USDT`` 桶,与现货 USDT 桶割裂）。
+    """
     s = symbol.strip().upper()
     if "/" in s:
-        quote = s.split("/", 1)[1].strip()
+        quote = s.split("/", 1)[1].strip().split(":", 1)[0].strip()
         return quote or _DEFAULT_CRYPTO_QUOTE
     return _DEFAULT_CRYPTO_QUOTE
 

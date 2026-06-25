@@ -607,6 +607,16 @@ class SubmitOrderRequest(BaseModel):
 
     fee_rate: float = Field(default=0.001, ge=0, lt=1)
 
+    trading_mode: Literal["spot", "perp"] = Field(
+        default="spot",
+        description="spot(默认,现货 long-only)或 perp(USDT-M 永续 + 逐仓,放开做空/杠杆;"
+        "仅 crypto 永续标的如 BTC/USDT:USDT 生效)",
+    )
+    leverage: int = Field(
+        default=1, ge=1, le=20,
+        description="杠杆倍数(perp 用,1..20);spot 恒 1",
+    )
+
     @model_validator(mode="after")
     def _check_price_for_type(self) -> SubmitOrderRequest:
         # 用 PydanticCustomError 而不是 ValueError —— 后者会把 exception 对象塞进

@@ -25,6 +25,7 @@ from inalpha_shared.errors import InalphaError, UnauthorizedError
 from ..account_id import account_id_from_user
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
+from ..execution import perp_margin
 from ..execution import risk_guard as risk_guard_mod
 from ..execution.currency_resolver import resolve_currency
 from ..execution.order_executor import OrderExecutor
@@ -67,6 +68,13 @@ async def post_submit_order(
     """
     account_id = account_id_from_user(user)
 
+    # perp 资格硬 gate(trading_mode=perp 须 crypto + USDT-M 永续标的 + 杠杆 1..20,
+    # 否则 422 PERP_NOT_ELIGIBLE;spot 放行)。不静默降级。
+    perp_margin.validate_perp_eligibility(
+        venue=req.venue, symbol=req.symbol,
+        trading_mode=req.trading_mode, leverage=req.leverage,
+    )
+
     # D-9 风控前置闸门：违规 → 409 RISK_REJECTED + risk_locks 表写新行
     # enforce 内部用独立 connection 写锁，不复用 db（避免后续异常导致锁回滚）
     factory = getattr(request.app.state, "risk_guard_factory", None)
@@ -85,6 +93,23 @@ async def post_submit_order(
         factory, quantity=req.quantity, ref_price=ref_price,
         venue=req.venue, symbol=req.symbol,
     )
+
+    # perp 保证金购买力守门(v1 简化:本笔初始保证金 IM=notional/leverage + fee 不超过账户该
+    # 计价货币钱包余额;跨仓聚合留 Phase 2)。spot SELL 守门在下方事务内 FOR UPDATE 锁行做
+    # (TOCTOU 硬化);perp 做空合法,由本钱包购买力校验放行。
+    if req.trading_mode == "perp":
+        acct = await accounts_store.get_or_create(db, account_id)
+        currency = resolve_currency(req.venue, req.symbol)
+        wallet = Decimal(str((acct.get("cash_balances") or {}).get(currency, "0")))
+        im = Decimal(str(req.quantity * ref_price / req.leverage))
+        fee_amt = Decimal(str(req.quantity * ref_price * req.fee_rate))
+        if im + fee_amt > wallet:
+            raise InalphaError(
+                f"perp 保证金不足:需 IM {im} + fee {fee_amt} 超钱包 {wallet} {currency}",
+                code="INSUFFICIENT_MARGIN", status_code=409,
+                details={"im": str(im), "fee": str(fee_amt),
+                         "wallet": str(wallet), "currency": currency},
+            )
 
     # 算成交（纯函数，不依赖 DB）
     result = OrderExecutor.execute(
@@ -113,7 +138,8 @@ async def post_submit_order(
             )
             current_qty = Decimal(str(cur_pos["quantity"])) if cur_pos else Decimal(0)
             if violates_spot_long_only(
-                side=req.side, quantity=req.quantity, current_qty=current_qty
+                side=req.side, quantity=req.quantity, current_qty=current_qty,
+                trading_mode=req.trading_mode,
             ):
                 raise InsufficientPositionError(
                     f"SELL {req.quantity} exceeds current position {current_qty} "
@@ -138,6 +164,8 @@ async def post_submit_order(
             fee=result["fee"],  # type: ignore[arg-type]
             notional=result["notional"],  # type: ignore[arg-type]
             ts_event=result["ts_event"],  # type: ignore[arg-type]
+            trading_mode=req.trading_mode,
+            leverage=req.leverage,
         )
 
         if result["status"] == "FILLED":
@@ -156,6 +184,8 @@ async def post_submit_order(
                 fee=Decimal(str(result["fee"])),
                 ts_event=ts_event,
                 order_id=order_id,
+                trading_mode=req.trading_mode,
+                leverage=req.leverage,
             )
             # 回写这笔成交的已实现盈亏(开仓单 0 / 平仓单实现盈亏)——每笔交易记录都带盈亏。
             await orders_store.set_realized_pnl(
