@@ -660,6 +660,112 @@ _SINGLE_FACTOR_ASSISTIVE = ArchetypeMeta(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 6. perp_short_reversion ← 永续做空均值回归（仅 perp 模式）
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PERP_SHORT_REVERSION_CODE = '''
+class PerpShortReversionStrategy(Strategy):
+    # 永续做空均值回归:z-score 触上轨(超买)开空,回中线买入平空(cover)。
+    # **仅 perp 模式**(USDT-M 永续 + 逐仓):须以 trading_mode=perp 起 run / 下单;
+    # 现货 spot 下开不了空(出场 SELL 会被守门拒)。含完整做空入场/出场/cover 逻辑。
+    def __init__(
+        self, name, clock, msgbus, instrument_id, timeframe="1h",
+        period=20, entry_z=2.0, exit_z=0.5, trade_size=0.01,
+        position_pct=None, initial_cash=0.0,
+    ):
+        if period < 2:
+            raise ValueError("period must be >= 2")
+        super().__init__(name, clock, msgbus)
+        self._instrument_id = instrument_id
+        self._timeframe = timeframe
+        self._period = period
+        self._entry_z = entry_z
+        self._exit_z = exit_z
+        self._trade_size = trade_size
+        self._position_pct = position_pct
+        self._initial_cash = initial_cash
+        self._closes = deque(maxlen=period)
+        self._is_short = False
+        self._open_qty = 0.0
+
+    def on_start(self):
+        self.subscribe_bars(self._instrument_id, self._timeframe)
+
+    def on_bar(self, bar):
+        if bar.instrument_id != self._instrument_id:
+            return
+        if bar.timeframe != self._timeframe:
+            return
+        self._closes.append(bar.close)
+        if len(self._closes) < self._period:
+            return
+        mean = sum(self._closes) / self._period
+        var = sum((x - mean) ** 2 for x in self._closes) / self._period
+        std = var ** 0.5
+        if std <= 0:
+            return
+        z = (bar.close - mean) / std
+        # 超买(z 高)开空;回到中线附近买入 cover(平空)
+        if z >= self._entry_z and not self._is_short:
+            self._submit(OrderSide.SELL, bar)
+        elif self._is_short and z <= self._exit_z:
+            self._submit(OrderSide.BUY, bar)
+
+    def on_position_opened(self, event):
+        self._is_short = event.quantity < 0
+        self._open_qty = abs(event.quantity)
+
+    def on_position_closed(self, event):
+        self._is_short = False
+        self._open_qty = 0.0
+
+    def _qty(self, bar):
+        if (
+            self._position_pct is not None and self._position_pct > 0
+            and self._initial_cash > 0 and bar.close > 0
+        ):
+            return (self._initial_cash * self._position_pct) / bar.close / 1.05
+        return self._trade_size
+
+    def _submit(self, side, bar):
+        # 平空(BUY)用持空量;开空(SELL)用 _qty
+        if side == OrderSide.BUY and self._open_qty > 0:
+            qty = self._open_qty
+        else:
+            qty = self._qty(bar)
+        order = Order(
+            client_order_id=ClientOrderId("psr-" + uuid4().hex[:8]),
+            instrument_id=self._instrument_id,
+            side=side,
+            type=OrderType.MARKET,
+            quantity=qty,
+        )
+        self.submit_order(order)
+'''.strip()
+
+_PERP_SHORT_REVERSION = ArchetypeMeta(
+    name="perp_short_reversion",
+    source_archetype="mean_reversion_pullback",
+    applies_to_kinds=("mean_reversion", "volatility"),
+    description="永续做空均值回归:超买开空、回中线 cover。**仅 perp 模式**(crypto USDT-M 永续)。",
+    when_to_use="用户要做空 / 押下跌 / 套保,标的是 crypto 永续(以 trading_mode=perp 起 run);超买回落",
+    when_not_to_use="现货 spot 模式(开不了空);强单边上涨(被逼空一路扛);非 crypto / 非永续标的",
+    failure_modes=(
+        "趋势单边上涨被逼空(空头扛不住一路涨)",
+        "杠杆下小幅反向即触发维持保证金强平",
+        "资金费持续为正时空头长期付费侵蚀收益",
+    ),
+    compatible_pivots=("mean_reversion", "momentum_trend"),
+    params=(
+        ArchetypeParam("period", 20, "均值 / 标准差窗口"),
+        ArchetypeParam("entry_z", 2.0, "开空 z 阈值(升破 +entry_z 做空)"),
+        ArchetypeParam("exit_z", 0.5, "平空 z 阈值(回到 +exit_z 以下 cover)"),
+    ),
+    code=_PERP_SHORT_REVERSION_CODE,
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -670,6 +776,7 @@ ARCHETYPES: Final[tuple[ArchetypeMeta, ...]] = (
     _VOLATILITY_CONTRACTION,
     _MULTI_FACTOR,
     _SINGLE_FACTOR_ASSISTIVE,
+    _PERP_SHORT_REVERSION,
 )
 
 _BY_NAME: Final[dict[str, ArchetypeMeta]] = {a.name: a for a in ARCHETYPES}
