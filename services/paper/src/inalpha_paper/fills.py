@@ -18,10 +18,40 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from .execution import perp_margin
 from .execution.currency_resolver import resolve_currency
 from .storage import accounts as accounts_store
 from .storage import closed_trades as closed_trades_store
 from .storage import positions as positions_store
+
+
+async def _update_perp_margin(
+    db: Any, account_id: UUID, venue: str, symbol: str,
+    new_row: dict[str, Any], leverage: int,
+) -> None:
+    """按成交后持仓重写 perp 的 leverage / margin_used / liquidation_price(逐仓口径)。
+
+    逐仓简化:用分配保证金 IM 作该仓 isolated wallet 估算强平价(v1 不模拟加保证金)。
+    flat → margin_used=0 / liquidation_price=NULL。
+    """
+    new_qty = Decimal(str(new_row["quantity"]))
+    new_avg = Decimal(str(new_row["avg_open_price"]))
+    if new_qty == 0:
+        margin_used: Decimal = Decimal(0)
+        liq: Decimal | None = None
+    else:
+        margin_used = abs(new_qty) * new_avg / Decimal(leverage)
+        side_i = 1 if new_qty > 0 else -1
+        liq = Decimal(str(perp_margin.liquidation_price(
+            side=side_i, qty_abs=float(abs(new_qty)),
+            entry_price=float(new_avg), wallet_balance=float(margin_used),
+        )))
+    async with db.cursor() as cur:
+        await cur.execute(
+            "UPDATE positions SET leverage=%s, margin_used=%s, liquidation_price=%s "
+            "WHERE account_id=%s AND venue=%s AND symbol=%s",
+            (leverage, margin_used, liq, str(account_id), venue, symbol),
+        )
 
 
 async def apply_fill_to_positions_and_cash(
@@ -36,18 +66,25 @@ async def apply_fill_to_positions_and_cash(
     fee: Decimal,
     ts_event: datetime,
     order_id: str,
+    trading_mode: str = "spot",
+    leverage: int = 1,
 ) -> Decimal:
     """把一笔 fill 同时更新 positions + cash + closed_trades（在调用方的事务里）。
 
     返回**这笔成交的已实现盈亏**（毛口径，不减手续费，与 position.realized_pnl 同口径）：
-    平/减仓单 = ``close_profit_abs``；纯开/加仓单 = ``0``。调用方据此回写 orders.realized_pnl，
-    让每笔交易记录都带盈亏（开仓单恒 0，平仓单记该笔实现盈亏）。
+    平/减仓单 = ``close_profit_abs``；纯开/加仓单 = ``0``。调用方据此回写 orders.realized_pnl。
+
+    ``trading_mode``:
+    - ``"spot"``（默认）:cash delta = ``∓notional − fee``（买减卖加,现货语义）。
+    - ``"perp"``:**开/加仓不收付名义**,cash 只随已实现盈亏（平/减仓 ``close_profit_abs``）
+      与 fee 变动;并按成交后持仓重写 ``leverage / margin_used / liquidation_price``
+      （逐仓口径,与内存 ``Portfolio`` 同算法）。
     """
     currency = resolve_currency(venue, symbol)
     notional = quantity * fill_price
-    cash_delta = (-notional if side == "BUY" else notional) - fee
-    await accounts_store.apply_cash_delta(db, account_id, cash_delta, currency=currency)
-    _, close_info = await positions_store.apply_fill(
+
+    # 先更新持仓(perp 现金口径依赖平仓信息 close_info;spot 不依赖,顺序无碍)
+    new_row, close_info = await positions_store.apply_fill(
         db,
         account_id=account_id,
         venue=venue,
@@ -59,6 +96,21 @@ async def apply_fill_to_positions_and_cash(
         order_id=order_id,
         currency=currency,
     )
+
+    # 现金 delta:spot 动名义;perp 只动已实现盈亏 + fee
+    if trading_mode == "perp":
+        realized = (
+            Decimal(str(close_info.close_profit_abs)) if close_info is not None else Decimal(0)
+        )
+        cash_delta = realized - fee
+    else:
+        cash_delta = (-notional if side == "BUY" else notional) - fee
+    await accounts_store.apply_cash_delta(db, account_id, cash_delta, currency=currency)
+
+    # perp:按成交后持仓重写保证金 / 强平价
+    if trading_mode == "perp":
+        await _update_perp_margin(db, account_id, venue, symbol, new_row, leverage)
+
     if close_info is not None:
         await closed_trades_store.insert_close(
             db,

@@ -35,19 +35,26 @@ async def insert(
     notional: Decimal | float,
     ts_event: datetime,
     trade_plan_id: UUID | None = None,
+    trading_mode: str = "spot",
+    leverage: int = 1,
 ) -> None:
-    """写一行订单。status 可以是 FILLED / REJECTED / 等等（见 schema CHECK）。"""
+    """写一行订单。status 可以是 FILLED / REJECTED / 等等（见 schema CHECK）。
+
+    ``trading_mode`` / ``leverage`` 落单留痕(spot 默认):复盘 perp 做空/杠杆单的口径。
+    """
     async with conn.cursor() as cur:
         await cur.execute(
             """
             INSERT INTO orders (
                 client_order_id, instrument_id, side, type, quantity, price,
                 status, filled_quantity, avg_fill_price, ts_event,
-                account_id, venue, symbol, fee, notional, trade_plan_id
+                account_id, venue, symbol, fee, notional, trade_plan_id,
+                trading_mode, leverage
             ) VALUES (
                 %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s,
+                %s, %s
             )
             """,
             (
@@ -67,6 +74,8 @@ async def insert(
                 fee,
                 notional,
                 str(trade_plan_id) if trade_plan_id else None,
+                trading_mode,
+                leverage,
             ),
         )
 

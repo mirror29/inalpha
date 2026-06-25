@@ -18,6 +18,10 @@ from __future__ import annotations
 
 import math
 
+from inalpha_shared.errors import InalphaError
+
+from .risk_rules.exchange_resolver import is_crypto_venue
+
 # ─── 默认参数(实现期可挪进 PaperSettings 覆盖) ───
 
 #: 杠杆上限(per-run 配置,越界拒)
@@ -130,3 +134,40 @@ def unrealized_pnl(*, qty_signed: float, entry_price: float, mark_price: float) 
 def is_perp_symbol(symbol: str) -> bool:
     """是否 USDT-M 永续标的:ccxt 记法含 ``:`` 结算币后缀(如 ``BTC/USDT:USDT``)。"""
     return ":" in symbol
+
+
+class PerpNotEligibleError(InalphaError):
+    """开杠杆/做空但标的不符合 perp 资格(非 crypto / 非永续 / 杠杆越界)。"""
+
+    code = "PERP_NOT_ELIGIBLE"
+    status_code = 422
+
+
+def validate_perp_eligibility(
+    *, venue: str, symbol: str, trading_mode: str, leverage: int,
+) -> None:
+    """per-run / 下单时的 perp 硬 gate:不合规直接 422 拒(不静默降级)。
+
+    - ``trading_mode == "spot"``:放行(现货,杠杆恒 1)。
+    - ``trading_mode == "perp"``:必须 ``is_crypto_venue(venue)`` 且 ``is_perp_symbol(symbol)``
+      （v1 仅 crypto USDT-M 永续）,且 ``1 <= leverage <= DEFAULT_MAX_LEVERAGE``。
+    """
+    if trading_mode == "spot":
+        return
+    if trading_mode != "perp":
+        raise PerpNotEligibleError(f"unknown trading_mode {trading_mode!r}")
+    if not is_crypto_venue(venue):
+        raise PerpNotEligibleError(
+            f"perp 仅支持 crypto venue,{venue!r} 不是",
+            details={"venue": venue, "symbol": symbol},
+        )
+    if not is_perp_symbol(symbol):
+        raise PerpNotEligibleError(
+            f"perp 标的须为 USDT-M 永续(ccxt 后缀 :USDT,如 BTC/USDT:USDT),{symbol!r} 不是",
+            details={"venue": venue, "symbol": symbol},
+        )
+    if not 1 <= leverage <= DEFAULT_MAX_LEVERAGE:
+        raise PerpNotEligibleError(
+            f"leverage 须在 1..{DEFAULT_MAX_LEVERAGE},得到 {leverage}",
+            details={"leverage": leverage, "max": DEFAULT_MAX_LEVERAGE},
+        )
