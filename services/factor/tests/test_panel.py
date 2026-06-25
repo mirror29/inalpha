@@ -4,11 +4,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from inalpha_factor.adapters import Alpha101Adapter
 from inalpha_factor.config import get_factor_settings
 from inalpha_factor.engine import FactorEngine
 from inalpha_factor.panel import (
     align_field,
     cross_sectional_ic,
+    cross_sectional_rank,
     forward_return_panel,
     latest_cross_section,
 )
@@ -132,6 +134,72 @@ def test_latest_cross_section_skips_incomplete_tail() -> None:
     assert len(ranking) == 5  # 用了第一行,不是残缺的末行
 
 
+# ── cross_sectional_rank（内禀横截面基础算子）────────────────────────
+
+
+def test_cross_sectional_rank_handcheck() -> None:
+    """每行横截面百分位 rank；NaN 不参与、保持 NaN（手算对照,Graduation 第2条）。
+
+    行 [10,30,20,nan,nan]：3 个有效值 → rank/3。10→1/3、20→2/3、30→3/3；NaN 保持。
+    """
+    panel = _panel([[10.0, 30.0, 20.0, np.nan, np.nan]])
+    ranked = cross_sectional_rank(panel).iloc[0]
+    assert abs(ranked["A"] - 1.0 / 3.0) < 1e-12  # 10 最低
+    assert abs(ranked["C"] - 2.0 / 3.0) < 1e-12  # 20 居中
+    assert abs(ranked["B"] - 1.0) < 1e-12  # 30 最高
+    assert np.isnan(ranked["D"]) and np.isnan(ranked["E"])
+
+
+def test_cross_sectional_rank_three_values() -> None:
+    panel = _panel([[10.0, 30.0, 20.0, 40.0, 50.0]])
+    ranked = cross_sectional_rank(panel).iloc[0]
+    # 5 个值升序 rank/5：10→.2 20→.4 30→.6 40→.8 50→1.0
+    assert abs(ranked["A"] - 0.2) < 1e-12
+    assert abs(ranked["C"] - 0.4) < 1e-12
+    assert abs(ranked["B"] - 0.6) < 1e-12
+    assert abs(ranked["E"] - 1.0) < 1e-12
+
+
+# ── 内禀横截面 alpha101.a1 / a3（ADR-0055 D1 ①）──────────────────────
+
+
+def test_alpha1_intrinsic_cross_sectional() -> None:
+    """a1 = rank(Ts_ArgMax(...))-0.5 ∈ [-0.5, 0.5]，横截面（依赖全池）。"""
+    a = Alpha101Adapter()
+    frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
+    fields = {f: align_field(frames, f) for f in ("open", "close", "volume")}
+    out = a.compute_cross_sectional(fields, ["alpha101.a1"])
+    a1 = out["alpha101.a1"]
+    assert list(a1.columns) == _SYMS
+    vals = a1.to_numpy()
+    finite = vals[~np.isnan(vals)]
+    assert finite.size > 0
+    assert finite.min() >= -0.5 - 1e-9 and finite.max() <= 0.5 + 1e-9
+    assert a1.iloc[-5:].notna().any().any()  # 尾部有值
+
+
+def test_alpha3_intrinsic_cross_sectional() -> None:
+    """a3 = -corr(rank(open), rank(volume), 10) ∈ [-1, 1]。"""
+    a = Alpha101Adapter()
+    frames = {s: _bars(seed=i + 10) for i, s in enumerate(_SYMS)}
+    fields = {f: align_field(frames, f) for f in ("open", "close", "volume")}
+    out = a.compute_cross_sectional(fields, ["alpha101.a3"])
+    a3 = out["alpha101.a3"]
+    assert list(a3.columns) == _SYMS
+    vals = a3.to_numpy()
+    finite = vals[~np.isnan(vals)]
+    assert finite.size > 0
+    assert finite.min() >= -1.0 - 1e-9 and finite.max() <= 1.0 + 1e-9
+
+
+def test_compute_cross_sectional_filters_ids() -> None:
+    a = Alpha101Adapter()
+    frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
+    fields = {f: align_field(frames, f) for f in ("open", "close", "volume")}
+    out = a.compute_cross_sectional(fields, ["alpha101.a1"])
+    assert set(out) == {"alpha101.a1"}  # 没点 a3 就不算
+
+
 # ── engine.panel_score 集成 ──────────────────────────────────────────
 
 
@@ -167,6 +235,9 @@ async def test_panel_score_end_to_end() -> None:
         assert 0 < len(f["latest_ranking"]) <= len(_SYMS)
     # macro 不参与横截面（全市场单值无区分度，ADR-0055 D1）
     assert not any(f["factor_id"].startswith("macro.") for f in res["factors"])
+    # 内禀横截面 alpha（needs_universe）已原生算入（ADR-0055 D1 ①）
+    fids = {f["factor_id"] for f in res["factors"]}
+    assert "alpha101.a1" in fids and "alpha101.a3" in fids
 
 
 async def test_panel_score_below_min_symbols_empty() -> None:

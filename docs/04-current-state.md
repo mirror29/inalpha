@@ -366,8 +366,12 @@ live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩
   标的 < min_symbols 不排名（残缺池排名是伪信号）。**降级标注**:universe 非 PIT
   （is_pit=false,ADR-0053 C 成分快照未建,存活者偏差未挡,显式不静默）。顺带纠正
   `alpha101.a6 = -corr(open,volume,10)` 误标 needs_universe（纯时序,已下放实装）。
-  **延后**（归后续 PR）:0054 完整 `run_panel_backtest`、PIT 成分、内禀横截面 alpha
-  （a1/a3 原生 rank 公式）、paper 多标的轮动 runner、orchestration 横截面 tool。
+- **内禀横截面 alpha a1/a3 原生实装**（2026-06-25,ADR-0055 D1 ①）：`alpha101.a1
+  = rank(Ts_ArgMax(SignedPower((ret<0?std:close),2),5))-0.5`、`a3 = -corr(rank(open),
+  rank(volume),10)` —— 含 `rank()` 的真·横截面因子，在 Panel 上原生算（共享
+  `cross_sectional_rank` 算子），`panel_score` 自动纳入 ①路径。a3 零方差窗的 ±inf 归 NaN。
+  **延后**（归后续 PR）:0054 完整 `run_panel_backtest`、PIT 成分、paper 多标的轮动
+  runner、orchestration 横截面 tool。
 - **null IC 选择效应基准**：score/snapshot 加 `ic_null_benchmark`（Bailey–LdP
   E[max|null] 近似）——N 个候选、当前样本量下纯噪声能跑出的期望最大 |IC|；
   top1 不显著高于它 = 选择效应预警。只透出供判断，不剔除。
