@@ -74,32 +74,39 @@ def cross_sectional_ic(
         ``(mean_ic, icir, n_periods, mean_valid_symbols)`` —— 横截面 IC 均值、
         IC 序列的 mean/std（稳定性）、参与的期数、每期平均有效标的数。
         无任何有效期 → 全 0。
+
+    **向量化**（每行一次性算，不再逐期 ``.loc[t]`` Python 循环）：spearman = 行内
+    rank 后的 pearson；只在两边都有值的标的上 rank，行有效标的 < min_symbols 或
+    rank 全平（方差 0）的行剔除。52 因子 × 数百期时这比逐期循环快一个量级。
     """
-    common_idx = factor_panel.index.intersection(fwd_panel.index)
-    ics: list[float] = []
-    valid_counts: list[int] = []
-    for t in common_idx:
-        pair = (
-            pd.concat([factor_panel.loc[t], fwd_panel.loc[t]], axis=1)
-            .replace([np.inf, -np.inf], np.nan)
-            .dropna()
-        )
-        if len(pair) < min_symbols:
-            continue
-        fr = pair.iloc[:, 0].rank()
-        rr = pair.iloc[:, 1].rank()
-        if fr.std(ddof=0) == 0 or rr.std(ddof=0) == 0:
-            continue
-        ic = fr.corr(rr)
-        if not np.isnan(ic):
-            ics.append(float(ic))
-            valid_counts.append(len(pair))
-    if not ics:
+    if factor_panel.empty or fwd_panel.empty:
         return 0.0, 0.0, 0, 0.0
-    arr = np.asarray(ics)
+    idx = factor_panel.index.intersection(fwd_panel.index)
+    cols = factor_panel.columns.intersection(fwd_panel.columns)
+    if len(idx) == 0 or len(cols) == 0:
+        return 0.0, 0.0, 0, 0.0
+    f = factor_panel.loc[idx, cols].replace([np.inf, -np.inf], np.nan)
+    r = fwd_panel.loc[idx, cols].replace([np.inf, -np.inf], np.nan)
+    # 只在 (因子, 前瞻收益) 都有值的格子上参与（逐期 dropna 的向量化等价）
+    both = f.notna() & r.notna()
+    keep = both.sum(axis=1) >= min_symbols
+    if not keep.any():
+        return 0.0, 0.0, 0, 0.0
+    both = both[keep]
+    fr = f[keep].where(both).rank(axis=1)
+    rr = r[keep].where(both).rank(axis=1)
+    # 行内 pearson(rank) = spearman；中心化后逐行点积 / 模长
+    frm = fr.sub(fr.mean(axis=1), axis=0)
+    rrm = rr.sub(rr.mean(axis=1), axis=0)
+    den = np.sqrt((frm**2).sum(axis=1) * (rrm**2).sum(axis=1))
+    ic_row = ((frm * rrm).sum(axis=1) / den.replace(0.0, np.nan)).dropna()
+    if ic_row.empty:
+        return 0.0, 0.0, 0, 0.0
+    valid_counts = both.sum(axis=1).loc[ic_row.index]
+    arr = ic_row.to_numpy()
     sd = arr.std(ddof=1) if len(arr) > 1 else 0.0
     icir = float(arr.mean() / sd) if sd > 0 else 0.0
-    return float(arr.mean()), icir, len(ics), float(np.mean(valid_counts))
+    return float(arr.mean()), icir, len(arr), float(valid_counts.mean())
 
 
 def latest_cross_section(
