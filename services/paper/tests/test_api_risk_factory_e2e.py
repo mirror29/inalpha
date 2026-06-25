@@ -372,6 +372,16 @@ async def test_low_profit_rule_does_not_block_opposite_side(
     account_id = account_id_from_sub(fresh_user["sub"])
     now = datetime.now(UTC)
 
+    # 现货 long-only：SELL 需有持仓才放行（spot_guard）。先在"无亏损史"时 BUY 开 0.01 多头
+    # 供稍后 SELL 平仓——此 BUY 早于插入亏损，不受 long 侧锁影响（亏损此刻还没插）。
+    r_buy = client.post(
+        "/orders/submit",
+        headers=headers,
+        json={"symbol": "BTC/USDT", "venue": "binance", "side": "BUY",
+              "type": "MARKET", "quantity": 0.01, "ref_price": 50_000.0},
+    )
+    assert r_buy.status_code == 200, r_buy.json()
+
     for i in range(4):
         await _insert_trade(
             account_id=account_id,
@@ -384,7 +394,7 @@ async def test_low_profit_rule_does_not_block_opposite_side(
             exit_reason="manual",
         )
 
-    # SELL → side="short" → LowProfit only_per_side=true 不锁 short
+    # SELL 平掉上面的多头 → side="short" → LowProfit only_per_side=true 不锁 short
     r_sell = _submit_btc_sell(client, headers)
     assert r_sell.status_code == 200, r_sell.json()
     assert r_sell.json()["status"] == "FILLED"
