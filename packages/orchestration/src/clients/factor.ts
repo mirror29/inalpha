@@ -107,6 +107,48 @@ export type CustomScoreResult = {
   is_likely_redundant: boolean;
 };
 
+/** POST /panel/score —— 横截面因子结果（ADR-0055）。 */
+export type PanelRankEntry = {
+  symbol: string;
+  /** 该标的最近有效横截面时点的因子值 */
+  value: number;
+  /** 该值在 universe 内的分位排名 (0,1]，升序 */
+  rank_pct: number;
+};
+
+export type PanelFactorResult = {
+  factor_id: string;
+  source: string;
+  name: string;
+  kind: string;
+  /** 恒 "cross_sectional"，与单标的 timeseries IC 区分 */
+  ic_kind: string;
+  /** 逐期横截面 rank-IC 均值：每期对全池按因子排序 vs 跨标的前瞻收益 */
+  cross_sectional_ic: number;
+  icir: number;
+  /** 参与的横截面期数（有效标的 ≥ min_symbols 的 t） */
+  n_periods: number;
+  mean_valid_symbols: number;
+  low_confidence: boolean;
+  /** 最近有效横截面排名（按因子值升序）——选标的直接用：取最低=首，最高=尾 */
+  latest_ranking: PanelRankEntry[];
+};
+
+export type PanelScoreResult = {
+  venue: string;
+  timeframe: string;
+  as_of: string;
+  horizon_bars: number;
+  symbols: string[];
+  bars_used: Record<string, number>;
+  /** universe 是否 PIT。**当前恒 false**（成分快照未建，带存活者偏差，证据打折） */
+  is_pit: boolean;
+  universe_note: string;
+  factors: PanelFactorResult[];
+  ic_null_benchmark?: number;
+  reason: string | null;
+};
+
 /** factor_candidates 一行（D-12 · 因子发现 L1）。 */
 export type FactorCandidateRecord = {
   id: string;
@@ -202,6 +244,29 @@ export class FactorClient {
       lookback_bars: params.lookbackBars,
       horizon_bars: params.horizonBars,
       top_n: params.topN,
+    });
+  }
+
+  /** ADR-0055：一篮子标的的横截面因子评估（横截面 rank-IC + 最新排名,选标的用）。 */
+  async panelScore(params: {
+    venue: string;
+    symbols: string[];
+    timeframe: string;
+    asOf?: string;
+    lookbackBars?: number;
+    horizonBars?: number;
+    minSymbols?: number;
+    factorIds?: string[];
+  }): Promise<PanelScoreResult> {
+    return await this.http.post<PanelScoreResult>("/panel/score", {
+      venue: params.venue,
+      symbols: params.symbols,
+      timeframe: params.timeframe,
+      as_of: params.asOf,
+      lookback_bars: params.lookbackBars,
+      horizon_bars: params.horizonBars,
+      min_symbols: params.minSymbols,
+      factor_ids: params.factorIds,
     });
   }
 

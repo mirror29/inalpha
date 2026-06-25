@@ -370,8 +370,10 @@ live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩
   = rank(Ts_ArgMax(SignedPower((ret<0?std:close),2),5))-0.5`、`a3 = -corr(rank(open),
   rank(volume),10)` —— 含 `rank()` 的真·横截面因子，在 Panel 上原生算（共享
   `cross_sectional_rank` 算子），`panel_score` 自动纳入 ①路径。a3 零方差窗的 ±inf 归 NaN。
-  **延后**（归后续 PR）:0054 完整 `run_panel_backtest`、PIT 成分、paper 多标的轮动
-  runner、orchestration 横截面 tool。
+- **横截面选股 tool 接入 agent**（2026-06-25,ADR-0055 D5）：`factor.panel_score` orchestration
+  tool（FactorClient.panelScore → `POST /panel/score`）——对话里"给一组标的按因子选哪只 / 轮动"
+  即走它；orchestrator prompt 加路由说明（单标的择时仍走 factor.timing,non-PIT 降级须转述）。
+  **延后**（归后续 PR）:0054 完整 `run_panel_backtest`、PIT 成分（0053 C）、paper 多标的轮动 runner。
 - **null IC 选择效应基准**：score/snapshot 加 `ic_null_benchmark`（Bailey–LdP
   E[max|null] 近似）——N 个候选、当前样本量下纯噪声能跑出的期望最大 |IC|；
   top1 不显著高于它 = 选择效应预警。只透出供判断，不剔除。
