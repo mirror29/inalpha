@@ -644,19 +644,15 @@ class FactorEngine:
         }
         specs = self._spec_index()
         results: list[dict[str, Any]] = []
-        for fid in ids:
-            cols = {
-                sym: fac[fid] for sym, fac in per_symbol.items() if fid in fac
-            }
-            if len(cols) < min_symbols:
-                continue
-            fpanel = pd.DataFrame(cols).reindex(close_panel.index)
+
+        def _xs_result(fid: str, fpanel: pd.DataFrame) -> dict[str, Any]:
+            """从一个 time × symbol 因子矩阵算横截面 IC + 最新排名 → 结果行。"""
             mean_ic, icir, n_periods, mean_valid = cross_sectional_ic(
                 fpanel, fwd_panel, min_symbols=min_symbols
             )
             _t, ranking = latest_cross_section(fpanel, min_symbols=min_symbols)
             spec = specs.get(fid)
-            results.append({
+            return {
                 "factor_id": fid,
                 "source": spec.source if spec else "",
                 "name": spec.name if spec else fid,
@@ -671,7 +667,40 @@ class FactorEngine:
                     {"symbol": s, "value": v, "rank_pct": rp}
                     for (s, v, rp) in ranking
                 ],
-            })
+            }
+
+        # ② 普通时序因子的横截面化（ADR-0055 D1 ②）：每期把单标的因子值横向排名
+        for fid in ids:
+            cols = {sym: fac[fid] for sym, fac in per_symbol.items() if fid in fac}
+            if len(cols) < min_symbols:
+                continue
+            results.append(
+                _xs_result(fid, pd.DataFrame(cols).reindex(close_panel.index))
+            )
+
+        # ① 内禀横截面因子（needs_universe，含 rank()）：在 OHLCV 面板上原生算
+        xs_ids = [s.factor_id for s in self.catalog() if s.needs_universe]
+        if factor_ids is not None:
+            req = set(factor_ids)
+            xs_ids = [fid for fid in xs_ids if fid in req]
+        if xs_ids:
+            fields = {
+                "open": align_field(frames, "open"),
+                "high": align_field(frames, "high"),
+                "low": align_field(frames, "low"),
+                "close": close_panel,
+                "volume": align_field(frames, "volume"),
+            }
+            for a in self._adapters:
+                fn = getattr(a, "compute_cross_sectional", None)
+                if fn is None:
+                    continue
+                for fid, matrix in fn(fields, xs_ids).items():
+                    aligned = matrix.reindex(close_panel.index)
+                    if int(aligned.notna().any().sum()) < min_symbols:
+                        continue
+                    results.append(_xs_result(fid, aligned))
+
         results.sort(key=lambda r: abs(r["cross_sectional_ic"]), reverse=True)
         max_periods = max((r["n_periods"] for r in results), default=0)
         benchmark = null_ic_benchmark(len(results), max_periods, horizon_bars)

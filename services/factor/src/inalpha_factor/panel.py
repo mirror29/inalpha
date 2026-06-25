@@ -38,6 +38,17 @@ def align_field(frames: dict[str, pd.DataFrame], field: str) -> pd.DataFrame:
     return pd.DataFrame(cols).sort_index()
 
 
+def cross_sectional_rank(panel: pd.DataFrame) -> pd.DataFrame:
+    """每行（时刻）对各 symbol 做横截面百分位 rank ∈ (0,1]；全 NaN 行保持 NaN。
+
+    内禀横截面因子（WorldQuant ``rank()``）的基础算子：某标的的值取决于当天它在
+    全池里的相对位置。NaN（缺观测）不参与排名、结果保持 NaN，不冒充。
+    """
+    if panel.empty:
+        return panel
+    return panel.rank(axis=1, pct=True)
+
+
 def forward_return_panel(close_panel: pd.DataFrame, horizon: int) -> pd.DataFrame:
     """每标的前瞻收益 ``close[t+H]/close[t]-1``；末 H 行 NaN（绝不用未来，§3.1）。"""
     if close_panel.empty:
