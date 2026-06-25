@@ -351,6 +351,10 @@ export type SubmitOrderParams = {
   /** D-8a' 后 optional：省略则 paper 服务端调 data /ticker 自取 */
   refPrice?: number;
   feeRate?: number;
+  /** spot（默认）或 perp（USDT-M 永续 + 逐仓，放开做空/杠杆；仅 crypto 永续标的）。 */
+  tradingMode?: "spot" | "perp";
+  /** 杠杆倍数（perp 用，1..20）；spot 恒 1。 */
+  leverage?: number;
 };
 
 export type SubmitOrderResult = {
@@ -489,6 +493,10 @@ export type StartStrategyParams = {
   symbol: string;
   timeframe?: string;
   params?: Record<string, unknown>;
+  /** spot（默认）或 perp（USDT-M 永续 + 逐仓，放开做空/杠杆；仅 crypto 永续标的如 BTC/USDT:USDT）。 */
+  tradingMode?: "spot" | "perp";
+  /** 杠杆倍数（perp 用，1..20）；spot 恒 1。 */
+  leverage?: number;
 };
 
 /** D-11 · live runner 决策复盘日志一行。 */
@@ -706,6 +714,8 @@ export class PaperClient {
       price: params.price,
       ref_price: params.refPrice,
       fee_rate: params.feeRate ?? 0.001,
+      trading_mode: params.tradingMode ?? "spot",
+      leverage: params.leverage ?? 1,
     });
   }
 
@@ -789,6 +799,8 @@ export class PaperClient {
       symbol: params.symbol,
       timeframe: params.timeframe ?? "1h",
       params: params.params ?? {},
+      trading_mode: params.tradingMode ?? "spot",
+      leverage: params.leverage ?? 1,
     });
   }
 

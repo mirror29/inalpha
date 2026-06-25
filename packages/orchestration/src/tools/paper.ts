@@ -747,6 +747,21 @@ export const paperStartStrategyTool = createTool({
     symbol: SymbolSchema,
     timeframe: TimeframeSchema.default("1h"),
     params: z.record(z.string(), z.unknown()).optional().describe("策略参数（缺省用策略默认值）"),
+    tradingMode: z
+      .enum(["spot", "perp"])
+      .default("spot")
+      .describe(
+        "spot（默认，现货 long-only）或 perp（USDT-M 永续 + 逐仓，放开做空 / 杠杆）。" +
+        "perp **仅** crypto 永续标的（ccxt 记法 BTC/USDT:USDT，非现货 BTC/USDT），" +
+        "非 crypto / 非永续会被服务端 422 拒。perp 须配**含做空逻辑**的策略，long-only 策略会告警。",
+      ),
+    leverage: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(1)
+      .describe("杠杆倍数（perp 用，1..20）；spot 恒 1"),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
@@ -757,6 +772,8 @@ export const paperStartStrategyTool = createTool({
       symbol: inputData.symbol,
       timeframe: inputData.timeframe,
       params: inputData.params,
+      tradingMode: inputData.tradingMode,
+      leverage: inputData.leverage,
     });
   },
 });
