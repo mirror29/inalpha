@@ -611,6 +611,7 @@ describe("factor.timing / score / catalog", () => {
           ],
           ic_null_benchmark: 0.03,
           reason: null,
+          unknown_factor_ids: [],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );

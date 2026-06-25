@@ -218,6 +218,8 @@ export const factorPanelScoreTool = createTool({
     - symbols 应同 venue/timeframe；不同市场交易时段不同,缺口留 NaN、某期有效标的不足
       min_symbols 时该期不排名
     - cross_sectional_ic 同样受多重检验影响（ic_null_benchmark 是噪声地板,读法同 factor.score）
+    - **unknown_factor_ids 非空 = 你传的某些 factorIds 拼错/过期(不在 catalog)**,已被拒;
+      即使 factors 非空也要检查它,别以为传的因子都算了——先 factor.catalog 核对再重试
     - 股票/指数选股按市场表用 timeframe=1d（默认）
   `.trim(),
   inputSchema: z.object({

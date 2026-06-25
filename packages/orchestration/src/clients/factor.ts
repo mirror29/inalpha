@@ -151,6 +151,8 @@ export type PanelScoreResult = {
   factors: PanelFactorResult[];
   ic_null_benchmark?: number;
   reason: string | null;
+  /** 传入 factor_ids 里不在 catalog 的（拼错/过期）；恒透出，空 = 全部有效 */
+  unknown_factor_ids: string[];
 };
 
 /** factor_candidates 一行（D-12 · 因子发现 L1）。 */
