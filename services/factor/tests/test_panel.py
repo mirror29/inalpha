@@ -289,6 +289,17 @@ async def test_panel_score_empty_factor_ids_not_all() -> None:
     assert res["reason"] is not None
 
 
+async def test_panel_score_unknown_factor_id_explicit_reason() -> None:
+    """未知/拼错 factor_id → reason 明说'unknown',别伪装成'标的不够'(§3.1)。"""
+    frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
+    eng = _PanelEngine(frames)
+    res = await eng.panel_score(
+        **_kwargs(_SYMS, factor_ids=["qlib.roc_20_typo"])  # type: ignore[arg-type]
+    )
+    assert res["factors"] == []
+    assert res["reason"] is not None and "unknown" in res["reason"].lower()
+
+
 async def test_panel_score_below_min_symbols_empty() -> None:
     """universe 标的数 < min_symbols → 无因子可横截面评估,显式 reason。"""
     frames = {"A": _bars(seed=1), "B": _bars(seed=2)}
