@@ -263,6 +263,20 @@ async def test_panel_score_degrades_on_single_symbol_fetch_failure() -> None:
     assert all(res["bars_used"][s] > 0 for s in _SYMS if s != "C")
 
 
+async def test_panel_score_macro_only_factor_ids_explicit_reason() -> None:
+    """全传 macro factor_ids → 无可横截面评估的因子,显式 reason 不静默(§3.1)。
+
+    防止与"评估了但全部低置信"的正常空响应混淆,agent 误读成"此 universe 无信号"。
+    """
+    frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
+    eng = _PanelEngine(frames)
+    res = await eng.panel_score(
+        **_kwargs(_SYMS, factor_ids=["macro.vix_level", "macro.curve_slope"])  # type: ignore[arg-type]
+    )
+    assert res["factors"] == []
+    assert res["reason"] is not None and "macro" in res["reason"]
+
+
 async def test_panel_score_below_min_symbols_empty() -> None:
     """universe 标的数 < min_symbols → 无因子可横截面评估,显式 reason。"""
     frames = {"A": _bars(seed=1), "B": _bars(seed=2)}
