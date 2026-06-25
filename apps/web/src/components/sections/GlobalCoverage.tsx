@@ -35,7 +35,7 @@ export function GlobalCoverage() {
 
   return (
     <BroadsheetSection
-      index="07"
+      index="08"
       eyebrow="Coverage · twelve markets, one kernel"
       title={t("title")}
       intro={t("sub")}

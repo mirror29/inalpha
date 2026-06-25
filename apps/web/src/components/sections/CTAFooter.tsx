@@ -40,7 +40,7 @@ export function CTAFooter({ stats = null }: CTAFooterProps = {}) {
           className="pointer-events-none absolute -top-16 right-4 -z-10 select-none font-display italic leading-none text-fg/[0.04] transition-colors duration-500 group-hover:text-gold/25 md:right-12"
           style={{ fontSize: "clamp(8rem, 24vw, 22rem)" }}
         >
-          09
+          10
         </span>
         {/* Bracketed header */}
         <div className="border-y border-fg/15">

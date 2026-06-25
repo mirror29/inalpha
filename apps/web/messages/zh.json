@@ -181,6 +181,36 @@
     "gateLabel": "质量门",
     "gate": "上线前，质量门拿候选与基线打分；不达标，agent 自动改一版重写——只有过线的才发布。过线者还可跑交叉验证——WalkForward / Purged / Combinatorial CV 配 Deflated Sharpe——让 edge 必须在多条样本外路径上都站得住，而非靠一段窗口走运。"
   },
+  "robustness": {
+    "title": "过得了这道关，",
+    "titleAlt": "才算真有 edge。",
+    "sub": "「从一堆尝试里挑最优」这个动作本身就会过拟合。所以每个环节——因子筛选、策略挑选、参数、样本外——都各自带一套统计校正，而不是一份你看着顺眼的回测。",
+    "coreLabel": "核心敌人",
+    "core": "多重检验偏差",
+    "killLabel": "挡住",
+    "layers": [
+      {
+        "tag": "回测",
+        "kills": "走运的一段窗口冒充不了 edge",
+        "items": ["CPCV · purge + embargo", "Deflated Sharpe · 修正试错次数", "Bootstrap Sharpe 95% CI", "参数邻域敏感性"]
+      },
+      {
+        "tag": "因子",
+        "kills": "数据挖出的伪因子进不了库",
+        "items": ["null-IC 选择效应基准", "Benjamini–Hochberg FDR", "经济学故事门", "ρ < 0.85 去相关"]
+      },
+      {
+        "tag": "进化",
+        "kills": "单一指标刷不动分",
+        "items": ["多目标 fitness", "回撤一票否决", "换手率惩罚", "buy-and-hold 基线并跑"]
+      },
+      {
+        "tag": "未来函数",
+        "kills": "回测永远看不到明天",
+        "items": ["财报 point-in-time", "FRED 发布滞后表", "bar 截断到 as_of", "test 段止于最新 bar"]
+      }
+    ]
+  },
   "demo": {
     "eyebrow": "04 / 演示",
     "title": "看 Agent 当面争辩。",
@@ -367,7 +397,7 @@
   },
   "faq": {
     "eyebrow": {
-      "index": "08",
+      "index": "09",
       "label": "常见问题"
     },
     "title": "你可能在想的问题。",

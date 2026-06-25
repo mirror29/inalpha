@@ -6,6 +6,7 @@ import { CTAFooter } from "@/components/sections/CTAFooter";
 import { FAQ } from "@/components/sections/FAQ";
 import { GlobalCoverage } from "@/components/sections/GlobalCoverage";
 import { Hero } from "@/components/sections/Hero";
+import { OverfittingGuard } from "@/components/sections/OverfittingGuard";
 import { ResearchFloor } from "@/components/sections/ResearchFloor";
 import { StrategyEvolution } from "@/components/sections/StrategyEvolution";
 import { TrustBoundary } from "@/components/sections/TrustBoundary";
@@ -40,7 +41,8 @@ export default async function HomePage({
     "FACTOR TIMING · RANK IC",
     "INVESTING LEGENDS PANEL",
     "STRATEGY EVOLUTION",
-    "70-FACTOR LIBRARY · DECAY WATCH",
+    "ANTI-OVERFITTING · CPCV · DEFLATED SHARPE",
+    "79-FACTOR LIBRARY · DECAY WATCH",
     "PLAN · APPROVE · EXECUTE",
     "POSITION GUARD · −20% HARD STOP",
     "AUTONOMOUS PAPER RUNNER",
@@ -61,6 +63,7 @@ export default async function HomePage({
         <AgentIntelligence />
         <ResearchFloor />
         <StrategyEvolution />
+        <OverfittingGuard />
         <UnifiedKernel />
         <TrustBoundary />
         <GlobalCoverage />

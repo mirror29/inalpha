@@ -204,6 +204,21 @@ Inalpha 把*调度*和*算力*分开：agent runtime 负责扇出网格、聚合
 
 ---
 
+## 防过拟合
+
+量化研究最难缠的对手不是市场，是*多重检验偏差*——从一堆尝试里挑最优，纯噪声里也能挑出 Sharpe=2.0 的「赢家」。所以 Inalpha 从不押注一份「聪明的回测」；每个会「挑出最优」的环节，都各自带一套统计校正。
+
+| 环节 | 防线 | 挡住什么 |
+|---|---|---|
+| **回测验证** | Combinatorial Purged CV（purge + embargo）· Deflated Sharpe（修正试错 N 次）· bootstrap Sharpe 95% CI · 参数邻域敏感性 —— `POST /backtest/cv`、`POST /backtest/sensitivity` | 走运的一段窗口、或脆弱的参数尖峰，冒充成真 edge |
+| **因子筛选** | null-IC 选择效应基准 · Benjamini–Hochberg FDR 校正 · 经济学故事门 · ρ < 0.85 去相关 | 数据挖出的伪因子混进因子库 |
+| **策略进化** | 多目标 fitness（收益 − 换手 − 回撤一票否决）· buy-and-hold 基线并跑 | 候选靠刷单一指标显得好看 |
+| **防未来函数** | 财报 point-in-time · FRED 发布滞后表 · bar 截断到 `as_of` · CV test 段止于最新 bar | 回测看到当时还没公开的数据 |
+
+> DSR 与 bootstrap Sharpe CI 已透出在 CV / 回测报告里；PBO（回测过拟合概率，CSCV）在 `services/paper/.../engine/robustness.py`，备好供 swarm 网格对比。
+
+---
+
 ## Roadmap
 
 每条能力的当前进度。已落地模块清单与端到端决策时序图见 [`docs/04-current-state.md`](docs/04-current-state.md)。

@@ -33,8 +33,9 @@ export function UnifiedKernel() {
 
   return (
     <BroadsheetSection
-      index="05"
-      align="right"
+      index="06"
+      align="left"
+      indexSide="right"
       eyebrow="Unified kernel · same code, three modes"
       title=""
       titleNode={
