@@ -1,6 +1,8 @@
 """宏观因子单测（ADR-0044）：滞后对齐 / staleness / timeframe 门 / 优雅降级。"""
 from __future__ import annotations
 
+import asyncio
+
 import numpy as np
 import pandas as pd
 
@@ -205,6 +207,30 @@ async def test_macro_in_daily_score() -> None:
     ids = {f["factor_id"] for f in res["factors"]}
     assert any(fid.startswith("macro.") for fid in ids)
     assert eng.macro_fetches == 18  # 8 daily + 10 monthly（Phase 2 + Phase 3）
+
+
+async def test_macro_series_fetched_concurrently() -> None:
+    """18 个 FRED 序列必须并发取数，不能串行——串行累积会让 1d snapshot 越过客户端超时。
+
+    确定性探针（不看墙钟）：记录"同时在飞"的最大并发数。串行 → 恒 1；并发 → >1。
+    """
+    eng = _MacroEngine(_daily_bars())
+    in_flight = 0
+    max_in_flight = 0
+
+    async def _probe(series_id: str, **_kw: object) -> pd.Series:
+        nonlocal in_flight, max_in_flight
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        try:
+            await asyncio.sleep(0.01)  # 让出事件循环，给并发机会
+            return _macro_map()[series_id]
+        finally:
+            in_flight -= 1
+
+    eng._fetch_macro_series = _probe  # type: ignore[method-assign]
+    await eng.score(**_score_kwargs("1d"))  # type: ignore[arg-type]
+    assert max_in_flight > 1, f"FRED 序列疑似串行取数（max_in_flight={max_in_flight}）"
 
 
 async def test_macro_skipped_intraday() -> None:
