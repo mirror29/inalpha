@@ -33,7 +33,10 @@ from .execution import risk_guard as risk_guard_mod
 from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
 from .execution.risk_guard_factory import RiskGuardFactory
-from .execution.spot_guard import violates_spot_long_only
+from .execution.spot_guard import (
+    InsufficientPositionError,
+    violates_spot_long_only,
+)
 from .factor_patrol import capture_factor_baseline
 from .fills import apply_fill_to_positions_and_cash
 from .fx import BaseCurrencyConverter, needs_network
@@ -856,60 +859,94 @@ class LiveRunnerManager:
         rationale = (
             f"[live_runner run:{run_id}] candidate:{run['candidate_id']} on_bar {side} signal"
         )
-        async with get_conn() as conn, conn.transaction():
-            await accounts_store.get_or_create(conn, account_id)  # 首单 lazy create 账户
-            plan = await plans_store.create(
-                conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
-                order_params=order_params, rationale=rationale,
-                expire_in_seconds=_PLAN_EXPIRE_S,
-            )
-            plan_id = plan["plan_id"]
-            approved = await plans_store.approve(
-                conn, account_id=account_id, plan_id=plan_id, approver=_LIVE_RUNNER_APPROVER
-            )
-            await plans_store.consume_approval(
-                conn, account_id=account_id, plan_id=plan_id,
-                approval_token=approved["approval_token"],
-            )
-            await orders_store.insert(
-                conn, account_id=account_id, client_order_id=result["client_order_id"],
-                venue=venue, symbol=symbol, side=side, order_type=order.type.value,
-                quantity=order.quantity, price=order.price, status=result["status"],
-                filled_quantity=result["filled_quantity"],
-                avg_fill_price=result["avg_fill_price"], fee=result["fee"],
-                notional=result["notional"], ts_event=result["ts_event"],
-                trade_plan_id=plan_id,
-            )
-            if result["status"] == "FILLED":
-                realized_pnl = await apply_fill_to_positions_and_cash(
-                    conn, account_id=account_id, venue=venue, symbol=symbol, side=side,
-                    quantity=Decimal(str(result["filled_quantity"])),
-                    fill_price=Decimal(str(result["avg_fill_price"])),
-                    fee=Decimal(str(result["fee"])),
-                    ts_event=result["ts_event"], order_id=result["client_order_id"],
+        try:
+            async with get_conn() as conn, conn.transaction():
+                await accounts_store.get_or_create(conn, account_id)  # 首单 lazy create 账户
+                # 现货 long-only 权威守门（事务内 FOR UPDATE）：闭合 step 1.5 乐观读与本 apply
+                # 跨事务的 TOCTOU——并发同账户同标的 SELL 各读旧持仓双双过 step 1.5，这里锁行
+                # 串行化，第二个读到更新后持仓 → raise 回滚（不落 plan/order/fill）转 except 拒单。
+                if side == "SELL" and result["status"] == "FILLED":
+                    locked = await positions_store.get(
+                        conn, account_id=account_id, venue=venue, symbol=symbol,
+                        for_update=True,
+                    )
+                    locked_qty = Decimal(str(locked["quantity"])) if locked else Decimal(0)
+                    if violates_spot_long_only(
+                        side=side, quantity=order.quantity, current_qty=locked_qty
+                    ):
+                        raise InsufficientPositionError(
+                            f"INSUFFICIENT_POSITION: sell {order.quantity} exceeds position "
+                            f"{locked_qty} (spot long-only guard)"
+                        )
+                plan = await plans_store.create(
+                    conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
+                    order_params=order_params, rationale=rationale,
+                    expire_in_seconds=_PLAN_EXPIRE_S,
                 )
-                # 回写该笔已实现盈亏(开仓 0 / 平仓实现值)——与 api/orders 提交路径
-                # 同口径;漏写会让控制台「最近订单」的本笔盈亏恒为空。
-                await orders_store.set_realized_pnl(
-                    conn,
-                    client_order_id=result["client_order_id"],
-                    realized_pnl=realized_pnl,
+                plan_id = plan["plan_id"]
+                approved = await plans_store.approve(
+                    conn, account_id=account_id, plan_id=plan_id, approver=_LIVE_RUNNER_APPROVER
                 )
-            await plans_store.record_execution(
-                conn, plan_id=plan_id, resulting_order_id=result["client_order_id"]
+                await plans_store.consume_approval(
+                    conn, account_id=account_id, plan_id=plan_id,
+                    approval_token=approved["approval_token"],
+                )
+                await orders_store.insert(
+                    conn, account_id=account_id, client_order_id=result["client_order_id"],
+                    venue=venue, symbol=symbol, side=side, order_type=order.type.value,
+                    quantity=order.quantity, price=order.price, status=result["status"],
+                    filled_quantity=result["filled_quantity"],
+                    avg_fill_price=result["avg_fill_price"], fee=result["fee"],
+                    notional=result["notional"], ts_event=result["ts_event"],
+                    trade_plan_id=plan_id,
+                )
+                if result["status"] == "FILLED":
+                    realized_pnl = await apply_fill_to_positions_and_cash(
+                        conn, account_id=account_id, venue=venue, symbol=symbol, side=side,
+                        quantity=Decimal(str(result["filled_quantity"])),
+                        fill_price=Decimal(str(result["avg_fill_price"])),
+                        fee=Decimal(str(result["fee"])),
+                        ts_event=result["ts_event"], order_id=result["client_order_id"],
+                    )
+                    # 回写该笔已实现盈亏(开仓 0 / 平仓实现值)——与 api/orders 提交路径
+                    # 同口径;漏写会让控制台「最近订单」的本笔盈亏恒为空。
+                    await orders_store.set_realized_pnl(
+                        conn,
+                        client_order_id=result["client_order_id"],
+                        realized_pnl=realized_pnl,
+                    )
+                await plans_store.record_execution(
+                    conn, plan_id=plan_id, resulting_order_id=result["client_order_id"]
+                )
+                # 决策复盘日志（与订单同事务，原子）
+                filled = result["status"] == "FILLED"
+                await self._record_decision(
+                    conn, run, order, bar,
+                    outcome="filled" if filled else "rejected",
+                    intent=intent,
+                    plan_id=plan_id,
+                    order_id=str(result["client_order_id"]),
+                    fill_price=Decimal(str(result["avg_fill_price"])) if filled else None,
+                    fee=Decimal(str(result["fee"])) if filled else None,
+                    reason=None if filled else str(result.get("rejection_reason") or "not filled"),
+                )
+        except InsufficientPositionError as e:
+            # 事务内 FOR UPDATE 守门命中并发竞态：事务已回滚（无 plan/order/fill），
+            # 补 session 拒单 + 决策日志（新连接，原事务已废）。
+            session.reject_order(
+                order=order, strategy_id=strategy_id,
+                reason=e.message, ts_event=bar.ts_event,
             )
-            # 决策复盘日志（与订单同事务，原子）
-            filled = result["status"] == "FILLED"
-            await self._record_decision(
-                conn, run, order, bar,
-                outcome="filled" if filled else "rejected",
-                intent=intent,
-                plan_id=plan_id,
-                order_id=str(result["client_order_id"]),
-                fill_price=Decimal(str(result["avg_fill_price"])) if filled else None,
-                fee=Decimal(str(result["fee"])) if filled else None,
-                reason=None if filled else str(result.get("rejection_reason") or "not filled"),
-            )
+            async with get_conn() as conn:
+                await runs_store.append_log(
+                    conn, run_id, "warn",
+                    f"order rejected by spot guard (txn race): {e.message}",
+                )
+                await self._record_decision(
+                    conn, run, order, bar, outcome="rejected", intent=intent,
+                    reason=e.message,
+                )
+            return "rejected"
 
         # 4. 回灌 session：成交更新 portfolio + 策略持仓视图；未成交清理 ExecutionEngine 状态
         if result["status"] == "FILLED":
