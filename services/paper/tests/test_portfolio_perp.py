@@ -145,3 +145,50 @@ def test_spot_can_afford_sell_allows_closing_long() -> None:
     p._handle_fill(_fill(OrderSide.BUY, qty=1.0, price=100.0))
     assert p.can_afford_sell(inst, 1.0) is True  # 等量平多放行
     assert p.can_afford_sell(inst, 2.0) is False  # 超卖翻空拒
+
+
+# ─── 资金费计提(进 cash 现金流,不污染 UPNL) ───
+
+
+def test_apply_funding_long_pays_on_positive_rate() -> None:
+    p = _perp(leverage=10)
+    inst = _btc()
+    p._handle_fill(_fill(OrderSide.BUY, qty=1.0, price=100.0))  # 多 1@100,cash=10000
+    p.update_mark(inst, 100.0)
+    pay = p.apply_funding(inst, 0.0001)  # 正费率 → 多头付 1×100×0.0001=0.01
+    assert pay == 0.01
+    assert p.cash == 10_000.0 - 0.01
+
+
+def test_apply_funding_short_receives_on_positive_rate() -> None:
+    p = _perp(leverage=10)
+    inst = _btc()
+    p._handle_fill(_fill(OrderSide.SELL, qty=1.0, price=100.0))  # 空
+    p.update_mark(inst, 100.0)
+    pay = p.apply_funding(inst, 0.0001)  # 空头收 → 负支付 = 入账
+    assert pay == -0.01
+    assert p.cash == 10_000.0 + 0.01
+
+
+def test_apply_funding_spot_is_noop() -> None:
+    p = Portfolio(MessageBus(), initial_cash=10_000.0, fee_rate=0.0)  # spot
+    inst = _btc()
+    p._handle_fill(_fill(OrderSide.BUY, qty=1.0, price=100.0))
+    assert p.apply_funding(inst, 0.001) == 0.0
+    assert p.cash == 9_900.0  # 不被 funding 改
+
+
+def test_apply_funding_flat_is_noop() -> None:
+    p = _perp(leverage=10)
+    assert p.apply_funding(_btc(), 0.001) == 0.0
+
+
+# ─── 引擎 perp 透传(回测==实盘:同一 Portfolio 配置) ───
+
+
+def test_backtest_engine_perp_portfolio() -> None:
+    from inalpha_paper.engine.backtest import BacktestEngine
+
+    eng = BacktestEngine(initial_cash=10_000.0, fee_rate=0.0, trading_mode="perp", leverage=5)
+    assert eng.portfolio.trading_mode == "perp"
+    assert eng.portfolio.leverage == 5

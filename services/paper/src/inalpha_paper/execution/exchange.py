@@ -160,7 +160,9 @@ class SimulatedExchange(Gateway):
             if (
                 self._portfolio is not None
                 and order.side == OrderSide.SELL
-                and not self._portfolio.can_afford_sell(order.instrument_id, order.quantity)
+                and not self._portfolio.can_afford_sell(
+                    order.instrument_id, order.quantity, price=bar.close
+                )
             ):
                 # 正常不可达(guard 出场量=持仓);留日志便于未来排查边界异常
                 _logger.warning(
@@ -237,7 +239,9 @@ class SimulatedExchange(Gateway):
         # spot 守门：portfolio 注入后启用；未注入时退化为旧行为
         if self._portfolio is not None:
             if order.side == OrderSide.BUY:
-                if not self._portfolio.can_afford_buy(fill_qty, fill_price):
+                if not self._portfolio.can_afford_buy(
+                    fill_qty, fill_price, instrument_id=order.instrument_id
+                ):
                     notional = fill_qty * fill_price
                     fee = notional * self._portfolio.fee_rate
                     self._emit_denied(
@@ -248,7 +252,9 @@ class SimulatedExchange(Gateway):
                     )
                     return None
             else:  # SELL
-                if not self._portfolio.can_afford_sell(order.instrument_id, fill_qty):
+                if not self._portfolio.can_afford_sell(
+                    order.instrument_id, fill_qty, price=fill_price
+                ):
                     pos = self._portfolio.position(order.instrument_id)
                     current = pos.quantity if pos is not None else 0.0
                     self._emit_denied(

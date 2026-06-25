@@ -56,6 +56,8 @@ class BacktestEngine:
         protective_trailing_stop_pct: float | None = None,
         protective_chandelier_atr_mult: float | None = None,
         protective_chandelier_atr_period: int = 22,
+        trading_mode: str = "spot",
+        leverage: int = 1,
     ) -> None:
         """初始化。
 
@@ -63,6 +65,9 @@ class BacktestEngine:
             initial_cash: 账户起始现金（也作为 RiskEngine ``starting_balance``，
                 让 MaxDrawdownRule 等 global rule 用正确基准）
             fee_rate: 撮合手续费率
+            trading_mode: ``"spot"``（默认）或 ``"perp"``（USDT-M 永续 + 逐仓);perp 下
+                Portfolio 走保证金记账,与 live/HTTP 同口径(回测==实盘)。
+            leverage: 杠杆倍数(perp 用,spot 恒 1)。
             rules: ADR-0006 RiskRule 列表。``None`` 时 RiskEngine 退化为 pass-through
                 （向后兼容 D-5 ~ D-8 调用方）
             lock_store: 风控锁存储。None 时 RiskEngine 自动创建 InMemoryLockStore
@@ -87,7 +92,10 @@ class BacktestEngine:
             starting_balance=initial_cash,
             lock_store=lock_store,
         )
-        self.portfolio = Portfolio(self.msgbus, initial_cash=initial_cash, fee_rate=fee_rate)
+        self.portfolio = Portfolio(
+            self.msgbus, initial_cash=initial_cash, fee_rate=fee_rate,
+            trading_mode=trading_mode, leverage=leverage,
+        )
         # spot 守门：让 SimulatedExchange 撮合前能 query portfolio cash / position
         # （ADR-0032 BuyingPowerRule 撮合层兜底实现，旧 BTC -98% bug 同源防御）
         self.exchange.bind_portfolio(self.portfolio)

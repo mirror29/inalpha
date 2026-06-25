@@ -118,13 +118,18 @@ class LiveEngineSession:
         protective_trailing_stop_pct: float | None = None,
         protective_chandelier_atr_mult: float | None = None,
         protective_chandelier_atr_period: int = 22,
+        trading_mode: str = "spot",
+        leverage: int = 1,
     ) -> None:
         self.clock = TestClock(0)
         self.msgbus = MessageBus()
         self._gateway = _CaptureGateway(self.msgbus, self.clock)
         # ExecutionEngine 注册 EXECUTION_ENGINE_ENDPOINT + 订阅 internal.venue.*
         self.execution_engine = ExecutionEngine(self.msgbus, self._gateway)
-        self.portfolio = Portfolio(self.msgbus, initial_cash=initial_cash, fee_rate=fee_rate)
+        self.portfolio = Portfolio(
+            self.msgbus, initial_cash=initial_cash, fee_rate=fee_rate,
+            trading_mode=trading_mode, leverage=leverage,
+        )
         # 风控旁路：策略 submit_order → RISK_ENGINE_ENDPOINT → 直接转 ExecutionEngine。
         # 真风控在外部 route_through_plan_exec 用 DB-backed RiskGuard 做。
         self.msgbus.register_endpoint(RISK_ENGINE_ENDPOINT, self._forward_to_execution)
