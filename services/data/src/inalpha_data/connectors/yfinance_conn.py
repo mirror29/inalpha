@@ -174,10 +174,13 @@ class YfinanceConnector:
         """
         global _last_fetch_mono
         async with _FETCH_LOCK:
-            wait = _MIN_FETCH_INTERVAL_S - (time.monotonic() - _last_fetch_mono)
-            if wait > 0:
-                await asyncio.sleep(wait)
+            # sleep 也包进 try：若在 sleep 处被外部 cancel（上层请求超时），finally 仍更新
+            # _last_fetch_mono，否则下一个 symbol 进锁读到陈旧时间戳会跳过节流、与上一个
+            # 孤儿请求并发打 Yahoo 触发 429。
             try:
+                wait = _MIN_FETCH_INTERVAL_S - (time.monotonic() - _last_fetch_mono)
+                if wait > 0:
+                    await asyncio.sleep(wait)
                 loop = asyncio.get_running_loop()
                 return await asyncio.wait_for(
                     loop.run_in_executor(
