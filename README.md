@@ -47,7 +47,7 @@ Several capability lines sit on top of that harness:
 
 The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha** (the quant term for excess return) — a companion that reads your direction and keeps every step on the record.
 
-> **Status:** Inalpha is in **alpha** (Phase D-12 — factor-library closure: 70+ factors with lineage & decay watch (alert-only, no auto-trim), a restricted-DSL factor-discovery L1, and a three-party research debate — on top of D-11 multi-market paper trading (cross-currency cash + a live runner that auto-runs promoted strategies on live bars), D-10 multi-market data, and D-9 LLM-authored strategies + risk engine). Read the code, weigh in on design — **do not run this against real money** (real-money trading is out of scope).
+> **Status:** Inalpha is in **alpha** (Phase D-12 — factor-library closure: 79 factors with lineage & decay watch (alert-only, no auto-trim), a restricted-DSL factor-discovery L1, and a three-party research debate — on top of D-11 multi-market paper trading (cross-currency cash + a live runner that auto-runs promoted strategies on live bars), D-10 multi-market data, and D-9 LLM-authored strategies + risk engine). Read the code, weigh in on design — **do not run this against real money** (real-money trading is out of scope).
 
 ---
 
@@ -78,7 +78,20 @@ The **Operator Console** (`apps/dashboard`) is the home base — a runtime dashb
 </td>
 <td width="50%" valign="top">
 <img src="assets/screenshots/en/factors.png" alt="Factor Library" />
-<br /><sub><strong>Factor Library</strong> — 70+ factors (pandas-ta / Alpha101 / qlib + FRED macro) ranked by current-effectiveness IC.</sub>
+<br /><sub><strong>Factor Library</strong> — 79 factors (pandas-ta / Alpha101 / qlib + FRED macro) ranked by current-effectiveness IC.</sub>
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/screenshots/en/paper-1.png" alt="Runner Detail — Chart" />
+<br /><sub><strong>Runner Detail — Chart</strong> — drill into a paper runner: cumulative PnL, decisions count, risk-blocked tally, and last-bar freshness, with every entry/exit plotted on live bars.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="assets/screenshots/en/paper-2.png" alt="Runner Detail — Positions & Decisions" />
+<br /><sub><strong>Runner Detail — Positions &amp; Decisions</strong> — open positions, a per-bar decision timeline (side · qty · fill · fee), and the instrument's effective factors ranked by current IC.</sub>
 </td>
 </tr>
 </table>
@@ -132,6 +145,7 @@ An *alpha hypothesis* is a guess about what predicts returns ("stocks with low v
 
 - **Talk it through.** Drop a hypothesis in plain language; agents formalize it, compute the values, and run the standard statistical checks in seconds.
 - **Not just a registry — timing too.** Rather than a hard-coded indicator set, agents rank factors by time-series Rank IC to surface the ones effective *right now* (`factor.timing`), backing research and entry timing — when the market rotates, the chosen factors rotate with it.
+- **Cross-section, not only timing.** The same factors also rank *across a basket* — `factor.panel_score` scores a universe by cross-sectional Rank IC each period (who's strongest now, who to rotate into), orthogonal to single-name timing. Alpha101 cross-sectional factors are computed natively on the panel.
 - **An economic story gate.** A factor without a "why" never enters the library. The gate is a required step, not a recommendation.
 - **Guardrails for the classic mistakes.** Looking ahead in time, surviving-only universes, over-parameterized search, too few samples, normalization leaks — five middleware checks intercept each one before it pollutes a result.
 - **No silent promotion.** Registering a factor to the library is permanently human-only. Rejected factors are kept on file for postmortems, not silently dropped.
@@ -154,6 +168,7 @@ Human-written strategies hit a velocity ceiling, and parameter tuning can only a
 - **Full source, optionally from a vetted archetype.** The LLM authors the strategy's complete Python source — it can start from a pre-validated archetype skeleton to cut protocol errors — then iterates against the last backtest report. (Small-diff / unified-diff mutation arrives with E2.)
 - **Three sandbox gates.** A static code audit, an isolated subprocess run, and a final check that the result still satisfies the `Strategy` interface. Malicious or malformed code never reaches the backtest.
 - **Balanced fitness, baseline-checked.** Candidates are scored on a balanced fitness (return + risk-adjusted return − turnover − drawdown veto), and each is auto-raced against a buy-and-hold baseline — a high score has to beat just holding, not a single Sharpe number. (The MAP-Elites behavioral grid that keeps the population diverse is part of E2.)
+- **Cross-validated, not a single lucky split.** A candidate can run time-series cross-validation — WalkForward / Purged K-Fold / Combinatorial Purged CV with a Deflated Sharpe — so an edge has to hold across many out-of-sample paths instead of one window, with the test fold always reaching the latest bar.
 - **Reproducible end to end.** Each candidate's parent, prompt, sandbox verdict, and scores are versioned — the entire lineage can be replayed later.
 
 > Ships as E1 (single-generation closed loop) in D-9 and ramps to E4 (loop exposed to the orchestrator as a single MCP tool), with two weeks of stable operation required between tiers.
@@ -171,7 +186,7 @@ Inalpha splits *scheduling* from *compute*. The agent runtime fans out the grid 
 A deep dive doesn't hand you one "correct answer." Beyond the usual technical, fundamental, and sentiment analysts, you can convene a panel of master personas — Buffett (value / moats), Lynch (GARP growth), Wood (disruptive innovation), Burry (contrarian / bubbles), Druckenmiller (macro trends), Marks (cycles / risk): each argues in their own style, naturally forming opposing views that feed a synthesized judgment.
 
 - **Opt-in, cost-controlled.** A plain deep dive costs the same as before; you only pay for the masters you actually convene.
-- **Views grounded in data.** Each persona reads technicals / fundamentals / web intel with `as_of` pinned to *now* — no passing a stale forecast off as the present.
+- **Views grounded in data.** Each persona reads technicals / fundamentals / web intel with `as_of` pinned to *now* — no passing a stale forecast off as the present. Fundamentals are read point-in-time, filtered by report period and release lag so a backtest never sees a number before it was public (akshare today; yfinance v1 not yet PIT, flagged in place).
 - **Structured bull / bear / risk debate — now live.** Beyond the parallel analysts, opposing-stance bull and bear researchers argue across rounds while a risk researcher stress-tests both — triggered only when the analysts genuinely disagree, with a soft early-stop when arguments stop changing and the full decision chain (why it debated, why it stopped, how it was synthesized) persisted for replay.
 
 ### 6. Skills — absorb outside research playbooks
@@ -215,10 +230,17 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 | ✅ Shipped | Research debate — three-party + contested trigger | D-12 | 6 analysts + bull / bear / risk researcher · contested-only trigger · Jaccard soft early-stop · decision chain persisted |
 | ✅ Shipped | Factor lineage & decay watch | D-12 | `factor_snapshot` + `factor_baseline` · independent decay patrol · `factor_decay` warning (alert-only, no auto-trim) |
 | ✅ Shipped | Monthly FRED macro factors | D-12 | CPI / core CPI / unemployment / payrolls / M2 (62 → 70 factors) · per-series release-lag table |
+| ✅ Shipped | FRED macro factors — Phase 3 | D-12 | credit spreads (HY / IG OAS) · curve front-end (10Y–3M) · real economy (PPI / industrial production / retail) · sentiment (70 → 79 factors) |
 | ✅ Shipped | Factor discovery — L1 | D-12 | restricted qlib-style DSL (zero eval/exec) · `factor_candidates` pool · multiple-testing correction + null-IC benchmark · discovery workflow → propose; register is dashboard-only |
+| ✅ Shipped | Cross-sectional factor scoring | D-12 | `factor.panel_score` · `POST /panel/score` · cross-sectional Rank IC (rank the pool each period vs forward cross-sectional return) · native Alpha101 a1/a3 · orthogonal to single-name timing |
+| ✅ Shipped | Time-series cross-validation — anti-overfitting | D-12 | WalkForward / PurgedKFold / Combinatorial Purged CV + Deflated Sharpe · `POST /backtest/cv` · test fold always includes the latest bar · auto-fallback to walk-forward when samples are short |
+| ✅ Shipped | Point-in-time fundamentals | D-12 | akshare financials filtered by report-period + release lag · `GET /fundamentals?as_of=` · prevents look-ahead (yfinance v1 not yet PIT, explicitly flagged) |
 | 🗓️ Planned | Strategy evolution — E2 | E2 | multi-generation loop + MAP-Elites + Island Model + `unified-diff` mutations (E1 single-generation closed loop already shipped in D-9) |
+| 🗓️ Planned | Factor discovery — L2 / L3 | L2 / L3 | multi-agent factor crew (L2) + weekly automated scans (L3), on top of the L1 DSL pipeline already shipped |
+| 🗓️ Planned | Automated decay handling | TBD | reflection-driven backtest + auto-trim of decaying factors — today the decay patrol only alerts, never moves the book |
 | 🔬 Exploring | Alpha Zoo cold start | E1+ | seed factor library with public alphas (Qlib / Kakushadze / GTJA) |
 | 🔬 Exploring | E4 `evolve_strategy` MCP tool | E4 | evolution loop exposed to the orchestrator as one MCP tool |
+| 🔬 Exploring | Point-in-time fundamentals — deeper coverage | TBD | bars-table PIT metadata + adjustment handling, beyond the report-lag filter shipped today |
 | 🔬 Exploring | Analog backtesting | TBD | similarity-window-driven backtest range selection (STUMPY) |
 
 > **Legend** — ✅ Shipped: behavior already lives in `main` · ⏭️ In Flight: actively in this phase · 🗓️ Planned: scoped for an upcoming phase, not started · 🔬 Exploring: research recorded, no commit date.
