@@ -188,6 +188,9 @@ async def run_sensitivity(
                 params=params,
                 initial_cash=req.initial_cash,
                 fee_rate=req.fee_rate,
+                trading_mode=req.trading_mode,
+                leverage=req.leverage,
+                funding_rate=req.funding_rate,
             )
         except Exception:
             return None

@@ -652,6 +652,9 @@ async def run_cv(
             initial_cash=req.initial_cash,
             fee_rate=req.fee_rate,
             splitter=spl,
+            trading_mode=req.trading_mode,
+            leverage=req.leverage,
+            funding_rate=req.funding_rate,
         )
         try:
             pool = get_pool()
@@ -718,6 +721,9 @@ def run_cv_in_subprocess(
     initial_cash: float,
     fee_rate: float,
     splitter: CombinatorialPurgedCV | PurgedKFold | WalkForward,
+    trading_mode: str = "spot",
+    leverage: int = 1,
+    funding_rate: float = 0.0,
 ) -> CVReport:
     """**Top-level 可 pickle 函数**：在子进程里解析策略类 + 跑多路 CV，返 ``CVReport``。
 
@@ -759,6 +765,9 @@ def run_cv_in_subprocess(
         splitter=splitter,
         initial_cash=initial_cash,
         fee_rate=fee_rate,
+        trading_mode=trading_mode,
+        leverage=leverage,
+        funding_rate=funding_rate,
     )
 
 

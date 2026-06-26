@@ -278,6 +278,20 @@ class SensitivityRequest(BaseModel):
     initial_cash: float = Field(default=10_000.0, gt=0)
     fee_rate: float = Field(default=0.001, ge=0, lt=1)
 
+    # perp 透传(同 BacktestRequest 口径)：做空策略须用 perp,否则 base/邻域跑成 spot
+    # → 裸空被守门拒 → 0 成交 → base_fitness 恒 0 → verdict 误判 insufficient。
+    trading_mode: Literal["spot", "perp"] = Field(
+        default="spot",
+        description="spot(默认,现货 long-only)或 perp(USDT-M 永续 + 逐仓,放开做空/杠杆;"
+        "仅 crypto 永续标的 BTC/USDT:USDT)。做空策略须用 perp,否则裸空被守门拒=0 成交。",
+    )
+    leverage: int = Field(default=1, ge=1, le=20, description="杠杆倍数(perp 用,1..20);spot 恒 1")
+    funding_rate: float = Field(
+        default=0.0,
+        description="perp 敏感性用的(常数)资金费率,每结算时点(默认 8h)计提;0=不计 funding。"
+        "正费率多头付空头。",
+    )
+
     pct: float = Field(default=0.2, gt=0, lt=1, description="扰动幅度（±pct）")
     max_combos: int = Field(default=16, ge=2, le=16, description="邻域组合数上限")
 
