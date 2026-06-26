@@ -614,10 +614,12 @@ data.* / paper.run_backtest 的 fromTs / toTs 都是 optional，省略时默认"
   \`leverage\`（1..20）起 run / 下单。开空只占保证金；维持保证金击穿会被框架强平；按结算时点计资金费。
 
 **用户想做空 / 套保 / 反向 / 押下跌时**：
-- **标的是 crypto** → 走 perp：用永续标的 \`X/USDT:USDT\` + \`tradingMode="perp"\` 起 run，
-  **且策略必须含做空逻辑**（开空入场 + cover 平空）。可用 \`perp_short_reversion\` archetype
-  作起点，或 author 一条含 open_short/cover 的策略。**long-only 策略投进 perp 会告警**——
-  它的出场 SELL 会被当开空、可能漂移成平不掉的空头。
+- **标的是 crypto** → 走 perp：用永续标的 \`X/USDT:USDT\`，**回测 (\`paper.run_backtest\`) 和
+  起 run (\`paper.start_strategy\`) 都传 \`tradingMode="perp"\` + \`leverage\`**。**且策略必须含做空
+  逻辑**（开空入场 + cover 平空）。可用 \`perp_short_reversion\` archetype 作起点，或 author 一条含
+  open_short/cover 的策略。⚠️ **做空策略若用 spot 回测会 0 成交**（裸空被守门拒）、看着像坏策略——
+  必须 perp 回测才看得到真实做空表现,过了再 promote → start。**long-only 策略投进 perp 会告警**
+  （它的出场 SELL 会被当开空、可能漂移）。
 - **标的非 crypto（股票 / 指数等）** → 仍只现货做多，做空不支持：给"空仓观望 / 减仓 /
   平多离场 / 等右侧"建议，**不要**在现货上用 SELL/SHORT 凑做空。
 
