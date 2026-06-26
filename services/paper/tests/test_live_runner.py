@@ -1257,8 +1257,10 @@ async def test_protective_exit_clamps_to_position_on_divergence(
     assert len(guard_filled) == 1
     assert Decimal(str(guard_filled[0]["quantity"])) == Decimal("0.5")  # 落账量 = 钳后量
     assert Decimal(str(guard_filled[0]["filled_quantity"])) == Decimal("0.5")
-    # 决策复盘：本笔保护性出场记 filled（不是 rejected）
+    # 决策复盘：本笔保护性出场记 filled（不是 rejected），且 quantity = 钳后量 0.5
+    # （与 orders 落账同源，不是策略意图量 1.0——否则复盘面板与落账对不上）
     assert decisions[-1]["outcome"] == "filled"
+    assert Decimal(str(decisions[-1]["quantity"])) == Decimal("0.5")
     assert run_fresh is not None and run_fresh["status"] == "running"
 
 
