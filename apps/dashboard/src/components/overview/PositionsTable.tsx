@@ -50,6 +50,7 @@ export function PositionsTable({
                 <Th right>{t("col.qty")}</Th>
                 <Th right>{t("col.avgPrice")}</Th>
                 <Th right>{t("col.mark")}</Th>
+                <Th right>{t("col.liqPrice")}</Th>
                 <Th right>{t("col.unrealized")}</Th>
                 <Th right>{t("col.realized")}</Th>
               </TableHeadRow>
@@ -57,6 +58,8 @@ export function PositionsTable({
             <tbody>
               {positions.map((p) => {
                 const ccy = p.currency ?? baseCcy;
+                // perp 仓:后端给非 null 强平价(spot 恒 null);杠杆 >1 才挂徽标。
+                const isPerp = p.liquidation_price !== null;
                 return (
                   <tr
                     key={`${p.venue}:${p.symbol}`}
@@ -66,6 +69,17 @@ export function PositionsTable({
                       <span className="font-medium text-fg">
                         {instrumentLabel(p.symbol, p.venue)}
                       </span>
+                      {p.leverage > 1 && (
+                        <span
+                          className="ml-1.5 rounded bg-bg-elev px-1 py-0.5 font-mono text-[10px] text-gold"
+                          title={t("leverageTitle", {
+                            leverage: p.leverage,
+                            margin: fmtSigned(p.margin_used, ccy, locale),
+                          })}
+                        >
+                          {p.leverage}×
+                        </span>
+                      )}
                     </Td>
                     <Td right mono>
                       <span className={p.quantity < 0 ? "text-fox-red" : "text-fg"}>
@@ -92,6 +106,15 @@ export function PositionsTable({
                               title={tStatus("stale")}
                             />
                           )}
+                        </span>
+                      )}
+                    </Td>
+                    <Td right mono>
+                      {!isPerp || p.liquidation_price === null ? (
+                        <span className="text-fg-muted/50">—</span>
+                      ) : (
+                        <span className="text-fox-red" title={t("liqStale")}>
+                          {fmtNum(p.liquidation_price, locale, 4)}
                         </span>
                       )}
                     </Td>

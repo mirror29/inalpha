@@ -32,6 +32,12 @@ export interface PositionRecord {
   generation: number;
   currency: string | null;
   updated_at: string;
+  /** perp 杠杆倍数；spot 恒 1。 */
+  leverage: number;
+  /** perp 该仓占用保证金；spot 为 0。 */
+  margin_used: number;
+  /** perp 强平价（mark 穿越即强平）；spot 为 null。null 也用来判定是否 perp 仓。 */
+  liquidation_price: number | null;
 }
 
 /** GET /orders 元素。 */
