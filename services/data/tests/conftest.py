@@ -115,6 +115,15 @@ async def app_with_overrides() -> AsyncIterator[Any]:
                 for i in range(5)
             ]
 
+        async def fetch_perp_funding_rate(self, symbol: str) -> dict[str, object]:
+            return {
+                "symbol": symbol,
+                "mark_price": 60000.0,
+                "funding_rate": 0.0001,
+                "ts": datetime(2026, 6, 26, tzinfo=UTC),
+                "next_funding_ts": datetime(2026, 6, 26, 8, tzinfo=UTC),
+            }
+
         async def close(self) -> None:
             pass
 

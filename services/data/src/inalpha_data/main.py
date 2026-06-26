@@ -26,6 +26,7 @@ from .api import (
     health,
     market,
     news,
+    perp,
     symbols,
     ticker,
     web_fetch,
@@ -110,6 +111,7 @@ app.include_router(market.router)
 app.include_router(constituents.router)
 app.include_router(fundamentals.router)
 app.include_router(fx.router)
+app.include_router(perp.router)
 app.include_router(web_search.router)
 app.include_router(web_fetch.router)
 app.include_router(symbols.router)
