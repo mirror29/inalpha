@@ -985,12 +985,15 @@ class LiveRunnerManager:
             return "rejected"
 
         # 4. 回灌 session：成交更新 portfolio + 策略持仓视图；未成交清理 ExecutionEngine 状态
-        # 已知残差（保护性钳量场景）：confirm_fill 按钳后量（如 0.5）增量减仓，而 DB 已被钳到
-        # 全平（0）——若前置分叉源自 HTTP 卖单，session 视图会残留分叉（session 0.5 vs DB 0）。
-        # 后续 bar PositionGuard 仍按 session 残仓触发保护性 SELL，但每次都打到事务内权威闸
-        # （DB=0 → locked_qty=0 → raise → rejected），**不静默、run 不崩**，仅产生连续 rejected
-        # 决策行噪音。彻底消除残差属 session/DB 对账范畴（restart 或 _restore_position reconcile
-        # 可清），不在本「止损不再被静默吃掉」修复范围内。
+        # 已知残差（保护性钳量场景）：confirm_fill 按钳后量（如 0.5）增量减仓，DB 已被钳到全平
+        # （0），故 session 视图残留分叉（session 0.5 vs DB 0；前置分叉源自 HTTP 卖单）。注意
+        # PositionGuard 首次触发时已把该 inst 记入 _pending_exit_insts，而 confirm_fill 不清它
+        # （只有 reject_order 的保护性单分支、或 pos 转 flat 才清，见 position_guard.evaluate）——
+        # session 残仓非 flat → 后续 bar guard.evaluate 命中 pending 去重 → **对该 inst 静默 skip、
+        # 不再发出场单**（不是反复 rejected 噪音）。此刻 DB 实仓已 0、无即时暴露；但若策略此后在该
+        # inst 重新建仓，guard 因 pending 未清仍跳过 → 新仓得不到 guard 保护。这属 session/DB 对账
+        # 缺口（restart 或 _restore_position reconcile 可一并清 session + pending），不在本「止损不再
+        # 被静默吃掉」修复范围内，留作 follow-up。
         if result["status"] == "FILLED":
             session.confirm_fill(
                 order=order, strategy_id=strategy_id,
