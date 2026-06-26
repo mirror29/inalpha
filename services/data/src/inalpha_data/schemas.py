@@ -361,3 +361,40 @@ class SymbolSearchResult(BaseModel):
 class SymbolSearchResponse(BaseModel):
     query: str
     results: list[SymbolSearchResult] = Field(default_factory=list)
+
+
+# ── 指数成分 PIT 快照（#106 / ADR-0053 阶段 C）────────────────────────
+
+
+class ConstituentItem(BaseModel):
+    code: str
+    """成分符号，Inalpha 格式（sh./sz./bj. 前缀）。"""
+    name: str | None = None
+    weight: float | None = None
+
+
+class SnapshotConstituentsRequest(BaseModel):
+    index_code: str = Field(
+        ..., examples=["000300"], description="中证/常用指数代码（000300 沪深300 等）"
+    )
+
+
+class SnapshotConstituentsResponse(BaseModel):
+    index_code: str
+    as_of_date: str
+    """快照日（今天）。"""
+    count: int
+
+
+class ConstituentsResponse(BaseModel):
+    index_code: str
+    as_of: str
+    """请求的 PIT 时点。"""
+    snapshot_date: str | None = None
+    """实际命中的快照日（as_of_date <= as_of 的最近一份）；None = 无可用快照。"""
+    is_pit: bool = Field(
+        description="是否命中 PIT 快照。false = as_of 早于最早快照（向前累积尚未覆盖），"
+        "成分不可信、带存活者偏差，调用方须显式降级（§3.1）"
+    )
+    reason: str | None = None
+    constituents: list[ConstituentItem] = Field(default_factory=list)

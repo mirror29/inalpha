@@ -20,6 +20,7 @@ from . import __version__
 from .api import (
     backfill,
     bars,
+    constituents,
     fundamentals,
     fx,
     health,
@@ -98,6 +99,7 @@ app.include_router(backfill.router)
 app.include_router(ticker.router)
 app.include_router(news.router)
 app.include_router(market.router)
+app.include_router(constituents.router)
 app.include_router(fundamentals.router)
 app.include_router(fx.router)
 app.include_router(web_search.router)
