@@ -197,11 +197,13 @@ export const factorPanelScoreTool = createTool({
     - 用户给一组标的、要在其中**按某因子排序 / 选最优 / 轮动**（无论中英文、无论哪个市场或
       因子：value / momentum / volatility / 任意 catalog 因子）
     - 想知道某因子在这组标的上**横截面**有没有选股力（每期排序 vs 跨标的后市收益）
-    - "成分股里按因子轮动"类策略的选标的步
+    - "成分股里按因子轮动"类策略的选标的步——传 indexCode（如 000300）让它取 **PIT 成分**
+      当 universe（去存活者偏差，venue 配 akshare），而非自己列 symbols
 
     何时不用：
     - 只有一个标的、判方向/时机 → factor.timing（横截面要 ≥2 个标的）
-    - 全市场自动扫描/筛选标的池 → 没有这能力，universe 要调用方显式给（symbols 列表）
+    - universe 二选一：显式 symbols（非 PIT）或 indexCode（PIT 成分）；自由"全市场扫描选池"
+      仍不支持——indexCode 只覆盖已快照的指数
     - 要完整研究单个标的 → research.deep_dive
 
     返回 factors[]（按 |cross_sectional_ic| 排序）：每个含 cross_sectional_ic（横截面 rank-IC，
@@ -227,9 +229,19 @@ export const factorPanelScoreTool = createTool({
     venue: z.string().min(1).describe("数据源（按市场分类选，不预设默认市场）"),
     symbols: z
       .array(SymbolSchema)
-      .min(2)
       .max(50)
-      .describe("universe 标的集（同 venue/timeframe，2-50 个）。非 PIT——调用方给定"),
+      .optional()
+      .describe(
+        "显式 universe（2-50 个，同 venue/timeframe）。**非 PIT**（调用方给定，带存活者偏差）。" +
+        "与 indexCode 二选一",
+      ),
+    indexCode: z
+      .string()
+      .optional()
+      .describe(
+        "指数代码（如 000300），由 data 解析 asOf 那刻的 **PIT 成分**当 universe（is_pit=true，" +
+        "去存活者偏差，venue 配 akshare）。与 symbols 二选一,优先 indexCode。取不到 PIT 快照→空+降级",
+      ),
     timeframe: TimeframeSchema.default("1d"),
     asOf: z
       .string()
@@ -249,13 +261,17 @@ export const factorPanelScoreTool = createTool({
       .array(z.string())
       .optional()
       .describe("要算的因子 id（来自 factor.catalog）；省略=全部价量/横截面因子（macro 不参与）"),
-  }),
+  }).refine(
+    (d) => d.indexCode !== undefined || (d.symbols !== undefined && d.symbols.length >= 2),
+    { message: "提供 indexCode（PIT 成分）或 symbols（≥2 个）二选一" },
+  ),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
     return await client.panelScore({
       venue: inputData.venue,
       symbols: inputData.symbols,
+      indexCode: inputData.indexCode,
       timeframe: inputData.timeframe ?? "1d",
       asOf: inputData.asOf,
       lookbackBars: inputData.lookbackBars ?? 720,
