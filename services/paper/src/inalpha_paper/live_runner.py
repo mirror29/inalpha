@@ -953,6 +953,7 @@ class LiveRunnerManager:
                     fill_price=Decimal(str(result["avg_fill_price"])) if filled else None,
                     fee=Decimal(str(result["fee"])) if filled else None,
                     reason=None if filled else str(result.get("rejection_reason") or "not filled"),
+                    quantity=Decimal(str(exec_qty)),  # 钳量分叉时 = 钳后量,与 orders 落账同源
                 )
         except InsufficientPositionError as e:
             # 事务内 FOR UPDATE 守门命中并发竞态：事务已回滚（无 plan/order/fill），
@@ -973,6 +974,12 @@ class LiveRunnerManager:
             return "rejected"
 
         # 4. 回灌 session：成交更新 portfolio + 策略持仓视图；未成交清理 ExecutionEngine 状态
+        # 已知残差（保护性钳量场景）：confirm_fill 按钳后量（如 0.5）增量减仓，而 DB 已被钳到
+        # 全平（0）——若前置分叉源自 HTTP 卖单，session 视图会残留分叉（session 0.5 vs DB 0）。
+        # 后续 bar PositionGuard 仍按 session 残仓触发保护性 SELL，但每次都打到事务内权威闸
+        # （DB=0 → locked_qty=0 → raise → rejected），**不静默、run 不崩**，仅产生连续 rejected
+        # 决策行噪音。彻底消除残差属 session/DB 对账范畴（restart 或 _restore_position reconcile
+        # 可清），不在本「止损不再被静默吃掉」修复范围内。
         if result["status"] == "FILLED":
             session.confirm_fill(
                 order=order, strategy_id=strategy_id,
@@ -1002,15 +1009,21 @@ class LiveRunnerManager:
         fill_price: Decimal | None = None,
         fee: Decimal | None = None,
         reason: str | None = None,
+        quantity: Decimal | None = None,
     ) -> None:
-        """记一行决策复盘日志（策略在某根 bar 的下单意图 + 撮合结果）。"""
+        """记一行决策复盘日志（策略在某根 bar 的下单意图 + 撮合结果）。
+
+        ``quantity`` 缺省记 ``order.quantity``（策略意图量）；保护性出场钳量分叉时显式传
+        钳后量（``exec_qty``），让决策行的 quantity 与 ``orders`` 表落账量一致，避免复盘
+        面板显示「SELL 1.0 filled」而落账实为 0.5 的对不上。
+        """
         await runs_store.insert_decision(
             conn,
             run_id=run["id"],
             bar_ts=_ns_to_dt(bar.ts_event),
             bar_close=Decimal(str(bar.close)),
             side=order.side.value,
-            quantity=Decimal(str(order.quantity)),
+            quantity=quantity if quantity is not None else Decimal(str(order.quantity)),
             order_type=order.type.value,
             limit_price=Decimal(str(order.price)) if order.price is not None else None,
             tag=order.tag,  # 策略可经 Order.tag 透传语义意图（stop_loss / take_profit / ...）
