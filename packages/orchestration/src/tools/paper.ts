@@ -25,10 +25,50 @@ const SymbolSchema = z
 
 type ToolRequestContext = { authToken?: string };
 
+/**
+ * perp（USDT-M 永续）回测入参——run_backtest / cv_backtest / check_sensitivity 共用，
+ * 保证三个回测面口径一致（做空策略必须三处都用 perp，否则裸空被守门拒=0 成交=fitness 0）。
+ */
+const perpInputFields = {
+  tradingMode: z
+    .enum(["spot", "perp"])
+    .default("spot")
+    .describe(
+      "spot（默认，现货 long-only）或 perp（USDT-M 永续 + 逐仓，放开做空 / 杠杆）。" +
+      "**做空策略必须用 perp**——spot 下做空 SELL 被守门拒，会 0 成交、看着像坏策略。" +
+      "perp 仅 crypto 永续标的（ccxt 记法 BTC/USDT:USDT，非现货 BTC/USDT）。",
+    ),
+  leverage: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .default(1)
+    .describe("杠杆倍数（perp 用，1..20）；spot 恒 1"),
+  fundingRate: z
+    .number()
+    .default(0)
+    .describe("perp 用的（常数）资金费率，每结算时点计提；0=不计 funding（默认）。正费率多头付空头"),
+} as const;
+
 async function getClient(ctx?: ToolRequestContext): Promise<PaperClient> {
   const settings = getSettings();
   const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
   return new PaperClient({ baseUrl: settings.paperServiceUrl, token });
+}
+
+/**
+ * 回测类工具专用长超时 client —— 缓存命中（增量 backfill）多为秒级，但空缓存首次
+ * 全量拉数据（CCXT rate-limited fetch_ohlcv）+ CV/敏感性跑多路引擎可能分钟级，
+ * 默认 30s 会 `request timed out`（与 tools/data.ts getBackfillClient 同模式）。
+ */
+async function getBacktestClient(
+  ctx?: ToolRequestContext,
+  timeoutMs = 300_000,
+): Promise<PaperClient> {
+  const settings = getSettings();
+  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  return new PaperClient({ baseUrl: settings.paperServiceUrl, token, timeoutMs });
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -228,7 +268,8 @@ export const paperRunBacktestTool = createTool({
     }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
-    const client = await getClient(tc);
+    // 长超时：空缓存首次全量拉数据可分钟级（增量 backfill 命中时秒级）
+    const client = await getBacktestClient(tc);
 
     // 默认窗口：[now - 1y, now]。LLM 没指定 fromTs / toTs 时自动填，避免每次都要算时间。
     const now = new Date();
@@ -338,6 +379,7 @@ export const paperCheckSensitivityTool = createTool({
       toTs: z.string().datetime().describe("ISO 8601 结束时间"),
       initialCash: z.number().positive().default(10_000),
       feeRate: z.number().min(0).lt(1).default(0.001),
+      ...perpInputFields,
       pct: z.number().gt(0).lt(1).default(0.2).describe("扰动幅度（默认 ±20%）"),
     })
     .superRefine((data, ctx) => {
@@ -353,7 +395,8 @@ export const paperCheckSensitivityTool = createTool({
     }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
-    const client = await getClient(tc);
+    // 敏感性跑 base + ≤16 邻域各一次回测，长超时兜底
+    const client = await getBacktestClient(tc, 600_000);
     return await client.checkSensitivity({
       strategyId: inputData.strategyId,
       candidateId: inputData.candidateId,
@@ -365,6 +408,9 @@ export const paperCheckSensitivityTool = createTool({
       toTs: inputData.toTs,
       initialCash: inputData.initialCash ?? 10_000,
       feeRate: inputData.feeRate ?? 0.001,
+      tradingMode: inputData.tradingMode,
+      leverage: inputData.leverage,
+      fundingRate: inputData.fundingRate,
       pct: inputData.pct ?? 0.2,
     });
   },
@@ -416,6 +462,7 @@ export const paperCvBacktestTool = createTool({
       embargoPct: z.number().min(0).lt(1).default(0.05),
       wfTestSize: z.number().int().min(1).default(21),
       wfTrainSize: z.number().int().min(1).default(252),
+      ...perpInputFields,
     })
     .superRefine((data, ctx) => {
       const hasId = typeof data.strategyId === "string" && data.strategyId.length > 0;
@@ -437,7 +484,8 @@ export const paperCvBacktestTool = createTool({
     }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
-    const client = await getClient(tc);
+    // CV 跑多路引擎，长超时兜底
+    const client = await getBacktestClient(tc);
     return await client.cvBacktest({
       strategyId: inputData.strategyId,
       candidateId: inputData.candidateId,
@@ -455,6 +503,9 @@ export const paperCvBacktestTool = createTool({
       embargoPct: inputData.embargoPct ?? 0.05,
       wfTestSize: inputData.wfTestSize ?? 21,
       wfTrainSize: inputData.wfTrainSize ?? 252,
+      tradingMode: inputData.tradingMode,
+      leverage: inputData.leverage,
+      fundingRate: inputData.fundingRate,
     });
   },
 });
