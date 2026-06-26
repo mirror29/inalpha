@@ -359,6 +359,31 @@ async def test_panel_score_index_code_no_snapshot_degrades(monkeypatch) -> None:
     assert res["reason"] is not None
 
 
+async def test_panel_score_index_code_over_cap_degrades(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """index_code 解析出超 _MAX_PANEL_SYMBOLS 的大 universe → 降级返空,不截断成随机子集。"""
+    from inalpha_factor.data_client import DataClient
+    from inalpha_factor.engine import _MAX_PANEL_SYMBOLS
+
+    eng = _PanelEngine({})
+    big = [f"X{i:04d}" for i in range(_MAX_PANEL_SYMBOLS + 1)]  # 超上限一个
+
+    async def _fake_cons(self, *, index_code, as_of):  # type: ignore[no-untyped-def]
+        return {
+            "index_code": index_code, "is_pit": True, "snapshot_date": "2026-06-01",
+            "reason": None, "constituents": [{"code": s} for s in big],
+        }
+
+    monkeypatch.setattr(DataClient, "get_constituents", _fake_cons)
+    res = await eng.panel_score(
+        symbols=[], venue="akshare", timeframe="1d", as_of=None,
+        lookback_bars=150, horizon_bars=5, factor_ids=None, min_symbols=3,
+        index_code="000852",
+    )
+    assert res["factors"] == []  # 不算——拒绝截断
+    assert res["bars_used"] == {}  # 没去 fetch 任何标的（cap 在 fetch 前拦下）
+    assert res["reason"] is not None and "cap" in res["reason"]
+
+
 async def test_panel_score_below_min_symbols_empty() -> None:
     """universe 标的数 < min_symbols → 无因子可横截面评估,显式 reason。"""
     frames = {"A": _bars(seed=1), "B": _bars(seed=2)}
