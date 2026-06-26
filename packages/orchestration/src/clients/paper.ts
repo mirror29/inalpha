@@ -142,6 +142,12 @@ export type SensitivityParams = {
   toTs: string;
   initialCash?: number;
   feeRate?: number;
+  /** spot（默认）/ perp——做空策略必须用 perp，否则 base/邻域跑成 spot=0 成交=base_fitness 0 */
+  tradingMode?: "spot" | "perp";
+  /** 杠杆倍数（perp 用，1..20）；spot 恒 1 */
+  leverage?: number;
+  /** perp 资金费率（常数，每结算时点计提）；0=不计 funding */
+  fundingRate?: number;
   /** 扰动幅度，默认 0.2（±20%） */
   pct?: number;
 };
@@ -187,6 +193,12 @@ export type CVBacktestParams = {
   embargoPct?: number;
   wfTestSize?: number;
   wfTrainSize?: number;
+  /** spot（默认）/ perp——做空策略 CV 必须用 perp，否则跑成 spot=0 成交=fitness 0 */
+  tradingMode?: "spot" | "perp";
+  /** 杠杆倍数（perp 用，1..20）；spot 恒 1 */
+  leverage?: number;
+  /** perp 资金费率（常数，每结算时点计提）；0=不计 funding */
+  fundingRate?: number;
 };
 
 export type CVBacktestResult = {
@@ -596,6 +608,9 @@ export class PaperClient {
       to_ts: params.toTs,
       initial_cash: params.initialCash ?? 10_000,
       fee_rate: params.feeRate ?? 0.001,
+      trading_mode: params.tradingMode ?? "spot",
+      leverage: params.leverage ?? 1,
+      funding_rate: params.fundingRate ?? 0,
       pct: params.pct ?? 0.2,
     });
   }
@@ -622,6 +637,9 @@ export class PaperClient {
       embargo_pct: params.embargoPct ?? 0.05,
       wf_test_size: params.wfTestSize ?? 21,
       wf_train_size: params.wfTrainSize ?? 252,
+      trading_mode: params.tradingMode ?? "spot",
+      leverage: params.leverage ?? 1,
+      funding_rate: params.fundingRate ?? 0,
     });
   }
 
