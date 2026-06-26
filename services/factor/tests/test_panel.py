@@ -312,6 +312,53 @@ async def test_panel_score_mixed_valid_and_unknown_surfaces_unknown() -> None:
     assert res["unknown_factor_ids"] == ["qlib.roc_20_typo"]  # typo 不被静默丢弃
 
 
+async def test_panel_score_index_code_resolves_pit_universe(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """index_code → 由 data /constituents 解析 PIT 成分当 universe，is_pit=True。"""
+    from inalpha_factor.data_client import DataClient
+
+    frames = {s: _bars(seed=i + 1) for i, s in enumerate(_SYMS)}
+    eng = _PanelEngine(frames)
+
+    async def _fake_cons(self, *, index_code, as_of):  # type: ignore[no-untyped-def]
+        return {
+            "index_code": index_code, "is_pit": True, "snapshot_date": "2026-06-01",
+            "reason": None, "constituents": [{"code": s} for s in _SYMS],
+        }
+
+    monkeypatch.setattr(DataClient, "get_constituents", _fake_cons)
+    res = await eng.panel_score(
+        symbols=[], venue="akshare", timeframe="1d", as_of=None,
+        lookback_bars=150, horizon_bars=5, factor_ids=None, min_symbols=3,
+        index_code="000300",
+    )
+    assert res["is_pit"] is True  # PIT 成分解析成功
+    assert set(res["bars_used"]) == set(_SYMS)
+    assert res["factors"]
+
+
+async def test_panel_score_index_code_no_snapshot_degrades(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """index_code 但无 ≤as_of 的 PIT 快照 → is_pit=False + 空 + reason,**不回退当前成分**。"""
+    from inalpha_factor.data_client import DataClient
+
+    eng = _PanelEngine({})
+
+    async def _fake_cons(self, *, index_code, as_of):  # type: ignore[no-untyped-def]
+        return {
+            "index_code": index_code, "is_pit": False, "snapshot_date": None,
+            "reason": "no constituent snapshot at or before as_of", "constituents": [],
+        }
+
+    monkeypatch.setattr(DataClient, "get_constituents", _fake_cons)
+    res = await eng.panel_score(
+        symbols=[], venue="akshare", timeframe="1d", as_of=None,
+        lookback_bars=150, horizon_bars=5, factor_ids=None, min_symbols=3,
+        index_code="000300",
+    )
+    assert res["is_pit"] is False
+    assert res["factors"] == []
+    assert res["reason"] is not None
+
+
 async def test_panel_score_below_min_symbols_empty() -> None:
     """universe 标的数 < min_symbols → 无因子可横截面评估,显式 reason。"""
     frames = {"A": _bars(seed=1), "B": _bars(seed=2)}
