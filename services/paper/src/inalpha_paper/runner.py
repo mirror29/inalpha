@@ -161,6 +161,11 @@ async def run_backtest(
         params=req.params,
         initial_cash=req.initial_cash,
         fee_rate=req.fee_rate,
+        # perp 透传:做空策略须在 perp 回测才能真做空(spot 下裸空被守门拒=0 成交)。
+        # baseline(下方 buy_and_hold)保持 spot,作 alpha 对照锚点。
+        trading_mode=req.trading_mode,
+        leverage=req.leverage,
+        funding_rate=req.funding_rate,
     )
     try:
         if req.candidate_id is not None:
@@ -767,6 +772,9 @@ async def _run_engine(
     initial_cash: float,
     fee_rate: float,
     candidate_code: str | None = None,
+    trading_mode: str = "spot",
+    leverage: int = 1,
+    funding_rate: float = 0.0,
 ) -> BacktestReport:
     """调度 engine 执行：pool 已起则丢 ProcessPool，未起则同进程跑兜底。
 
@@ -799,6 +807,9 @@ async def _run_engine(
             protective_trailing_stop_pct=ts,
             protective_chandelier_atr_mult=ch_mult,
             protective_chandelier_atr_period=ch_period,
+            trading_mode=trading_mode,
+            leverage=leverage,
+            funding_rate=funding_rate,
         )
 
     loop = asyncio.get_running_loop()
@@ -818,6 +829,9 @@ async def _run_engine(
         protective_trailing_stop_pct=ts,
         protective_chandelier_atr_mult=ch_mult,
         protective_chandelier_atr_period=ch_period,
+        trading_mode=trading_mode,
+        leverage=leverage,
+        funding_rate=funding_rate,
     )
     return await loop.run_in_executor(pool, fn)
 
@@ -852,6 +866,9 @@ def _make_pool_call(
     protective_trailing_stop_pct: float | None = None,
     protective_chandelier_atr_mult: float | None = None,
     protective_chandelier_atr_period: int = 22,
+    trading_mode: str = "spot",
+    leverage: int = 1,
+    funding_rate: float = 0.0,
 ) -> Any:
     """生成一个无参 callable，丢给 ``run_in_executor``。
 
@@ -875,6 +892,9 @@ def _make_pool_call(
         protective_trailing_stop_pct=protective_trailing_stop_pct,
         protective_chandelier_atr_mult=protective_chandelier_atr_mult,
         protective_chandelier_atr_period=protective_chandelier_atr_period,
+        trading_mode=trading_mode,
+        leverage=leverage,
+        funding_rate=funding_rate,
     )
 
 
@@ -893,6 +913,9 @@ def run_engine_in_subprocess(
     protective_trailing_stop_pct: float | None = None,
     protective_chandelier_atr_mult: float | None = None,
     protective_chandelier_atr_period: int = 22,
+    trading_mode: str = "spot",
+    leverage: int = 1,
+    funding_rate: float = 0.0,
 ) -> BacktestReport:
     """**Top-level 函数 = 可 pickle**：实例化 engine + strategy + 跑 bars，返 ``BacktestReport``。
 
@@ -921,6 +944,9 @@ def run_engine_in_subprocess(
         protective_trailing_stop_pct=protective_trailing_stop_pct,
         protective_chandelier_atr_mult=protective_chandelier_atr_mult,
         protective_chandelier_atr_period=protective_chandelier_atr_period,
+        trading_mode=trading_mode,
+        leverage=leverage,
+        funding_rate=funding_rate,
     )
 
     if candidate_code is not None:

@@ -57,6 +57,18 @@ class BacktestRequest(BaseModel):
     initial_cash: float = Field(default=10_000.0, gt=0)
     fee_rate: float = Field(default=0.001, ge=0, lt=1)
 
+    trading_mode: Literal["spot", "perp"] = Field(
+        default="spot",
+        description="spot(默认,现货 long-only)或 perp(USDT-M 永续 + 逐仓,放开做空/杠杆;"
+        "仅 crypto 永续标的 BTC/USDT:USDT)。做空策略须用 perp 回测,否则裸空被守门拒=0 成交。",
+    )
+    leverage: int = Field(default=1, ge=1, le=20, description="杠杆倍数(perp 用,1..20);spot 恒 1")
+    funding_rate: float = Field(
+        default=0.0,
+        description="perp 回测用的(常数)资金费率,每结算时点(默认 8h)计提;0=不计 funding。"
+        "正费率多头付空头。",
+    )
+
     validation_split: float = Field(
         default=0.7,
         ge=0.0,
