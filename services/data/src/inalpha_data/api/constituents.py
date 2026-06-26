@@ -13,12 +13,11 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from inalpha_shared import get_logger
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
-from inalpha_shared.errors import InalphaError, ValidationError
+from inalpha_shared.errors import ValidationError
 
-from ..connectors.akshare import get_connector as get_akshare_connector
+from ..scheduler import record_snapshot
 from ..schemas import (
     ConstituentItem,
     ConstituentsResponse,
@@ -27,13 +26,7 @@ from ..schemas import (
 )
 from ..storage import constituents as store
 
-_logger = get_logger(__name__)
 router = APIRouter(tags=["constituents"])
-
-
-class ConstituentsUnavailableError(InalphaError):
-    code = "CONSTITUENTS_UNAVAILABLE"
-    status_code = 502
 
 
 @router.post("/constituents/snapshot", response_model=SnapshotConstituentsResponse)
@@ -45,31 +38,12 @@ async def snapshot_constituents(
     """拉 ``index_code`` 当前成分（akshare）落库，``as_of_date=今天``。
 
     每日（或按需）调用一次即向前累积一份 PIT 快照。akshare 只回当前成分，故本接口是
-    PIT 史的**唯一来源**;源站失败 → 502，不静默写空（§3.1）。
+    PIT 史的**唯一来源**;源站失败 → 502，不静默写空（§3.1）。与每日调度器共用
+    :func:`record_snapshot`，手动触发与自动累积行为一致。
     """
-    try:
-        conn = get_akshare_connector()
-    except RuntimeError as exc:  # akshare connector 未注册（启动未 init）
-        raise ConstituentsUnavailableError(
-            f"akshare connector unavailable: {exc}", code="CONSTITUENTS_UNAVAILABLE"
-        ) from exc
-
-    members = await conn.fetch_index_constituents(req.index_code)
-    if not members:
-        raise ConstituentsUnavailableError(
-            f"no constituents fetched for index {req.index_code!r} "
-            "(akshare 拉取失败 / 不支持该指数)",
-            details={"index_code": req.index_code},
-        )
-
-    today = datetime.now(UTC).date()
-    async with db.transaction():
-        n = await store.upsert_snapshot(
-            db, index_code=req.index_code, as_of_date=today, constituents=members
-        )
-    _logger.info("constituent_snapshot_recorded", index_code=req.index_code, count=n)
+    snap_date, n = await record_snapshot(db, index_code=req.index_code)
     return SnapshotConstituentsResponse(
-        index_code=req.index_code, as_of_date=today.isoformat(), count=n
+        index_code=req.index_code, as_of_date=snap_date, count=n
     )
 
 
