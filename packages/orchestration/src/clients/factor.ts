@@ -256,7 +256,8 @@ export class FactorClient {
   /** 一篮子标的的横截面因子评估（横截面 rank-IC + 最新排名,选标的用）。 */
   async panelScore(params: {
     venue: string;
-    symbols: string[];
+    symbols?: string[];
+    indexCode?: string;
     timeframe: string;
     asOf?: string;
     lookbackBars?: number;
@@ -266,7 +267,8 @@ export class FactorClient {
   }): Promise<PanelScoreResult> {
     return await this.http.post<PanelScoreResult>("/panel/score", {
       venue: params.venue,
-      symbols: params.symbols,
+      symbols: params.symbols ?? [],
+      index_code: params.indexCode,
       timeframe: params.timeframe,
       as_of: params.asOf,
       lookback_bars: params.lookbackBars,
