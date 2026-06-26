@@ -125,6 +125,7 @@ class DataClient:
         连接级瞬时失败有界重试（同 get_bars）。
         """
         params = {"index_code": index_code, "as_of": as_of.isoformat()}
+        r: httpx.Response | None = None
         for attempt in range(_GET_RETRIES):
             try:
                 r = await self._client.get("/constituents", params=params)
@@ -137,6 +138,7 @@ class DataClient:
                     f"failed to reach data-service after {_GET_RETRIES} attempts: {e}",
                     code="DATA_SERVICE_UNREACHABLE",
                 ) from e
+        assert r is not None  # 循环要么 break 绑 r，要么末次 raise（同 get_bars）
         if r.status_code >= 400:
             try:
                 detail = r.json()
