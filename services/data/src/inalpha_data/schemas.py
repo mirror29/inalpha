@@ -154,6 +154,31 @@ class TickerResponse(BaseModel):
 
 
 # ────────────────────────────────────────────────────────────────────
+# 永续 funding（给 paper perp 记账：mark price + 资金费率）
+# ────────────────────────────────────────────────────────────────────
+
+
+class PerpFundingQuery(BaseModel):
+    """``GET /perp/funding`` query 参数。"""
+
+    venue: str = Field(default="binance", description="crypto 交易所（仅 crypto perp 支持）")
+    symbol: str = Field(
+        ..., description="USDT-M 永续标的（ccxt 记法）", examples=["BTC/USDT:USDT"]
+    )
+
+
+class PerpFundingResponse(BaseModel):
+    """USDT-M 永续的标记价 + 当期资金费率。"""
+
+    venue: str
+    symbol: str
+    mark_price: float
+    funding_rate: float
+    ts: datetime
+    next_funding_ts: datetime | None = None
+
+
+# ────────────────────────────────────────────────────────────────────
 # FX（D-11 加：汇率查询，给 paper 跨币种 cash / equity 折算用）
 # ────────────────────────────────────────────────────────────────────
 

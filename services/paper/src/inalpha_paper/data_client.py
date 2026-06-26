@@ -92,6 +92,38 @@ class DataClient:
             )
         return result
 
+    async def get_perp_funding(self, *, venue: str, symbol: str) -> dict[str, Any]:
+        """``GET /perp/funding`` —— USDT-M 永续 mark price + 当期 funding rate(perp 记账用)。
+
+        Returns dict: ``venue, symbol, mark_price, funding_rate, ts, next_funding_ts``。
+        venue 非 crypto perp / fapi 不通 → 抛 :class:`DataServiceError`,调用方(live 循环)
+        best-effort 兜底(funding=0 + 用 bar close 当 mark + 标注失真)。
+        """
+        try:
+            r = await self._client.get(
+                "/perp/funding", params={"venue": venue, "symbol": symbol}
+            )
+        except httpx.RequestError as e:
+            raise DataServiceError(
+                f"failed to reach data-service: {e}", code="DATA_SERVICE_UNREACHABLE",
+            ) from e
+        if r.status_code >= 400:
+            try:
+                detail = r.json()
+            except Exception:
+                detail = {"message": r.text}
+            raise DataServiceError(
+                f"data-service {r.status_code}: {detail.get('message', 'unknown')}",
+                code=detail.get("code", "DATA_SERVICE_ERROR"),
+                details={"upstream_status": r.status_code, "upstream_body": detail},
+            )
+        result = r.json()
+        if not isinstance(result, dict):
+            raise DataServiceError(
+                f"unexpected perp funding response shape: {type(result).__name__}"
+            )
+        return result
+
     async def get_fx(
         self,
         *,
