@@ -63,9 +63,12 @@
         "qty": "数量",
         "avgPrice": "开仓均价",
         "mark": "最新价",
+        "liqPrice": "强平价",
         "unrealized": "浮动盈亏",
         "realized": "已实现盈亏"
-      }
+      },
+      "leverageTitle": "{leverage}× 杠杆 · 占用保证金 {margin}",
+      "liqStale": "强平价（mark 穿越即强平）"
     },
     "orders": {
       "title": "最近订单",

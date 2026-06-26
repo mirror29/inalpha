@@ -63,9 +63,12 @@
         "qty": "Qty",
         "avgPrice": "Avg Open",
         "mark": "Mark",
+        "liqPrice": "Liq.",
         "unrealized": "Unrealized",
         "realized": "Realized PnL"
-      }
+      },
+      "leverageTitle": "{leverage}× leverage · margin {margin}",
+      "liqStale": "Liquidation price (mark crossing it triggers liquidation)"
     },
     "orders": {
       "title": "Recent Orders",
