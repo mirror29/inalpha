@@ -19,7 +19,12 @@ from inalpha_paper.config import get_paper_settings
 from inalpha_paper.engine.live_session import LiveEngineSession
 from inalpha_paper.kernel.identifiers import ClientOrderId
 from inalpha_paper.live_runner import LiveRunnerManager, _closed_bars
-from inalpha_paper.model.orders import Order, OrderSide, OrderType
+from inalpha_paper.model.orders import (
+    GUARD_ORDER_PREFIX,
+    Order,
+    OrderSide,
+    OrderType,
+)
 from inalpha_paper.storage import accounts as accounts_store
 from inalpha_paper.storage import closed_trades as closed_trades_store
 from inalpha_paper.storage import orders as orders_store
@@ -1159,3 +1164,138 @@ async def test_process_bar_oversell_no_flip_to_short(app_with_lifespan: Any) -> 
         )
     assert pos is not None
     assert Decimal(str(pos["quantity"])) == Decimal("1.0")  # 维持多仓，未翻空
+
+
+# ─── 框架保护性出场遇 session/DB 视图分叉：钳到实仓全平（#109 CR medium）───
+
+
+class _ProtectiveSellStrategy(Strategy):
+    """第一根 bar 提交一笔框架保护性出场单（``guard-`` 前缀 + ``stop_loss`` tag），量 = sell_qty。
+
+    三因子（side=SELL + 保护性 tag + guard 前缀）→ ``is_protective_order`` 判真，复现
+    PositionGuard 触发的灾难止损在 live runner 路径上的撮合行为。
+    """
+
+    def __init__(  # type: ignore[no-untyped-def]
+        self, name, clock, msgbus, instrument_id, timeframe, sell_qty=1.0, **_kw
+    ) -> None:
+        super().__init__(name, clock, msgbus)
+        self._instrument_id = instrument_id
+        self._timeframe = timeframe
+        self._sell_qty = sell_qty
+        self._sent = False
+
+    def on_start(self) -> None:
+        self.subscribe_bars(self._instrument_id, self._timeframe)
+
+    def on_bar(self, bar: Any) -> None:
+        if not self._sent:
+            self._sent = True
+            self.submit_order(
+                Order(
+                    client_order_id=ClientOrderId(f"{GUARD_ORDER_PREFIX}{uuid4().hex[:8]}"),
+                    instrument_id=self._instrument_id,
+                    side=OrderSide.SELL,
+                    type=OrderType.MARKET,
+                    quantity=self._sell_qty,
+                    tag="stop_loss",
+                )
+            )
+
+
+def _protective_sell_session(sell_qty: float) -> LiveEngineSession:
+    return LiveEngineSession(
+        strategy_cls=_ProtectiveSellStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
+        params={"sell_qty": sell_qty}, initial_cash=10_000.0, fee_rate=0.001,
+    )
+
+
+async def test_protective_exit_clamps_to_position_on_divergence(
+    app_with_lifespan: Any,
+) -> None:
+    """保护性出场量 > DB 实仓（session/DB 分叉）→ 钳到实仓全平，不超卖翻空、不整单拒。
+
+    场景：bar1 建多 1.0；bar2 另一路径（模拟同账户 HTTP /orders/submit）卖掉 0.5 → DB=0.5；
+    bar3 框架保护性出场按策略视图 SELL 1.0。守门读 DB=0.5，若整单拒则实仓 0.5 无止损保护、
+    暴露持续扩大（#109 CR medium）；若照单成交则翻空 −0.5（裸空）。正确行为：钳到 0.5 全平。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    # bar1：建多 1.0
+    await manager._process_bar(
+        _make_session(), run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+    # bar2：另一 session 卖掉 0.5（模拟同账户被别的写路径减仓 → DB 落到 0.5）
+    await manager._process_bar(
+        _sell_session(0.5), run, _bar(1_700_000_003_600_000_000, close=50_000.0)
+    )
+    # bar3：框架保护性出场 SELL 1.0（策略视图仍记 1.0，但 DB 实仓只剩 0.5）
+    await manager._process_bar(
+        _protective_sell_session(1.0), run, _bar(1_700_000_007_200_000_000, close=49_000.0)
+    )
+
+    async with get_conn() as conn:
+        pos = await positions_store.get(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT"
+        )
+        orders = await orders_store.list_by_account(conn, account_id)
+        decisions = await runs_store.list_decisions(conn, run["id"])
+        run_fresh = await runs_store.get(conn, run["id"])
+
+    # 钳量全平：DB 实仓 → 0（既非 −0.5 裸空，也非维持 0.5 无保护）
+    assert pos is not None
+    assert Decimal(str(pos["quantity"])) == Decimal("0")
+    # 保护性出场单（bar3 收盘 49000 撮合）按钳后量 0.5 落账、成交
+    guard_filled = [
+        o for o in orders
+        if o["side"] == "SELL"
+        and o["status"] == "FILLED"
+        and Decimal(str(o["avg_fill_price"])) == Decimal("49000")
+    ]
+    assert len(guard_filled) == 1
+    assert Decimal(str(guard_filled[0]["quantity"])) == Decimal("0.5")  # 落账量 = 钳后量
+    assert Decimal(str(guard_filled[0]["filled_quantity"])) == Decimal("0.5")
+    # 决策复盘：本笔保护性出场记 filled（不是 rejected）
+    assert decisions[-1]["outcome"] == "filled"
+    assert run_fresh is not None and run_fresh["status"] == "running"
+
+
+async def test_protective_exit_on_flat_position_still_rejected(
+    app_with_lifespan: Any,
+) -> None:
+    """DB 实仓为 0（已全平）时的保护性出场 → 仍拒单、不翻空：钳量豁免不放过裸空。
+
+    钳量只在「有实仓可平」时生效；实仓为 0 无可钳 → 走权威闸 raise → rejected，
+    DB 维持 0（绝不因 is_protective_exit 而放过裸空 −1.0）。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    # bar1：建多 1.0；bar2：全平 1.0 → DB=0
+    await manager._process_bar(
+        _make_session(), run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+    await manager._process_bar(
+        _sell_session(1.0), run, _bar(1_700_000_003_600_000_000, close=50_000.0)
+    )
+    # bar3：实仓已 0，保护性出场 SELL 1.0
+    await manager._process_bar(
+        _protective_sell_session(1.0), run, _bar(1_700_000_007_200_000_000, close=49_000.0)
+    )
+
+    async with get_conn() as conn:
+        pos = await positions_store.get(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT"
+        )
+        decisions = await runs_store.list_decisions(conn, run["id"])
+        run_fresh = await runs_store.get(conn, run["id"])
+
+    # 维持平仓，未翻空
+    assert pos is not None
+    assert Decimal(str(pos["quantity"])) == Decimal("0")
+    assert decisions[-1]["outcome"] == "rejected"
+    assert "INSUFFICIENT_POSITION" in decisions[-1]["reason"]
+    assert run_fresh is not None and run_fresh["status"] == "running"
