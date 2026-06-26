@@ -29,6 +29,7 @@ from inalpha_shared.errors import ConflictError, InalphaError
 from .config import PaperSettings
 from .data_client import DataClient
 from .engine.live_session import LiveEngineSession
+from .execution import perp_margin
 from .execution import risk_guard as risk_guard_mod
 from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
@@ -641,6 +642,13 @@ class LiveRunnerManager:
                     ts_event=bar.ts_event,
                 )
                 raise
+        # perp 资金费:本根 bar 跨过的结算时点对当前持仓计提(进计价货币现金桶,用真 mark)。
+        # best-effort——拉不到 funding rate 就本结算跳过、不在 stale 数据上乱计提（不阻断主流程）。
+        if (run.get("trading_mode") or "spot") == "perp":
+            try:
+                await self._accrue_perp_funding(run, bar)
+            except Exception:
+                _logger.exception("live run %s: perp 资金费计提失败（best-effort，已忽略）", run["id"])
         # 进度写做 best-effort（CR medium）：本根 bar 的下单意图已落账 + confirm_fill 已回灌，
         # 这些副作用**不幂等**。若 update_progress 因 DB 瞬时错误抛出，绝不能让它逃出本函数——
         # 否则 _run_loop 的内存 last_bar_ts 不前进 → 下轮重喂同一根 bar → 重复下单 / 指标污染。
@@ -671,6 +679,59 @@ class LiveRunnerManager:
             _logger.exception("live run %s: update_progress 失败（best-effort，不重喂 bar）", run["id"])
 
         return circuit_break
+
+    async def _accrue_perp_funding(self, run: dict[str, Any], bar: Bar) -> None:
+        """perp:本根 bar 跨过的每个资金费结算时点,对当前 DB 持仓计提(进计价货币现金桶)。
+
+        funding = ``qty_signed × mark × rate``(正费率多付空),进 cash 已实现现金流、不并入 UPNL。
+        mark / rate 取自 data ``/perp/funding``(真 mark);拉不到则本结算跳过(不在 stale 上乱计提)。
+        M-1:DB 读 / 外部 HTTP 严格分段,不在持连接时发请求。
+        """
+        prev = run.get("last_bar_ts")
+        if prev is None:
+            return  # 首根 bar 无前序,无结算区间
+        prev_ns = int(prev.timestamp() * 1_000_000_000)
+        n_settle = perp_margin.funding_settlements_between(prev_ns, bar.ts_event)
+        if n_settle <= 0:
+            return
+        account_id: UUID = run["account_id"]
+        venue: str = run["venue"]
+        symbol: str = run["symbol"]
+        # 1) 读持仓(DB,短连接)
+        async with get_conn() as conn:
+            pos = await positions_store.get(
+                conn, account_id=account_id, venue=venue, symbol=symbol
+            )
+        qty = float(pos["quantity"]) if pos is not None else 0.0
+        if qty == 0:
+            return  # flat 无计提
+        # 2) 拉 funding rate + mark(HTTP,不持连接)
+        try:
+            token = self._mint_service_token(account_id)
+            async with DataClient(self._settings.data_service_url, token) as dc:
+                out = await dc.get_perp_funding(venue=venue, symbol=symbol)
+            mark = float(out["mark_price"])
+            rate = float(out["funding_rate"])
+        except Exception:
+            _logger.warning(
+                "live run %s: perp funding 拉取失败,本结算(%d 次)跳过、不计提", run["id"], n_settle
+            )
+            return
+        # 3) 计提 → cash delta(进计价货币桶,n 次结算)
+        payment = (
+            perp_margin.funding_payment(qty_signed=qty, mark_price=mark, funding_rate=rate)
+            * n_settle
+        )
+        currency = resolve_currency(venue, symbol)
+        async with get_conn() as conn:
+            await accounts_store.apply_cash_delta(
+                conn, account_id, Decimal(str(-payment)), currency=currency
+            )
+            await runs_store.append_log(
+                conn, run["id"], "info",
+                f"资金费计提 {n_settle}× rate={rate:.6f} mark={mark:.2f} qty={qty} "
+                f"→ cash {-payment:+.4f} {currency}",
+            )
 
     async def _read_run_pnl_quote(
         self, conn: Any, run: dict[str, Any], mark_price: float
@@ -845,6 +906,34 @@ class LiveRunnerManager:
                     await self._record_decision(
                         conn, run, order, bar, outcome="rejected", intent=intent,
                         reason=reason,
+                    )
+                return "rejected"
+
+        # 1.6 perp 保证金购买力守门(v1 简化,与 HTTP 同口径:本笔 IM+fee ≤ 该币种钱包)。
+        # 保护性出场(强平/止损)豁免——必须能平仓(与 notional/风控豁免同理)。
+        if (run.get("trading_mode") or "spot") == "perp" and not is_protective_exit:
+            leverage = int(run.get("leverage") or 1)
+            notional = order.quantity * float(bar.close)
+            im = notional / leverage
+            fee_amt = notional * _FEE_RATE
+            currency = resolve_currency(venue, symbol)
+            async with get_conn() as conn:
+                acct = await accounts_store.get_or_create(conn, account_id)
+            wallet = float((acct.get("cash_balances") or {}).get(currency, 0) or 0)
+            if im + fee_amt > wallet:
+                reason = (
+                    f"INSUFFICIENT_MARGIN: 需 IM {im:.2f} + fee {fee_amt:.4f} "
+                    f"超钱包 {wallet:.2f} {currency}"
+                )
+                session.reject_order(
+                    order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
+                )
+                async with get_conn() as conn:
+                    await runs_store.append_log(
+                        conn, run_id, "warn", f"order rejected by perp margin: {reason}"
+                    )
+                    await self._record_decision(
+                        conn, run, order, bar, outcome="rejected", intent=intent, reason=reason,
                     )
                 return "rejected"
 
