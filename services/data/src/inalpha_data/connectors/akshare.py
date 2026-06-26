@@ -677,9 +677,13 @@ def _fetch_constituents_sync(*, index_code: str) -> list[dict[str, Any]]:
     cols = [str(c) for c in df.columns]
 
     def _find(*keys: str) -> str | None:
-        for c in cols:
-            if any(k in c for k in keys):
-                return c
+        # key 优先（非列优先）：精确 key 先全列扫一遍，宽松兜底 key 最后才用。
+        # 中证返回表同时含「指数代码/指数名称」与「成分券代码/成分券名称」，列优先 +
+        # 宽松 "代码" 会先命中排在前面的「指数代码」，把 300 只成分全错写成指数自身。
+        for k in keys:
+            for c in cols:
+                if k in c:
+                    return c
         return None
 
     code_col = _find("成分券代码", "证券代码", "股票代码", "代码")
