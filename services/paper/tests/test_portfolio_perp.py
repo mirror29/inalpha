@@ -16,7 +16,9 @@ def _btc() -> InstrumentId:
     return InstrumentId(symbol="BTC/USDT:USDT", venue="binance")
 
 
-def _fill(side: OrderSide, qty: float, price: float, ts: int = 1_000) -> OrderFilled:
+def _fill(
+    side: OrderSide, qty: float, price: float, ts: int = 1_000, tag: str | None = None
+) -> OrderFilled:
     return OrderFilled(
         client_order_id=f"cid-{ts}",  # type: ignore[arg-type]
         venue_order_id=None,
@@ -27,6 +29,7 @@ def _fill(side: OrderSide, qty: float, price: float, ts: int = 1_000) -> OrderFi
         fill_price=price,
         ts_event=ts,
         ts_init=ts,
+        tag=tag,
     )
 
 
@@ -192,3 +195,25 @@ def test_backtest_engine_perp_portfolio() -> None:
     eng = BacktestEngine(initial_cash=10_000.0, fee_rate=0.0, trading_mode="perp", leverage=5)
     assert eng.portfolio.trading_mode == "perp"
     assert eng.portfolio.leverage == 5
+
+
+# ─── 强平罚金 + 逐仓破产 clamp ───
+
+
+def test_perp_liquidation_penalty_charged() -> None:
+    """tag=liquidation 平仓:按名义额外扣罚金(1%);平价无盈亏 → cash 仅减罚金。"""
+    p = _perp(leverage=10)  # fee_rate=0
+    p._handle_fill(_fill(OrderSide.BUY, qty=1.0, price=100.0))  # 开多 IM=10
+    p._handle_fill(_fill(OrderSide.SELL, qty=1.0, price=100.0, ts=2_000, tag="liquidation"))
+    # 平价 realized=0,fee=0,penalty = 100×1% = 1.0
+    assert p.cash == 10_000.0 - 1.0
+
+
+def test_perp_isolated_bankruptcy_clamp() -> None:
+    """gap 平仓亏损超保证金 → 逐仓只亏该仓保证金(其余由保险基金吸收)。"""
+    p = _perp(leverage=10)  # fee_rate=0
+    p._handle_fill(_fill(OrderSide.BUY, qty=1.0, price=100.0))  # 多 1@100,IM=10
+    # 价崩到 50 平仓:gross 亏 -50,但逐仓最多亏保证金 10
+    p._handle_fill(_fill(OrderSide.SELL, qty=1.0, price=50.0, ts=2_000))
+    assert p.cash == 10_000.0 - 10.0  # 亏损 clamp 到 10
+    assert p.position(_btc()).is_flat

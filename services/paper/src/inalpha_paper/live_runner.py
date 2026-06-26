@@ -949,6 +949,16 @@ class LiveRunnerManager:
             fee_rate=_FEE_RATE,
         )
 
+        # perp 强平罚金:tag=liquidation 成交时按名义额外计入 fee(经 cash -= fee 扣除,
+        # 与回测 Portfolio 同口径)。普通单不受影响。
+        if (
+            (run.get("trading_mode") or "spot") == "perp"
+            and order.tag == "liquidation"
+            and result["status"] == "FILLED"
+        ):
+            penalty = float(result["notional"]) * perp_margin.DEFAULT_LIQUIDATION_PENALTY_RATE
+            result["fee"] = float(result["fee"]) + penalty
+
         # 3. 走 plan/exec 链路落账（机器自动审批）
         # exec_qty = 实际撮合 / 落账量（float，喂 OrderExecutor / order_params）。保护性出场遇
         # session/DB 分叉时会在下方事务内被钳到真实持仓（见 step 1.5 注释）。
