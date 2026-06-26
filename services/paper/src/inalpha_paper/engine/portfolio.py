@@ -302,6 +302,7 @@ class Portfolio:
 
         was_flat = pos.is_flat
         prev_qty = pos.quantity  # apply_fill 前的方向，用于 flip 检测
+        prev_avg = pos.avg_open_price  # perp 破产 clamp 用（成交前持仓 IM 基准）
         prev_realized = pos.realized_pnl  # 算本笔实现盈亏增量用（apply_fill 后会变）
 
         # ADR-0007：detect close **必须**在 apply_fill 之前，否则 prev_position 已变
@@ -338,7 +339,17 @@ class Portfolio:
             # 永续:开/加仓不收付名义、只占保证金;cash 只随**已实现盈亏**(平/减/反手那部分)
             # 与手续费变动。realized 增量 = apply_fill 后 pos.realized_pnl − 成交前快照。
             realized_increment = pos.realized_pnl - prev_realized
+            # 逐仓破产 clamp:平/减仓的**亏损不超过该仓开仓保证金**(bar 跳空穿强平价的兜底;
+            # 超出部分由保险基金吸收,钱包不再扣)。margin_before = |prev_qty|×prev_avg/leverage。
+            margin_before = abs(prev_qty) * prev_avg / self._leverage
+            if realized_increment < 0 and -realized_increment > margin_before > 0:
+                realized_increment = -margin_before
             self._cash += realized_increment - fee
+            # 强平罚金:tag=liquidation 时按名义额外扣(惩罚"靠强平兜底",与回测/live 同口径)
+            if msg.tag == "liquidation":
+                penalty = notional * perp_margin.DEFAULT_LIQUIDATION_PENALTY_RATE
+                self._cash -= penalty
+                self._total_fees += penalty
             self._recompute_margin_used()
         elif msg.side == OrderSide.BUY:
             self._cash -= notional + fee
