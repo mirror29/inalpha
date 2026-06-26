@@ -811,8 +811,13 @@ class LiveRunnerManager:
         # OrderExecutor 是无状态纯函数、撮合前不查持仓，apply_fill 又允许负仓——若不在此
         # 拦截，long-only 策略空仓时的 SELL 会被照单成交成裸空、滚出策略平不掉的空头（漂移）。
         # 读 DB 持仓（权威：apply_fill 落账的真实持仓，且能防 session/DB 视图分叉）。
-        # 框架保护性出场卖的是真实持仓（quantity <= current）→ 自然放行，无需额外豁免。
-        if side == "SELL":
+        #
+        # **框架保护性出场（stop_loss / trailing / take_profit）跳过本乐观快闸**：单一路径下
+        # 它卖的就是真实持仓（quantity == current）自然放行；但若同账户被 HTTP /orders/submit
+        # 卖过一笔（DB 实仓 < 策略视图），整单拒会让止损被静默吃掉、实仓无保护、暴露持续扩大。
+        # 故保护性出场不在此提前拒，下放到下方事务内 FOR UPDATE 权威闸——按真实持仓**钳量全平**
+        # （既不超卖翻空，也不丢保护）。
+        if side == "SELL" and not is_protective_exit:
             async with get_conn() as conn:
                 cur_pos = await positions_store.get(
                     conn, account_id=account_id, venue=venue, symbol=symbol
@@ -852,9 +857,12 @@ class LiveRunnerManager:
         )
 
         # 3. 走 plan/exec 链路落账（机器自动审批）
+        # exec_qty = 实际撮合 / 落账量。保护性出场遇 session/DB 分叉时会在下方事务内被钳到
+        # 真实持仓（见 step 1.5 注释），届时同步更新 result / order_params / 落账 quantity。
+        exec_qty = order.quantity
         order_params = {
             "side": side, "type": order.type.value,
-            "quantity": order.quantity, "price": order.price,
+            "quantity": exec_qty, "price": order.price,
         }
         rationale = (
             f"[live_runner run:{run_id}] candidate:{run['candidate_id']} on_bar {side} signal"
@@ -872,12 +880,28 @@ class LiveRunnerManager:
                     )
                     locked_qty = Decimal(str(locked["quantity"])) if locked else Decimal(0)
                     if violates_spot_long_only(
-                        side=side, quantity=order.quantity, current_qty=locked_qty
+                        side=side, quantity=exec_qty, current_qty=locked_qty
                     ):
-                        raise InsufficientPositionError(
-                            f"INSUFFICIENT_POSITION: sell {order.quantity} exceeds position "
-                            f"{locked_qty} (spot long-only guard)"
-                        )
+                        if is_protective_exit and locked_qty > 0:
+                            # 框架保护性出场遇 session/DB 视图分叉（DB 实仓 < 策略视图，例如
+                            # 同账户被 HTTP /orders/submit 卖过一笔）：钳到 DB 实仓**全平**——
+                            # 既不超卖翻空（裸空），也不整单拒（拒则实仓无保护、暴露持续扩大，
+                            # 即 #109 CR medium）。用钳后量在锁内重算 fill，下方 insert /
+                            # apply_fill / plan 全部用 exec_qty / result 同口径。
+                            exec_qty = float(locked_qty)
+                            order_params["quantity"] = exec_qty
+                            result = OrderExecutor.execute(
+                                venue=venue, symbol=symbol,
+                                side=side,  # type: ignore[arg-type]
+                                order_type=order.type.value,  # type: ignore[arg-type]
+                                quantity=exec_qty, price=order.price,
+                                ref_price=float(bar.close), fee_rate=_FEE_RATE,
+                            )
+                        else:
+                            raise InsufficientPositionError(
+                                f"INSUFFICIENT_POSITION: sell {exec_qty} exceeds position "
+                                f"{locked_qty} (spot long-only guard)"
+                            )
                 plan = await plans_store.create(
                     conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
                     order_params=order_params, rationale=rationale,
@@ -894,7 +918,7 @@ class LiveRunnerManager:
                 await orders_store.insert(
                     conn, account_id=account_id, client_order_id=result["client_order_id"],
                     venue=venue, symbol=symbol, side=side, order_type=order.type.value,
-                    quantity=order.quantity, price=order.price, status=result["status"],
+                    quantity=exec_qty, price=order.price, status=result["status"],
                     filled_quantity=result["filled_quantity"],
                     avg_fill_price=result["avg_fill_price"], fee=result["fee"],
                     notional=result["notional"], ts_event=result["ts_event"],
