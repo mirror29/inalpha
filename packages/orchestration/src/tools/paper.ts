@@ -182,6 +182,25 @@ export const paperRunBacktestTool = createTool({
         .describe("ISO 8601 结束时间；**省略时默认 = 当前时间**"),
       initialCash: z.number().positive().default(10_000),
       feeRate: z.number().min(0).lt(1).default(0.001),
+      tradingMode: z
+        .enum(["spot", "perp"])
+        .default("spot")
+        .describe(
+          "spot（默认，现货 long-only）或 perp（USDT-M 永续 + 逐仓，放开做空 / 杠杆）。" +
+          "**做空策略必须用 perp 回测**——spot 下做空 SELL 被守门拒，回测会 0 成交、看着像坏策略。" +
+          "perp 仅 crypto 永续标的（ccxt 记法 BTC/USDT:USDT，非现货 BTC/USDT）。",
+        ),
+      leverage: z
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .default(1)
+        .describe("杠杆倍数（perp 用，1..20）；spot 恒 1"),
+      fundingRate: z
+        .number()
+        .default(0)
+        .describe("perp 回测用的（常数）资金费率，每结算时点计提；0=不计 funding（默认）。正费率多头付空头"),
       researchId: z
         .string()
         .uuid()
@@ -228,6 +247,9 @@ export const paperRunBacktestTool = createTool({
       toTs,
       initialCash: inputData.initialCash ?? 10_000,
       feeRate: inputData.feeRate ?? 0.001,
+      tradingMode: inputData.tradingMode,
+      leverage: inputData.leverage,
+      fundingRate: inputData.fundingRate,
       researchId: inputData.researchId,
       strategyHint: inputData.strategyHint,
     });

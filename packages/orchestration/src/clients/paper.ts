@@ -221,6 +221,12 @@ export type BacktestParams = {
   toTs: string;
   initialCash?: number;
   feeRate?: number;
+  /** spot（默认）或 perp（USDT-M 永续 + 逐仓，放开做空/杠杆；仅 crypto 永续标的）。做空策略须用 perp 回测。 */
+  tradingMode?: "spot" | "perp";
+  /** 杠杆倍数（perp 用，1..20）；spot 恒 1。 */
+  leverage?: number;
+  /** perp 回测用的（常数）资金费率，每结算时点计提；0=不计 funding。 */
+  fundingRate?: number;
   /** D-8c 起：上游 research 血缘 */
   researchId?: string;
   /** D-8c 起：触发本次回测的 strategy_hint（审计用） */
@@ -566,6 +572,9 @@ export class PaperClient {
       to_ts: params.toTs,
       initial_cash: params.initialCash ?? 10_000,
       fee_rate: params.feeRate ?? 0.001,
+      trading_mode: params.tradingMode ?? "spot",
+      leverage: params.leverage ?? 1,
+      funding_rate: params.fundingRate ?? 0,
       research_id: params.researchId,
       strategy_hint: params.strategyHint,
     });
