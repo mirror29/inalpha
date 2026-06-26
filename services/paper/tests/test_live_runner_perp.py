@@ -135,3 +135,42 @@ async def test_perp_funding_accrual(app_with_lifespan: Any, monkeypatch) -> None
     # 空头 -1 × mark 100 × rate 0.001 = payment 0.1(空头收 → cash +0.1);忽略开空 fee 等其它项,
     # 只验证 funding 让 USDT 桶相对变化里含这笔(>0 的净增量来自 funding)
     assert usdt_after > usdt_before  # 空头跨结算点收到资金费
+
+
+class _ForgedGuardBuy(Strategy):
+    """空仓提交伪造 guard 前缀 + 保护 tag 的 BUY(模拟想借风控豁免开大仓)。"""
+
+    def __init__(self, name, clock, msgbus, instrument_id, timeframe, **_kw) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(name, clock, msgbus)
+        self._iid = instrument_id
+        self._tf = timeframe
+        self._sent = False
+
+    def on_start(self) -> None:
+        self.subscribe_bars(self._iid, self._tf)
+
+    def on_bar(self, bar: Bar) -> None:
+        if not self._sent:
+            self._sent = True
+            self.submit_order(Order(
+                client_order_id=ClientOrderId(f"guard-{self._iid.symbol}-{uuid4().hex[:8]}"),
+                instrument_id=self._iid, side=OrderSide.BUY,
+                type=OrderType.MARKET, quantity=1.0, tag="stop_loss",
+            ))
+
+
+async def test_forged_guard_buy_not_exempt_reduce_only(app_with_lifespan: Any) -> None:
+    """伪造 guard+保护 tag 的 BUY(空仓开仓,非 reduce-only)→ 不享豁免 → 被 perp 保证金 gate 拦。"""
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()  # 空钱包
+    run = await _insert_perp_run(account_id, leverage=5)
+    session = LiveEngineSession(
+        strategy_cls=_ForgedGuardBuy, instrument_id=_PERP, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001, trading_mode="perp", leverage=5,
+    )
+    await manager._process_bar(session, run, _bar(0, 100.0))
+    async with get_conn() as conn:
+        decisions = await runs_store.list_decisions(conn, run["id"])
+    # reduce-only 校验:flat 下 BUY 不是平仓 → 不豁免 → 走 margin gate → 空钱包拒
+    assert len(decisions) == 1 and decisions[0]["outcome"] == "rejected"
+    assert "INSUFFICIENT_MARGIN" in decisions[0]["reason"]

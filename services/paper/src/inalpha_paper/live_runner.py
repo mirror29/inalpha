@@ -841,7 +841,20 @@ class LiveRunnerManager:
         # 重试又被拒 → 止损形同虚设。notional 上限是防"胖手指"超大开仓单，平实际持仓不属此列）。
         # 三因子判定(side=SELL + tag + guard 专属 client_order_id 前缀)：策略代码可控 tag/前缀，
         # 单看 tag 会被仿冒绕过风控（CR #88 major），必须三者同时校验。
+        # 风控豁免(跳过 notional 上限 + 行为锁)只给**保护性 + reduce-only(平/减仓)**单:
+        # perp 双向化后 is_protective_signature 不再限 side(平空是 BUY),单看 tag/前缀会被
+        # 伪造 BUY+guard 前缀借豁免开大仓——故再用 DB 持仓方向校验,只有"平自己持仓方向"才豁免
+        # (SELL 平多 / BUY 平空),开/加仓单照常过风控。
         is_protective_exit = is_protective_order(order)
+        if is_protective_exit:
+            async with get_conn() as conn:
+                _guard_pos = await positions_store.get(
+                    conn, account_id=account_id, venue=venue, symbol=symbol
+                )
+            _cur_qty = float(_guard_pos["quantity"]) if _guard_pos is not None else 0.0
+            reduces = (side == "SELL" and _cur_qty > 0) or (side == "BUY" and _cur_qty < 0)
+            if not reduces:
+                is_protective_exit = False  # 非平仓单 → 不享豁免,照常过 notional/风控
         try:
             if not is_protective_exit:
                 risk_guard_mod.check_order_notional(
