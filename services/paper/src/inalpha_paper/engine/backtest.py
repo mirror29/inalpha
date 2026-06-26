@@ -267,6 +267,9 @@ def run_cv_backtest(
     splitter: WalkForward | PurgedKFold | CombinatorialPurgedCV,
     initial_cash: float = 10_000.0,
     fee_rate: float = 0.001,
+    trading_mode: str = "spot",
+    leverage: int = 1,
+    funding_rate: float = 0.0,
 ) -> CVReport:
     """在 ``splitter`` 切出的多条 train/test 上跑回测，聚合成样本外 Sharpe 分布 + DSR。
 
@@ -280,6 +283,8 @@ def run_cv_backtest(
         bars: 完整 bar 序列（按时间升序）。
         splitter: ``cv.py`` 的三种 splitter 之一。
         initial_cash / fee_rate: 每个 split 引擎的起始现金 / 手续费率。
+        trading_mode / leverage / funding_rate: 透传给每个 split 引擎（perp 做空策略
+            CV 必须用 perp 口径，否则裸空被守门拒 → 0 成交 → fitness 恒 0）。
 
     Returns:
         ``CVReport``。CV 引擎跑**裸策略**（不挂 RiskRule / PositionGuard，专注 alpha 稳健性
@@ -298,7 +303,13 @@ def run_cv_backtest(
         if len(run_idx) < 2:
             continue
         test_set = set(sp.test_idx)
-        engine = BacktestEngine(initial_cash=initial_cash, fee_rate=fee_rate)
+        engine = BacktestEngine(
+            initial_cash=initial_cash,
+            fee_rate=fee_rate,
+            trading_mode=trading_mode,
+            leverage=leverage,
+            funding_rate=funding_rate,
+        )
         engine.add_strategy(build_strategy(engine))
         report = engine.run([bars[i] for i in run_idx])
         eq = [e for _ts, e in report.equity_curve]
