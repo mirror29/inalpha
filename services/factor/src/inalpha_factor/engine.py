@@ -69,6 +69,13 @@ def _tf_seconds(timeframe: str) -> int:
 _PANEL_CACHE_MAX = 64
 # FRED daily 序列一天才更新一次，live 缓存 TTL 放宽到 1 小时（ADR-0044 D1）
 _MACRO_CACHE_TTL_S = 3600.0
+# 横截面 panel 的 universe 硬上限。实指数（HS300=300 / ZZ500=500）做横截面排名**需要全
+# 成分**才有意义，故远高于用户自列 symbols 的 50 上限；超过则**降级返空**——拒绝按代码序
+# 截断成随机子集（那会给出误导性的"指数排名"）。覆盖 HS300/ZZ500，更大的(如 ZZ1000)显式降级。
+_MAX_PANEL_SYMBOLS = 500
+# 逐标的 /bars 拉取的并发上限：indexCode 解析出数百标的时，无界 asyncio.gather 会对
+# data-service 发起请求风暴（500 并发 HTTP）；限并发把它压成稳定的滚动批。
+_PANEL_FETCH_CONCURRENCY = 16
 _PanelEntry = tuple[float, pd.DataFrame, dict[str, pd.Series]]
 _panel_cache: OrderedDict[tuple[Any, ...], _PanelEntry] = OrderedDict()
 
@@ -656,6 +663,23 @@ class FactorEngine:
                 "controlled — discount the evidence accordingly)." + _cache_note
             )
 
+        # universe 硬上限：超过 → **降级返空**，不静默截断（截断成随机子集会给误导性排名）。
+        # 用户自列 symbols 在 schema/tool 已限 50；indexCode 解析出的大指数(>500)在此拦下。
+        if len(symbols) > _MAX_PANEL_SYMBOLS:
+            return {
+                "as_of": as_of, "symbols": symbols, "bars_used": {},
+                "latest_bar_ts": {}, "is_pit": is_pit,
+                "universe_note": universe_note,
+                "factors": [], "ic_null_benchmark": 0.0,
+                "reason": (
+                    f"universe has {len(symbols)} symbols, exceeds panel cap "
+                    f"{_MAX_PANEL_SYMBOLS}: refusing to rank a truncated subset "
+                    "(would be a misleading 'index ranking'). Narrow to a smaller index "
+                    "or pass an explicit symbol list."
+                ),
+                "unknown_factor_ids": [],
+            }
+
         # 因子分流（② / ①）。两者**构造上不相交**：② = 普通时序因子横截面化（非 macro、
         # 非 needs_universe）；① = 内禀横截面因子（needs_universe，含 rank()）。同一 id 不会
         # 双份落入 ids 和 xs_ids（防 compute_on_df 万一对某 needs_universe 因子产值时重复计）。
@@ -697,13 +721,17 @@ class FactorEngine:
                 "unknown_factor_ids": unknown_ids,
             }
 
+        # 限并发：大 universe(indexCode 解析出数百标的)下防对 data-service 的请求风暴。
+        fetch_sem = asyncio.Semaphore(_PANEL_FETCH_CONCURRENCY)
+
         async def _one(sym: str) -> tuple[str, pd.DataFrame]:
             try:
                 # fresh=False：横截面读 DB 缓存，不逐标的 backfill（见 docstring 约束）
-                df = await self._fetch_df(
-                    venue=venue, symbol=sym, timeframe=timeframe,
-                    from_ts=from_ts, to_ts=as_of, fresh=False,
-                )
+                async with fetch_sem:
+                    df = await self._fetch_df(
+                        venue=venue, symbol=sym, timeframe=timeframe,
+                        from_ts=from_ts, to_ts=as_of, fresh=False,
+                    )
                 # ≤ as_of 过滤也放进 try：未来某 connector/mock 返 tz-naive index 时
                 # `df.index <= pd.Timestamp(as_of)`(UTC-aware) 会 TypeError——在此降级为空,
                 # 不让一个标的的 tz 不一致打断整个 panel（当前 bars_to_df 恒 utc,属防御）。
