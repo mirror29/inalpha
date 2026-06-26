@@ -29,6 +29,7 @@ async def panel_score(req: PanelScoreRequest, engine: EngineDep) -> PanelScoreRe
         horizon_bars=req.horizon_bars,
         factor_ids=req.factor_ids,
         min_symbols=req.min_symbols,
+        index_code=req.index_code,
     )
     return PanelScoreResponse(
         venue=req.venue,

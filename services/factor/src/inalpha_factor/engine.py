@@ -594,6 +594,7 @@ class FactorEngine:
         horizon_bars: int,
         factor_ids: list[str] | None,
         min_symbols: int,
+        index_code: str | None = None,
     ) -> dict[str, Any]:
         """横截面因子评估：多标的对齐 → 每因子横截面 rank-IC + 最新横截面排名。
 
@@ -615,13 +616,45 @@ class FactorEngine:
         span_bars = lookback_bars + horizon_bars + 60
         from_ts = as_of - timedelta(seconds=_tf_seconds(timeframe) * span_bars)
 
-        universe_note = (
-            "fixed non-PIT universe (caller-supplied symbol set; no historical "
-            "constituent snapshot, so cross-sectional survivorship bias is not "
-            "controlled — discount the evidence accordingly). Bars are read from the "
-            "data-service cache (not force-refreshed); the latest bar per symbol may "
-            "lag as_of — pre-backfill the universe if you need to-now freshness"
+        _cache_note = (
+            " Bars are read from the data-service cache (not force-refreshed); the latest "
+            "bar per symbol may lag as_of — pre-backfill the universe if you need to-now "
+            "freshness."
         )
+        # index_code 给定 → 解析 as_of 那刻的 PIT 成分当 universe（#106/ADR-0053 C）。
+        # 取不到 PIT 快照(早于最早快照)→ **不回退当前成分**(那正是存活者偏差),显式降级返空。
+        is_pit = False
+        if index_code is not None:
+            async with DataClient(self._settings.data_service_url, self._token) as dc:
+                cons = await dc.get_constituents(index_code=index_code, as_of=as_of)
+            is_pit = bool(cons.get("is_pit"))
+            symbols = [c["code"] for c in cons.get("constituents", []) if c.get("code")]
+            snap = cons.get("snapshot_date")
+            if not is_pit or len(symbols) < min_symbols:
+                return {
+                    "as_of": as_of, "symbols": symbols, "bars_used": {},
+                    "latest_bar_ts": {}, "is_pit": is_pit,
+                    "universe_note": (
+                        f"index {index_code}: no PIT constituent snapshot at or before "
+                        f"{as_of.date().isoformat()} (PIT coverage accumulates forward) — "
+                        "refusing to fall back to current constituents (survivorship bias)"
+                    ),
+                    "factors": [], "ic_null_benchmark": 0.0,
+                    "reason": cons.get("reason")
+                    or f"index {index_code} has too few PIT constituents at as_of",
+                    "unknown_factor_ids": [],
+                }
+            universe_note = (
+                f"PIT universe from {index_code} constituent snapshot dated {snap} "
+                f"(as_of {as_of.date().isoformat()}); survivorship bias controlled."
+                + _cache_note
+            )
+        else:
+            universe_note = (
+                "fixed non-PIT universe (caller-supplied symbol set; no historical "
+                "constituent snapshot, so cross-sectional survivorship bias is not "
+                "controlled — discount the evidence accordingly)." + _cache_note
+            )
 
         # 因子分流（② / ①）。两者**构造上不相交**：② = 普通时序因子横截面化（非 macro、
         # 非 needs_universe）；① = 内禀横截面因子（needs_universe，含 rank()）。同一 id 不会
@@ -653,7 +686,7 @@ class FactorEngine:
             return {
                 "as_of": as_of, "symbols": symbols, "bars_used": {},
                 "latest_bar_ts": {},
-                "is_pit": False, "universe_note": universe_note,
+                "is_pit": is_pit, "universe_note": universe_note,
                 "factors": [], "ic_null_benchmark": 0.0,
                 "reason": (
                     "no usable cross-sectional factor in factor_ids (empty list, all-macro, "
@@ -699,7 +732,7 @@ class FactorEngine:
             return {
                 "as_of": as_of, "symbols": symbols, "bars_used": bars_used,
                 "latest_bar_ts": latest_bar_ts,
-                "is_pit": False, "universe_note": universe_note,
+                "is_pit": is_pit, "universe_note": universe_note,
                 "factors": [], "ic_null_benchmark": 0.0,
                 "reason": "no bars for any symbol in universe",
                 "unknown_factor_ids": unknown_ids,
@@ -804,7 +837,7 @@ class FactorEngine:
         return {
             "as_of": as_of, "symbols": symbols, "bars_used": bars_used,
             "latest_bar_ts": latest_bar_ts,
-            "is_pit": False, "universe_note": universe_note,
+            "is_pit": is_pit, "universe_note": universe_note,
             "factors": results, "ic_null_benchmark": benchmark,
             "reason": reason,
             # 恒透出（空 = 全部 id 有效）：混合调用里有效因子并存时，typo id 也能被看到，

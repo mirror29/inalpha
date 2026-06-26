@@ -114,6 +114,45 @@ class DataClient:
             )
         return result
 
+    async def get_constituents(
+        self, *, index_code: str, as_of: datetime
+    ) -> dict[str, Any]:
+        """``GET /constituents`` —— 指数成分 PIT time-travel（#106 / ADR-0053 阶段 C）。
+
+        Returns data-service 响应 dict:``{index_code, as_of, snapshot_date, is_pit,
+        reason, constituents:[{code,name,weight}]}``。早于最早快照时 ``is_pit=false`` +
+        空 constituents（横截面 universe 取不到 PIT 成分,调用方须显式降级、不假装）。
+        连接级瞬时失败有界重试（同 get_bars）。
+        """
+        params = {"index_code": index_code, "as_of": as_of.isoformat()}
+        for attempt in range(_GET_RETRIES):
+            try:
+                r = await self._client.get("/constituents", params=params)
+                break
+            except httpx.RequestError as e:
+                if attempt < _GET_RETRIES - 1:
+                    await asyncio.sleep(_GET_BACKOFF_S[attempt])
+                    continue
+                raise DataServiceError(
+                    f"failed to reach data-service after {_GET_RETRIES} attempts: {e}",
+                    code="DATA_SERVICE_UNREACHABLE",
+                ) from e
+        if r.status_code >= 400:
+            try:
+                detail = r.json()
+            except Exception:
+                detail = {"message": r.text}
+            raise DataServiceError(
+                f"data-service {r.status_code}: {detail.get('message', 'unknown')}",
+                code=detail.get("code", "DATA_SERVICE_ERROR"),
+            )
+        result = r.json()
+        if not isinstance(result, dict):
+            raise DataServiceError(
+                f"unexpected /constituents shape: {type(result).__name__}"
+            )
+        return result
+
     async def _best_effort_backfill(
         self,
         *,

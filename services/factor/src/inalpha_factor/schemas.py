@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _assume_utc_if_naive(v: datetime) -> datetime:
@@ -244,12 +244,18 @@ class PanelScoreRequest(BaseModel):
 
     venue: str = Field(default="binance")
     symbols: list[str] = Field(
-        ...,
-        min_length=2,
+        default_factory=list,
         max_length=50,
-        description="universe 标的集（同 venue/timeframe）。**非 PIT**——调用方给定的固定"
-        "集，历史成分快照未建，响应 is_pit=false 显式标注存活者偏差风险",
+        description="显式 universe 标的集（同 venue/timeframe）。**非 PIT**（调用方给定固定集，"
+        "响应 is_pit=false 标存活者偏差）。与 index_code 二选一;给 index_code 时本字段忽略。",
         examples=[["AAPL", "MSFT", "GOOGL", "AMZN", "META"]],
+    )
+    index_code: str | None = Field(
+        default=None,
+        description="指数代码（如 000300），由 data /constituents 解析 as_of 那刻的 **PIT 成分**"
+        "当 universe（is_pit=true，去存活者偏差）。取不到 PIT 快照 → 显式降级返空,**不**回退"
+        "当前成分。venue 应配 akshare（成分是 A股符号）。与 symbols 二选一,优先 index_code。",
+        examples=["000300"],
     )
     timeframe: str = Field(default="1d")
     as_of: datetime | None = Field(
@@ -271,6 +277,15 @@ class PanelScoreRequest(BaseModel):
     @classmethod
     def _aware(cls, v: datetime | None) -> datetime | None:
         return _assume_utc_if_naive(v) if v is not None else None
+
+    @model_validator(mode="after")
+    def _one_of_universe(self) -> PanelScoreRequest:
+        """universe 来源二选一:显式 symbols(≥2) 或 index_code（PIT 成分,优先）。"""
+        if self.index_code is None and len(self.symbols) < 2:
+            raise ValueError(
+                "provide index_code (PIT constituents), or symbols with >= 2 entries"
+            )
+        return self
 
 
 class PanelRankEntry(BaseModel):
