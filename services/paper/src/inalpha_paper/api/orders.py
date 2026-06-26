@@ -369,7 +369,7 @@ def _row_to_order_record(row: dict[str, Any]) -> OrderRecord:
 
 def _decimal_to_float(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
-    for k in ("quantity", "avg_open_price", "realized_pnl"):
+    for k in ("quantity", "avg_open_price", "realized_pnl", "margin_used", "liquidation_price"):
         if k in out and out[k] is not None:
             out[k] = float(out[k])
     return out

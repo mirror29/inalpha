@@ -694,6 +694,11 @@ class PositionRecord(BaseModel):
         default=None,
         description="D-11：持仓计价货币（USD / CNY / USDT …）；旧行可能为 null",
     )
+    leverage: int = Field(default=1, description="perp 杠杆倍数；spot 恒 1")
+    margin_used: float = Field(default=0.0, description="perp 该仓占用保证金；spot 为 0")
+    liquidation_price: float | None = Field(
+        default=None, description="perp 强平价（mark 穿越即强平）；spot 为 null"
+    )
     updated_at: datetime
 
 
