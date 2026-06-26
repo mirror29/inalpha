@@ -116,21 +116,32 @@ class BinanceConnector:
     ) -> list[tuple[datetime, float, float, float, float, float]]:
         """从 Binance 拉 OHLCV。
 
+        永续合约符号（如 ``BTC/USDT:USDT``）的 OHLCV **用现货同对作价格 proxy**：
+        永续标记价≈现货价，K 线走势一致；剥掉 ``:USDT`` 后缀走现货 OHLCV 端点
+        （现货 ccxt markets 里没有带 ``:`` 的合约符号，直接拉会失败）。资金费 / mark
+        另走 ``fetch_perp_funding_rate`` / ``/perp/funding``，不在此 proxy。
+
         Returns:
             list of (ts, open, high, low, close, volume)；ts 是 UTC aware datetime。
         """
         if timeframe not in TIMEFRAME_SECONDS:
             raise ValueError(f"unsupported timeframe: {timeframe}")
 
+        # 永续符号剥成现货同对作价格 proxy（BTC/USDT:USDT → BTC/USDT）
+        fetch_symbol = symbol.split(":", 1)[0] if ":" in symbol else symbol
+
         since_ms = int(since.timestamp() * 1000)
         _logger.debug(
             "binance_fetch_ohlcv",
             symbol=symbol,
+            fetch_symbol=fetch_symbol,
             timeframe=timeframe,
             since=since.isoformat(),
             limit=limit,
         )
-        raw = await self._exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=limit)
+        raw = await self._exchange.fetch_ohlcv(
+            fetch_symbol, timeframe, since=since_ms, limit=limit
+        )
         return [
             (
                 datetime.fromtimestamp(ts_ms / 1000, tz=UTC),

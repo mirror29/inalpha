@@ -19,7 +19,7 @@ from ..connectors.binance import TIMEFRAME_SECONDS as BINANCE_TIMEFRAME_SECONDS
 from ..connectors.fred import TIMEFRAME_SECONDS as FRED_TIMEFRAME_SECONDS
 from ..connectors.yfinance_conn import TIMEFRAME_SECONDS as YFINANCE_TIMEFRAME_SECONDS
 from ..schemas import BackfillRequest, BackfillResponse
-from ..storage.bars import insert_bars
+from ..storage.bars import insert_bars, latest_bar_ts
 
 router = APIRouter(tags=["backfill"])
 _logger = get_logger(__name__)
@@ -93,7 +93,28 @@ async def backfill_bars(
             },
         )
 
-    cursor = req.from_ts
+    # ─── 增量续拉 ────────────────────────────────────────────────
+    # 已缓存到哪根就从哪根继续，只补缺口；缓存覆盖大半时只拉最近几根
+    # （而非每次把整个 [from_ts, to_ts] 从外部 venue 全量重拉 —— CCXT 限流下
+    # 长窗口会超时）。仍循环拉到 to_ts，故尾部始终补到当前、不牺牲新鲜度。
+    # 起点取已缓存 max(ts)（重拉最后一根，覆盖落库时仍未收盘的半根 candle），
+    # 但不早于请求的 from_ts；空缓存则从 from_ts 全量。
+    # 注：仅按 max(ts) 续拉，中间空洞（非连续缓存，罕见）不会回补；需要时显式重拉窗口。
+    cached_latest = await latest_bar_ts(
+        db, req.venue, req.symbol, req.timeframe, upto=req.to_ts
+    )
+    if cached_latest is not None and cached_latest > req.from_ts:
+        cursor = cached_latest
+        _logger.info(
+            "backfill_incremental",
+            venue=req.venue,
+            symbol=req.symbol,
+            timeframe=req.timeframe,
+            cached_latest=cached_latest.isoformat(),
+            from_ts=req.from_ts.isoformat(),
+        )
+    else:
+        cursor = req.from_ts
     fetched_total = 0
     inserted_total = 0
 

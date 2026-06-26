@@ -191,3 +191,81 @@ def test_backfill_rejects_timeframe_unsupported_by_venue(
     assert isinstance(supported_tfs, list)
     assert bad_timeframe not in supported_tfs
     assert "1d" in supported_tfs  # 两个 venue 至少都支持 1d
+
+
+# ─── 增量 backfill：已缓存则从 max(ts) 续拉，不从 from_ts 全量重拉 ──────────
+
+
+class _RecordingConnector:
+    """记录每次 fetch_bars 收到的 since；返 3 根 hourly 递增 bar（从 since 起）。"""
+
+    def __init__(self) -> None:
+        self.seen_since: list[datetime] = []
+
+    async def fetch_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        since: datetime,
+        limit: int = 1000,
+    ) -> list[tuple[datetime, float, float, float, float, float]]:
+        start = since.replace(microsecond=0)
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=UTC)
+        self.seen_since.append(start)
+        return [
+            (start + timedelta(hours=i), 100.0 + i, 101.0 + i, 99.0 + i, 100.5 + i, 1000.0 + i)
+            for i in range(3)
+        ]
+
+    async def close(self) -> None:
+        pass
+
+
+@pytest.fixture
+async def app_with_recording_binance() -> AsyncIterator[tuple[Any, _RecordingConnector]]:
+    from inalpha_data.connectors import _base as _connectors_base
+    from inalpha_data.main import app
+
+    rec = _RecordingConnector()
+    async with app.router.lifespan_context(app):
+        _connectors_base._REGISTRY["binance"] = rec
+        yield app, rec
+    app.dependency_overrides.clear()
+
+
+def test_backfill_second_call_is_incremental_from_cached_max(
+    app_with_recording_binance: tuple[Any, _RecordingConnector],
+    auth_headers: dict[str, str],
+) -> None:
+    """二次 backfill 同窗口 → cursor 从已缓存 max(ts) 续拉，不再从 from_ts 全量重拉。
+
+    回归"有缓存却每次重 backfill → 超时"：第二次 fetch_bars 首个 since 应 >= 第一次落库的
+    最新 bar ts（而非回到 from_ts）。
+    """
+    client = TestClient(app_with_recording_binance[0])
+    rec = app_with_recording_binance[1]
+    symbol = f"BTC/USDT-{uuid4().hex[:8]}"
+    base = {"venue": "binance", "symbol": symbol, "timeframe": "1h"}
+
+    # 第一次：窄窗口 [00:00, 02:00]，空缓存 → 从 from_ts 全量；_FakeConnector 落 00/01/02 三根
+    r1 = client.post(
+        "/backfill/bars",
+        headers=auth_headers,
+        json={**base, "from_ts": "2026-04-01T00:00:00Z", "to_ts": "2026-04-01T02:00:00Z"},
+    )
+    assert r1.status_code == 200, r1.json()
+    assert rec.seen_since[0] == datetime(2026, 4, 1, 0, 0, tzinfo=UTC)  # 空缓存从头
+
+    # 第二次：更宽窗口 [00:00, 08:00]，缓存已覆盖到 02:00 → cursor 从 02:00 续拉缺口，
+    # **绝不回到 from_ts(00:00) 重拉**（这正是修复前超时的根因）。
+    rec.seen_since.clear()
+    r2 = client.post(
+        "/backfill/bars",
+        headers=auth_headers,
+        json={**base, "from_ts": "2026-04-01T00:00:00Z", "to_ts": "2026-04-01T08:00:00Z"},
+    )
+    assert r2.status_code == 200, r2.json()
+    assert rec.seen_since, "第二次须续拉尾部缺口（02:00→08:00）保新鲜"
+    # 首个 since 从已缓存 max(ts)=02:00 起，而非 from_ts=00:00
+    assert rec.seen_since[0] == datetime(2026, 4, 1, 2, 0, tzinfo=UTC)
