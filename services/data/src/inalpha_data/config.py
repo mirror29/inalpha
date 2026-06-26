@@ -78,6 +78,19 @@ class DataSettings(BaseSettings):
     """进程内缓存 TTL（秒）。快讯/板块榜分钟级更新，60s 挡住 analyst fan-out
     同一轮重复打源站；响应带 fetched_at，fresh 语义不破。"""
 
+    constituent_snapshot_indices: str = Field(
+        default="", alias="CONSTITUENT_SNAPSHOT_INDICES"
+    )
+    """每日成分快照追踪的指数代码，逗号分隔（如 ``000300,000905``）。空=禁用调度
+    （ADR-0053 阶段 C 向前累积:akshare 只回当前成分，唯一 PIT 路径是从启用日起每日落库）。
+    手动 ``POST /constituents/snapshot`` 不受本项影响。"""
+
+    constituent_snapshot_interval_h: float = Field(
+        default=12.0, alias="CONSTITUENT_SNAPSHOT_INTERVAL_H"
+    )
+    """成分快照调度的检查间隔（小时）。幂等:每轮只补"今天还没快照"的指数，
+    <24h 不会重复打源站（省 akshare + 防封），>1 轮/天纯为重启后尽快补当天。"""
+
 
 @lru_cache(maxsize=1)
 def get_data_settings() -> DataSettings:

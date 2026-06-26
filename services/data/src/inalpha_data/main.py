@@ -41,6 +41,7 @@ from .connectors import symbol_search as symbol_search_conn
 from .connectors import web_fetch as web_fetch_conn
 from .connectors import web_search as web_search_conn
 from .connectors import yfinance_conn
+from .scheduler import ConstituentSnapshotScheduler, parse_indices
 
 _settings = get_data_settings()
 configure_logging(level=_settings.log_level, service_name=_settings.service_name)
@@ -69,9 +70,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     cn_market_conn.init_connector()
     web_fetch_conn.init_connector()
     symbol_search_conn.init_connector()
+    # 成分快照每日调度（ADR-0053 阶段 C 向前累积）——无追踪指数则自动禁用
+    snapshot_scheduler = ConstituentSnapshotScheduler(
+        index_codes=parse_indices(_settings.constituent_snapshot_indices),
+        interval_s=_settings.constituent_snapshot_interval_h * 3600,
+    )
+    snapshot_scheduler.start()
     try:
         yield
     finally:
+        await snapshot_scheduler.stop()
         await symbol_search_conn.close_connector()
         await web_fetch_conn.close_connector()
         await fred_conn.close_connector()
