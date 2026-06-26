@@ -44,7 +44,7 @@ async def test_tick_skips_when_today_snapshot_exists(monkeypatch: pytest.MonkeyP
     calls: list[str] = []
     monkeypatch.setattr(
         sched, "record_snapshot",
-        lambda db, *, index_code: _coro(_record_marker(calls, index_code)),
+        lambda db, *, index_code, as_of_date=None: _coro(_record_marker(calls, index_code)),
     )
 
     s = ConstituentSnapshotScheduler(index_codes=["000300"], interval_s=1.0)
@@ -66,7 +66,7 @@ async def test_tick_records_when_no_snapshot_today(monkeypatch: pytest.MonkeyPat
     calls: list[str] = []
     monkeypatch.setattr(
         sched, "record_snapshot",
-        lambda db, *, index_code: _coro(_record_marker(calls, index_code)),
+        lambda db, *, index_code, as_of_date=None: _coro(_record_marker(calls, index_code)),
     )
 
     s = ConstituentSnapshotScheduler(index_codes=["000300", "000905"], interval_s=1.0)
@@ -87,7 +87,7 @@ async def test_tick_isolates_per_index_failure(monkeypatch: pytest.MonkeyPatch) 
     )
     calls: list[str] = []
 
-    async def flaky_record(db, *, index_code):  # type: ignore[no-untyped-def]
+    async def flaky_record(db, *, index_code, as_of_date=None):  # type: ignore[no-untyped-def]
         if index_code == "BAD":
             raise RuntimeError("akshare 源站失败")
         calls.append(index_code)
@@ -97,6 +97,43 @@ async def test_tick_isolates_per_index_failure(monkeypatch: pytest.MonkeyPatch) 
     s = ConstituentSnapshotScheduler(index_codes=["BAD", "000300"], interval_s=1.0)
     await s._tick()  # 不抛
     assert calls == ["000300"]  # 坏指数跳过，好指数照常
+
+
+async def test_record_snapshot_honors_passed_as_of_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """传入 as_of_date → 落库用它，不重算"现在"（防跨午夜把 D 写成 D+1）。"""
+    from datetime import date
+
+    from inalpha_data.scheduler import record_snapshot
+
+    class _FakeConn:
+        def transaction(self):  # type: ignore[no-untyped-def]
+            @asynccontextmanager
+            async def _txn():  # type: ignore[no-untyped-def]
+                yield
+            return _txn()
+
+    class _FakeAk:
+        async def fetch_index_constituents(self, index_code):  # type: ignore[no-untyped-def]
+            return [{"code": "sh.600519", "name": "X", "weight": 1.0}]
+
+    captured: dict[str, object] = {}
+
+    async def fake_upsert(db, *, index_code, as_of_date, constituents):  # type: ignore[no-untyped-def]
+        captured["as_of_date"] = as_of_date
+        return len(constituents)
+
+    monkeypatch.setattr(sched, "get_akshare_connector", lambda: _FakeAk())
+    monkeypatch.setattr(sched.store, "upsert_snapshot", fake_upsert)
+
+    pinned = date(2026, 1, 31)
+    snap_iso, n = await record_snapshot(
+        _FakeConn(), index_code="000300", as_of_date=pinned
+    )
+    assert captured["as_of_date"] == pinned  # 用传入的，非 now()
+    assert snap_iso == "2026-01-31"
+    assert n == 1
 
 
 # ── helpers ──────────────────────────────────────────────────────────
