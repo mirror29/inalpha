@@ -58,3 +58,39 @@ async def test_fetch_perp_funding_rate_no_timestamp_falls_back_to_now() -> None:
     assert out["funding_rate"] == -0.0002  # 负费率(空头付多头)
     assert out["ts"] is not None  # now() 兜底
     assert out["next_funding_ts"] is None
+
+
+class _RecordingSpot:
+    """假 spot ccxt 实例:记录 fetch_ohlcv 收到的 symbol。"""
+
+    def __init__(self) -> None:
+        self.seen_symbol: str | None = None
+
+    async def fetch_ohlcv(
+        self, symbol: str, timeframe: str, since: int | None = None, limit: int = 1000
+    ) -> list[list[float]]:
+        self.seen_symbol = symbol
+        return [[1_700_000_000_000, 100.0, 101.0, 99.0, 100.5, 5.0]]
+
+
+async def test_fetch_bars_strips_perp_suffix_to_spot_proxy() -> None:
+    """永续符号 BTC/USDT:USDT 取 OHLCV 时剥成现货 BTC/USDT(价格 proxy)。"""
+    conn = BinanceConnector()
+    fake = _RecordingSpot()
+    conn._exchange = fake  # type: ignore[assignment]
+    bars = await conn.fetch_bars(
+        symbol="BTC/USDT:USDT", timeframe="1h", since=datetime(2024, 1, 1, tzinfo=UTC)
+    )
+    assert fake.seen_symbol == "BTC/USDT"  # :USDT 后缀已剥
+    assert len(bars) == 1
+
+
+async def test_fetch_bars_spot_symbol_unchanged() -> None:
+    """现货符号不含 ':' → 原样传(不受 proxy 影响)。"""
+    conn = BinanceConnector()
+    fake = _RecordingSpot()
+    conn._exchange = fake  # type: ignore[assignment]
+    await conn.fetch_bars(
+        symbol="ETH/USDT", timeframe="1h", since=datetime(2024, 1, 1, tzinfo=UTC)
+    )
+    assert fake.seen_symbol == "ETH/USDT"

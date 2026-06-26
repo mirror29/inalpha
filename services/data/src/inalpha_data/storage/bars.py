@@ -118,3 +118,31 @@ async def count_bars(
         row = await cur.fetchone()
     # dict_row 工厂保证 row 是 dict；mypy 看不到 row_factory 的类型传导
     return int(row["n"]) if row else 0  # type: ignore[call-overload]
+
+
+async def latest_bar_ts(
+    conn: AsyncConnection,
+    venue: str,
+    symbol: str,
+    timeframe: str,
+    upto: datetime | None = None,
+) -> datetime | None:
+    """返回某 (venue, symbol, timeframe) 已缓存的最新 bar 时间戳。
+
+    供 backfill **增量续拉**用：已缓存到哪根就从哪根继续，只补缺口（而非每次从
+    ``from_ts`` 全量重拉）。``upto`` 限定只看 ``ts <= upto`` 的缓存（通常传 backfill
+    的 ``to_ts``），避免未来 bar 干扰起点判定。
+
+    无缓存返回 ``None``。
+    """
+    sql = "SELECT max(ts) AS m FROM bars WHERE venue = %s AND symbol = %s AND timeframe = %s"
+    params: list[Any] = [venue, symbol, timeframe]
+    if upto is not None:
+        sql += " AND ts <= %s"
+        params.append(upto)
+
+    async with conn.cursor() as cur:
+        await cur.execute(sql, tuple(params))
+        row = await cur.fetchone()
+    # dict_row 工厂保证 row 是 dict；max(ts) 在空表时返回 NULL → None
+    return row["m"] if row else None  # type: ignore[call-overload]
