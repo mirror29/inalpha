@@ -292,7 +292,8 @@ async def list_by_account(
     """列出某 account 的所有持仓。默认过滤掉 quantity=0 的（已平仓但保留行）。"""
     sql = (
         "SELECT venue, symbol, quantity, avg_open_price, realized_pnl, "
-        "generation, ts_opened, open_order_id, currency, updated_at "
+        "generation, ts_opened, open_order_id, currency, updated_at, "
+        "leverage, margin_used, liquidation_price "
         "FROM positions WHERE account_id = %s"
     )
     if not include_flat:
