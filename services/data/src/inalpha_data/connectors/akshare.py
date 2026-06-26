@@ -418,6 +418,29 @@ class AkshareConnector:
             })
         return out
 
+    async def fetch_index_constituents(self, index_code: str) -> list[dict[str, Any]]:
+        """拉指数**当前**成分（中证指数网，零 key）。
+
+        Args:
+            index_code: 中证/常用指数代码，如 ``"000300"``(沪深300) / ``"000905"``(中证500)。
+
+        Returns:
+            ``[{code, name, weight}]``——code 归一为 sh./sz./bj. 前缀的 Inalpha 符号格式;
+            name/weight 可空。空 list = 拉取失败 / 不支持(优雅降级)。
+
+        坑:akshare 只回**当前**成分(中证 XLS 每日覆盖、无 as-of 历史);**PIT 历史靠本服务
+        每日快照向前累积**(#106 / ADR-0053 阶段 C),本方法只提供"今天的成分"这一原料。
+        """
+        _logger.debug("akshare_fetch_constituents", index_code=index_code)
+        try:
+            rows = await asyncio.to_thread(_fetch_constituents_sync, index_code=index_code)
+        except Exception as exc:
+            _logger.warning(
+                "akshare_constituents_fetch_failed", index_code=index_code, error=str(exc)
+            )
+            return []
+        return rows
+
     async def close(self) -> None:
         # akshare 无连接对象需要关
         return None
@@ -619,6 +642,68 @@ def _fetch_sync(
     if df is None or len(df) == 0:
         return []
     return df.to_dict(orient="records")  # type: ignore[no-any-return]
+
+
+def _cn_symbol(raw_code: str) -> str:
+    """6 位 A股代码 → Inalpha 符号（sh./sz./bj. 前缀，与 _parse_symbol 对称）。
+
+    6/9→沪(主板/B)、0/2/3→深(主板·中小/B/创业)、4/8→北交所;其它兜底沪。
+    """
+    c = raw_code.strip().split(".")[-1]  # 已带前缀时取纯数字部分
+    if c[:1] in ("6", "9"):
+        return f"sh.{c}"
+    if c[:1] in ("4", "8"):
+        return f"bj.{c}"
+    return f"sz.{c}"
+
+
+def _fetch_constituents_sync(*, index_code: str) -> list[dict[str, Any]]:
+    """同步调 akshare 取指数**当前**成分（带权重优先，回退无权重接口）。
+
+    akshare 列名随接口/版本变动 → 用模糊匹配抽 代码/名称/权重，不硬钉列名。
+    """
+    import akshare as ak
+
+    df = None
+    try:
+        df = ak.index_stock_cons_weight_csindex(symbol=index_code)
+    except Exception:
+        df = None
+    if df is None or len(df) == 0:
+        df = ak.index_stock_cons_csindex(symbol=index_code)
+    if df is None or len(df) == 0:
+        return []
+
+    cols = [str(c) for c in df.columns]
+
+    def _find(*keys: str) -> str | None:
+        for c in cols:
+            if any(k in c for k in keys):
+                return c
+        return None
+
+    code_col = _find("成分券代码", "证券代码", "股票代码", "代码")
+    name_col = _find("成分券名称", "证券名称", "股票名称", "简称", "名称")
+    weight_col = _find("权重")
+    if code_col is None:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for _, row in df.iterrows():
+        raw = row.get(code_col)
+        if raw is None:
+            continue
+        code = str(raw).strip().zfill(6)
+        if not code.isdigit() or len(code) != 6:
+            continue
+        out.append(
+            {
+                "code": _cn_symbol(code),
+                "name": str(row.get(name_col)).strip() if name_col else None,
+                "weight": _to_float(row.get(weight_col)) if weight_col else None,
+            }
+        )
+    return out
 
 
 def _to_float(v: Any) -> float | None:
