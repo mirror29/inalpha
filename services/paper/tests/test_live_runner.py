@@ -17,6 +17,7 @@ from inalpha_shared.errors import InalphaError
 
 from inalpha_paper.config import get_paper_settings
 from inalpha_paper.engine.live_session import LiveEngineSession
+from inalpha_paper.fills import apply_fill_to_positions_and_cash
 from inalpha_paper.kernel.identifiers import ClientOrderId
 from inalpha_paper.live_runner import LiveRunnerManager, _closed_bars
 from inalpha_paper.model.orders import (
@@ -1301,3 +1302,41 @@ async def test_protective_exit_on_flat_position_still_rejected(
     assert decisions[-1]["outcome"] == "rejected"
     assert "INSUFFICIENT_POSITION" in decisions[-1]["reason"]
     assert run_fresh is not None and run_fresh["status"] == "running"
+
+
+async def test_protective_exit_clamp_preserves_high_precision(
+    app_with_lifespan: Any,
+) -> None:
+    """钳量全平用精确 Decimal（locked_qty）落账，高精度持仓不留浮点微尘仓位。
+
+    持仓 NUMERIC 列无精度上限，可存超 float 精度的量（高精度 altcoin / 合约乘数）。若钳量走
+    Decimal→float→Decimal 往返，``apply_fill`` 减去的量 ≠ 原持仓 → 留极小残差（≠0）误触后续
+    守门。本例直接建一个超 float 精度的持仓，保护性出场钳量全平，断言持仓**精确归零**。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+
+    # 直接建一个超 float 精度（18 位小数）的多仓——绕开 strategy 路径以精确控制持仓量
+    hi_qty = Decimal("1.123456789012345678")
+    seed_ts = datetime(2023, 11, 14, tzinfo=UTC)
+    async with get_conn() as conn, conn.transaction():
+        await accounts_store.get_or_create(conn, account_id)
+        await apply_fill_to_positions_and_cash(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="BUY", quantity=hi_qty, fill_price=Decimal("100"),
+            fee=Decimal("0"), ts_event=seed_ts, order_id="seed-hiprec",
+        )
+
+    # 保护性出场 SELL 2.0（> hi_qty）→ 钳到 hi_qty 全平
+    await manager._process_bar(
+        _protective_sell_session(2.0), run, _bar(1_700_000_000_000_000_000, close=100.0)
+    )
+
+    async with get_conn() as conn:
+        pos = await positions_store.get(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT"
+        )
+    # 精确归零：钳量走 Decimal(locked_qty)，无 float 往返微尘（旧 float 往返会留 ≠0 残差）
+    assert pos is not None
+    assert Decimal(str(pos["quantity"])) == Decimal("0")

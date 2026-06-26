@@ -857,9 +857,13 @@ class LiveRunnerManager:
         )
 
         # 3. 走 plan/exec 链路落账（机器自动审批）
-        # exec_qty = 实际撮合 / 落账量。保护性出场遇 session/DB 分叉时会在下方事务内被钳到
-        # 真实持仓（见 step 1.5 注释），届时同步更新 result / order_params / 落账 quantity。
+        # exec_qty = 实际撮合 / 落账量（float，喂 OrderExecutor / order_params）。保护性出场遇
+        # session/DB 分叉时会在下方事务内被钳到真实持仓（见 step 1.5 注释）。
+        # clamped_fill：钳量场景下的**精确 Decimal** 成交量（= 锁内读到的 locked_qty），直接喂
+        # apply_fill / 决策日志，绕开 Decimal→float→Decimal 往返——避免未来 12+ 位精度品种
+        # （高精度 altcoin / 合约乘数）浮点舍入在持仓表留极小微尘仓位、误触后续守门。
         exec_qty = order.quantity
+        clamped_fill: Decimal | None = None
         order_params = {
             "side": side, "type": order.type.value,
             "quantity": exec_qty, "price": order.price,
@@ -889,6 +893,7 @@ class LiveRunnerManager:
                             # 即 #109 CR medium）。用钳后量在锁内重算 fill，下方 insert /
                             # apply_fill / plan 全部用 exec_qty / result 同口径。
                             exec_qty = float(locked_qty)
+                            clamped_fill = locked_qty  # 精确 Decimal,绕开 float 往返
                             order_params["quantity"] = exec_qty
                             result = OrderExecutor.execute(
                                 venue=venue, symbol=symbol,
@@ -925,9 +930,13 @@ class LiveRunnerManager:
                     trade_plan_id=plan_id,
                 )
                 if result["status"] == "FILLED":
+                    fill_qty_decimal = (
+                        clamped_fill if clamped_fill is not None
+                        else Decimal(str(result["filled_quantity"]))
+                    )
                     realized_pnl = await apply_fill_to_positions_and_cash(
                         conn, account_id=account_id, venue=venue, symbol=symbol, side=side,
-                        quantity=Decimal(str(result["filled_quantity"])),
+                        quantity=fill_qty_decimal,
                         fill_price=Decimal(str(result["avg_fill_price"])),
                         fee=Decimal(str(result["fee"])),
                         ts_event=result["ts_event"], order_id=result["client_order_id"],
@@ -953,7 +962,9 @@ class LiveRunnerManager:
                     fill_price=Decimal(str(result["avg_fill_price"])) if filled else None,
                     fee=Decimal(str(result["fee"])) if filled else None,
                     reason=None if filled else str(result.get("rejection_reason") or "not filled"),
-                    quantity=Decimal(str(exec_qty)),  # 钳量分叉时 = 钳后量,与 orders 落账同源
+                    # 钳量分支 = 精确 locked_qty（与 orders 落账 / apply_fill 同源）；
+                    # 普通 / rejected 路径 = 意图量 exec_qty。
+                    quantity=clamped_fill if clamped_fill is not None else Decimal(str(exec_qty)),
                 )
         except InsufficientPositionError as e:
             # 事务内 FOR UPDATE 守门命中并发竞态：事务已回滚（无 plan/order/fill），
