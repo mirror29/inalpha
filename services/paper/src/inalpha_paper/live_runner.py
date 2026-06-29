@@ -922,16 +922,22 @@ class LiveRunnerManager:
                     )
                 return "rejected"
 
-        # 1.6 perp 保证金购买力守门(v1 简化,与 HTTP 同口径:本笔 IM+fee ≤ 该币种钱包)。
-        # 保护性出场(强平/止损)豁免——必须能平仓(与 notional/风控豁免同理)。
+        # 1.6 perp 保证金购买力守门(与回测 Portfolio.can_afford_* + HTTP 同口径:按**成交后
+        # 目标仓**算 prospective IM = |cur_qty ± qty| × price / leverage——平 / 减仓 IM 降,
+        # 不误拒策略自发的 cover 单)。保护性出场(强平/止损)已在上方豁免。
         if (run.get("trading_mode") or "spot") == "perp" and not is_protective_exit:
             leverage = int(run.get("leverage") or 1)
-            notional = order.quantity * float(bar.close)
-            im = notional / leverage
-            fee_amt = notional * _FEE_RATE
+            close = float(bar.close)
             currency = resolve_currency(venue, symbol)
             async with get_conn() as conn:
                 acct = await accounts_store.get_or_create(conn, account_id)
+                cur_pos = await positions_store.get(
+                    conn, account_id=account_id, venue=venue, symbol=symbol
+                )
+            cur_qty = float(cur_pos["quantity"]) if cur_pos else 0.0
+            signed_qty = order.quantity if side == "BUY" else -order.quantity
+            im = abs(cur_qty + signed_qty) * close / leverage
+            fee_amt = order.quantity * close * _FEE_RATE
             wallet = float((acct.get("cash_balances") or {}).get(currency, 0) or 0)
             if im + fee_amt > wallet:
                 reason = (
