@@ -1,0 +1,101 @@
+name: Build & Push Images
+
+# CI 构建 5 个生产镜像(data/paper/research/factor + mastra)并推送 GHCR。
+# VPS 端只 `docker compose pull` 不 `build`,绕开小内存机现场 build OOM。
+# 见 docs/miro/decisions/0058。部署仍是手动 `scripts/deploy.sh`(非自动 CD)。
+#
+# 镜像命名:ghcr.io/<owner>/inalpha-<service>:{latest,<sha>}
+# migrate 服务复用 inalpha-paper 镜像(不单独构建)。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "packages/orchestration/**"
+      - "infra/docker/**"
+      - ".github/workflows/build-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  python:
+    name: build · ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [data, paper, research, factor]
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR 仓库路径必须全小写;owner 可能含大写 → 转小写
+      - name: Resolve owner (lowercase)
+        id: meta
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 构建上下文 = services/(因 inalpha-shared 路径依赖,见 Dockerfile.python 注释)
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: services
+          file: infra/docker/Dockerfile.python
+          build-args: |
+            SERVICE=${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/inalpha-${{ matrix.service }}:latest
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/inalpha-${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  mastra:
+    name: build · mastra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve owner (lowercase)
+        id: meta
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 构建上下文 = packages/orchestration(见 Dockerfile.mastra 注释)
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: packages/orchestration
+          file: infra/docker/Dockerfile.mastra
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/inalpha-mastra:latest
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/inalpha-mastra:${{ github.sha }}
+          cache-from: type=gha,scope=mastra
+          cache-to: type=gha,mode=max,scope=mastra
