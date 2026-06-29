@@ -359,6 +359,31 @@ async def test_panel_score_index_code_no_snapshot_degrades(monkeypatch) -> None:
     assert res["reason"] is not None
 
 
+async def test_panel_score_index_code_undersized_snapshot_note(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """有 PIT 快照但成分数 < min_symbols → universe_note 说"成分不足",不与 is_pit=True 矛盾。"""
+    from inalpha_factor.data_client import DataClient
+
+    eng = _PanelEngine({})
+
+    async def _fake_cons(self, *, index_code, as_of):  # type: ignore[no-untyped-def]
+        return {  # 快照存在(is_pit=True)但只回 1 条(akshare 截断/指数重组过渡)
+            "index_code": index_code, "is_pit": True, "snapshot_date": "2026-06-01",
+            "reason": None, "constituents": [{"code": "sh.600519"}],
+        }
+
+    monkeypatch.setattr(DataClient, "get_constituents", _fake_cons)
+    res = await eng.panel_score(
+        symbols=[], venue="akshare", timeframe="1d", as_of=None,
+        lookback_bars=150, horizon_bars=5, factor_ids=None, min_symbols=3,
+        index_code="000300",
+    )
+    assert res["is_pit"] is True  # 快照确实存在
+    assert res["factors"] == []
+    note = res["universe_note"]
+    assert "no PIT constituent snapshot" not in note  # 不能说"没快照"(矛盾)
+    assert "below min_symbols" in note  # 说的是"成分不足"
+
+
 async def test_panel_score_index_code_over_cap_degrades(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """index_code 解析出超 _MAX_PANEL_SYMBOLS 的大 universe → 降级返空,不截断成随机子集。"""
     from inalpha_factor.data_client import DataClient

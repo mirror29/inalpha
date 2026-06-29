@@ -638,14 +638,25 @@ class FactorEngine:
             symbols = [c["code"] for c in cons.get("constituents", []) if c.get("code")]
             snap = cons.get("snapshot_date")
             if not is_pit or len(symbols) < min_symbols:
-                return {
-                    "as_of": as_of, "symbols": symbols, "bars_used": {},
-                    "latest_bar_ts": {}, "is_pit": is_pit,
-                    "universe_note": (
+                # 两类失败分开说明，别让 universe_note 与 is_pit 自相矛盾：
+                #   无快照(is_pit=false) → "没快照、拒回退当前成分"
+                #   有快照但成分残缺(is_pit=true 但 < min) → "快照存在但成分不足"
+                if not is_pit:
+                    degraded_note = (
                         f"index {index_code}: no PIT constituent snapshot at or before "
                         f"{as_of.date().isoformat()} (PIT coverage accumulates forward) — "
                         "refusing to fall back to current constituents (survivorship bias)"
-                    ),
+                    )
+                else:
+                    degraded_note = (
+                        f"index {index_code}: PIT snapshot found (dated {snap}) but only "
+                        f"{len(symbols)} constituent(s) — below min_symbols={min_symbols}; "
+                        "refusing to rank an undersized cross-section"
+                    )
+                return {
+                    "as_of": as_of, "symbols": symbols, "bars_used": {},
+                    "latest_bar_ts": {}, "is_pit": is_pit,
+                    "universe_note": degraded_note,
                     "factors": [], "ic_null_benchmark": 0.0,
                     "reason": cons.get("reason")
                     or f"index {index_code} has too few PIT constituents at as_of",
