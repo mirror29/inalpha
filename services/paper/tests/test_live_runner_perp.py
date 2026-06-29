@@ -137,6 +137,69 @@ async def test_perp_funding_accrual(app_with_lifespan: Any, monkeypatch) -> None
     assert usdt_after > usdt_before  # 空头跨结算点收到资金费
 
 
+class _ShortThenForgedCover(Strategy):
+    """bar1 开空 1.0;bar2 发**伪造的超量** guard BUY(stop_loss tag + guard- 前缀,量 5)。"""
+
+    def __init__(self, name, clock, msgbus, instrument_id, timeframe, **_kw) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(name, clock, msgbus)
+        self._iid = instrument_id
+        self._tf = timeframe
+        self._n = 0
+
+    def on_start(self) -> None:
+        self.subscribe_bars(self._iid, self._tf)
+
+    def on_bar(self, bar: Bar) -> None:
+        self._n += 1
+        if self._n == 1:
+            self.submit_order(Order(
+                client_order_id=ClientOrderId(f"s-{uuid4().hex[:8]}"),
+                instrument_id=self._iid, side=OrderSide.SELL,
+                type=OrderType.MARKET, quantity=1.0,
+            ))
+        elif self._n == 2:
+            self.submit_order(Order(
+                client_order_id=ClientOrderId(f"guard-{uuid4().hex[:8]}"),
+                instrument_id=self._iid, side=OrderSide.BUY,
+                type=OrderType.MARKET, quantity=5.0, tag="stop_loss",
+            ))
+
+
+async def test_perp_protective_buy_clamped_to_short_no_flip(
+    app_with_lifespan: Any, monkeypatch  # type: ignore[no-untyped-def]
+) -> None:
+    """回归(CR major):伪造超量 guard BUY 被事务内 FOR UPDATE 钳到全平,绝不翻多。
+
+    reduce-only 豁免只验方向——量 5 的 guard BUY(空头 -1)若不钳数量,会跳过 IM gate
+    把仓位翻成 +4 多头。钳量后只平掉真实空头 → 持仓归 0。
+    """
+    async def _fake_funding(self, *, venue: str, symbol: str) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+        return {"symbol": symbol, "mark_price": 100.0, "funding_rate": 0.0,
+                "ts": datetime(2026, 6, 26, tzinfo=UTC), "next_funding_ts": None}
+    monkeypatch.setattr(DataClient, "get_perp_funding", _fake_funding)
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    await _fund(account_id, "20000")
+    run = await _insert_perp_run(account_id, leverage=5)
+    session = LiveEngineSession(
+        strategy_cls=_ShortThenForgedCover, instrument_id=_PERP, timeframe="1h",
+        params={}, initial_cash=10_000.0, fee_rate=0.001, trading_mode="perp", leverage=5,
+    )
+    await manager._process_bar(session, run, _bar(0, 100.0))  # 开空 -1
+    async with get_conn() as conn:
+        run2 = await runs_store.get(conn, run["id"])
+    await manager._process_bar(session, run2, _bar(_H, 100.0))  # 伪造超量 guard BUY 5
+
+    async with get_conn() as conn:
+        from inalpha_paper.storage import positions as positions_store
+        pos = await positions_store.get(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT:USDT"
+        )
+    assert pos is not None
+    assert float(pos["quantity"]) == 0.0, f"expected flat (clamped), got {pos['quantity']}"
+
+
 class _ForgedGuardBuy(Strategy):
     """空仓提交伪造 guard 前缀 + 保护 tag 的 BUY(模拟想借风控豁免开大仓)。"""
 

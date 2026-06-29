@@ -1030,6 +1030,33 @@ class LiveRunnerManager:
                                 f"INSUFFICIENT_POSITION: sell {exec_qty} exceeds position "
                                 f"{locked_qty} (spot long-only guard)"
                             )
+                # perp 保护性平空 BUY 的对称钳量(与上方 spot SELL 钳对称):reduce-only 豁免
+                # 只验方向,这里在事务内 FOR UPDATE 按真实空头量把超量 BUY 钳到**全平**——
+                # forged / 超量 guard BUY 不会借豁免翻成多头、也不会跳过 IM 凭空开仓。
+                elif (
+                    side == "BUY"
+                    and is_protective_exit
+                    and (run.get("trading_mode") or "spot") == "perp"
+                    and result["status"] == "FILLED"
+                ):
+                    locked = await positions_store.get(
+                        conn, account_id=account_id, venue=venue, symbol=symbol,
+                        for_update=True,
+                    )
+                    locked_qty = Decimal(str(locked["quantity"])) if locked else Decimal(0)
+                    short_size = -locked_qty  # 空头持仓量(正);非空头则 ≤ 0
+                    if short_size > 0 and Decimal(str(exec_qty)) > short_size:
+                        # 钳到全平,绝不翻多:超量 guard BUY 只平掉真实空头,不借豁免开多
+                        exec_qty = float(short_size)
+                        clamped_fill = short_size
+                        order_params["quantity"] = exec_qty
+                        result = OrderExecutor.execute(
+                            venue=venue, symbol=symbol,
+                            side=side,  # type: ignore[arg-type]
+                            order_type=order.type.value,  # type: ignore[arg-type]
+                            quantity=exec_qty, price=order.price,
+                            ref_price=float(bar.close), fee_rate=_FEE_RATE,
+                        )
                 plan = await plans_store.create(
                     conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
                     order_params=order_params, rationale=rationale,
