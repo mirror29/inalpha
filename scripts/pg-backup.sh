@@ -10,7 +10,12 @@ sudo docker exec inalpha-postgres sh -c \
   | gzip > "$OUT.tmp"
 mv "$OUT.tmp" "$OUT"
 ls -1t "$DIR"/inalpha-*.sql.gz 2>/dev/null | tail -n +15 | xargs -r rm -f
-if rclone copy "$OUT" r2:inalpha-backups/ 2>/dev/null; then
-  rclone delete --min-age 15d r2:inalpha-backups/ 2>/dev/null || true; R2="R2 OK"
-else R2="R2 上传失败(本地已留)"; fi
+# 上传与清理分别报告:清理失败(如令牌缺 DeleteObject)不能再被吞成 "R2 OK",
+# 否则 R2 存量无限增长而日志永远正常。
+if rclone copy "$OUT" r2:inalpha-backups/; then
+  R2="R2 上传 OK"
+  if rclone delete --min-age 15d r2:inalpha-backups/; then R2="$R2 / 清理 OK"; else R2="$R2 / ⚠️清理失败"; fi
+else
+  R2="⚠️R2 上传失败(本地已留)"
+fi
 echo "$(date '+%F %T') 本地 OK: $(basename "$OUT") ($(du -h "$OUT" | cut -f1)) | $R2 | 本地存 $(ls -1 "$DIR"/inalpha-*.sql.gz | wc -l) 份"
