@@ -8,6 +8,11 @@ name: inalpha-prod
 #
 # 拓扑：postgres + redis + migrate(一次性) + data/paper/research/factor + mastra + cloudflared
 # 仅 cloudflared 对公网；其余服务走容器内网，按服务名互访。
+#
+# 镜像策略(见 0058):各服务同时声明 image: + build:。
+#   - 默认部署(scripts/deploy.sh):`compose pull` 拉 GHCR 预构建镜像 → `up -d`,VPS 不 build。
+#   - 应急本地构建:`up -d --build`(小内存机注意 OOM)。
+#   image 路径由 IMAGE_PREFIX/IMAGE_TAG 注入(见 .env.prod.example);CI 见 build-images.yml。
 
 x-python-build: &python-build
   context: ../services
@@ -64,6 +69,7 @@ services:
 
   # 一次性：跑 DB 迁移到最新，app 服务依赖它 completed_successfully
   migrate:
+    image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-paper:${IMAGE_TAG:-latest}
     build:
       <<: *python-build
       args: { SERVICE: paper }   # 复用 paper 镜像（含 DB 依赖）；alembic 由 _shared/paper 提供
@@ -78,10 +84,13 @@ services:
     working_dir: /app
     # alembic 已是 paper 的**显式直接依赖**(services/paper/pyproject.toml,
     # 不再依赖 optuna 的传递依赖,上游换后端也不会让迁移静默消失)
-    command: ["sh", "-c", "uv --project paper run alembic -c /app/migrations/alembic.ini upgrade head"]
+    # 必须先 cd 到 migrations 目录:alembic.ini 的 script_location=. 按 CWD 解析,
+    # 否则在 /app 下找不到 env.py（ADR-0058 真机实测修复）。--project 用绝对路径。
+    command: ["sh", "-c", "cd /app/migrations && uv --project /app/paper run alembic -c alembic.ini upgrade head"]
 
   data:
     <<: *svc-common
+    image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-data:${IMAGE_TAG:-latest}
     build: { <<: *python-build, args: { SERVICE: data } }
     container_name: inalpha-data
     environment:
@@ -96,6 +105,7 @@ services:
 
   paper:
     <<: *svc-common
+    image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-paper:${IMAGE_TAG:-latest}
     build: { <<: *python-build, args: { SERVICE: paper } }
     container_name: inalpha-paper
     environment:
@@ -112,6 +122,7 @@ services:
 
   research:
     <<: *svc-common
+    image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-research:${IMAGE_TAG:-latest}
     build: { <<: *python-build, args: { SERVICE: research } }
     container_name: inalpha-research
     environment: { PORT: 8003, WORKERS: 1 }
@@ -124,6 +135,7 @@ services:
 
   factor:
     <<: *svc-common
+    image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-factor:${IMAGE_TAG:-latest}
     build: { <<: *python-build, args: { SERVICE: factor } }
     container_name: inalpha-factor
     environment: { PORT: 8004, WORKERS: 1 }
@@ -135,6 +147,7 @@ services:
       start_period: 40s
 
   mastra:
+    image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-mastra:${IMAGE_TAG:-latest}
     build:
       context: ../packages/orchestration
       dockerfile: ../../infra/docker/Dockerfile.mastra
