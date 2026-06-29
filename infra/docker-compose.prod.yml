@@ -181,16 +181,28 @@ services:
       dockerfile: ../../infra/docker/Dockerfile.dashboard
     container_name: inalpha-dashboard
     restart: unless-stopped
-    env_file: [../infra/.env.prod]
+    # 凭据隔离(最小权限):dashboard 是公网前端,**不挂 env_file** —— 那会把 DB/Redis/LLM/
+    # Binance/tunnel 全部凭据注入前端容器(RCE 即全泄)。BFF 实际只需 JWT_SECRET + 5 个内网 URL;
+    # JWT_SECRET 经 compose 从 .env.prod 插值,只此一个 secret 进容器。
     environment:
       NODE_ENV: production
       PORT: 3001
+      JWT_SECRET: ${JWT_SECRET:?required}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      CONSOLE_SUBJECT: ${CONSOLE_SUBJECT:-console:dev}
+      CONSOLE_EMAIL: ${CONSOLE_EMAIL:-console@inalpha.dev}
       MASTRA_URL: http://mastra:4111
       PAPER_SERVICE_URL: http://paper:8002
       DATA_SERVICE_URL: http://data:8001
       RESEARCH_SERVICE_URL: http://research:8003
       FACTOR_SERVICE_URL: http://factor:8004
-    depends_on: [mastra, paper, data, research, factor]
+    # 等后端 healthy 再起,避免冷启动期 BFF 路由全 502
+    depends_on:
+      mastra: { condition: service_healthy }
+      paper: { condition: service_healthy }
+      data: { condition: service_healthy }
+      research: { condition: service_healthy }
+      factor: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3001/en').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
