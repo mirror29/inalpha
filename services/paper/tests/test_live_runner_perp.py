@@ -200,6 +200,38 @@ async def test_perp_protective_buy_clamped_to_short_no_flip(
     assert float(pos["quantity"]) == 0.0, f"expected flat (clamped), got {pos['quantity']}"
 
 
+async def test_perp_funding_accrues_on_reused_run_dict(
+    app_with_lifespan: Any, monkeypatch  # type: ignore[no-untyped-def]
+) -> None:
+    """回归(CR major):funding 以**内存** run['last_bar_ts'] 为上根边界,_process_bar 须在
+    内存推进它。生产里 _run_loop 复用同一 run dict 跨 bar(不重取)——不推进会让新 run 永不
+    计提 funding(prev 恒 None)、续跑 run 每根从固定 T0 重复计提。本测试复用同一 dict 验证。
+    """
+    async def _fake_funding(self, *, venue: str, symbol: str) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+        return {"symbol": symbol, "mark_price": 100.0, "funding_rate": 0.001,
+                "ts": datetime(2026, 6, 26, tzinfo=UTC), "next_funding_ts": None}
+    monkeypatch.setattr(DataClient, "get_perp_funding", _fake_funding)
+
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    await _fund(account_id, "20000")
+    run = await _insert_perp_run(account_id, leverage=5)
+    session = _perp_session(1.0, leverage=5)
+    # 同一 run dict 跨两根 bar(**不重取**):7h 开空(内存须推进 last_bar_ts→7h),8h 跨 8h 结算点
+    await manager._process_bar(session, run, _bar(7 * _H, 100.0))
+    async with get_conn() as conn:
+        acct_before = await accounts_store.get(conn, account_id)
+    usdt_before = float((acct_before["cash_balances"] or {}).get("USDT", 0))
+    await manager._process_bar(session, run, _bar(8 * _H, 100.0))
+    async with get_conn() as conn:
+        acct_after = await accounts_store.get(conn, account_id)
+    usdt_after = float((acct_after["cash_balances"] or {}).get("USDT", 0))
+    # 空头 -1 × mark 100 × rate 0.001 = +0.1(空头收);只跨 1 个结算点 → 约 +0.1
+    # (0=永不计提的 bug,~0.2=重复计提的 bug)。
+    delta = usdt_after - usdt_before
+    assert delta == pytest.approx(0.1, abs=0.01), f"expected ~0.1 funding, got {delta}"
+
+
 class _ForgedGuardBuy(Strategy):
     """空仓提交伪造 guard 前缀 + 保护 tag 的 BUY(模拟想借风控豁免开大仓)。"""
 

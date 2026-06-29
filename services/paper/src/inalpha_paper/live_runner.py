@@ -649,6 +649,12 @@ class LiveRunnerManager:
                 await self._accrue_perp_funding(run, bar)
             except Exception:
                 _logger.exception("live run %s: perp 资金费计提失败（best-effort，已忽略）", run["id"])
+            # **推进内存 run["last_bar_ts"]**：funding 以它为"上根 bar"边界算本区间结算次数,
+            # 但 _run_loop 只推进局部变量、update_progress 只写 DB,都不回写本 dict(按引用传入)。
+            # 不在此同步会让:新 run(None)每根命中 prev is None → 永不计提 funding;续跑 run 每根
+            # 用固定 T0 重复计提 [T0, 当前] 全部结算 → 累计指数级重复扣费(CR)。放在 accrue 之后
+            # (它先读旧值算 [prev, bar]),下根 bar 即从本根续算 [bar, next]。
+            run["last_bar_ts"] = _ns_to_dt(bar.ts_event)
         # 进度写做 best-effort（CR medium）：本根 bar 的下单意图已落账 + confirm_fill 已回灌，
         # 这些副作用**不幂等**。若 update_progress 因 DB 瞬时错误抛出，绝不能让它逃出本函数——
         # 否则 _run_loop 的内存 last_bar_ts 不前进 → 下轮重喂同一根 bar → 重复下单 / 指标污染。
