@@ -50,6 +50,9 @@ loadRootEnv();
  */
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  /* Docker 部署(腾讯服务器,ADR-0058):standalone 产物 = 精简 server.js + 仅 traced
+     依赖,运行镜像小、内存省。注意与被禁用的 `output:"export"`(静态导出)不是一回事。 */
+  output: "standalone",
   /* Next 16 dev 默认只认 localhost 为同源,从 127.0.0.1 打开会拦掉 /_next/* dev
      资源(HMR/RSC),页面永远卡在骨架屏。本机两种写法都常用,显式放行。 */
   allowedDevOrigins: ["127.0.0.1"],

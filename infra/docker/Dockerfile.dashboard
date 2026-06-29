@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+#
+# Inalpha dashboard 生产镜像（Next 16 · standalone）—— 见 docs/miro/decisions/0058
+#
+# 构建上下文 = apps/dashboard（自带 pnpm-lock / pnpm-workspace，无 root workspace 依赖）。
+# 运行时只跑 standalone 的 server.js：BFF 经 docker 内网调后端（http://mastra:4111 等，
+# 走 .env.prod 的容器名 URL），JWT_SECRET 与后端同源 —— 零 CORS、无需公网子域。
+#
+# 用法（见 docker-compose.prod.yml 的 dashboard 服务）：
+#   docker build -f infra/docker/Dockerfile.dashboard -t inalpha-dashboard apps/dashboard
+
+FROM node:22-bookworm-slim AS builder
+RUN corepack enable
+WORKDIR /app
+# 依赖清单先行做层缓存。pnpm-workspace.yaml 必须带上 —— 它含 allowBuilds(批准
+# sharp/@swc/@parcel-watcher 的 build script，否则 pnpm 11 ERR_PNPM_IGNORED_BUILDS exit 1)
+# 与 overrides(@ag-ui/* 钉 0.0.53)。漏了它 frozen install 直接失败、装不出 node_modules。
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+# 源码（node_modules / .next / .open-next 已在 .dockerignore 排除）
+COPY . .
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+RUN pnpm build
+
+FROM node:22-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3001 HOSTNAME=0.0.0.0
+# 非 root 运行，缩小容器逃逸面
+RUN useradd --create-home --uid 10001 app && chown app:app /app
+USER app
+# standalone：精简 server.js + 仅 traced 的 node_modules
+COPY --from=builder --chown=app:app /app/.next/standalone ./
+COPY --from=builder --chown=app:app /app/.next/static ./.next/static
+COPY --from=builder --chown=app:app /app/public ./public
+# next-intl 的 messages（动态 import，保险起见显式带上）
+COPY --from=builder --chown=app:app /app/messages ./messages
+EXPOSE 3001
+# 健康检查端点用根路径；standalone server 监听 0.0.0.0:3001
+CMD ["node", "server.js"]

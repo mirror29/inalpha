@@ -172,6 +172,32 @@ services:
       retries: 5
       start_period: 30s
 
+  # 操作者控制台(Next16 standalone)。BFF 经容器名直连后端,零 CORS、JWT 同源(共用 .env.prod)。
+  # 公网仅经 Cloudflare Tunnel 暴露 dashboard.inalpha.dev → dashboard:3001;后端服务一律不暴露。
+  dashboard:
+    image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-dashboard:${IMAGE_TAG:-latest}
+    build:
+      context: ../apps/dashboard
+      dockerfile: ../../infra/docker/Dockerfile.dashboard
+    container_name: inalpha-dashboard
+    restart: unless-stopped
+    env_file: [../infra/.env.prod]
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MASTRA_URL: http://mastra:4111
+      PAPER_SERVICE_URL: http://paper:8002
+      DATA_SERVICE_URL: http://data:8001
+      RESEARCH_SERVICE_URL: http://research:8003
+      FACTOR_SERVICE_URL: http://factor:8004
+    depends_on: [mastra, paper, data, research, factor]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/en').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+
   # 公网入口：Cloudflare Tunnel（无需在 VPS 开入站端口，TLS/防护走 CF）
   cloudflared:
     image: cloudflare/cloudflared:2026.6.0
