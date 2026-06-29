@@ -287,3 +287,52 @@ def test_perp_leverage_out_of_range_rejected(
               "quantity": 0.01, "ref_price": 50_000.0, "trading_mode": "perp", "leverage": 50},
     )
     assert r.status_code == 400  # pydantic 请求校验失败,本服务统一返 400
+
+
+def test_perp_margin_gate_allows_cover_when_wallet_eroded(
+    client: TestClient, fresh_user: dict[str, str]
+) -> None:
+    """回归(CR major):perp 平仓单按**成交后目标仓**算 IM(≈0),钱包被亏损侵蚀也不误拒 cover。
+
+    裸 notional 算法把 cover 当等量开仓多算全额 IM → 钱包 < 开仓 IM 时误拒(且回测能过、
+    实盘拒,口径分叉)。修复后与回测 Portfolio.can_afford_buy 同口径。
+    """
+    import asyncio
+    from decimal import Decimal
+
+    from inalpha_shared.db import get_conn
+
+    from inalpha_paper.account_id import account_id_from_sub
+    from inalpha_paper.storage import accounts as accounts_store
+
+    headers = {"Authorization": fresh_user["Authorization"]}
+    account_id = account_id_from_sub(fresh_user["sub"])
+    sym = "BTC/USDT:USDT"
+
+    async def _fund(amount: str) -> None:
+        async with get_conn() as conn:
+            await accounts_store.get_or_create(conn, account_id)
+            await accounts_store.apply_cash_delta(
+                conn, account_id, Decimal(amount), currency="USDT"
+            )
+
+    # 1) 注资够开 0.01 短空(leverage=1 → IM=0.01×50000=500),开空
+    asyncio.get_event_loop().run_until_complete(_fund("600"))
+    r_open = client.post(
+        "/orders/submit", headers=headers,
+        json={"symbol": sym, "venue": "binance", "side": "SELL", "type": "MARKET",
+              "quantity": 0.01, "ref_price": 50_000.0, "trading_mode": "perp", "leverage": 1},
+    )
+    assert r_open.status_code == 200, r_open.json()
+
+    # 2) 模拟亏损把钱包侵蚀到 < 开仓 IM(500)
+    asyncio.get_event_loop().run_until_complete(_fund("-550"))  # ≈ 49.5 USDT 剩余
+
+    # 3) cover BUY 0.01 平掉短空:目标仓=0 → prospective IM=0,只需 fee → 放行(旧算法会 409)
+    r_cover = client.post(
+        "/orders/submit", headers=headers,
+        json={"symbol": sym, "venue": "binance", "side": "BUY", "type": "MARKET",
+              "quantity": 0.01, "ref_price": 50_000.0, "trading_mode": "perp", "leverage": 1},
+    )
+    assert r_cover.status_code == 200, r_cover.json()
+    assert r_cover.json()["status"] == "FILLED"

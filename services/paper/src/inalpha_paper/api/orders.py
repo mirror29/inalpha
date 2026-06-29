@@ -94,14 +94,22 @@ async def post_submit_order(
         venue=req.venue, symbol=req.symbol,
     )
 
-    # perp 保证金购买力守门(v1 简化:本笔初始保证金 IM=notional/leverage + fee 不超过账户该
-    # 计价货币钱包余额;跨仓聚合留 Phase 2)。spot SELL 守门在下方事务内 FOR UPDATE 锁行做
-    # (TOCTOU 硬化);perp 做空合法,由本钱包购买力校验放行。
+    # perp 保证金购买力守门(与回测 Portfolio.can_afford_buy/sell 同口径:按**成交后目标仓**
+    # 算 prospective IM = |cur_qty ± qty| × price / leverage——平 / 减仓目标仓变小、IM 降,
+    # 不误拒合法 cover;开 / 加 / 反手按目标仓校验。裸 notional 算法会把平仓当等量开仓多算
+    # IM、误拒(回测能过实盘拒,口径分叉)。跨仓聚合留 Phase 2)。spot SELL 守门在下方事务内
+    # FOR UPDATE 锁行做(TOCTOU 硬化);perp 做空合法,由本钱包购买力校验放行。
     if req.trading_mode == "perp":
         acct = await accounts_store.get_or_create(db, account_id)
         currency = resolve_currency(req.venue, req.symbol)
         wallet = Decimal(str((acct.get("cash_balances") or {}).get(currency, "0")))
-        im = Decimal(str(req.quantity * ref_price / req.leverage))
+        cur_pos = await positions_store.get(
+            db, account_id=account_id, venue=req.venue, symbol=req.symbol
+        )
+        cur_qty = float(cur_pos["quantity"]) if cur_pos else 0.0
+        signed_qty = req.quantity if req.side == "BUY" else -req.quantity
+        prospective_qty = abs(cur_qty + signed_qty)
+        im = Decimal(str(prospective_qty * ref_price / req.leverage))
         fee_amt = Decimal(str(req.quantity * ref_price * req.fee_rate))
         if im + fee_amt > wallet:
             raise InalphaError(
