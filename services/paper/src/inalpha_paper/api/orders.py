@@ -94,31 +94,6 @@ async def post_submit_order(
         venue=req.venue, symbol=req.symbol,
     )
 
-    # perp 保证金购买力守门(与回测 Portfolio.can_afford_buy/sell 同口径:按**成交后目标仓**
-    # 算 prospective IM = |cur_qty ± qty| × price / leverage——平 / 减仓目标仓变小、IM 降,
-    # 不误拒合法 cover;开 / 加 / 反手按目标仓校验。裸 notional 算法会把平仓当等量开仓多算
-    # IM、误拒(回测能过实盘拒,口径分叉)。跨仓聚合留 Phase 2)。spot SELL 守门在下方事务内
-    # FOR UPDATE 锁行做(TOCTOU 硬化);perp 做空合法,由本钱包购买力校验放行。
-    if req.trading_mode == "perp":
-        acct = await accounts_store.get_or_create(db, account_id)
-        currency = resolve_currency(req.venue, req.symbol)
-        wallet = Decimal(str((acct.get("cash_balances") or {}).get(currency, "0")))
-        cur_pos = await positions_store.get(
-            db, account_id=account_id, venue=req.venue, symbol=req.symbol
-        )
-        cur_qty = float(cur_pos["quantity"]) if cur_pos else 0.0
-        signed_qty = req.quantity if req.side == "BUY" else -req.quantity
-        prospective_qty = abs(cur_qty + signed_qty)
-        im = Decimal(str(prospective_qty * ref_price / req.leverage))
-        fee_amt = Decimal(str(req.quantity * ref_price * req.fee_rate))
-        if im + fee_amt > wallet:
-            raise InalphaError(
-                f"perp 保证金不足:需 IM {im} + fee {fee_amt} 超钱包 {wallet} {currency}",
-                code="INSUFFICIENT_MARGIN", status_code=409,
-                details={"im": str(im), "fee": str(fee_amt),
-                         "wallet": str(wallet), "currency": currency},
-            )
-
     # 算成交（纯函数，不依赖 DB）
     result = OrderExecutor.execute(
         venue=req.venue,
@@ -133,7 +108,32 @@ async def post_submit_order(
 
     # 落盘 + 持仓 + 现金（事务）
     async with db.transaction():
-        await accounts_store.get_or_create(db, account_id)
+        acct = await accounts_store.get_or_create(db, account_id)
+
+        # perp 保证金购买力守门（**事务内 FOR UPDATE**，与下方 spot SELL 守门同口径防 TOCTOU：
+        # 否则同账户同标的并发 BUY 各读旧 wallet/持仓双双过闸 → double-open、累计 IM 超钱包）。
+        # 与回测 Portfolio.can_afford_buy/sell 同口径：按**成交后目标仓**算 prospective IM =
+        # |cur_qty ± qty| × price / leverage——平 / 减仓 IM 降不误拒 cover;开 / 加 / 反手按目标
+        # 仓校验。跨 symbol 聚合仍留 Phase 2（#114）。raise 触发回滚 → 不落单/不落账（409）。
+        if req.trading_mode == "perp":
+            currency = resolve_currency(req.venue, req.symbol)
+            wallet = Decimal(str((acct.get("cash_balances") or {}).get(currency, "0")))
+            cur_pos = await positions_store.get(
+                db, account_id=account_id, venue=req.venue, symbol=req.symbol,
+                for_update=True,
+            )
+            cur_qty = float(cur_pos["quantity"]) if cur_pos else 0.0
+            signed_qty = req.quantity if req.side == "BUY" else -req.quantity
+            prospective_qty = abs(cur_qty + signed_qty)
+            im = Decimal(str(prospective_qty * ref_price / req.leverage))
+            fee_amt = Decimal(str(req.quantity * ref_price * req.fee_rate))
+            if im + fee_amt > wallet:
+                raise InalphaError(
+                    f"perp 保证金不足:需 IM {im} + fee {fee_amt} 超钱包 {wallet} {currency}",
+                    code="INSUFFICIENT_MARGIN", status_code=409,
+                    details={"im": str(im), "fee": str(fee_amt),
+                             "wallet": str(wallet), "currency": currency},
+                )
 
         # 现货 long-only 守门（与回测 Portfolio.can_afford_sell 同口径）：OrderExecutor
         # 无状态、apply_fill 又允许负仓——不拦则裸空 / 超卖翻空落账成凭空做空的负仓。
