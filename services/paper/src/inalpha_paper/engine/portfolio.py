@@ -339,9 +339,12 @@ class Portfolio:
             # 永续:开/加仓不收付名义、只占保证金;cash 只随**已实现盈亏**(平/减/反手那部分)
             # 与手续费变动。realized 增量 = apply_fill 后 pos.realized_pnl − 成交前快照。
             realized_increment = pos.realized_pnl - prev_realized
-            # 逐仓破产 clamp:平/减仓的**亏损不超过该仓开仓保证金**(bar 跳空穿强平价的兜底;
-            # 超出部分由保险基金吸收,钱包不再扣)。margin_before = |prev_qty|×prev_avg/leverage。
-            margin_before = abs(prev_qty) * prev_avg / self._leverage
+            # 逐仓破产 clamp:平/减仓的**亏损不超过被平那部分的开仓保证金**(bar 跳空穿强平价
+            # 的兜底;超出部分由保险基金吸收,钱包不再扣)。按**被平量**算 IM 而非全仓——部分平仓
+            # 只清被平那部分的逐仓保证金,剩余仓的保证金仍独立担保;用全仓 IM 会把剩余仓保证金
+            # 也一并耗光(CR)。反手时被平量 = |prev_qty|(新 leg 尚无已实现)。
+            closed_qty = min(abs(msg.fill_quantity), abs(prev_qty))
+            margin_before = closed_qty * prev_avg / self._leverage
             if realized_increment < 0 and -realized_increment > margin_before > 0:
                 realized_increment = -margin_before
             self._cash += realized_increment - fee
