@@ -484,8 +484,9 @@ export const paperCvBacktestTool = createTool({
     }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
-    // CV 跑多路引擎，长超时兜底
-    const client = await getBacktestClient(tc);
+    // CV 跑 N 折 × 多 path（perp 还含逐根 funding），冷缓存下显著慢于单次回测——
+    // 给 600s（与 check_sensitivity 一致），300s 极易超时。
+    const client = await getBacktestClient(tc, 600_000);
     return await client.cvBacktest({
       strategyId: inputData.strategyId,
       candidateId: inputData.candidateId,
