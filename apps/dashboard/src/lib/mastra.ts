@@ -184,6 +184,7 @@ export async function setChatThreadTitle(
       threadId,
       resourceId: CONSOLE_SUBJECT,
       title: clean,
+      agentId: AGENT_ID,
     } as Parameters<typeof client.createMemoryThread>[0]);
   }
 }

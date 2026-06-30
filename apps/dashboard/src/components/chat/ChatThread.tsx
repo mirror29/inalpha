@@ -414,7 +414,7 @@ export function ChatThread({
     if (open) inputRef.current?.focus();
   }, [open]);
 
-  const submit = () => {
+  const submit = async () => {
     const text = draft.trim();
     if (!text || isLoading) return;
     const isFirst = messages.length === 0; // 该会话首条 → 用它当会话标题
@@ -428,10 +428,11 @@ export function ChatThread({
     const content = contextAttached
       ? buildPageContextEnvelope(page) + text
       : text;
-    // 标题必须在发消息前发出:setChatThreadTitle 已内置 create 兜底,
-    // 即使线程还不存在也会创建带标题的线程,避免活动流 8s 轮询看到 #uuid。
+    // 首条消息:先等待标题落库,再发消息。setChatThreadTitle 内置 create 兜底
+    // (线程不存在时创建带标题的线程),确保 8s 活动流轮询和页面切换时标题已就位。
+    // 同机 loopback 通常 <100ms,用户无感;失败静默放弃不阻塞发送。
     if (isFirst && threadId) {
-      void fetch(`/api/chat/threads/${threadId}/title`, {
+      await fetch(`/api/chat/threads/${threadId}/title`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: text }),
