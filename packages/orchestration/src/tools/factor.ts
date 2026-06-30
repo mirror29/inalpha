@@ -27,7 +27,7 @@ const SymbolSchema = z
   .min(1)
   .max(50)
   .regex(
-    /^[\^A-Za-z0-9._/-]+$/,
+    /^[\^A-Za-z0-9._/\-:]+$/,
     "symbol 不能为空 / 含空格；crypto 'BTC/USDT' / 股票 'AAPL' / 指数 '^N225' / akshare 'sh.600519'",
   );
 
