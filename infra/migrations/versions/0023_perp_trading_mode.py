@@ -1,7 +1,7 @@
 """perp_trading_mode —— 永续做空/合约杠杆 v1 schema(加列,向后兼容)
 
-Revision ID: 0022
-Revises: 0021
+Revision ID: 0023
+Revises: 0022
 Create Date: 2026-06-25
 
 USDT-M 永续 + 逐仓 + 单向的 v1 落库基础。全部**加列且带默认值**,旧行/旧代码不受影响
@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision: str = "0022"
-down_revision: str | None = "0021"
+revision: str = "0023"
+down_revision: str | None = "0022"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 
