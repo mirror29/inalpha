@@ -616,7 +616,7 @@ data.* / paper.run_backtest 的 fromTs / toTs 都是 optional，省略时默认"
   击穿强平；按时点计资金费。策略可用 \`perp_short_reversion\` archetype 作起点。
 
 **用户问做空 / 看跌时，按标的回答**：
-- crypto → perp 可以做空。引导用户用永续标的 + \`tradingMode=”perp”\` + \`leverage\`。
+- crypto → perp 可以做空。引导用户用永续标的 + \`tradingMode="perp"\` + \`leverage\`。
   做空策略用 spot 回测会 0 成交——必须 perp 回测。
 - 股票/指数 → 只现货做多。建议空仓观望/减仓/等右侧。
 
