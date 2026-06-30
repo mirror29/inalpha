@@ -113,6 +113,20 @@ export const createTradePlanTool = createTool({
       .optional()
       .describe("D-8c 血缘：触发本次下单的 paper.run_backtest 的 run_id"),
     expireInSeconds: z.number().int().positive().max(3600).default(300),
+    tradingMode: z
+      .enum(["spot", "perp"])
+      .default("spot")
+      .describe(
+        "spot（默认，现货 long-only）或 perp（USDT-M 永续 + 逐仓，放开做空 / 杠杆）。" +
+        "**做空单必须用 perp**——spot 下 open_short/SELL 无持仓会被守门拒。仅 crypto 永续标的。",
+      ),
+    leverage: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(1)
+      .describe("杠杆倍数（perp 用，1..20）；spot 恒 1"),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
@@ -135,6 +149,8 @@ export const createTradePlanTool = createTool({
         price: inputData.price,
         rationale: rationaleWithLineage,
         expireInSeconds: inputData.expireInSeconds ?? 300,
+        tradingMode: inputData.tradingMode,
+        leverage: inputData.leverage,
       });
       return {
         ok: true as const,
