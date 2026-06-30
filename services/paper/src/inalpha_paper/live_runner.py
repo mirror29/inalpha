@@ -646,7 +646,7 @@ class LiveRunnerManager:
         # best-effort——拉不到 funding rate 就本结算跳过、不在 stale 数据上乱计提（不阻断主流程）。
         if (run.get("trading_mode") or "spot") == "perp":
             try:
-                await self._accrue_perp_funding(run, bar)
+                await self._accrue_perp_funding(run, bar, session)
             except Exception:
                 _logger.exception("live run %s: perp 资金费计提失败（best-effort，已忽略）", run["id"])
             # **推进内存 run["last_bar_ts"]**：funding 以它为"上根 bar"边界算本区间结算次数,
@@ -686,7 +686,9 @@ class LiveRunnerManager:
 
         return circuit_break
 
-    async def _accrue_perp_funding(self, run: dict[str, Any], bar: Bar) -> None:
+    async def _accrue_perp_funding(
+        self, run: dict[str, Any], bar: Bar, session: LiveEngineSession
+    ) -> None:
         """perp:本根 bar 跨过的每个资金费结算时点,对当前 DB 持仓计提(进计价货币现金桶)。
 
         funding = ``qty_signed × mark × rate``(正费率多付空),进 cash 已实现现金流、不并入 UPNL。
@@ -738,6 +740,12 @@ class LiveRunnerManager:
                 f"资金费计提 {n_settle}× rate={rate:.6f} mark={mark:.2f} qty={qty} "
                 f"→ cash {-payment:+.4f} {currency}",
             )
+        # 同步内存 session portfolio:funding 是**无 fill 的现金变动**,成交回灌不覆盖它——不同步
+        # 会让 session._cash 与 DB 钱包发散,策略 can_afford / equity 失真、可能开出 DB 守门会拒
+        # 的幽灵仓(CR)。与回测 backtest.py 对称:每个结算时点调一次 apply_funding。
+        iid = InstrumentId(symbol=symbol, venue=venue)
+        for _ in range(n_settle):
+            session.portfolio.apply_funding(iid, rate, mark=mark)
 
     async def _read_run_pnl_quote(
         self, conn: Any, run: dict[str, Any], mark_price: float
