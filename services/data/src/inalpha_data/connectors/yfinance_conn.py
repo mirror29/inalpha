@@ -205,17 +205,39 @@ class YfinanceConnector:
             ``(ts, last_price)``，``ts`` UTC aware——是**真实成交分钟**而非本地 now()。
             休市时段最后一根 bar 停在上个交易时段 → 上层 stale_seconds 反映真实滞后、
             ``is_stale=true``（issue #62：原 fast_info + now() 兜底让休市恒"新鲜"，
-            paper live runner 会按几小时前的陈价下单）。无任何 bar 抛 ``ValueError``。
+            paper live runner 会按几小时前的陈价下单）。无任何 bar 抛 ``RuntimeError``。
 
         坑：
         - 走 Yahoo chart HTTP，单次 ~300-800ms，**不要**在循环里高频调
         - ``prepost=True``：盘前盘后有真实成交时按延伸时段最新成交判新鲜
-        - 部分场外 / 已退市 ticker 无 1m 数据 —— 抛 ValueError 让上层
-          返 5xx，不要静默 fallback DB（caller 拿到错误自己决定）
+        - 部分场外 / 已退市 ticker 无 1m 数据 —— 抛 RuntimeError
+        - Yahoo 对非美 IP 反爬偏严；TCP 挂起 / 429 / 空返都统一成 RuntimeError，
+          上层 `/ticker` 端点捕获后返 TICKER_UNAVAILABLE（502）而非裸 500
         """
-        result = await asyncio.to_thread(_fetch_ticker_sync, symbol)
+        try:
+            loop = asyncio.get_running_loop()
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    _FETCH_EXECUTOR,
+                    functools.partial(_fetch_ticker_sync, symbol),
+                ),
+                timeout=_FETCH_TIMEOUT_S,
+            )
+        except TimeoutError:
+            raise RuntimeError(
+                f"yfinance ticker for {symbol} timed out after {_FETCH_TIMEOUT_S}s "
+                "(Yahoo may be blocking this IP — try fresh=false to use DB cache)"
+            ) from None
+        except Exception as exc:
+            raise RuntimeError(
+                f"yfinance ticker for {symbol} unavailable: {exc}"
+            ) from exc
+
         if result is None:
-            raise ValueError(f"yfinance ticker for {symbol} has no 1m bars (delisted / OTC?)")
+            raise RuntimeError(
+                f"yfinance ticker for {symbol} has no 1m bars (delisted / OTC / "
+                "rate-limited — Yahoo may have returned empty data)"
+            )
         ts, last_price = result
         return ts, float(last_price)
 

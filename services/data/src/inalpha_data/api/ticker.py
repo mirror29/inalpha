@@ -59,6 +59,12 @@ class FreshNotSupportedError(InalphaError):
     status_code = 422
 
 
+class TickerUnavailableError(InalphaError):
+    """外部数据源实时报价不可用（限流 / 超时 / 网络分区），非代码 bug。"""
+    code = "TICKER_UNAVAILABLE"
+    status_code = 502
+
+
 @router.get("/ticker", response_model=TickerResponse)
 async def get_ticker(
     db: DBConn,
@@ -91,7 +97,17 @@ async def get_ticker(
                     "hint": "use fresh=false to read latest DB cache (run /backfill/bars first if empty)",
                 },
             )
-        ts, price = await connector.fetch_ticker(query.symbol)
+        try:
+            ts, price = await connector.fetch_ticker(query.symbol)
+        except RuntimeError as exc:
+            raise TickerUnavailableError(
+                str(exc),
+                details={
+                    "venue": query.venue,
+                    "symbol": query.symbol,
+                    "hint": "use fresh=false to read latest DB cache (run /backfill/bars first if empty)",
+                },
+            ) from exc
         stale_seconds = max(int((now - ts).total_seconds()), 0)
         return TickerResponse(
             venue=query.venue,
