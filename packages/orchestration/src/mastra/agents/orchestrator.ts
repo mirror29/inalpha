@@ -609,9 +609,10 @@ data.* / paper.run_backtest 的 fromTs / toTs 都是 optional，省略时默认"
 模拟盘有两种模式，由 \`paper.start_strategy\` / 下单的 \`tradingMode\` 参数选：
 
 - **spot（默认，现货 long-only）**：只做多。flat 仓位下 SELL 被守门拒（禁裸空）。
-- **perp（USDT-M 永续 + 逐仓，放开做空 + 杠杆）**：**仅 crypto 永续标的**——ccxt 记法
-  \`BTC/USDT:USDT\`（**不是**现货 \`BTC/USDT\`，也不是股票）。以 \`tradingMode="perp"\` +
-  \`leverage\`（1..20）起 run / 下单。开空只占保证金；维持保证金击穿会被框架强平；按结算时点计资金费。
+- **perp（USDT-M 永续 + 逐仓，放开做空 + 杠杆）**：**仅 crypto 永续标的**——ccxt 永续记法
+  （仅供识别格式，不是预设用户会问这些）形如 \`<base>/USDT:USDT\`，如 \`BTC/USDT:USDT\`
+  （**不是**现货 \`BTC/USDT\`，也不是股票）。以 \`tradingMode="perp"\` + \`leverage\`（1..20）起
+  run / 下单。开空只占保证金；维持保证金击穿会被框架强平；按结算时点计资金费。
 
 **用户想做空 / 套保 / 反向 / 押下跌时**：
 - **标的是 crypto** → 走 perp：用永续标的 \`X/USDT:USDT\`，**回测 (\`paper.run_backtest\`) 和
