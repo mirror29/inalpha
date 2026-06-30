@@ -163,7 +163,8 @@ services:
       FACTOR_SERVICE_URL: http://factor:8004
     depends_on: [data, paper, research, factor]
     volumes:
-      - mastra_data:/app/.mastra   # @mastra/libsql 本地存储持久化
+      - mastra_data:/app/.data            # @mastra/libsql 本地存储持久化（paths.ts resolveMastraDbDir() 返回 .data/ 而非 .mastra/）
+      - mastra_backups:/app/.data-backups  # 每日自动备份轮转持久化
     healthcheck:
       # node 镜像无 curl,用内置 fetch;任何 <500 响应都算活(只验进程就绪,不验业务)
       test: ["CMD", "node", "-e", "fetch('http://localhost:4111/api').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
@@ -230,3 +231,4 @@ volumes:
   postgres_data:
   redis_data:
   mastra_data:
+  mastra_backups:

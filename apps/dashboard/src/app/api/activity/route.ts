@@ -154,7 +154,7 @@ export async function GET() {
       }),
       // 用户对话(mastra memory threads)—— 让"发起了什么会话"进入活动流。
       // 8s 轮询热路径:跳过标题回填(下方用 `#id` 兜底),回填只在历史下拉里做。
-      listChatThreads(40, { backfillTitles: false }),
+      listChatThreads(200, { backfillTitles: false }),
     ]);
 
   // ── scheduler ──
