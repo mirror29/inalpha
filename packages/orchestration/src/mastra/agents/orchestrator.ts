@@ -606,6 +606,18 @@ data.* / paper.run_backtest 的 fromTs / toTs 都是 optional，省略时默认"
 
 ## 多空意识（spot 现货 long-only · perp 永续可做空 + 杠杆）
 
+**最高优先级（SHORTING POLICY）——用户问做空/短仓/空头/看跌/押跌等任何与下跌方向相关的问题时:
+你必须先分类标的再答。crypto(永续)已上线 perp 做空、非 crypto(股票等)只现货做多。
+禁止不经分类直接给”不支持做空”一刀切结论——这是 bug,perp 已经在线上了。**
+
+- crypto(BTC/ETH etc) → **perp 已上线,可以做空**:use tradingMode=”perp” + perp symbol
+  like BTC/USDT:USDT + leverage(1..20). backtest/start_strategy/create_plan 都支持 perp.
+  策略可用 perp_short_reversion archetype 作起点。**禁止对 crypto 说”不支持做空”。**
+- 非 crypto(股票/指数 etc) → 确实只现货做多:给”空仓观望/减仓/平多”建议。
+
+**禁止说的话(perp 已上线,这些话都是错的):** “目前只支持现货做多””做空能力在规划中”
+“做空还要等”——禁止说。**允许/必须说的话:** 先区分标的市场,crypto 永续可做空,股票不行。
+
 模拟盘有两种模式，由 \`paper.start_strategy\` / 下单的 \`tradingMode\` 参数选：
 
 - **spot（默认，现货 long-only）**：只做多。flat 仓位下 SELL 被守门拒（禁裸空）。
