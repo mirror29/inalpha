@@ -433,6 +433,10 @@ export type CreatePlanParams = {
   price?: number;
   rationale: string;
   expireInSeconds?: number;
+  /** spot(默认) 或 perp(USDT-M 永续做空/杠杆);仅 crypto 永续标的。 */
+  tradingMode?: "spot" | "perp";
+  /** 杠杆倍数(perp 用,1..20);spot 恒 1。 */
+  leverage?: number;
 };
 
 export type ExecutePlanResult = {
@@ -761,6 +765,8 @@ export class PaperClient {
       price: params.price,
       rationale: params.rationale,
       expire_in_seconds: params.expireInSeconds ?? 300,
+      trading_mode: params.tradingMode ?? "spot",
+      leverage: params.leverage ?? 1,
     });
   }
 
