@@ -169,8 +169,12 @@ class Portfolio:
             return self._cash >= qty * price + fee
         cur = self._positions.get(instrument_id) if instrument_id is not None else None
         cur_qty = cur.quantity if cur is not None else 0.0
+        cur_im = abs(cur_qty) * (cur.avg_open_price if cur is not None else price) / self._leverage
         prospective_margin = abs(cur_qty + qty) * price / self._leverage
-        return prospective_margin + fee <= self._cash
+        # 与其他持仓的已占用保证金互斥:可用 = free_margin + 本仓当前 IM(= cash − 其他仓 IM)。
+        # 用裸 cash 会让多个 perp 仓各自只比全钱包 → 合计 IM 超钱包、free_margin 变负、回测静默
+        # 账务崩坏(跨 symbol 聚合,#114)。单仓时 free_margin+cur_im == cash,行为不变。
+        return prospective_margin + fee <= self.free_margin() + cur_im
 
     def can_afford_sell(
         self, instrument_id: InstrumentId, qty: float, *, price: float | None = None
@@ -191,8 +195,10 @@ class Portfolio:
         fee = qty * price * self._fee_rate
         cur = self._positions.get(instrument_id)
         cur_qty = cur.quantity if cur is not None else 0.0
+        cur_im = abs(cur_qty) * (cur.avg_open_price if cur is not None else price) / self._leverage
         prospective_margin = abs(cur_qty - qty) * price / self._leverage
-        return prospective_margin + fee <= self._cash
+        # 与其他持仓互斥:可用 = free_margin + 本仓当前 IM(同 can_afford_buy)。单仓时 == cash。
+        return prospective_margin + fee <= self.free_margin() + cur_im
 
     def update_mark(self, instrument_id: InstrumentId, mark_price: float) -> None:
         """BacktestEngine 每根 bar 调一次，更新 mark-to-market 估值用的最新价。"""

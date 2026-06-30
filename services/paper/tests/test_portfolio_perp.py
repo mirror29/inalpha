@@ -217,3 +217,28 @@ def test_perp_isolated_bankruptcy_clamp() -> None:
     p._handle_fill(_fill(OrderSide.SELL, qty=1.0, price=50.0, ts=2_000))
     assert p.cash == 10_000.0 - 10.0  # 亏损 clamp 到 10
     assert p.position(_btc()).is_flat
+
+
+def test_perp_partial_close_clamp_uses_closed_qty_im() -> None:
+    """部分平仓的破产 clamp 按**被平量**算 IM,不耗尽剩余仓保证金(CR)。"""
+    p = _perp(leverage=5)  # fee_rate=0
+    p._handle_fill(_fill(OrderSide.SELL, qty=2.0, price=100.0))  # 空 2@100,整仓 IM=40,每手 20
+    # 价跳到 160 平 1 手:gross 亏 -(160-100)*1 = -60,但被平 1 手 IM=20 → clamp 到 -20
+    p._handle_fill(_fill(OrderSide.BUY, qty=1.0, price=160.0, ts=2_000))
+    assert p.cash == 10_000.0 - 20.0  # 只亏被平那手的 IM 20(旧码用全仓 IM 40 会多扣)
+    assert p.position(_btc()).quantity == -1.0  # 剩 1 手空
+
+
+def test_perp_can_afford_uses_free_margin_across_symbols() -> None:
+    """多 symbol perp:can_afford 按 free_margin(扣其他仓 IM)判,不只比全钱包(CR · #114 backtest)。"""
+    eth = InstrumentId(symbol="ETH/USDT:USDT", venue="binance")
+    p = _perp(leverage=10, initial_cash=30_000.0)  # fee_rate=0
+    # 开 BTC:IM = 4×50000/10 = 20000 → 占用后 free_margin 余 10000
+    assert p.can_afford_buy(4.0, 50_000.0, instrument_id=_btc())
+    p._handle_fill(_fill(OrderSide.BUY, qty=4.0, price=50_000.0))
+    assert p.margin_used == 20_000.0
+    assert p.free_margin() == 10_000.0
+    # 再开 ETH:IM = 50×3000/10 = 15000 > free_margin 10000 → 必拒(旧码比全钱包 30000 会误过)
+    assert not p.can_afford_buy(50.0, 3_000.0, instrument_id=eth)
+    # IM = 30×3000/10 = 9000 ≤ 10000 → 放行
+    assert p.can_afford_buy(30.0, 3_000.0, instrument_id=eth)
