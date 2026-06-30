@@ -263,6 +263,10 @@ class PositionGuard:
 
         逐仓简化:用分配保证金 IM 作 isolated wallet 估算强平价(与 fills 落库口径一致)。
         buffer 让触发**提前于**真实强平价(更保守):多头 liq×(1+buffer) 上抬、空头 ×(1−buffer) 下压。
+
+        **v1 已知局限**:``wallet_balance`` 恒用**开仓 IM**,强平价不随 funding 计提 / 钱包缩水
+        更新——长持仓 + 高频 funding 下真实 isolated wallet 缩水会让真强平价向 entry 靠近,本估算
+        偏乐观(强平比真实晚触发)。短期 / 低费率可忽略;接动态 wallet_balance 见 #115。
         """
         side_i = 1 if qty > 0 else -1
         lev = self._portfolio.leverage
