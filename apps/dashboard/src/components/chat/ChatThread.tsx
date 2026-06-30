@@ -428,11 +428,8 @@ export function ChatThread({
     const content = contextAttached
       ? buildPageContextEnvelope(page) + text
       : text;
-    void sendMessage({
-      id: crypto.randomUUID(),
-      role: "user",
-      content,
-    } as Parameters<typeof sendMessage>[0]);
+    // 标题必须在发消息前发出:setChatThreadTitle 已内置 create 兜底,
+    // 即使线程还不存在也会创建带标题的线程,避免活动流 8s 轮询看到 #uuid。
     if (isFirst && threadId) {
       void fetch(`/api/chat/threads/${threadId}/title`, {
         method: "POST",
@@ -440,6 +437,11 @@ export function ChatThread({
         body: JSON.stringify({ title: text }),
       }).catch(() => {});
     }
+    void sendMessage({
+      id: crypto.randomUUID(),
+      role: "user",
+      content,
+    } as Parameters<typeof sendMessage>[0]);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

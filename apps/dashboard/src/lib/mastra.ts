@@ -87,11 +87,14 @@ export async function listChatThreads(
 ): Promise<ChatThreadSummary[]> {
   const { backfillTitles = true } = opts;
   const client = await mastraClient();
+  // 历史下拉(backfillTitles=true):全量拉取，不因默认分页截断旧会话。
+  // 活动流(backfillTitles=false):同样拉足够多，避免数据源不足被公平截断挤出。
+  const perPage = backfillTitles ? 10000 : Math.max(limit, 500);
   const res = (await withMastraTimeout(
     client.listMemoryThreads({
       resourceId: CONSOLE_SUBJECT,
       agentId: AGENT_ID,
-      perPage: limit,
+      perPage,
       orderBy: { field: "updatedAt", direction: "DESC" },
     }),
     "listMemoryThreads",
@@ -147,8 +150,12 @@ export async function listChatMessages(
   threadId: string,
 ): Promise<ChatHistoryMessage[]> {
   const client = await mastraClient();
+  // MastraClient.listThreadMessages() 不传 perPage → 服务端默认 40 → 超量消息被截断。
+  // 换用 MemoryThread.listMessages()（正确序列化 perPage 到 URL query）。
   const res = (await withMastraTimeout(
-    client.listThreadMessages(threadId, { agentId: AGENT_ID }),
+    client
+      .getMemoryThread({ threadId, agentId: AGENT_ID })
+      .listMessages({ perPage: 10000 }),
     "listThreadMessages",
   )) as { messages?: RawMessage[] };
   return (res.messages ?? []).flatMap(expandDbMessage);
