@@ -61,6 +61,13 @@ def _parse_symbol(symbol: str) -> tuple[str, str]:
     Raises:
         ValueError: 格式不符（缺 ``.`` 分隔 / prefix 不在允许集合）
     """
+    # 归一化 Yahoo Finance 后缀格式(600036.SH → sh.600036; 000001.SZ → sz.000001),
+    # 对上游(backfill/orchestrator)透明——orchestrator 透传用户输入的任意格式 symbol,
+    # connector 内部做格式适配。只匹配纯数字代码 + 已知市场后缀。
+    if "." in symbol and symbol.rsplit(".", 1)[1].lower() in {"sh", "sz"}:
+        code, suffix = symbol.rsplit(".", 1)
+        if code.replace(".", "", 1).isdigit():
+            symbol = f"{suffix.lower()}.{code}"
     if "." not in symbol:
         raise ValueError(
             f"akshare symbol must be '<prefix>.<code>'，prefix in (sh/sz/hk/jp/uk/de)，"
