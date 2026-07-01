@@ -79,7 +79,7 @@ export const BacktestResultSchema = z.object({
       holdout: z.object({ sharpe: z.number().optional() }).optional(),
     })
     .optional(),
-  equity_curve: z.array(z.tuple([z.string(), z.number()]).or(z.unknown())).optional(),
+  equity_curve: z.array(z.any()).optional(),
   trades: z
     .array(
       z.object({
@@ -126,8 +126,8 @@ export type FactorScoreResult = z.infer<typeof FactorScoreResultSchema>;
 export const FundamentalsSchema = z.object({
   symbol: z.string().optional(),
   venue: z.string().optional(),
-  indicators: z.record(z.unknown()).optional(),
-  categories: z.record(z.array(z.string())).optional(),
+  indicators: z.record(z.string(), z.unknown()).optional(),
+  categories: z.record(z.string(), z.array(z.string())).optional(),
 });
 
 export type Fundamentals = z.infer<typeof FundamentalsSchema>;

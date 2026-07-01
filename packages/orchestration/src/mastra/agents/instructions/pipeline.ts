@@ -40,7 +40,18 @@ export const DECISION_PIPELINE = `
 - 多个关键词可**并行调 web.search**（独立请求，没有依赖）
 - web.search 结果可以作为 context 喂给 deep_dive 的 userQuestion 字段
 
-1. **研究**：research.deep_dive({ symbol, timeframe, asOf: <现在>, lookbackDays: <按市场>, userQuestion: <用户原话>, language: <用户语言, 如 "中文" / "English"> })
+1. **研究**——二选一：
+
+   **a. 普通研究**：research.deep_dive({ symbol, timeframe, asOf: <现在>, lookbackDays: <按市场>, userQuestion: <用户原话>, language: <用户语言> })
+
+   **b. 多视角独立扇出（D-13 新）**：research.parallel_dive({ perspectives: [
+      {lens:"bull", question:"从多头角度分析..."},
+      {lens:"bear", question:"从空头角度分析..."},
+      {lens:"technical", question:"纯技术面分析..."},
+      {lens:"macro", question:"宏观环境分析..."}] })
+      ——仅当用户明确要"多空对立/跨维度独立分析/辩论"时用；每个视角独立 LLM session，零交叉污染。
+
+   无论 a 或 b，都一样：
    → 拿 ResearchPlan，**记下 research_id**；关注 strategy_hint / factors / thesis
    - **language / userQuestion 必传**（见顶部「输出语言」）：让 analyst / 辩论 / 综合直接用用户语言返回
    - asOf 必须传**真正的"现在"**（如 "2026-05-25T00:00:00Z"），不要传过去日期
