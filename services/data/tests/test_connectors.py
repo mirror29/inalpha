@@ -310,6 +310,74 @@ def test_yfinance_fetch_ticker_sync_empty_history_returns_none(monkeypatch) -> N
 
 
 # ────────────────────────────────────────────────────────────────────
+# yfinance 代理（YFINANCE_PROXY_URL → CF Worker URL 改写）
+# ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw,want",
+    [
+        (
+            "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d&interval=1m",
+            "https://proxy.example/query1/v8/finance/chart/AAPL?range=1d&interval=1m",
+        ),
+        (
+            "https://query2.finance.yahoo.com/v7/finance/options/AAPL",
+            "https://proxy.example/query2/v7/finance/options/AAPL",
+        ),
+        (
+            "https://finance.yahoo.com/quote/AAPL",
+            "https://proxy.example/finance/quote/AAPL",
+        ),
+        (
+            "https://fc.yahoo.com/",
+            "https://proxy.example/fc/",
+        ),
+        # 非 Yahoo URL 原样透传
+        ("https://api.example.com/x", "https://api.example.com/x"),
+    ],
+)
+def test_yfinance_rewrite_yahoo_url(raw: str, want: str) -> None:
+    """Yahoo 主机 → {proxy_base}/{host-key}，query string 原样保留；非 Yahoo 透传。"""
+    from inalpha_data.connectors.yfinance_conn import _rewrite_yahoo_url
+
+    assert _rewrite_yahoo_url(raw, "https://proxy.example") == want
+
+
+def test_yfinance_proxy_patches_curl_cffi(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """回归锁：_install_yfinance_proxy 必须打中 curl_cffi（yfinance 1.x 实际用的库），
+    不再只 patch 标准库 requests 而静默空转。"""
+    import requests
+    from curl_cffi.requests import Session as CurlSession
+
+    from inalpha_data.connectors.yfinance_conn import _install_yfinance_proxy
+
+    captured: dict[str, str] = {}
+
+    def _fake_request(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def]
+        captured["url"] = url
+        return "OK"
+
+    # monkeypatch 记录 patch 前的真实 request，测试结束自动还原（防污染其它测试的全局态）
+    monkeypatch.setattr(CurlSession, "request", _fake_request, raising=True)
+    monkeypatch.setattr(requests.Session, "request", _fake_request, raising=True)
+
+    _install_yfinance_proxy("https://proxy.example/")
+
+    # curl_cffi 这条被改写才算修好（fetch_ticker / fetch_bars 走的就是它）
+    result = CurlSession.request(
+        object(), "GET", "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?x=1"
+    )
+    assert result == "OK"
+    assert captured["url"] == "https://proxy.example/query1/v8/finance/chart/AAPL?x=1"
+
+    # 标准库兜底同样命中
+    captured.clear()
+    requests.Session.request(object(), "GET", "https://finance.yahoo.com/quote/MSFT")
+    assert captured["url"] == "https://proxy.example/finance/quote/MSFT"
+
+
+# ────────────────────────────────────────────────────────────────────
 # FRED connector：key 缺失跳过 + ts 归一化
 # ────────────────────────────────────────────────────────────────────
 

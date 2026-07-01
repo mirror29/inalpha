@@ -527,37 +527,76 @@ def _normalize_ts(ts_raw: Any) -> datetime:
 
 # ---------- yfinance proxy (env YFINANCE_PROXY_URL) ----------
 
+#: Yahoo 主机 → CF Worker 路径前缀 key（与 infra/workers/yahoo-proxy.js 的 HOST_MAP 对应）
+_YAHOO_PROXY_HOSTS: tuple[str, ...] = (
+    "query1.finance.yahoo.com",
+    "query2.finance.yahoo.com",
+    "finance.yahoo.com",
+    "fc.yahoo.com",
+)
+
+
+def _rewrite_yahoo_url(url: str, proxy_base: str) -> str:
+    """把 ``https://<yahoo-host>/...`` 改写成 ``{proxy_base}/<host-key>/...``。
+
+    非 Yahoo URL 原样返回。``proxy_base`` 应已去尾 ``/``。
+    """
+    if "yahoo.com" not in url:
+        return url
+    for host in _YAHOO_PROXY_HOSTS:
+        if host in url:
+            key = host.split(".")[0]
+            return url.replace(f"https://{host}", f"{proxy_base}/{key}")
+    return url
+
+
 def _install_yfinance_proxy(proxy_url: str) -> None:
-    """Monkey-patch ``requests.Session.request``，让 yfinance 全量 HTTP 走代理。
+    """Monkey-patch HTTP 客户端的 ``Session.request``，让 yfinance 全量走代理。
 
     在 ``init_connector()`` 里调一次——仅当 ``YFINANCE_PROXY_URL`` 有值时生效。
     拦截 ``query1/query2/finance/fc.yahoo.com`` → 重写为 ``{proxy_url}/{host_key}/...``。
-
     使用 Cloudflare Worker 等边缘代理时，出口 IP 为美国段，Yahoo 不拦。
+
+    **必须打中 ``curl_cffi``**：yfinance 0.2.51+ / 1.x 全量 HTTP 走
+    ``curl_cffi.requests.Session(impersonate="chrome")``，并**主动拒绝**注入的非 curl_cffi
+    session（``data.py``）。历史上此处只 patch 了标准库 ``requests.Session``——yfinance 根本
+    不碰它，导致代理静默空转、请求仍从被封 IP 直连 Yahoo。这里两个库都 patch，以 curl_cffi
+    为主、标准库为兜底（旧版 yfinance / 其它依赖仍可能用到）；两者 ``Session.request`` 位置
+    签名一致 ``(self, method, url, **kwargs)``，改写逻辑共用 ``_rewrite_yahoo_url``。
     """
-    import requests as _requests
-
     proxy_base = proxy_url.rstrip("/")
-    _original = _requests.Session.request
+    patched: list[str] = []
 
-    def _proxied(
-        self: _requests.Session, method: str, url: str, **kwargs: Any
-    ) -> _requests.Response:
-        if "yahoo.com" in url:
-            for host in (
-                "query1.finance.yahoo.com",
-                "query2.finance.yahoo.com",
-                "finance.yahoo.com",
-                "fc.yahoo.com",
-            ):
-                if host in url:
-                    key = host.split(".")[0]
-                    url = url.replace(f"https://{host}", f"{proxy_base}/{key}")
-                    break
-        return _original(self, method, url, **kwargs)
+    def _patch_session_class(session_cls: Any, label: str) -> None:
+        _original = session_cls.request
 
-    _requests.Session.request = _proxied  # type: ignore[method-assign]
-    _logger.info("yfinance_proxy_installed", proxy_url=proxy_url)
+        def _proxied(self: Any, method: str, url: str, *args: Any, **kwargs: Any) -> Any:
+            return _original(self, method, _rewrite_yahoo_url(url, proxy_base), *args, **kwargs)
+
+        session_cls.request = _proxied  # type: ignore[method-assign]
+        patched.append(label)
+
+    # 主目标：curl_cffi（yfinance 实际使用的 HTTP 库）
+    try:
+        from curl_cffi.requests import Session as _CurlSession
+
+        _patch_session_class(_CurlSession, "curl_cffi.requests.Session")
+    except Exception as exc:
+        _logger.warning("yfinance_proxy_curl_cffi_patch_failed", error=str(exc))
+
+    # 兜底：标准库 requests（旧版 yfinance / 其它依赖可能用到）
+    try:
+        import requests as _requests
+
+        _patch_session_class(_requests.Session, "requests.Session")
+    except Exception as exc:
+        _logger.warning("yfinance_proxy_requests_patch_failed", error=str(exc))
+
+    if patched:
+        _logger.info("yfinance_proxy_installed", proxy_url=proxy_url, patched=patched)
+    else:
+        # 一个都没打中 = 代理完全无效，请求会直连被封 IP。显式 error，别再假成功。
+        _logger.error("yfinance_proxy_install_failed_no_target", proxy_url=proxy_url)
 
 
 # ---------- module-level singleton ----------
