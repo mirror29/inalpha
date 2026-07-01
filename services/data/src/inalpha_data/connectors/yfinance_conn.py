@@ -598,11 +598,28 @@ def _install_yfinance_proxy(proxy_url: str) -> None:
     except Exception as exc:
         _logger.warning("yfinance_proxy_requests_patch_failed", error=str(exc))
 
-    if patched:
-        _logger.info("yfinance_proxy_installed", proxy_url=proxy_url, patched=patched)
-    else:
-        # 一个都没打中 = 代理完全无效，请求会直连被封 IP。显式 error，别再假成功。
+    # curl_cffi 是 yfinance 实际用的库——没打中它，代理对 yfinance 就等于没装（哪怕标准库
+    # requests 打中了）。这正是本次 bug 的形态：patch 打错目标、日志却假报 installed。所以把
+    # "是否命中 curl_cffi" 作为强信号：未命中一律 error，别退化成 info "installed" 让巡检误判。
+    # 触发点：yfinance>=0.2.40 无上限，`uv lock --upgrade` 若换到不再依赖 curl_cffi 的版本会重演。
+    curl_patched = "curl_cffi.requests.Session" in patched
+    if not patched:
         _logger.error("yfinance_proxy_install_failed_no_target", proxy_url=proxy_url)
+    elif not curl_patched:
+        _logger.error(
+            "yfinance_proxy_installed_but_curl_cffi_missed",
+            proxy_url=proxy_url,
+            patched=patched,
+            curl_cffi_patched=False,
+            hint="yfinance 走 curl_cffi，未命中它代理不生效；检查 curl_cffi import / yfinance 版本",
+        )
+    else:
+        _logger.info(
+            "yfinance_proxy_installed",
+            proxy_url=proxy_url,
+            patched=patched,
+            curl_cffi_patched=True,
+        )
 
 
 # ---------- module-level singleton ----------
