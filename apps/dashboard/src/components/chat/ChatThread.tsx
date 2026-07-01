@@ -8,7 +8,6 @@ import {
   SquarePen,
   Square,
   TriangleAlert,
-  Wrench,
   X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -35,6 +34,11 @@ import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatStreamdown } from "./ChatStreamdown";
 import { ToolOutput } from "./ToolOutput";
 import { resolveToolView } from "./tool-views";
+import {
+  TOOL_STATE_MAP,
+  inferToolState,
+  type ToolState,
+} from "./tool-states";
 
 /** AG-UI 消息(@ag-ui/core)的最小形态 —— 只取渲染需要的字段。 */
 type AGMessage = {
@@ -746,7 +750,18 @@ function MessageRow({
         );
       }
     }
-    // 已完成 chip:展开只看**输出结果**(入参噪音大,按用户要求不展示)。
+    // 检测结果中是否含 error 标记。
+    const hasError = (() => {
+      try {
+        const parsed = JSON.parse(text);
+        return Boolean(parsed?.isError || parsed?.error);
+      } catch {
+        return false;
+      }
+    })();
+    const state = inferToolState(true, hasError);
+    const { label: stateLabel } = TOOL_STATE_MAP[state];
+
     return (
       <div className="rise flex justify-start">
         <ToolChip
@@ -754,7 +769,8 @@ function MessageRow({
           result={text}
           label={toolDone}
           resultLabel={toolResultLabel}
-          done
+          state={state}
+          stateLabel={stateLabel}
         />
       </div>
     );
@@ -778,14 +794,20 @@ function MessageRow({
           )}
         </div>
       )}
-      {calls.map((c) => (
-        <ToolChip
-          key={c.id}
-          name={c.function?.name ?? "tool"}
-          label={toolRunning}
-          resultLabel={toolResultLabel}
-        />
-      ))}
+      {calls.map((c) => {
+        const runningState = inferToolState(false);
+        const { label: runningLabel } = TOOL_STATE_MAP[runningState];
+        return (
+          <ToolChip
+            key={c.id}
+            name={c.function?.name ?? "tool"}
+            label={toolRunning}
+            resultLabel={toolResultLabel}
+            state={runningState}
+            stateLabel={runningLabel}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -801,8 +823,17 @@ function pretty(raw: string): string {
 
 /**
  * 工具调用 / 结果的紧凑 chip。
- * 调用中(金):仅 chip 标头;已完成(绿):展开看**输出结果**(入参不展示,按需看 raw)。
- * 输出按优先级渲染:工具专属视图(tool-views,行情卡/回测指标格等)→ 通用结构化
+ *
+ * 状态机驱动（七态）：
+ *   - Running: gold chip + 无展开
+ *   - Completed: green chip + 可展开查看结果
+ *   - Error: red chip + 展开显示错误
+ *   - Denied: orange chip
+ *   - Pending: gray chip + pulse 动画
+ *   - Awaiting Approval: yellow chip + clock + pulse
+ *   - Responded: blue chip
+ *
+ * 输出按优先级渲染：工具专属视图(tool-views,行情卡/回测指标格等)→ 通用结构化
  * ({@link ToolOutput} 键值行/表格)→ raw 钮永远可切回原始 JSON。
  */
 function ToolChip({
@@ -810,16 +841,20 @@ function ToolChip({
   label,
   resultLabel,
   result,
-  done = false,
+  state,
+  stateLabel,
 }: {
   name: string;
   label: string;
   resultLabel: string;
   result?: string;
-  done?: boolean;
+  state: ToolState;
+  stateLabel: string;
 }) {
   const [showRaw, setShowRaw] = useState(false);
-  // 工具专属视图:结果可解析且形态命中才有;否则 null 落回通用结构化视图。
+  const { Icon, color, expandable, pulse } = TOOL_STATE_MAP[state];
+
+  // 工具专属视图：结果可解析且形态命中才有；否则 null 落回通用结构化视图。
   const view = useMemo(() => {
     if (!result) return null;
     try {
@@ -833,21 +868,31 @@ function ToolChip({
 
   const head = (
     <>
-      <Wrench
-        className="size-3.5 shrink-0 transition-colors group-hover:text-cyan"
+      <Icon
+        className={cn("size-3.5 shrink-0 transition-colors", pulse && "animate-pulse")}
         strokeWidth={1.75}
       />
       <span className="truncate text-fg">{name}</span>
-      <span className="ml-auto uppercase tracking-[0.12em] text-fg-muted/70 transition-colors group-hover:text-fg-muted">
-        {label}
+      <span
+        className={cn(
+          "ml-auto font-mono text-[10px] uppercase tracking-[0.12em]",
+          color,
+        )}
+      >
+        {stateLabel}
       </span>
     </>
   );
 
-  // 调用中 / 无结果:没有可展开内容,渲染普通行,不给假的展开预期。
-  if (!done || !result) {
+  // 非展开态：Running / Pending / Awaiting Approval / Responded 等中间状态。
+  if (!expandable || !result) {
     return (
-      <div className="group flex w-full max-w-[90%] items-center gap-2 rounded-md border border-border-subtle bg-bg/40 px-2.5 py-1.5 font-mono text-xs text-gold">
+      <div
+        className={cn(
+          "group flex w-full max-w-[90%] items-center gap-2 rounded-md border border-border-subtle bg-bg/40 px-2.5 py-1.5 font-mono text-xs",
+          color,
+        )}
+      >
         {head}
       </div>
     );
@@ -858,12 +903,12 @@ function ToolChip({
       <summary
         className={cn(
           "flex items-center gap-2 px-2.5 py-1.5 font-mono transition-transform hover:translate-x-0.5 motion-reduce:transition-none",
-          done ? "text-bull" : "text-gold",
+          color,
         )}
       >
         {head}
       </summary>
-      {done && result && (
+      {result && (
         <div className="border-t border-border-subtle bg-bg-deep/50">
           <div className="flex items-baseline justify-between pr-2.5">
             <div className={sectionCaption}>{resultLabel}</div>
