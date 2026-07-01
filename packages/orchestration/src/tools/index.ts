@@ -140,6 +140,7 @@ export {
   paperStopStrategyTool,
   rejectTradePlanTool,
   researchDeepDiveTool,
+  researchParallelDiveTool,
   riskDescribeRulesTool,
   riskListLocksTool,
   riskRuleTools,
@@ -165,6 +166,7 @@ export const allTools = [
   ...paperAuthoringTools,
   ...tradePlanTools,
   ...researchTools,
+  researchParallelDiveTool,
   // 接现成因子库 + 有效性择时（docs/miro/11）
   ...factorTools,
   ...swarmTools,
@@ -247,6 +249,8 @@ export const orchestratorToolList = [
   paperHealthTool,
   // 研究
   researchDeepDiveTool,
+  // D-13 · 并行多视角研究（bull/bear/technical/macro 独立扇出）
+  researchParallelDiveTool,
   // 接现成因子库（docs/miro/11）：有效因子择时 + 横截面选股 + 目录 + 深挖打分
   factorTimingTool,
   factorScoreTool,

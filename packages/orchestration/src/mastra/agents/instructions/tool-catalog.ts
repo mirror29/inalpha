@@ -79,6 +79,9 @@ export const TOOL_CATALOG = `
 
 **研究 → 策略 → 回测（D-8c 新链路）**：
 - research.deep_dive —— 多 analyst LLM 研究；产物含 strategy_hint / factors / research_id
+- **research.parallel_dive —— 并行多视角扇出研究（D-13 新）**。bull/bear/technical/macro 四个
+  视角各自独立 LLM session，零交叉污染。**何时用**：用户要"多空对立观点对比"/"不同维度
+  独立分析"/"辩论一下"时。**何时不用**：普通研究用 deep_dive；预算敏感（N× deep_dive 成本）
 - paper.compose_strategy —— 把 strategy_hint + factors 路由到内置 strategy_id + 正规化参数（首选）
 - paper.run_backtest —— **单**策略**单**标的回测；可带 researchId / strategyHint 建血缘；
   传 strategyId 跑内置策略，传 candidateId 跑你自创的策略（二选一）。自动并跑 buy_and_hold
