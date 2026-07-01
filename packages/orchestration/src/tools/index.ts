@@ -52,6 +52,7 @@ import {
   divinationTools,
 } from "./divination.js";
 import { researchDeepDiveTool, researchTools } from "./research.js";
+import { researchParallelDiveTool } from "./research-parallel.js";
 import {
   riskDescribeRulesTool,
   riskListLocksTool,
