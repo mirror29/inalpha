@@ -16,6 +16,10 @@ dependencies = [
     # yfinance 全球兜底（韩 / 澳 / 印 / 巴西 / 全球指数等 akshare 没覆盖的）
     # 零 key，反爬偶发；同步库
     "yfinance>=0.2.40",
+    # curl_cffi：yfinance 实际用的 HTTP 后端（impersonate=chrome）。虽由 yfinance 传递引入，
+    # 但 YFINANCE_PROXY_URL 代理直接 import 它 patch Session.request——显式声明，让「yfinance 换版
+    # 不再依赖 curl_cffi」这类回归在 uv lock/CI 阶段就报 lockfile diff，而非只靠运行时 error 日志。
+    "curl-cffi>=0.7",
     # ddgs 聚合搜索（Bing/DuckDuckGo/Google 等，零 key，MIT 协议）
     "ddgs>=9.0.0",
     # FRED 全球宏观（圣路易斯联储），免费 key 注册；80 万+ 经济序列
@@ -69,6 +73,7 @@ module = [
     "akshare", "akshare.*",
     "ddgs", "ddgs.*",
     "yfinance", "yfinance.*",
+    "curl_cffi", "curl_cffi.*",
     "fredapi", "fredapi.*",
 ]
 ignore_missing_imports = true
