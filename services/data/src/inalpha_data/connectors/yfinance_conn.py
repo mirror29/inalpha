@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -524,16 +525,57 @@ def _normalize_ts(ts_raw: Any) -> datetime:
     return dt.astimezone(UTC)
 
 
+# ---------- yfinance proxy (env YFINANCE_PROXY_URL) ----------
+
+def _install_yfinance_proxy(proxy_url: str) -> None:
+    """Monkey-patch ``requests.Session.request``，让 yfinance 全量 HTTP 走代理。
+
+    在 ``init_connector()`` 里调一次——仅当 ``YFINANCE_PROXY_URL`` 有值时生效。
+    拦截 ``query1/query2/finance/fc.yahoo.com`` → 重写为 ``{proxy_url}/{host_key}/...``。
+
+    使用 Cloudflare Worker 等边缘代理时，出口 IP 为美国段，Yahoo 不拦。
+    """
+    import requests as _requests
+
+    proxy_base = proxy_url.rstrip("/")
+    _original = _requests.Session.request
+
+    def _proxied(
+        self: _requests.Session, method: str, url: str, **kwargs: Any
+    ) -> _requests.Response:
+        if "yahoo.com" in url:
+            for host in (
+                "query1.finance.yahoo.com",
+                "query2.finance.yahoo.com",
+                "finance.yahoo.com",
+                "fc.yahoo.com",
+            ):
+                if host in url:
+                    key = host.split(".")[0]
+                    url = url.replace(f"https://{host}", f"{proxy_base}/{key}")
+                    break
+        return _original(self, method, url, **kwargs)
+
+    _requests.Session.request = _proxied  # type: ignore[method-assign]
+    _logger.info("yfinance_proxy_installed", proxy_url=proxy_url)
+
+
 # ---------- module-level singleton ----------
 
 _connector: YfinanceConnector | None = None
 
 
 def init_connector() -> YfinanceConnector:
-    """启动时调一次。yfinance 无 key，无失败路径。"""
+    """启动时调一次。"""
     global _connector
     if _connector is not None:
         raise RuntimeError("Yfinance connector already initialized")
+
+    # 可选代理：VPS IP 被 Yahoo 限流时，通过 CF Worker 边缘节点中转
+    proxy_url = os.environ.get("YFINANCE_PROXY_URL", "").strip()
+    if proxy_url:
+        _install_yfinance_proxy(proxy_url)
+
     _connector = YfinanceConnector()
     register_connector(VENUE, _connector)
     return _connector
