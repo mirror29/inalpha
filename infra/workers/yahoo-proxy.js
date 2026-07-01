@@ -14,7 +14,7 @@
  *   https://yahoo.inalpha.dev/fc/...                          → fc.yahoo.com
  */
 
-const HOST_MAP: Record<string, string> = {
+const HOST_MAP = {
   query1: "query1.finance.yahoo.com",
   query2: "query2.finance.yahoo.com",
   finance: "finance.yahoo.com",
@@ -22,7 +22,7 @@ const HOST_MAP: Record<string, string> = {
 };
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request) {
     const url = new URL(request.url);
 
     // OPTIONS preflight (yfinance 不用, 但浏览器调试时方便)
