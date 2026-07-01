@@ -20,6 +20,8 @@
     "@copilotkit/react-core": "^1.59.5",
     "@copilotkit/runtime": "^1.59.5",
     "@mastra/client-js": "^1.23.2",
+    "@streamdown/cjk": "^1.0.3",
+    "@streamdown/code": "^1.1.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "geist": "^1.7.1",
@@ -35,6 +37,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
+    "streamdown": "^2.5.0",
     "swr": "^2.3.6",
     "tailwind-merge": "^3.6.0"
   },
