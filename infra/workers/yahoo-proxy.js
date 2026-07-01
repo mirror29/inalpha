@@ -53,12 +53,24 @@ export default {
     const targetPath = "/" + segments.slice(1).join("/");
     const targetUrl = `https://${targetHost}${targetPath}${url.search}`;
 
-    // 只转发必要头，不转发原始 UA（python-requests/x.x 会被 CF free plan 在 edge 层拦截）
-    const headers = new Headers();
+    // 转发原始请求头（含 Cookie —— 别丢，它是 yfinance 认证契约的一部分），只删 CF 注入头
+    // 避免干扰 Yahoo。data service 走 curl_cffi（impersonate=chrome），UA 本就是浏览器 UA，
+    // 无需改写；仅当 UA 缺失 / 是 CF 默认值时兜底成浏览器 UA（防 python-requests UA 被 edge 拦）。
+    //
+    // ⚠️ crumb 认证端点的已知限制：.info / v10 quoteSummary 靠 fc/guce/consent/query 跨多个
+    // Yahoo 子域的 cookie+crumb 握手，URL 改写把出口主机换成 workers.dev 后这套握手无法还原
+    // （实测即便转发 Cookie + 剥离 Set-Cookie 的 Domain 仍返 401 Invalid Crumb）。故 fetch_financials
+    // 走代理时会降级 available=false（直连才可用，但线上 IP 被封直连也不通）。chart/history 实时
+    // 报价路径不吃 crumb，代理完全可用——那才是本代理要解决的目标。
+    const headers = new Headers(request.headers);
     headers.set("Host", targetHost);
-    headers.set("Accept-Encoding", "gzip, deflate");
-    headers.set("Accept", request.headers.get("Accept") || "*/*");
-    headers.set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36");
+    for (const key of ["CF-Connecting-IP", "CF-IPCountry", "CF-RAY", "CF-Visitor", "CDN-Loop"]) {
+      headers.delete(key);
+    }
+    const ua = headers.get("User-Agent") || "";
+    if (!ua || ua.includes("cloudflare") || ua.length < 10) {
+      headers.set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36");
+    }
 
     const response = await fetch(targetUrl, {
       method: request.method,

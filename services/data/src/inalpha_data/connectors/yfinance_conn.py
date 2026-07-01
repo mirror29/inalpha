@@ -280,6 +280,12 @@ class YfinanceConnector:
         ``as_of``（ADR-0053 阶段 A）：接受参数以与 akshare 端签名对称，但 **v1 不对 yfinance
         财报做 PIT 截断**（yfinance .info 只给"最新"快照、不带历史报告期列，无法可靠按
         as_of 回溯）；如需 yfinance 财报 PIT 须改用带报告期的数据源，留后续。
+
+        **走 YFINANCE_PROXY_URL 代理时的已知限制**：.info → v10 quoteSummary 靠 fc/guce/consent/
+        query 跨多个 Yahoo 子域的 cookie+crumb 握手，CF Worker 把出口主机改写成 workers.dev 后这
+        套握手无法还原（实测即便代理端转发 Cookie + 剥离 Set-Cookie Domain 仍返 401 Invalid Crumb），
+        故代理下财报会降级 ``available=false``。直连可用但线上机房 IP 被封直连也不通——即代理与否
+        财报在线上都拿不到，只能优雅缺席。chart/history 实时报价路径不吃 crumb，代理完全可用。
         """
         _logger.debug("yfinance_fetch_financials", symbol=symbol, as_of=as_of)
 
