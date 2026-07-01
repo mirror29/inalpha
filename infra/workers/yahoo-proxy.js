@@ -53,22 +53,12 @@ export default {
     const targetPath = "/" + segments.slice(1).join("/");
     const targetUrl = `https://${targetHost}${targetPath}${url.search}`;
 
-    // 转发请求头 (去掉 CF 注入的 header 避免干扰 Yahoo)
-    const headers = new Headers(request.headers);
+    // 只转发必要头，不转发原始 UA（python-requests/x.x 会被 CF free plan 在 edge 层拦截）
+    const headers = new Headers();
     headers.set("Host", targetHost);
     headers.set("Accept-Encoding", "gzip, deflate");
-    for (const key of ["CF-Connecting-IP", "CF-IPCountry", "CF-RAY", "CF-Visitor", "CDN-Loop"]) {
-      headers.delete(key);
-    }
-
-    // 如果 UA 是 Worker 默认的 "cloudflare" 之类, 换成 curl (Yahoo 不拦 curl)
-    const ua = headers.get("User-Agent") || "";
-    if (ua.includes("cloudflare") || ua.length < 10) {
-      headers.set(
-        "User-Agent",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 yfinance-proxy/1.0",
-      );
-    }
+    headers.set("Accept", request.headers.get("Accept") || "*/*");
+    headers.set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36");
 
     const response = await fetch(targetUrl, {
       method: request.method,
