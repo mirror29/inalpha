@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, get_args
 from inalpha_shared import get_logger
 
 from .analysts import ALL_ANALYSTS
+from .analysts.base import AnalystContext
 from .analysts.personas import PERSONA_ANALYSTS
 from .config import get_research_settings
 from .debate import assess_disagreement, run_debate
@@ -55,6 +56,32 @@ async def run_deep_dive(
     """
     settings = get_research_settings()
 
+    # ─── 0) 数据预取（D-13 · P0）────────────────────────────────────
+    # 6 个 analyst 各自调 DataClient 拉同一批 K 线 → N 次重复往返。
+    # 一次预拉后注入所有 analyst，延迟 -30%、服务端负载 -60%。
+    # 单个预取失败不阻断整链：回退为 None，analyst 在 build_user_prompt 里自己拉。
+    shared: AnalystContext | None = None
+    try:
+        pre_bars, pre_fund, pre_factor = await asyncio.gather(
+            data.get_bars(req.venue, req.symbol, req.timeframe,
+                          as_of=req.as_of, lookback_days=req.lookback_days),
+            data.get_fundamentals(req.venue, req.symbol),
+            factor.get_snapshot(
+                venue=req.venue, symbol=req.symbol, timeframe=req.timeframe,
+                as_of=req.as_of, lookback_bars=req.lookback_days * 24,
+            ) if factor else None,
+            return_exceptions=True,
+        )
+        shared = AnalystContext(
+            bars=None if isinstance(pre_bars, BaseException) else pre_bars,
+            fundamentals=None if isinstance(pre_fund, BaseException) else pre_fund,
+            factor_snapshot=None if (
+                pre_factor is None or isinstance(pre_factor, BaseException)
+            ) else pre_factor,
+        )
+    except Exception:
+        pass  # 预取全挂 → shared=None，所有 analyst 回退到自己拉
+
     # ─── 1) analyst 并行 ────────────────────────────────────────────
     # 核心 analyst 永远跑；ADR-0037 §A：req.personas 指定的投资大师人格按需追加
     # （无效 key 静默忽略，不阻断主链路）。
@@ -65,7 +92,7 @@ async def run_deep_dive(
         persona_cls = PERSONA_ANALYSTS.get(key)
         if persona_cls is not None:
             analyst_classes.append(persona_cls)
-    analysts = [cls(llm=llm, data=data, factor=factor) for cls in analyst_classes]
+    analysts = [cls(llm=llm, data=data, factor=factor, shared=shared) for cls in analyst_classes]
 
     coros = [
         a.run(
@@ -130,14 +157,28 @@ async def run_deep_dive(
             debate_log = outcome.turns
             debate_stop_reason = outcome.stop_reason
 
-    # ─── 3) Manager 综合 ────────────────────────────────────────────
+    # ─── 3) Manager 综合（D-13 · P2：送前压缩 briefs，去掉 raw_excerpt 噪音）─
     manager = ResearchManager(llm=llm)
+    # 每个 brief 的 raw_excerpt 是 json.dumps(raw)[:500]——6+ briefs ≈ 3000+ 字噪音。
+    # manager 需要的是 stance/summary/key_points/factors，不需要已 parse 过的原始 LLM 输出。
+    condensed = [
+        AnalystBrief(
+            analyst=b.analyst,
+            stance=b.stance,
+            confidence=b.confidence,
+            summary=b.summary,
+            key_points=b.key_points[:3],
+            factors=b.factors,
+            raw_excerpt=None,
+        )
+        for b in briefs
+    ]
     plan = await manager.synthesize(
         venue=req.venue,
         symbol=req.symbol,
         timeframe=req.timeframe,
         as_of=req.as_of,
-        briefs=briefs,
+        briefs=condensed,
         debate_log=debate_log,
         user_question=req.user_question,
         debate_trigger=debate_trigger,

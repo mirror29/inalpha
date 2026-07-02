@@ -87,14 +87,18 @@ class TechnicalAnalyst(Analyst):
         lookback_days: int,
     ) -> str:
         from_ts = as_of - timedelta(days=lookback_days)
-        bars = await self._data.get_bars(
-            venue=venue,
-            symbol=symbol,
-            timeframe=timeframe,
-            from_ts=from_ts,
-            to_ts=as_of,
-            limit=2_000,
-        )
+        # D-13 · P0：优先从共享预取数据读 K 线（runner 前置拉取，避免重复往返）
+        if self._shared is not None and self._shared.bars is not None:
+            bars = self._shared.bars
+        else:
+            bars = await self._data.get_bars(
+                venue=venue,
+                symbol=symbol,
+                timeframe=timeframe,
+                from_ts=from_ts,
+                to_ts=as_of,
+                limit=2_000,
+            )
 
         # 提炼最近 N 根 + 算几个粗指标喂给 LLM（factor 服务不可用时的兜底）
         recent = bars[-60:]
@@ -136,6 +140,10 @@ class TechnicalAnalyst(Analyst):
         """
         if self._factor is None:
             return [], "unavailable"
+        # D-13 · P0：runner 预拉因子快照 → 跳过 DataClient 调 factor service
+        if self._shared is not None and self._shared.factor_snapshot is not None:
+            factors = self._shared.factor_snapshot
+            return (factors, "ok") if factors else ([], "insufficient")
         snap = await self._factor.get_snapshot(
             venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
         )
