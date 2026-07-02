@@ -181,28 +181,17 @@ async def run_deep_dive(
             debate_log = outcome.turns
             debate_stop_reason = outcome.stop_reason
 
-    # ─── 3) Manager 综合（D-13 · P2：送前压缩 briefs，去掉 raw_excerpt 噪音）─
+    # ─── 3) Manager 综合 ─
+    # 注：prompt 侧的 token 压缩（key_points 截断）在 manager._format_user_prompt
+    # 内完成，不在此处改 briefs——runner 直接把完整 briefs 传下去，保证返回给
+    # 调用方的 ResearchPlan.briefs 保留 raw_excerpt（debug/复盘用）与完整 key_points。
     manager = ResearchManager(llm=llm)
-    # 每个 brief 的 raw_excerpt 是 json.dumps(raw)[:500]——6+ briefs ≈ 3000+ 字噪音。
-    # manager 需要的是 stance/summary/key_points/factors，不需要已 parse 过的原始 LLM 输出。
-    condensed = [
-        AnalystBrief(
-            analyst=b.analyst,
-            stance=b.stance,
-            confidence=b.confidence,
-            summary=b.summary,
-            key_points=b.key_points[:3],
-            factors=b.factors,
-            raw_excerpt=None,
-        )
-        for b in briefs
-    ]
     plan = await manager.synthesize(
         venue=req.venue,
         symbol=req.symbol,
         timeframe=req.timeframe,
         as_of=req.as_of,
-        briefs=condensed,
+        briefs=briefs,
         debate_log=debate_log,
         user_question=req.user_question,
         debate_trigger=debate_trigger,

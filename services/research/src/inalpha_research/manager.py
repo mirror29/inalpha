@@ -220,7 +220,10 @@ def _format_user_prompt(
         "analyst_briefs:",
     ]
     for b in briefs:
-        kp = "\n    - ".join(b.key_points) if b.key_points else "(no key points)"
+        # 仅在拼 prompt 时截断 key_points 省 token（每 brief 取前 3 条要点）；
+        # 不改 briefs 本身，返回给调用方的 ResearchPlan.briefs 保留完整要点。
+        top_points = b.key_points[:3]
+        kp = "\n    - ".join(top_points) if top_points else "(no key points)"
         factors_block = ""
         if b.factors:
             factor_lines = [
