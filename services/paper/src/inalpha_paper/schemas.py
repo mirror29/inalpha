@@ -761,7 +761,8 @@ class AccountSnapshot(BaseModel):
     )
     realized_pnl: float = Field(
         default=0.0,
-        description="所有持仓累计实现 PnL，按各自计价货币折算到 base_currency 后汇总",
+        description="自最近一次重置以来的累计实现 PnL(closed_trades 成交审计口径,"
+        "毛盈亏不含手续费),按各计价货币折算到 base_currency 后汇总",
     )
     net_external_flows: float = Field(
         default=0.0,

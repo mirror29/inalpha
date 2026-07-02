@@ -49,6 +49,7 @@ from ..schemas import (
     SubmitOrderResponse,
 )
 from ..storage import accounts as accounts_store
+from ..storage import closed_trades as closed_trades_store
 from ..storage import orders as orders_store
 from ..storage import positions as positions_store
 from ..storage import strategy_runs as runs_store
@@ -344,28 +345,35 @@ async def get_my_account(
     acct = await accounts_store.get_or_create(db, account_id)
     base_currency = acct["base_currency"]
 
-    # include_flat=True：已平仓行（quantity=0）对 positions_value 贡献 0，但仍携带累计
-    # realized_pnl——纳入才能让账户总已实现盈亏完整（CR：避免漏计已平仓持仓的 PnL）。
+    # 持仓行只用于市值(mark-to-market);已实现盈亏改从 closed_trades 汇总(见下)。
     pos_rows = await positions_store.list_by_account(db, account_id, include_flat=True)
 
     # 原始按币种桶
     cash_balances: dict[str, Decimal] = {
         cur: Decimal(str(amt)) for cur, amt in (acct["cash_balances"] or {}).items()
     }
-    # realized_pnl 按计价货币分桶（NULL 行按 venue/symbol 兜底解析）;
-    # 持仓市值在下方 try 里逐仓取 mark 后再分桶（需要 data client）。
-    realized_pnl_by_ccy: dict[str, Decimal] = {}
     pos_ccys: set[str] = set()
     has_open_position = False
     for p in pos_rows:
-        ccy = p.get("currency") or resolve_currency(
-            p["venue"], p["symbol"], default=base_currency
+        pos_ccys.add(
+            p.get("currency")
+            or resolve_currency(p["venue"], p["symbol"], default=base_currency)
         )
-        pos_ccys.add(ccy)
         if Decimal(p["quantity"]) != 0:
             has_open_position = True
+
+    # realized_pnl 以**成交审计源**(closed_trades)为准,按最近一次 reset 起算:
+    # 此前从 positions 行汇总——reset 删行后快照凭空归零而 closed_trades 仍在,
+    # 两套"已实现盈亏"互相矛盾;统一到 closed_trades + reset epoch 一个口径。
+    reset_ts = await accounts_store.last_reset_at(db, account_id)
+    realized_rows = await closed_trades_store.sum_realized_grouped(
+        db, account_id=account_id, since=reset_ts
+    )
+    realized_pnl_by_ccy: dict[str, Decimal] = {}
+    for r in realized_rows:
+        ccy = resolve_currency(r["venue"], r["symbol"], default=base_currency)
         realized_pnl_by_ccy[ccy] = (
-            realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(p["realized_pnl"])
+            realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(str(r["realized"]))
         )
 
     # 净外生入金(自最近一次 reset,按币种)——真实收益口径的第三项,防充值算成盈利
@@ -373,7 +381,9 @@ async def get_my_account(
 
     # DataClient 在两种情况下才开：FX 有非本地可解析币种,或有持仓要取 mark
     # （无持仓的单币种 / crypto-USD 账户保持零网络）。
-    all_ccys = set(cash_balances) | pos_ccys | set(flows_by_ccy)
+    all_ccys = (
+        set(cash_balances) | pos_ccys | set(flows_by_ccy) | set(realized_pnl_by_ccy)
+    )
     # token 实际上必非空：get_current_user 依赖已保证 Bearer header 合法，否则先行 401；
     # 这里 token=None 分支是防御性的（理论不可达），保留以防未来调用方绕过 auth。
     token = (

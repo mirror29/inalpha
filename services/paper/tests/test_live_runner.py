@@ -1012,6 +1012,36 @@ async def test_restore_position_from_db_brings_session_to_position(
     assert pos.quantity == 2.0
 
 
+async def test_restore_backfills_net_realized_to_session_wallet(
+    app_with_lifespan: Any,
+) -> None:
+    """resume 把 run 净已实现盈亏灌回 session 钱包——重启不"回血"也不丢盈利额度。
+
+    买 1 @50000(fee 50)→ 全平 @60000(fee 60):毛已实现 10000 − 费 110 = 9890。
+    新 session resume 后钱包应为 _TEST_CASH + 9890(持仓已 flat,无成本占用),
+    而不是回到 _TEST_CASH 满额(allocation 花费/盈利记忆丢失)。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+    await manager._process_bar(
+        _make_session(), run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+    await manager._process_bar(
+        _sell_session(1.0), run, _bar(1_700_000_003_600_000_000, close=60_000.0)
+    )
+
+    session = _make_session()
+    # 测试 bar 是 2023 年时间戳,而 run.started_at=NOW();回灌按 started_at 过滤,
+    # 这里改成早于 bar 的时刻模拟真实时序(实际运行中 bar 恒晚于 started_at)。
+    run["started_at"] = datetime(2020, 1, 1, tzinfo=UTC)
+    await manager._restore_position(session, run)
+
+    assert session.portfolio.cash == pytest.approx(_TEST_CASH + 9_890.0)
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat  # 已全平,不重建持仓
+
+
 async def test_convert_run_pnl_zero_short_circuits_no_network() -> None:
     """total_quote=0 → 直接返 Decimal(0)，不打 /fx（非 USD 币种也不需网络）。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())

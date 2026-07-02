@@ -148,6 +148,34 @@ async def sum_realized(
     return Decimal(str(row["realized"])) if row else Decimal(0)  # type: ignore[index]
 
 
+async def sum_realized_grouped(
+    conn: AsyncConnection,
+    *,
+    account_id: UUID,
+    since: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """账户已实现盈亏按 (venue, symbol) 分组合计(账户快照口径)。
+
+    ``since`` 传最近一次 reset 时刻:快照的 realized_pnl 以**成交审计源**
+    (closed_trades)为准并按 reset epoch 起算——此前从 positions 行汇总,reset
+    删行后快照凭空归零而 closed_trades 仍在,两套"已实现盈亏"口径分叉。
+    ``since=None`` = 全历史(从未 reset 的账户)。
+    """
+    sql = (
+        "SELECT venue, symbol, COALESCE(SUM(close_profit_abs), 0) AS realized "
+        "FROM closed_trades WHERE account_id = %s"
+    )
+    args: list[Any] = [str(account_id)]
+    if since is not None:
+        sql += " AND close_ts > %s"
+        args.append(since)
+    sql += " GROUP BY venue, symbol"
+    async with conn.cursor() as cur:
+        await cur.execute(sql, tuple(args))
+        rows = await cur.fetchall()
+    return list(rows)  # type: ignore[arg-type]
+
+
 async def count_by_account(
     conn: AsyncConnection,
     *,
