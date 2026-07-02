@@ -7,10 +7,10 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { defaultServiceSubject, mintServiceToken } from "../auth.js";
+import { resolveRequestToken } from "../auth.js";
 import { getSettings } from "../config.js";
 
-type ToolRequestContext = { authToken?: string };
+type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown };
 
 /**
  * 工具层兜底超时（ms）。Node fetch 无默认超时——data 服务异常无响应时会让
@@ -27,7 +27,7 @@ async function getBaseUrl(): Promise<string> {
 }
 
 async function getAuthHeaders(ctx?: ToolRequestContext): Promise<Record<string, string>> {
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return { Authorization: `Bearer ${token}` };
 }
 

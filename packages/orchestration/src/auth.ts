@@ -11,6 +11,7 @@
 import { SignJWT, jwtVerify } from "jose";
 
 import { getSettings } from "./config.js";
+import { AUTH_SUB_KEY } from "./hooks/with-hooks.js";
 
 type Payload = {
   sub: string;
@@ -48,6 +49,34 @@ export async function mintServiceToken(
  */
 export function defaultServiceSubject(): string {
   return getSettings().consoleSubject;
+}
+
+/**
+ * 从 tool 的 ``ctx.requestContext`` 解析打给下游 service 的 token（多用户隔离关键）。
+ *
+ * 优先级：
+ *  1. **显式 ``authToken``**（scheduler tool-mode 塞的 plain object）——直接 forward。
+ *  2. **HTTP 中间件注入的已认证 ``sub``**（``RequestContext[AUTH_SUB_KEY]``，由 mastra
+ *     ``identityMiddleware`` 从 Bearer 提取）——按登录用户 ``sub`` 铸 token，使 agent
+ *     发起的写操作（start_strategy / execute_plan / 下单 …）落到该用户的 ``account_id``。
+ *  3. 都没有 → service subject 兜底（后台任务 / dev 未登录）。
+ *
+ * ⚠️ 历史坑：工具过去只读 ``ctx?.authToken``，而 HTTP 路径下 RequestContext 是 Map 实例、
+ * sub 存在 ``AUTH_SUB_KEY`` 下（不是 ``.authToken`` 属性），导致恒落兜底 —— 多用户下 agent
+ * 写操作全落到 ``console:dev``。本函数同时兼容 ``.authToken`` 属性与 ``.get(AUTH_SUB_KEY)``。
+ */
+export async function resolveRequestToken(rc?: {
+  authToken?: string;
+  get?: (key: string) => unknown;
+}): Promise<string> {
+  if (typeof rc?.authToken === "string" && rc.authToken) {
+    return rc.authToken;
+  }
+  const sub = typeof rc?.get === "function" ? rc.get(AUTH_SUB_KEY) : undefined;
+  if (typeof sub === "string" && sub) {
+    return await mintServiceToken({ sub });
+  }
+  return await mintServiceToken({ sub: defaultServiceSubject() });
 }
 
 /**
