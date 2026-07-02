@@ -8,24 +8,34 @@ import {
 } from "lucide-react";
 
 /**
- * 工具调用状态机（7 态）。
+ * 工具调用状态机（7 态 · 定义先行）。
  *
  * 参照 Omnigent 的 ToolUIPart["state"] 设计，适配 AG-UI 的消息模型。
- * AG-UI 当前仅传递二态（tool call → tool result），完整七态需要 mastra
- * 侧上报中间状态。现阶段基于可用数据推断：
- *   - toolCalls 存在但无对应 tool result → Running
- *   - tool result 存在且无 error → Completed
- *   - tool result 存在且有 error → Error
+ *
+ * ⚠️ **接线现状（避免误以为七态都已可用）**：
+ * AG-UI 当前只传递二态（tool call → tool result），所以 `inferToolState`
+ * 实际只会产出下面 3 个态：
+ *   - **input-available**（Running）：toolCalls 存在但无对应 tool result
+ *   - **output-available**（Completed）：tool result 存在且无 error
+ *   - **output-error**（Error）：tool result 存在且含 error
+ *
+ * 另外 4 个态（input-streaming / output-denied / approval-requested /
+ * approval-responded）是**为 mastra 侧未来上报中间状态预留的定义**——
+ * TOOL_STATE_MAP 里有它们的渲染样式，但目前**没有生产者**会产出这些态。
+ * 等 mastra 上报 tool 生命周期细分（如 plan/exec 审批态）时，只需扩
+ * `inferToolState` 的输入即可点亮，无需再动样式表。
  */
 
 export type ToolState =
-  | "input-streaming" // 正在接收工具参数
-  | "input-available" // 参数就绪，执行中
-  | "output-available" // 执行成功
-  | "output-error" // 执行失败
-  | "output-denied" // 被权限拒绝
-  | "approval-requested" // 等待审批
-  | "approval-responded"; // 审批已响应
+  // ── 已接线（inferToolState 会产出）──
+  | "input-available" // 参数就绪，执行中（Running）
+  | "output-available" // 执行成功（Completed）
+  | "output-error" // 执行失败（Error）
+  // ── 预留（样式已备，待 mastra 上报后点亮，当前无生产者）──
+  | "input-streaming" // 正在接收工具参数（Pending）
+  | "output-denied" // 被权限拒绝（Denied）
+  | "approval-requested" // 等待审批（Awaiting Approval）
+  | "approval-responded"; // 审批已响应（Responded）
 
 export interface ToolStateProps {
   label: string;
@@ -91,6 +101,9 @@ export const TOOL_STATE_MAP: Record<ToolState, ToolStateProps> = {
 
 /**
  * 从 AG-UI 消息推断工具状态。
+ *
+ * 当前只产出 3 个态（input-available / output-available / output-error）——
+ * 其余 4 个态待 mastra 上报中间状态后在此扩展（见 ToolState 注释）。
  *
  * @param hasResult 工具结果是否已到达
  * @param hasError 结果中是否包含 error
