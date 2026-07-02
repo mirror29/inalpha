@@ -763,6 +763,12 @@ class AccountSnapshot(BaseModel):
         default=0.0,
         description="所有持仓累计实现 PnL，按各自计价货币折算到 base_currency 后汇总",
     )
+    net_external_flows: float = Field(
+        default=0.0,
+        description="自最近一次重置以来的净外生入金(充值−提取,折 base_currency)。"
+        "真实收益 = total_equity − initial_cash − net_external_flows——"
+        "不减它会把充值当成盈利(1 万户充 1 万显示 +100%)",
+    )
     fx_warnings: list[str] = Field(
         default_factory=list,
         description="D-11：估值告警——FX 不可用 / 偏旧的币种,或持仓最新价不可用 / 偏旧;"

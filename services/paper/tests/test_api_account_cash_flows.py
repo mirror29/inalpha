@@ -43,6 +43,8 @@ def test_deposit_records_flow_and_updates_balance(client: TestClient) -> None:
     acct = client.get("/accounts/me", headers=headers).json()
     assert acct["cash_balances"]["USD"] == pytest.approx(15_000.0)
     assert acct["initial_cash"] == pytest.approx(10_000.0)  # 基准不随充值动
+    # 净外生入金:真实收益 = equity − initial_cash − net_external_flows,充值不算盈利
+    assert acct["net_external_flows"] == pytest.approx(5_000.0)
 
     flows = client.get("/accounts/me/cash_flows", headers=headers).json()
     assert len(flows) == 1 and flows[0]["kind"] == "deposit"
@@ -71,6 +73,18 @@ def test_deposit_invalid_amount_rejected(client: TestClient) -> None:
     assert r.status_code == 400
 
 
+def test_deposit_unknown_currency_rejected(client: TestClient) -> None:
+    """未知币种 → 422(任意字符串会建出 FX 永远折算不了的垃圾桶)。"""
+    _, headers = _headers()
+    r = client.post(
+        "/accounts/me/deposit",
+        headers=headers,
+        json={"amount": 100.0, "currency": "FOO"},
+    )
+    assert r.status_code == 422, r.json()
+    assert r.json()["code"] == "UNSUPPORTED_CURRENCY"
+
+
 def test_reset_clears_positions_keeps_history(client: TestClient) -> None:
     """重置:删持仓 + 现金回基准 + reset 流水;订单历史保留(审计不可抹)。"""
     _, headers = _headers()
@@ -93,6 +107,8 @@ def test_reset_clears_positions_keeps_history(client: TestClient) -> None:
     acct = client.get("/accounts/me", headers=headers).json()
     assert acct["cash_balances"] == {"USD": 10_000.0}  # USDT 负桶被清
     assert acct["positions_value"] == pytest.approx(0.0)
+    # 净外生入金按"最近一次 reset 之后"统计 → 重置即归零(新一轮口径)
+    assert acct["net_external_flows"] == pytest.approx(0.0)
     assert client.get("/positions", headers=headers).json() == []
     # 历史订单仍在(审计):重置不抹交易流水
     orders = client.get(

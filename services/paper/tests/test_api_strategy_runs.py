@@ -193,11 +193,13 @@ async def test_start_happy_path_and_duplicate(
     assert body["allocation"] == 10_000.0
     assert len(started) == 1  # manager.start 被调用
 
-    # 同 candidate 第二个 running → 409(换 symbol 避开同标的守门,专测 candidate 唯一性)
+    # 同 candidate 第二个 running → 409(换 symbol 避开同标的守门、显式 allocation
+    # 避开自动额度 422,专测 candidate 唯一性)
     r2 = client.post(
         "/strategy_runs",
         headers=headers,
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "ETH/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "ETH/USDT",
+              "timeframe": "1h", "allocation": 1_000.0},
     )
     assert r2.status_code == 409
     assert r2.json()["code"] == "STRATEGY_RUN_ALREADY_RUNNING"
@@ -228,12 +230,50 @@ async def test_same_symbol_second_run_conflict(
     assert r2.status_code == 409, r2.json()
     assert r2.json()["code"] == "SYMBOL_RUN_CONFLICT"
 
-    # 换 symbol 即可正常 start(守门只按标的,不锁账户)
+    # 换 symbol 即可正常 start(守门只按标的,不锁账户)。显式 allocation:首个 run
+    # 已把默认未分配额度(1 万)占满,自动额度会 422(见 allocation 扣减测试)。
     r3 = client.post(
+        "/strategy_runs", headers=headers,
+        json={"candidate_id": str(cid2), "venue": "binance", "symbol": "ETH/USDT",
+              "timeframe": "1h", "allocation": 2_000.0},
+    )
+    assert r3.status_code == 200, r3.json()
+
+
+async def test_auto_allocation_deducts_running_runs(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """自动 allocation 扣减其他 running run 已分配额度,防集体超额认领资本。
+
+    账户 1 万:首个 run 显式占 4000;第二个自动额度 = min(10000, 10000−4000) = 6000;
+    第三个自动额度 = 0 → 422(现金没花出去也不能再虚拟认领)。
+    """
+    _stub_manager(app_with_lifespan)
+    headers = _headers(client)
+    cid1 = await _make_promoted_candidate()
+    r1 = client.post(
+        "/strategy_runs", headers=headers,
+        json={"candidate_id": str(cid1), "venue": "binance", "symbol": "BTC/USDT",
+              "timeframe": "1h", "allocation": 4_000.0},
+    )
+    assert r1.status_code == 200, r1.json()
+
+    cid2 = await _make_promoted_candidate()
+    r2 = client.post(
         "/strategy_runs", headers=headers,
         json={"candidate_id": str(cid2), "venue": "binance", "symbol": "ETH/USDT", "timeframe": "1h"},
     )
-    assert r3.status_code == 200, r3.json()
+    assert r2.status_code == 200, r2.json()
+    assert r2.json()["allocation"] == pytest.approx(6_000.0)
+
+    cid3 = await _make_promoted_candidate()
+    r3 = client.post(
+        "/strategy_runs", headers=headers,
+        json={"candidate_id": str(cid3), "venue": "binance", "symbol": "SOL/USDT", "timeframe": "1h"},
+    )
+    assert r3.status_code == 422, r3.json()
+    assert r3.json()["code"] == "INSUFFICIENT_CASH_FOR_RUN"
+    assert float(r3.json()["details"]["already_allocated"]) == pytest.approx(10_000.0)
 
 
 async def test_explicit_allocation_recorded(
@@ -385,12 +425,14 @@ async def test_per_account_run_cap(client: TestClient, app_with_lifespan: Any) -
     )
     app_with_lifespan.dependency_overrides[get_paper_settings] = lambda: small
 
-    # 起满 2 个（不同 candidate + 不同 symbol,避开同标的守门,各归本账户）
+    # 起满 2 个（不同 candidate + 不同 symbol 避开同标的守门;显式 allocation 避开
+    # 自动额度扣减——本测试只测数量上限）
     for symbol in ("BTC/USDT", "ETH/USDT"):
         cid = await _make_promoted_candidate(owner_account_id=acct)
         r = client.post(
             "/strategy_runs", headers=headers,
-            json={"candidate_id": str(cid), "venue": "binance", "symbol": symbol, "timeframe": "1h"},
+            json={"candidate_id": str(cid), "venue": "binance", "symbol": symbol,
+                  "timeframe": "1h", "allocation": 3_000.0},
         )
         assert r.status_code == 200, r.json()
 
@@ -398,7 +440,8 @@ async def test_per_account_run_cap(client: TestClient, app_with_lifespan: Any) -
     cid3 = await _make_promoted_candidate(owner_account_id=acct)
     r = client.post(
         "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid3), "venue": "binance", "symbol": "SOL/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid3), "venue": "binance", "symbol": "SOL/USDT",
+              "timeframe": "1h", "allocation": 3_000.0},
     )
     assert r.status_code == 429
     assert r.json()["code"] == "TOO_MANY_RUNNING_RUNS"
