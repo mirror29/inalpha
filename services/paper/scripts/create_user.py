@@ -5,29 +5,33 @@
 
 用法::
 
-    # 作者:沿用 console:dev subject → 继承现有模拟盘 / 会话历史
+    # 作者:沿用 console:dev subject → 继承现有模拟盘 / 会话历史。
+    # 省略 --password → 交互式 getpass 提示输入(不回显、不进 shell history)。
     uv --project services/paper run python services/paper/scripts/create_user.py \
-        --email me@example.com --password 's3cr3t' --subject console:dev
+        --email me@example.com --subject console:dev
 
     # 新用户:不给 --subject 则自动生成 user:<uuid4> → 独立空账户
     uv --project services/paper run python services/paper/scripts/create_user.py \
-        --email bob@example.com --password 'hunter2'
+        --email bob@example.com
 
-    # 容器内(生产 paper 镜像已含 DB 依赖 + DATABASE_URL 环境):
-    docker compose -f infra/docker-compose.prod.yml run --rm paper \
-        uv --project paper run python scripts/create_user.py --email ... --password ... --subject console:dev
+    # 容器内(非交互 tty):用 --password-stdin 从 stdin 读(read -s 避免 echo 进 history):
+    read -rs PW && printf '%s' "$PW" | docker compose -f infra/docker-compose.prod.yml run --rm -T paper \
+        uv --project paper run python scripts/create_user.py --email ... --subject console:dev --password-stdin
 
 约束:
 
-- 密码经 argon2 哈希,明文不落库、不打日志(仅 argparse 短暂持有)。
+- 密码经 argon2 哈希,明文不落库、不打日志;默认交互式 getpass 输入,避免进 shell
+  history / ``ps aux``。``--password`` 仍支持但会告警(留痕风险)。
 - ``--subject`` 是 JWT ``sub``,也是 paper ``account_id_from_sub`` 的派生源;改它 = 换账户。
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import getpass
 import logging
 import os
+import sys
 from uuid import uuid4
 
 from argon2 import PasswordHasher
@@ -65,6 +69,27 @@ async def _upsert_user(
             await conn.commit()
 
 
+def _resolve_password(args: argparse.Namespace) -> str:
+    """取密码,优先不留痕的方式。
+
+    - ``--password-stdin``:从 stdin 读一行(自动化 / 容器,配 ``read -s`` 避免 echo 进 history)。
+    - ``--password``:仍支持但**不推荐**——明文会进 shell history 与 ``ps aux``,会打印告警。
+    - 都没给:交互式 ``getpass`` 提示输入(不回显、不留痕)。
+    """
+    if args.password_stdin:
+        pw = sys.stdin.readline().rstrip("\n")
+    elif args.password is not None:
+        logger.warning(
+            "--password 明文会留在 shell history 与 ps aux;建议改用交互式输入或 --password-stdin。"
+        )
+        pw = args.password
+    else:
+        pw = getpass.getpass("Password: ")
+    if not pw:
+        raise SystemExit("密码不能为空")
+    return pw
+
+
 async def _amain(args: argparse.Namespace) -> int:
     db_url = os.environ.get(
         "DATABASE_URL",
@@ -73,13 +98,14 @@ async def _amain(args: argparse.Namespace) -> int:
     subject = args.subject or f"user:{uuid4()}"
     email = args.email.strip()  # 存 strip 后的邮箱,与登录端点的 email_key 口径一致
     roles = [r.strip() for r in (args.roles or "").split(",") if r.strip()]
+    password = _resolve_password(args)
 
     await init_pool(db_url)
     try:
         await _upsert_user(
             subject=subject,
             email=email,
-            password=args.password,
+            password=password,
             username=args.username,
             roles=roles,
         )
@@ -94,7 +120,16 @@ async def _amain(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="创建 / 改密一个登录用户(argon2 落库)。")
     parser.add_argument("--email", required=True, help="登录邮箱(大小写不敏感唯一)")
-    parser.add_argument("--password", required=True, help="明文密码(会被 argon2 哈希)")
+    parser.add_argument(
+        "--password",
+        default=None,
+        help="(不推荐:会进 shell history / ps aux)明文密码;省略则交互式 getpass 输入",
+    )
+    parser.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="从 stdin 读一行作为密码(自动化 / 容器;配 read -s 更安全)",
+    )
     parser.add_argument(
         "--subject",
         default=None,
