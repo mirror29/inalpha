@@ -66,10 +66,14 @@
         "mark": "最新价",
         "liqPrice": "强平价",
         "unrealized": "浮动盈亏",
-        "realized": "已实现盈亏"
+        "realized": "已实现盈亏",
+        "margin": "保证金"
       },
       "leverageTitle": "{leverage}× 杠杆 · 占用保证金 {margin}",
-      "liqStale": "强平价（mark 穿越即强平）"
+      "liqStale": "强平价（mark 穿越即强平）",
+      "marginTitle": "该仓占用的初始保证金",
+      "modeSpot": "现货",
+      "modePerp": "合约"
     },
     "orders": {
       "title": "最近订单",
@@ -101,7 +105,9 @@
         "running": "运行中",
         "stopped": "已停止",
         "errored": "错误"
-      }
+      },
+      "modeSpot": "现货",
+      "modePerp": "合约 {leverage}×"
     },
     "strategyPanel": {
       "title": "策略池",
@@ -150,7 +156,10 @@
       "errors": "{count} 条错误",
       "viewDecisions": "查看决策",
       "neverRan": "尚未处理任何 bar",
-      "history": "历史运行 {count} 次"
+      "history": "历史运行 {count} 次",
+      "modeSpot": "现货",
+      "modePerp": "合约 {leverage}×",
+      "allocation": "资金额度"
     },
     "detail": {
       "back": "Live Runner",
@@ -179,7 +188,10 @@
         "fee": "手续费",
         "outcome": "结果",
         "reason": "原因"
-      }
+      },
+      "modeSpot": "现货",
+      "modePerp": "合约 {leverage}×",
+      "allocation": "资金额度 {amount}"
     },
     "factors": {
       "title": "标的有效因子",

@@ -111,6 +111,19 @@ export function RunnersPanel({ runs }: { runs: StrategyRunRecord[] }) {
                     >
                       {instrumentLabel(r.symbol, r.venue)}
                     </Link>
+                    {/* 现货/合约一眼可辨:perp 带杠杆倍数,spot 灰字轻量不抢视线 */}
+                    <span
+                      className={cn(
+                        "ml-1.5 rounded px-1 py-0.5 font-mono text-[10px]",
+                        r.trading_mode === "perp"
+                          ? "bg-gold/10 text-gold"
+                          : "bg-bg-elev text-fg-muted",
+                      )}
+                    >
+                      {r.trading_mode === "perp"
+                        ? t("modePerp", { leverage: r.leverage })
+                        : t("modeSpot")}
+                    </span>
                   </Td>
                   <Td mono muted>
                     {r.timeframe}
