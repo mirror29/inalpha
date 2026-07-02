@@ -482,10 +482,12 @@ export type AccountSnapshot = {
   cash: number;
   /** D-11：折算前的按币种现金桶（如 {"USD": 5000, "USDT": -1000}）。 */
   cash_balances: Record<string, number>;
+  /** mark-to-market：spot 仓 qty×最新价（含浮盈）；perp 仓贡献未实现盈亏。 */
   positions_value: number;
+  /** cash + positions_value（含未实现盈亏）。 */
   total_equity: number;
   realized_pnl: number;
-  /** D-11：折算时 FX 不可用 / 偏旧的币种告警；非空时须原样转告用户。 */
+  /** D-11：估值告警（FX 或最新价不可用 / 偏旧）；非空时须原样转告用户。 */
   fx_warnings: string[];
   created_at: string;
   updated_at: string;
@@ -501,6 +503,12 @@ export type StrategyRunRecord = {
   symbol: string;
   timeframe: string;
   params: Record<string, unknown>;
+  /** spot（现货 long-only）或 perp（USDT-M 永续，做空/杠杆）。 */
+  trading_mode: "spot" | "perp";
+  /** 杠杆倍数；spot 恒 1。 */
+  leverage: number;
+  /** 本 run 的资金额度（账户 base_currency 计）；老数据为 null（旧语义固定 1 万）。 */
+  allocation: number | null;
   last_bar_ts: string | null;
   cumulative_pnl: number;
   error_log: Array<Record<string, unknown>>;
@@ -519,6 +527,11 @@ export type StartStrategyParams = {
   tradingMode?: "spot" | "perp";
   /** 杠杆倍数（perp 用，1..20）；spot 恒 1。 */
   leverage?: number;
+  /**
+   * 本 run 的资金额度（账户 base_currency 计）：sizing 与 run 级购买力以它为上限。
+   * 省略时服务端取 min(10000, 账户折算可用现金)；账户可用 ≤0 时 422 拒绝 start。
+   */
+  allocation?: number;
 };
 
 /** D-11 · live runner 决策复盘日志一行。 */
@@ -834,6 +847,7 @@ export class PaperClient {
       params: params.params ?? {},
       trading_mode: params.tradingMode ?? "spot",
       leverage: params.leverage ?? 1,
+      allocation: params.allocation,
     });
   }
 
