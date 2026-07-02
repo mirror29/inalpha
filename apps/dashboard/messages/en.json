@@ -65,10 +65,14 @@
         "mark": "Mark",
         "liqPrice": "Liq.",
         "unrealized": "Unrealized",
-        "realized": "Realized PnL"
+        "realized": "Realized PnL",
+        "margin": "Margin"
       },
       "leverageTitle": "{leverage}× leverage · margin {margin}",
-      "liqStale": "Liquidation price (mark crossing it triggers liquidation)"
+      "liqStale": "Liquidation price (mark crossing it triggers liquidation)",
+      "marginTitle": "Initial margin used by this position",
+      "modeSpot": "SPOT",
+      "modePerp": "PERP"
     },
     "orders": {
       "title": "Recent Orders",
@@ -100,7 +104,9 @@
         "running": "Running",
         "stopped": "Stopped",
         "errored": "Errored"
-      }
+      },
+      "modeSpot": "SPOT",
+      "modePerp": "PERP {leverage}×"
     },
     "strategyPanel": {
       "title": "Strategy Pool",
@@ -149,7 +155,10 @@
       "errors": "{count} error(s)",
       "viewDecisions": "View decisions",
       "neverRan": "no bars processed yet",
-      "history": "Past runs ({count})"
+      "history": "Past runs ({count})",
+      "modeSpot": "SPOT",
+      "modePerp": "PERP {leverage}×",
+      "allocation": "Allocation"
     },
     "detail": {
       "back": "Live Runners",
@@ -178,7 +187,10 @@
         "fee": "Fee",
         "outcome": "Outcome",
         "reason": "Reason"
-      }
+      },
+      "modeSpot": "SPOT",
+      "modePerp": "PERP {leverage}×",
+      "allocation": "allocation {amount}"
     },
     "factors": {
       "title": "Effective Factors (Instrument)",
