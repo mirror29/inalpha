@@ -806,7 +806,11 @@ export const paperStartStrategyTool = createTool({
     坑：
     - **promote ≠ 自动跑**：promote 只是状态切换，必须再调本工具才真正按行情跑
     - 同一个 candidate 同时只能有一个 running（再起会 409）；先 stop 再换 symbol
+    - 同账户同 venue+symbol 同时只能有一个 running（撞会 409 SYMBOL_RUN_CONFLICT，
+      两个 run 会共享同一行持仓互相打架）；换策略先 stop 旧 run
     - candidate 表不含 venue/symbol/timeframe，必须在这里指定
+    - allocation 是该 run 的资金额度（sizing 上限）；省略时服务端取
+      min(10000, 账户可用现金)，账户可用 ≤0 会 422——先平仓/停 run 释放资金
     - 机器自动审批下单（approved_by=system:live_runner），正当性靠"人先 promote + 人显式 start"
   `.trim(),
   inputSchema: z.object({
@@ -836,6 +840,15 @@ export const paperStartStrategyTool = createTool({
       .max(20)
       .default(1)
       .describe("杠杆倍数（perp 用，1..20）；spot 恒 1"),
+    allocation: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        "本 run 的资金额度（账户 base_currency 计）：sizing 与 run 级购买力以它为上限，" +
+        "多 run 共享账户时各自的资金边界。省略 → 服务端取 min(10000, 账户折算可用现金)。" +
+        "用户没明确给金额就不要传。",
+      ),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
@@ -848,6 +861,7 @@ export const paperStartStrategyTool = createTool({
       params: inputData.params,
       tradingMode: inputData.tradingMode,
       leverage: inputData.leverage,
+      allocation: inputData.allocation,
     });
   },
 });
