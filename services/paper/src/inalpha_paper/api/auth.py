@@ -103,9 +103,11 @@ async def login(body: LoginRequest, db: DBConn) -> LoginResponse:
 
     async with db.cursor() as cur:
         await cur.execute(
+            # 用已 strip+lower 的 email_key,与节流 key 及建号时的存储保持一致
+            # (否则带首尾空格的邮箱查不到、却照样计入节流)。
             "SELECT subject, email, password_hash, roles FROM users "
-            "WHERE lower(email) = lower(%s)",
-            (body.email,),
+            "WHERE lower(email) = %s",
+            (email_key,),
         )
         # 连接池用 dict_row row_factory,fetchone 返回 dict(psycopg 默认 stub 标 tuple)。
         row = cast("dict[str, Any] | None", await cur.fetchone())

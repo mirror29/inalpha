@@ -71,13 +71,14 @@ async def _amain(args: argparse.Namespace) -> int:
         "postgresql+psycopg://quant:devpass@localhost:5433/inalpha",
     )
     subject = args.subject or f"user:{uuid4()}"
+    email = args.email.strip()  # 存 strip 后的邮箱,与登录端点的 email_key 口径一致
     roles = [r.strip() for r in (args.roles or "").split(",") if r.strip()]
 
     await init_pool(db_url)
     try:
         await _upsert_user(
             subject=subject,
-            email=args.email,
+            email=email,
             password=args.password,
             username=args.username,
             roles=roles,
@@ -85,7 +86,7 @@ async def _amain(args: argparse.Namespace) -> int:
     finally:
         await close_pool()
 
-    print(f"✔ 用户已写入:email={args.email!r} subject={subject!r} roles={roles}")
+    print(f"✔ 用户已写入:email={email!r} subject={subject!r} roles={roles}")
     print("  用该邮箱 + 密码在 dashboard /login 登录即可。")
     return 0
 
