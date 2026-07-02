@@ -7,7 +7,7 @@ import {
 import { getRemoteAgents } from "@ag-ui/mastra";
 import { MastraClient } from "@mastra/client-js";
 
-import { BACKENDS, CONSOLE_SUBJECT, getServiceToken } from "@/lib/backend";
+import { BACKENDS, getServiceToken, getSessionSubject } from "@/lib/backend";
 
 /**
  * 静音 @ag-ui/mastra 1.0.3 的良性日志噪音:它不认 mastra(v5 streamVNext)的
@@ -57,7 +57,10 @@ if (!(console.warn as { __inalphaFiltered?: boolean }).__inalphaFiltered) {
  * @returns CopilotKit runtime 的 POST handler
  */
 export const POST = async (req: Request): Promise<Response> => {
+  // token 的 sub = 登录用户(或 dev 下 console:dev)。mastra identityMiddleware 据此
+  // 注入 authSub,tool 层再据此打给 Python(resolveRequestToken),保证 agent 写操作落登录用户账户。
   const token = await getServiceToken();
+  const resourceId = await getSessionSubject();
 
   const mastraClient = new MastraClient({
     baseUrl: BACKENDS.mastra,
@@ -66,7 +69,7 @@ export const POST = async (req: Request): Promise<Response> => {
 
   const agents = await getRemoteAgents({
     mastraClient,
-    resourceId: CONSOLE_SUBJECT,
+    resourceId,
   });
 
   // CopilotKit 1.59.5 起 `agents` 收紧为 NonEmptyRecord | Promise | factory;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { BackendError, backendFetch, CONSOLE_SUBJECT } from "@/lib/backend";
+import { BackendError, backendFetch, getSessionSubject } from "@/lib/backend";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
         mode: body["mode"],
         question: body["question"],
         symbol: body["symbol"],
-        subject: CONSOLE_SUBJECT,
+        subject: await getSessionSubject(),
       },
     });
     return NextResponse.json(record);

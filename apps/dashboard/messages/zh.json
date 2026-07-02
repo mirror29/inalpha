@@ -16,7 +16,8 @@
     "menu": "菜单",
     "close": "关闭",
     "collapse": "收起侧边栏",
-    "expand": "展开侧边栏"
+    "expand": "展开侧边栏",
+    "logout": "登出"
   },
   "theme": {
     "label": "主题",
