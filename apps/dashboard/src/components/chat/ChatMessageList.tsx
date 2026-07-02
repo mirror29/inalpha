@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 
 import { ChatMessage, type AGMessage } from "./ChatMessage";
+import { TOOL_STATE_I18N_KEY, type ToolState } from "./tool-states";
 
 /**
  * 消息列表 + 自动滚动 + 思考中指示器。
@@ -31,6 +32,11 @@ export function ChatMessageList({
   thinkingLabel: string;
   loadingHistoryLabel: string;
 }) {
+  const t = useTranslations("chat");
+  const toolStateLabels = Object.fromEntries(
+    Object.entries(TOOL_STATE_I18N_KEY).map(([state, key]) => [state, t(key)]),
+  ) as Record<ToolState, string>;
+
   const endRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -61,6 +67,7 @@ export function ChatMessageList({
             resolvedToolCallIds={resolvedToolCallIds}
             toolDone={toolDone}
             toolResultLabel={toolResultLabel}
+            toolStateLabels={toolStateLabels}
             isStreaming={
               isLoading &&
               i === visible.length - 1 &&

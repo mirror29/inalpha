@@ -100,6 +100,23 @@ export const TOOL_STATE_MAP: Record<ToolState, ToolStateProps> = {
 };
 
 /**
+ * 每个态对应的 `chat` 命名空间 i18n key。
+ *
+ * TOOL_STATE_MAP.label 仅作开发期兜底 / 类型占位——真正渲染到 chip 上的文案
+ * 走 next-intl（见 ChatMessageList），中英文各有译文，避免中文 locale 下出现
+ * 裸英文 "Running" / "Completed"（命中 CLAUDE.md §3「回复用用户语言」的 i18n 惯例）。
+ */
+export const TOOL_STATE_I18N_KEY: Record<ToolState, string> = {
+  "input-streaming": "toolPending",
+  "input-available": "toolRunning",
+  "output-available": "toolDone",
+  "output-error": "toolError",
+  "output-denied": "toolDenied",
+  "approval-requested": "toolAwaitingApproval",
+  "approval-responded": "toolResponded",
+};
+
+/**
  * 从 AG-UI 消息推断工具状态。
  *
  * 当前只产出 3 个态（input-available / output-available / output-error）——
