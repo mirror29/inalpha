@@ -81,6 +81,15 @@ const COMPONENTS: Components = {
     </td>
   ),
   hr: () => <hr className="my-2 border-border-subtle" />,
+  // 禁用远程图片加载：与 ChatStreamdown 的空白名单 (allowedImagePrefixes: [])
+  // 对齐,防止 agent 转述内容里被注入的图片 beacon URL 在渲染时发起请求、
+  // 把 URL 参数(可能带用户上下文)渗出给第三方。已完成 / 历史消息走本组件,
+  // 若不拦截,重新渲染或重开历史会话时图片会照常加载。渲染 alt 占位而非 <img>。
+  img: ({ alt }) => (
+    <span className="font-mono text-[11px] text-fg-muted/60">
+      {alt ? `[图片: ${alt}]` : "[图片已拦截]"}
+    </span>
+  ),
 };
 
 export function ChatMarkdown({ children }: { children: string }) {
