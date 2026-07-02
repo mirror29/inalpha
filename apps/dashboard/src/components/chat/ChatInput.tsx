@@ -10,10 +10,14 @@ import { cn } from "@/lib/cn";
  * 对话输入区域：输入框 + 发送/停止按钮 + 页面上下文胶囊。
  *
  * 所有状态由父组件（ChatThread）管理，通过 props 传入。
+ *
+ * 聚焦：`open` 由父组件传入——对话栏由 `translate-x` 滑入而非条件卸载，
+ * 所以"打开时聚焦输入框"必须由 open prop 变化驱动（组件挂载 effect 补不上）。
  */
 export function ChatInput({
   draft,
   isLoading,
+  open,
   contextAttached,
   contextKind,
   contextId,
@@ -24,6 +28,7 @@ export function ChatInput({
 }: {
   draft: string;
   isLoading: boolean;
+  open: boolean;
   contextAttached: boolean;
   contextKind: string;
   contextId?: string;
@@ -35,9 +40,10 @@ export function ChatInput({
   const t = useTranslations("chat");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // 打开对话栏时聚焦输入框（Phase 3 拆分后从 ChatThread 迁移进来）。
   useEffect(() => {
-    if (draft === "") textareaRef.current?.focus();
-  }, [draft]);
+    if (open) textareaRef.current?.focus();
+  }, [open]);
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {

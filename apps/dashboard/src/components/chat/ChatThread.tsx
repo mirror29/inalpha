@@ -76,7 +76,6 @@ export function ChatThread({
   const [historyError, setHistoryError] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const loadedThreadRef = useRef<string | null>(null);
   const setMessagesRef = useRef(setMessages);
   setMessagesRef.current = setMessages;
@@ -116,7 +115,13 @@ export function ChatThread({
         const ctrl = new AbortController();
         const signal = init?.signal;
         if (signal) signal.addEventListener("abort", () => ctrl.abort());
-        if (stoppingRef.current) { ctrl.abort(); return orig(input, init); }
+        // 停止后到来的后续 tool 段：用**已 abort 的 signal**发请求，
+        // 浏览器立即以 AbortError 拒绝——这才真正掐断"点暂停后回复继续输出"。
+        // （ctrl 必须挂到 init.signal 上，否则 abort 形同虚设。）
+        if (stoppingRef.current) {
+          ctrl.abort();
+          return orig(input, { ...init, signal: ctrl.signal });
+        }
         inflightAborts.current.add(ctrl);
         const drop = () => inflightAborts.current.delete(ctrl);
         return orig(input, { ...init, signal: ctrl.signal }).then((res) => {
@@ -227,8 +232,7 @@ export function ChatThread({
     return s;
   }, [messages]);
 
-  // Focus input on open
-  useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
+  // 聚焦输入框由 ChatInput 内部按 open prop 驱动（Phase 3 拆分后 textarea 归 ChatInput 管）。
 
   // Submit message
   const submit = useCallback(async () => {
@@ -360,6 +364,7 @@ export function ChatThread({
       <ChatInput
         draft={draft}
         isLoading={isLoading}
+        open={open}
         contextAttached={contextAttached}
         contextKind={page.kind}
         contextId={page.id}
