@@ -13,7 +13,7 @@ D-8c 起 5 个 analyst；D-10 加 valuation 共 6 个：
 新增 analyst 加进 ``ALL_ANALYSTS`` 自动并行；schema 端只需在 ``AnalystBrief.analyst``
 Literal 里加值。
 """
-from .base import Analyst
+from .base import Analyst, AnalystContext
 from .fundamental import FundamentalAnalyst
 from .macro import MacroAnalyst
 from .risk import RiskAnalyst
