@@ -304,3 +304,43 @@ async def list_by_account(
         await cur.execute(sql, (str(account_id),))
         rows = await cur.fetchall()
     return list(rows)  # type: ignore[arg-type]
+
+
+async def sum_other_margin_used(
+    conn: AsyncConnection,
+    account_id: UUID,
+    *,
+    currency: str,
+    exclude_venue: str,
+    exclude_symbol: str,
+) -> Decimal:
+    """同账户同计价货币**其他**活跃仓已占用保证金之和(perp 跨仓聚合守门用)。
+
+    ``margin_used`` 由每笔 fill 后的保证金重算维护,是现成权威值;排除本
+    (venue, symbol)——本仓按"成交后目标仓 IM"在调用方另算,不能重复计。
+    读不加锁,与钱包读同级(模拟盘 TOCTOU 容忍度一致)。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT COALESCE(SUM(margin_used), 0) AS total FROM positions "
+            "WHERE account_id = %s AND currency = %s AND quantity <> 0 "
+            "AND NOT (venue = %s AND symbol = %s)",
+            (str(account_id), currency, exclude_venue, exclude_symbol),
+        )
+        row = await cur.fetchone()
+    return Decimal(str(row["total"])) if row else Decimal(0)  # type: ignore[index]
+
+
+async def delete_by_account(conn: AsyncConnection, account_id: UUID) -> int:
+    """删除某 account 的**全部**持仓行,返回删除行数。
+
+    仅供账户 reset 用(与现金重置、reset 流水同事务):重置 = 回到无仓起点,含
+    quantity=0 的历史行一并删(其累计 realized_pnl 属上一轮口径,保留会污染新一轮
+    的账户快照汇总;逐笔历史仍在 orders / closed_trades,审计不受影响)。
+    交易路径禁止调用——正常平仓走 apply_fill 保留行。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "DELETE FROM positions WHERE account_id = %s", (str(account_id),)
+        )
+        return cur.rowcount or 0

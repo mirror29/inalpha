@@ -77,6 +77,81 @@ async def get(conn: AsyncConnection, account_id: UUID) -> dict[str, Any] | None:
     return row  # type: ignore[return-value]
 
 
+async def record_cash_flow(
+    conn: AsyncConnection,
+    account_id: UUID,
+    *,
+    kind: str,
+    currency: str,
+    amount: Decimal,
+    balance_after: Decimal,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """写一行外生资金事件流水(deposit/withdraw/reset)。
+
+    资金变更一律先留痕再改余额(同事务,由调用方保证):模拟盘改钱 = 改绩效口径,
+    无流水的余额变更会让收益率/榜单/审计链失信。成交现金变动不走本表(orders /
+    closed_trades 已是成交审计源,重复记账会制造两套对不上的口径)。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            INSERT INTO account_cash_flows (account_id, kind, currency, amount,
+                                            balance_after, note)
+            VALUES (%s::uuid, %s, %s, %s::numeric, %s::numeric, %s)
+            RETURNING id, account_id, kind, currency, amount, balance_after, note,
+                      created_at
+            """,
+            (str(account_id), kind, currency, amount, balance_after, note),
+        )
+        row = await cur.fetchone()
+    if row is None:  # 理论不会
+        raise RuntimeError("account_cash_flows insert returned no row")
+    return row  # type: ignore[return-value]
+
+
+async def list_cash_flows(
+    conn: AsyncConnection, account_id: UUID, *, limit: int = 100
+) -> list[dict[str, Any]]:
+    """列账户资金流水,created_at DESC(最近的在前)。"""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id, account_id, kind, currency, amount, balance_after, note, "
+            "created_at "
+            "FROM account_cash_flows WHERE account_id = %s "
+            "ORDER BY created_at DESC, id DESC LIMIT %s",
+            (str(account_id), limit),
+        )
+        rows = await cur.fetchall()
+    return list(rows)  # type: ignore[arg-type]
+
+
+async def reset_cash_balances(
+    conn: AsyncConnection,
+    account_id: UUID,
+    *,
+    initial_cash: Decimal,
+    base_currency: str,
+) -> None:
+    """把账户现金重置为 ``{base_currency: initial_cash}`` 并同步 ``initial_cash`` 列。
+
+    重置语义(reset 端点专用):initial_cash = "当前一轮的基准",总收益率分母随之
+    更新。调用方负责同事务内:先锁行(get_or_create for_update)、清持仓、写
+    kind=reset 流水。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            UPDATE accounts
+            SET initial_cash = %s::numeric,
+                cash_balances = jsonb_build_object(%s::text, (%s::numeric)::text),
+                updated_at = NOW()
+            WHERE account_id = %s::uuid
+            """,
+            (initial_cash, base_currency, initial_cash, str(account_id)),
+        )
+
+
 async def apply_cash_delta(
     conn: AsyncConnection,
     account_id: UUID,
