@@ -43,7 +43,7 @@ export function ChatHistoryPanel({
     <div className="absolute left-0 right-0 top-full z-20 mx-3 mt-0.5 max-h-64 overflow-y-auto rounded-lg border border-border-subtle bg-bg-elev shadow-lg">
       {threads === null ? (
         <p className="px-3 py-3 text-center font-mono text-xs text-fg-muted">
-          {t("historyLoading")}
+          {t("loadingHistory")}
         </p>
       ) : threads.length === 0 ? (
         <p className="px-3 py-3 text-center font-mono text-xs text-fg-muted">

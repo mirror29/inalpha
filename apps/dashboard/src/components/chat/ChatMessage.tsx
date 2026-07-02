@@ -6,7 +6,7 @@ import { stripPageContext } from "@/lib/page-context";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { ChatStreamdown } from "./ChatStreamdown";
 import { ChatToolChip } from "./ChatToolChip";
-import { inferToolState, TOOL_STATE_MAP } from "./tool-states";
+import { inferToolState, type ToolState } from "./tool-states";
 
 /** AG-UI 消息最小形态。 */
 export type AGMessage = {
@@ -39,6 +39,7 @@ export function ChatMessage({
   resolvedToolCallIds,
   toolDone,
   toolResultLabel,
+  toolStateLabels,
   isStreaming,
 }: {
   message: AGMessage;
@@ -46,6 +47,8 @@ export function ChatMessage({
   resolvedToolCallIds: Set<string>;
   toolDone: string;
   toolResultLabel: string;
+  /** 七态 → 本地化文案（由 ChatMessageList 经 next-intl 解析后注入）。 */
+  toolStateLabels: Record<ToolState, string>;
   isStreaming?: boolean;
 }) {
   const text = textOf(message.content);
@@ -81,7 +84,7 @@ export function ChatMessage({
       }
     })();
     const state = inferToolState(true, hasError);
-    const { label: stateLabel } = TOOL_STATE_MAP[state];
+    const stateLabel = toolStateLabels[state];
 
     return (
       <div className="rise flex justify-start">
@@ -115,7 +118,7 @@ export function ChatMessage({
       )}
       {calls.map((c) => {
         const runningState = inferToolState(false);
-        const { label: runningLabel } = TOOL_STATE_MAP[runningState];
+        const runningLabel = toolStateLabels[runningState];
         return (
           <ChatToolChip
             key={c.id}
