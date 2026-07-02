@@ -725,6 +725,12 @@ class PositionRecord(BaseModel):
     liquidation_price: float | None = Field(
         default=None, description="perp 强平价（mark 穿越即强平）；spot 为 null"
     )
+    trading_mode: Literal["spot", "perp"] = Field(
+        default="spot",
+        description="派生字段(positions 表无该列):强平价非空或占用保证金非 0 → perp。"
+        "前端据此显式标注现货/合约,不要再靠 liquidation_price 隐式推断。"
+        "已平仓(quantity=0)的 perp 行保证金已清零,会派生成 spot——无敞口,可接受",
+    )
     updated_at: datetime
 
 
@@ -746,10 +752,12 @@ class AccountSnapshot(BaseModel):
     )
     positions_value: float = Field(
         default=0.0,
-        description="所有持仓按 avg_open_price 估值并折算到 base_currency（D-8b 不接实时 mark）",
+        description="持仓 mark-to-market 估值折算到 base_currency:spot 仓 = qty×最新价"
+        "（含未实现盈亏）;perp 仓 cash 即钱包,贡献未实现盈亏 (mark−avg)×qty。"
+        "最新价拿不到的仓 spot 按开仓均价兜底 / perp 记 0,见 fx_warnings",
     )
     total_equity: float = Field(
-        default=0.0, description="base_currency 计：cash + positions_value"
+        default=0.0, description="base_currency 计：cash + positions_value（含未实现盈亏）"
     )
     realized_pnl: float = Field(
         default=0.0,
@@ -757,8 +765,8 @@ class AccountSnapshot(BaseModel):
     )
     fx_warnings: list[str] = Field(
         default_factory=list,
-        description="D-11：折算时 FX 不可用 / 偏旧的币种告警；非空时估值可能不完整，"
-        "agent 须把告警原样转告用户",
+        description="D-11：估值告警——FX 不可用 / 偏旧的币种,或持仓最新价不可用 / 偏旧;"
+        "非空时估值可能不完整，agent 须把告警原样转告用户",
     )
     created_at: datetime
     updated_at: datetime
@@ -868,6 +876,12 @@ class StartStrategyRunRequest(BaseModel):
         "仅 crypto 永续标的 BTC/USDT:USDT 生效)。perp 须配做空逻辑的策略,否则会告警。",
     )
     leverage: int = Field(default=1, ge=1, le=20, description="杠杆倍数(perp 用,1..20);spot 恒 1")
+    allocation: float | None = Field(
+        default=None, gt=0, le=1e9,
+        description="本 run 的资金额度(账户 base_currency 计):sizing 与 run 级购买力"
+        "都以它为上限,多 run 共享账户时各自的资金边界。省略时服务端取 "
+        "min(10000, 账户折算可用现金);账户可用 ≤0 时拒绝 start",
+    )
 
 
 class StrategyRunRecord(BaseModel):
@@ -883,6 +897,10 @@ class StrategyRunRecord(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     trading_mode: str = "spot"
     leverage: int = 1
+    allocation: float | None = Field(
+        default=None,
+        description="本 run 的资金额度(账户 base_currency 计);老数据为 null(旧语义固定 1 万)",
+    )
     last_bar_ts: datetime | None = None
     cumulative_pnl: float = 0.0
     run_log: list[dict[str, Any]] = Field(

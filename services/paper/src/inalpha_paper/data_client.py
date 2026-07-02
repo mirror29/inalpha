@@ -58,16 +58,20 @@ class DataClient:
         *,
         venue: str,
         symbol: str,
+        fresh: bool | None = None,
     ) -> dict[str, Any]:
         """``GET /ticker`` —— 服务端取最新价（D-8a' 加，给 /orders/submit 自取 refPrice）。
 
+        ``fresh=False``:只读 data 缓存不触发慢 backfill(快照类调用用,如 /accounts/me
+        mark-to-market 估值);``None`` 用服务端默认(下单 refPrice 保持 fresh 语义)。
+
         Returns dict with: ``venue, symbol, price, ts, source, is_stale, stale_seconds``。
         """
+        params: dict[str, Any] = {"venue": venue, "symbol": symbol}
+        if fresh is not None:
+            params["fresh"] = fresh
         try:
-            r = await self._client.get(
-                "/ticker",
-                params={"venue": venue, "symbol": symbol},
-            )
+            r = await self._client.get("/ticker", params=params)
         except httpx.RequestError as e:
             raise DataServiceError(
                 f"failed to reach data-service: {e}",

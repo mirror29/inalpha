@@ -43,12 +43,14 @@ def test_accounts_me_multicurrency_after_crypto_buy(client: TestClient) -> None:
     assert body["cash_balances"]["USDT"] == pytest.approx(-500.5)
     # base(USD) 折算总现金 = 10000 + (-500.5)×1.0
     assert body["cash"] == pytest.approx(9_499.5)
-    # 持仓估值（avg_open_price）折算到 USD：0.01×50000×1.0
+    # 持仓 mark-to-market:测试环境 data 不可达 → 最新价拿不到,fallback 开仓均价
+    # (0.01×50000×1.0)并出估值告警(不静默,金融时效硬约束)
     assert body["positions_value"] == pytest.approx(500.0)
     # 总权益 = 现金 + 持仓 = 10000 - fee(0.5)
     assert body["total_equity"] == pytest.approx(9_999.5)
-    # USD / USDT 都本地可解析 → 无 FX 告警、无网络
-    assert body["fx_warnings"] == []
+    # USD / USDT 都本地可解析 → 无 FX 折算告警;唯一告警是最新价不可用的降级说明
+    assert len(body["fx_warnings"]) == 1
+    assert "最新价不可用" in body["fx_warnings"][0]
 
 
 def test_realized_pnl_converted_to_base(client: TestClient) -> None:
@@ -69,7 +71,8 @@ def test_realized_pnl_converted_to_base(client: TestClient) -> None:
     body = client.get("/accounts/me", headers=headers).json()
     # realized_pnl 经 USDT→USD(1.0) 折算 = 100；走的是分桶折算路径而非裸相加
     assert body["realized_pnl"] == pytest.approx(100.0)
-    assert body["fx_warnings"] == []
+    # 剩余 0.01 未平仓 → 测试环境拿不到最新价,只有 mark 降级告警,无 FX 折算告警
+    assert all("FX" not in w for w in body["fx_warnings"])
 
 
 def test_realized_pnl_includes_fully_closed_positions(client: TestClient) -> None:
@@ -93,6 +96,45 @@ def test_realized_pnl_includes_fully_closed_positions(client: TestClient) -> Non
     assert body["realized_pnl"] == pytest.approx(50.0)
 
 
+def test_positions_value_marks_to_market(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """最新价可用时持仓按市价估值(含浮盈),总权益随行情浮动。
+
+    stub 掉 DataClient:买 0.01 @ 50000 后 mark 涨到 60000 →
+    positions_value = 0.01×60000 = 600,总权益 = 9499.5 + 600 = 10099.5(浮盈计入)。
+    """
+
+    class _StubDataClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def get_ticker(
+            self, *, venue: str, symbol: str, fresh: bool | None = None
+        ) -> dict[str, object]:
+            return {"venue": venue, "symbol": symbol, "price": 60_000.0, "is_stale": False}
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr("inalpha_paper.api.orders.DataClient", _StubDataClient)
+
+    _, token = fresh_account_token("mc")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post(
+        "/orders/submit",
+        headers=headers,
+        json={
+            "symbol": "BTC/USDT", "side": "BUY", "type": "MARKET",
+            "quantity": 0.01, "ref_price": 50_000.0,
+        },
+    )
+    body = client.get("/accounts/me", headers=headers).json()
+    assert body["positions_value"] == pytest.approx(600.0)
+    assert body["total_equity"] == pytest.approx(10_099.5)
+    assert body["fx_warnings"] == []
+
+
 def test_positions_carry_currency(client: TestClient) -> None:
     """/positions 行带 currency（crypto → USDT）。"""
     _, token = fresh_account_token("mc")
@@ -112,3 +154,5 @@ def test_positions_carry_currency(client: TestClient) -> None:
     assert len(rows) == 1
     assert rows[0]["symbol"] == "BTC/USDT"
     assert rows[0]["currency"] == "USDT"
+    # 派生模式字段:现货仓显式标 spot(前端徽标判定依据)
+    assert rows[0]["trading_mode"] == "spot"

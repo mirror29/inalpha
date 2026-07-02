@@ -35,12 +35,14 @@ from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
 from .execution.risk_guard_factory import RiskGuardFactory
 from .execution.spot_guard import (
+    InsufficientCashError,
     InsufficientPositionError,
+    violates_spot_buying_power,
     violates_spot_long_only,
 )
 from .factor_patrol import capture_factor_baseline
 from .fills import apply_fill_to_positions_and_cash
-from .fx import BaseCurrencyConverter, needs_network
+from .fx import BaseCurrencyConverter, convert_cash_balances, needs_network
 from .kernel.identifiers import InstrumentId, StrategyId
 from .model.data import Bar
 from .model.orders import Order, is_protective_order
@@ -94,7 +96,9 @@ def _classify_build_error(exc: BaseException) -> tuple[str, bool]:
 
 
 _FEE_RATE = 0.001
-_LIVE_INITIAL_CASH = 10_000.0  # session 内部持仓视图用；真实现金在 DB 账户
+# run 无 allocation(老数据)时的 fallback 额度;新 run 由 API 层落库
+# min(10000, 账户折算可用现金) 或用户显式值,session 以它为虚拟钱包做 sizing。
+_LIVE_INITIAL_CASH = 10_000.0
 _LIVE_RUNNER_APPROVER = "system:live_runner"
 _PLAN_EXPIRE_S = 300
 
@@ -459,12 +463,15 @@ class LiveRunnerManager:
         strategy_cls = load_strategy_class(code)
         verify_strategy_contract(strategy_cls)
         instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
+        # per-run 资金额度:sizing 与 run 级购买力(step 1.7 ①)都以它为上限;
+        # 老 run 行 allocation 为空 → 沿用旧语义固定 1 万。
+        allocation = run.get("allocation")
         session = LiveEngineSession(
             strategy_cls=strategy_cls,
             instrument_id=instrument_id,
             timeframe=run["timeframe"],
             params=run.get("params") or {},
-            initial_cash=_LIVE_INITIAL_CASH,
+            initial_cash=float(allocation) if allocation is not None else _LIVE_INITIAL_CASH,
             fee_rate=_FEE_RATE,
             # ADR-0052：框架级持仓保护止损（与回测共用同一阈值，行为一致）
             protective_stop_loss_pct=self._settings.protective_stop_loss_pct,
@@ -970,6 +977,87 @@ class LiveRunnerManager:
                     )
                 return "rejected"
 
+        # 1.7 现货 BUY 购买力守门(与 HTTP /orders/submit 同口径,双层):
+        #   ① run 级:session Portfolio 以本 run 的 allocation 为虚拟钱包,cash 不足 =
+        #      该 run 额度花完 → 拒(多 run 共享账户时各自的资金边界)。
+        #   ② 账户级硬底:各币种现金桶按 FX 折算成 base 总可用现金,notional+fee 超过
+        #      可用×0.99 即拒——桶允许为负(隐式借计价货币),总折算现金不允许被买穿。
+        # 此处为乐观预检;plan/exec 事务内另有 FOR UPDATE 权威复检闭 TOCTOU(复用本处
+        # 预取的汇率缓存,锁内零网络)。拒单记 risk_rejected 决策行,不杀 run——下一根
+        # bar 重估(平仓回血后自然恢复)。spot 无保护性 BUY(protective 出场恒 SELL),
+        # 不需豁免;perp BUY 由 1.6 保证金守门管。
+        spot_buy_converter: BaseCurrencyConverter | None = None
+        if (run.get("trading_mode") or "spot") != "perp" and side == "BUY":
+            close = float(bar.close)
+            if not session.portfolio.can_afford_buy(order.quantity, close):
+                reason = (
+                    f"ALLOCATION_EXCEEDED: BUY {order.quantity} × {close} 超出本 run "
+                    f"剩余额度 {session.portfolio.cash:.2f}(run 虚拟钱包)"
+                )
+                session.reject_order(
+                    order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
+                )
+                async with get_conn() as conn:
+                    await runs_store.append_log(
+                        conn, run_id, "warn", f"order rejected by allocation: {reason}"
+                    )
+                    await self._record_decision(
+                        conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                        reason=reason,
+                    )
+                return "risk_rejected"
+
+            order_ccy = resolve_currency(venue, symbol)
+            async with get_conn() as conn:
+                acct = await accounts_store.get_or_create(conn, account_id)
+            balances = {
+                cur: Decimal(str(amt))
+                for cur, amt in (acct.get("cash_balances") or {}).items()
+            }
+            base_ccy = acct["base_currency"]
+            fx_client = (
+                DataClient(
+                    self._settings.data_service_url,
+                    self._mint_service_token(account_id),
+                )
+                if needs_network({*balances, order_ccy}, base_ccy)
+                else None
+            )
+            try:
+                spot_buy_converter = BaseCurrencyConverter(base_ccy, fx_client)
+                available = await convert_cash_balances(spot_buy_converter, balances)
+                order_ccy_rate = await spot_buy_converter.rate(order_ccy)
+            finally:
+                if fx_client is not None:
+                    await fx_client.close()
+            if violates_spot_buying_power(
+                side=side, quantity=order.quantity, ref_price=close,
+                fee_rate=_FEE_RATE, order_ccy_rate=order_ccy_rate,
+                available_cash_base=available,
+                trading_mode=run.get("trading_mode") or "spot",
+            ):
+                fx_note = (
+                    f"; FX warnings: {'; '.join(spot_buy_converter.warnings)}"
+                    if spot_buy_converter.warnings
+                    else ""
+                )
+                reason = (
+                    f"INSUFFICIENT_CASH: BUY 约 {order.quantity * close:.2f} {order_ccy}"
+                    f"(含手续费)超过账户折算可用 {available:.2f} {base_ccy}{fx_note}"
+                )
+                session.reject_order(
+                    order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
+                )
+                async with get_conn() as conn:
+                    await runs_store.append_log(
+                        conn, run_id, "warn", f"order rejected by buying power: {reason}"
+                    )
+                    await self._record_decision(
+                        conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                        reason=reason,
+                    )
+                return "risk_rejected"
+
         # 2. 撮合（纯函数，ref_price = bar.close）
         result = OrderExecutor.execute(
             venue=venue,
@@ -1071,6 +1159,46 @@ class LiveRunnerManager:
                             quantity=exec_qty, price=order.price,
                             ref_price=float(bar.close), fee_rate=_FEE_RATE,
                         )
+                # 现货 BUY 购买力权威复检(事务内 FOR UPDATE 锁账户行):闭合 step 1.7
+                # 乐观预检与本 apply 跨事务的 TOCTOU——并发 run 各读旧余额双双过预检,
+                # 这里锁行串行化,第二个读到扣款后余额 → raise 回滚转 except 拒单。
+                # 汇率复用预检的缓存(offline_copy 不打网络,持锁期间零 HTTP);锁内才
+                # 出现的新币种桶按 FX 不可用排除(fail-closed)。
+                if (
+                    (run.get("trading_mode") or "spot") != "perp"
+                    and side == "BUY"
+                    and result["status"] == "FILLED"
+                ):
+                    locked_acct = await accounts_store.get_or_create(
+                        conn, account_id, for_update=True
+                    )
+                    locked_base_ccy = locked_acct["base_currency"]
+                    offline_fx = (
+                        spot_buy_converter.offline_copy()
+                        if spot_buy_converter is not None
+                        else BaseCurrencyConverter(locked_base_ccy, None)
+                    )
+                    locked_balances = {
+                        cur: Decimal(str(amt))
+                        for cur, amt in (locked_acct.get("cash_balances") or {}).items()
+                    }
+                    locked_available = await convert_cash_balances(
+                        offline_fx, locked_balances
+                    )
+                    locked_order_ccy = resolve_currency(venue, symbol)
+                    if violates_spot_buying_power(
+                        side=side, quantity=exec_qty, ref_price=float(bar.close),
+                        fee_rate=_FEE_RATE,
+                        order_ccy_rate=await offline_fx.rate(locked_order_ccy),
+                        available_cash_base=locked_available,
+                        trading_mode=run.get("trading_mode") or "spot",
+                    ):
+                        raise InsufficientCashError(
+                            f"INSUFFICIENT_CASH: BUY 约 "
+                            f"{exec_qty * float(bar.close):.2f} {locked_order_ccy}"
+                            f"(含手续费)超过账户折算可用 "
+                            f"{locked_available:.2f} {locked_base_ccy}"
+                        )
                 plan = await plans_store.create(
                     conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
                     order_params=order_params, rationale=rationale,
@@ -1151,6 +1279,23 @@ class LiveRunnerManager:
                     reason=e.message,
                 )
             return "rejected"
+        except InsufficientCashError as e:
+            # 现货 BUY 购买力权威复检命中并发竞态(另一 run/HTTP 单先扣了款):事务已
+            # 回滚,补 session 拒单 + risk_rejected 决策行,不杀 run(下一根 bar 重估)。
+            session.reject_order(
+                order=order, strategy_id=strategy_id,
+                reason=e.message, ts_event=bar.ts_event,
+            )
+            async with get_conn() as conn:
+                await runs_store.append_log(
+                    conn, run_id, "warn",
+                    f"order rejected by buying power (txn race): {e.message}",
+                )
+                await self._record_decision(
+                    conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                    reason=e.message,
+                )
+            return "risk_rejected"
 
         # 4. 回灌 session：成交更新 portfolio + 策略持仓视图；未成交清理 ExecutionEngine 状态
         # 已知残差（保护性钳量场景）：confirm_fill 按钳后量（如 0.5）增量减仓，DB 已被钳到全平
