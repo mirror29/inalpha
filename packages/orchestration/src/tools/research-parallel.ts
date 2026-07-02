@@ -1,21 +1,22 @@
 /**
- * Parallel multi-perspective research (D-13 · P0).
+ * Parallel multi-hint research fan-out (D-13 · P0).
  *
- * Fan-out pattern: instead of a single deep_dive call where all analyst
- * perspectives share context and cross-contaminate, run 4 independent
- * research calls in parallel — each with an isolated analyst configuration
- * targeting a specific lens (bull / bear / technical / macro).
+ * 对同一标的**并行跑 N 次完整 deep_dive**，每次带不同侧重的 userQuestion（hint）。
+ * 每次调用是独立的 HTTP 请求 + 独立 research_id，彼此不共享进程内状态——
+ * 但**每次仍走后端完整的 run_deep_dive**（6 个 analyst + Bull/Bear 辩论 + manager 综合），
+ * 后端没有 "lens" 概念，不会按 hint 裁剪 analyst 集合。
  *
- * The 4 perspectives run concurrently. Once all complete, the raw briefs
- * and ratings are returned side-by-side so the orchestrator can synthesize
- * a balanced conclusion. Each call gets its own research_id for traceability.
+ * ⚠️ **能力边界（不要夸大）**：这不是"bull-only / bear-only 的独立视角推理"——
+ * 4 条 lane 在相同 venue/symbol/timeframe/asOf 下只是提问措辞不同，本质是
+ * **同一证据链的 N 次带侧重采样**（成本 = N × deep_dive）。收益是：
+ *   1. 采样多样性——不同提问角度可能触发不同的 analyst 强调点
+ *   2. 独立 research_id 便于分别溯源
+ *   3. 并行执行省墙钟时间
+ * 它**不能**保证"多空分歧"是真实的市场分歧——可能只是 LLM 采样噪声。
+ * orchestrator 呈现结果时应措辞为"从不同提问角度看"，而非"客观独立结论"。
  *
- * This is the first step toward the "Research Supervisor" architecture:
- * currently the 4 calls still go to the same /deep_dive endpoint, but
- * each call's internal LLM session is independent — no debate cross-talk.
- *
- * Future optimization: add a lighter-weight /deep_dive?mode=analyst-only
- * endpoint that skips the internal debate/synthesis pass (cuts cost ~40%).
+ * 未来真正的视角隔离需要 server 端支持 mode=analyst-only + 按 lens 过滤
+ * analyst 集合（跳过全量辩论），届时才是真正的"Research Supervisor"架构。
  */
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
@@ -68,28 +69,31 @@ async function runLane(
 export const researchParallelDiveTool = createTool({
   id: "research.parallel_dive",
   description: `
-    并行多视角研究（扇出模式）。同时对同一标的从 N 个独立视角跑深度研究，
-    每个视角有独立的 LLM session —— 观点不会互相污染。
+    并行多提问研究（扇出模式）。对同一标的**并行跑 N 次完整 deep_dive**，
+    每次带不同侧重的提问（如偏多头 / 偏空头 / 偏技术 / 偏宏观）。
+
+    ⚠️ **能力边界（呈现给用户时务必如实）**：每条 lane 都是后端完整的 deep_dive
+    （同一套 6 analyst + Bull/Bear 辩论），只是 userQuestion 措辞不同——**不是**
+    bull-only / bear-only 的独立视角推理。4 条 lane 在相同 venue/symbol/timeframe
+    下本质是**同一证据链的 N 次带侧重采样**。呈现结果时措辞用"从不同提问角度看"，
+    **不要**说成"客观独立结论"；rating 分歧可能只是 LLM 采样噪声，不等于真实市场分歧。
 
     **何时用**：
-    - 用户要求多空对立的观点对比（"bull case vs bear case"）
-    - 用户想要跨维度的独立分析（"技术面怎么看 + 基本面怎么看 + 宏观怎么看"）
-    - 用户说"辩论一下"——把 bull/bear 分别独立跑，结论并列对比
-    - 需要避免先入为主偏见时（先看到牛市分析会影响你看熊市分析的客观性）
+    - 用户明确要"多空对比 / 换几个角度看看 / 辩论一下"——想要提问多样性的采样
+    - 想同时拿到几个不同侧重的完整研究报告并列对比
 
     **何时不用**：
     - 标准研究（普通"看看 BTC 现在怎么样"）→ 用 research.deep_dive
-    - 预算敏感 → 并行扇出 = N × 单次 deep_dive 成本的 LLM 调用
-    - 只需要一个特定视角 → 用 research.deep_dive + userQuestion 指定方向就行
+    - 预算敏感 → 这是 N × deep_dive 成本
+    - 想要单一方向 → 用 research.deep_dive + userQuestion 指定就行
+    - 想让"多空分歧"当作客观信号 → 它给不了这个保证（见上边界说明）
 
     **返回特点**：
-    - lanes[] 是每个视角的完整 ResearchPlan（含独立 research_id）
-    - 各视角的 rating / thesis / factors 可并列对比
-    - 你需要综合 N 个视角给用户一个平衡结论，并特别指出对立观点
-    - 如果有视角 rating 显著不同（如 bull=overweight vs bear=underweight），
-      这本身就是信息——如实告知用户分歧在哪
+    - lanes[] 是每次提问的完整 ResearchPlan（含独立 research_id）
+    - 各 lane 的 rating / thesis / factors 可并列对比
+    - 综合时给用户一个平衡结论，如实标注"这是不同提问角度的采样，非独立客观结论"
 
-    **成本**：N 倍 deep_dive（每视角一次独立 LLM 调用链）。默认最多 4 个视角。
+    **成本**：N 倍 deep_dive（每 lane 一次完整 LLM 调用链）。默认最多 4 条。
   `.trim(),
 
   inputSchema: z.object({

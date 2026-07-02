@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, get_args
 from inalpha_shared import get_logger
 
 from .analysts import ALL_ANALYSTS
-from .analysts.base import AnalystContext
+from .analysts.base import AnalystContext, factor_lookback_bars
 from .analysts.personas import PERSONA_ANALYSTS
 from .config import get_research_settings
 from .debate import assess_disagreement, run_debate
@@ -41,10 +41,15 @@ async def _prefetch_shared(
     data: DataClient,
     factor: FactorClient | None,
 ) -> AnalystContext | None:
-    """D-13 · P0：一次预拉 K 线 / 基本面 / 因子快照，注入所有 analyst 复用。
+    """D-13 · P0：一次预拉 K 线 + 因子快照，注入 technical analyst 复用。
 
     每项独立容错（gather return_exceptions）：失败的那项回退 None，
     对应 analyst 会在 build_user_prompt 里自己拉。全挂则返回 None。
+
+    **不预取 fundamentals**：fundamental/valuation analyst 用的是
+    ``fundamentals_route`` 路由后的 fund_venue（可能 ≠ 研究 venue），
+    预取的 req.venue 版本对不上它们的需求——接进去反而喂错数据源。
+    预取范围因此限于 bars + factor_snapshot（消费方明确 = technical）。
     """
     from_ts = req.as_of - timedelta(days=req.lookback_days)
 
@@ -54,23 +59,19 @@ async def _prefetch_shared(
             from_ts=from_ts, to_ts=req.as_of, limit=2_000,
         )
 
-    async def _fund() -> dict[str, Any]:
-        return await data.get_fundamentals(req.venue, req.symbol, req.as_of)
-
     async def _factor() -> dict[str, Any] | None:
         if factor is None:
             return None
         return await factor.get_snapshot(
             venue=req.venue, symbol=req.symbol, timeframe=req.timeframe,
-            as_of=req.as_of, lookback_bars=req.lookback_days * 24,
+            as_of=req.as_of, lookback_bars=factor_lookback_bars(req.lookback_days),
         )
 
-    pre_bars, pre_fund, pre_factor = await asyncio.gather(
-        _bars(), _fund(), _factor(), return_exceptions=True,
+    pre_bars, pre_factor = await asyncio.gather(
+        _bars(), _factor(), return_exceptions=True,
     )
     return AnalystContext(
         bars=None if isinstance(pre_bars, BaseException) else pre_bars,
-        fundamentals=None if isinstance(pre_fund, BaseException) else pre_fund,
         factor_snapshot=(
             None if isinstance(pre_factor, BaseException) else pre_factor
         ),

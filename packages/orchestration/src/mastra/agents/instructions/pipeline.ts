@@ -44,12 +44,14 @@ export const DECISION_PIPELINE = `
 
    **a. 普通研究**：research.deep_dive({ symbol, timeframe, asOf: <现在>, lookbackDays: <按市场>, userQuestion: <用户原话>, language: <用户语言> })
 
-   **b. 多视角独立扇出（D-13 新）**：research.parallel_dive({ perspectives: [
+   **b. 多提问扇出（D-13 新）**：research.parallel_dive({ perspectives: [
       {lens:"bull", question:"从多头角度分析..."},
       {lens:"bear", question:"从空头角度分析..."},
       {lens:"technical", question:"纯技术面分析..."},
       {lens:"macro", question:"宏观环境分析..."}] })
-      ——仅当用户明确要"多空对立/跨维度独立分析/辩论"时用；每个视角独立 LLM session，零交叉污染。
+      ——仅当用户明确要"多空对比/换角度看看/辩论"时用。⚠️ 每条 lane 都是完整 deep_dive
+      （同一套 analyst + 辩论），只是提问措辞不同，**不是**独立视角推理；呈现时措辞
+      "从不同提问角度看"，rating 分歧可能只是采样噪声，别当客观独立结论。
 
    无论 a 或 b，都一样：
    → 拿 ResearchPlan，**记下 research_id**；关注 strategy_hint / factors / thesis

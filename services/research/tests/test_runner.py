@@ -79,6 +79,47 @@ async def test_deep_dive_runs_full_chain(fake_llm: FakeLLMClient) -> None:
 
 
 @respx.mock
+async def test_deep_dive_prefetch_dedups_shared_bars(fake_llm: FakeLLMClient) -> None:
+    """D-13 · P0 回归：预取命中后 technical + risk 消费 shared.bars，不再自拉同一批。
+
+    锁住上一轮 CI 才带出的静默降级——若 _prefetch_shared 每次抛异常被吞掉、shared
+    永远 None，technical 与 risk 会各自再打一次 /bars。命中时它们读 shared：
+    对 req.venue/symbol 的 K 线只在预取时打 1 次。
+    （macro 拉的是 venue=fred 的宏观序列，是独立必需请求，不能共享——所以 /bars mock
+    的总 call_count = 预取 1 + macro 的 fred 1 = 2，而非退化态的 4。）
+    """
+    bars = [
+        make_bar_row((_as_of() - timedelta(hours=60 - i)).isoformat(), close=100 + i * 0.1)
+        for i in range(60)
+    ]
+    # 按 symbol 区分两类 bars 请求：主标的（BTC/USDT）vs macro 拉的 FRED 序列。
+    # 预取命中时 technical + risk 读 shared → 主标的的 /bars 只在预取时打 1 次。
+    main_bars = respx.get(
+        "http://data-mock.test/bars", params__contains={"symbol": "BTC/USDT"}
+    ).mock(return_value=Response(200, json=bars))
+    # macro 的 FRED 序列 + 其它兜底：不精确计数，返空/占位即可。
+    respx.get("http://data-mock.test/bars").mock(return_value=Response(200, json=bars))
+    respx.get("https://api.alternative.me/fng/").mock(
+        return_value=Response(200, json={"data": [{"value": "40", "value_classification": "Fear", "timestamp": "1716163200"}]})
+    )
+
+    req = DeepDiveRequest(
+        venue="binance",
+        symbol="BTC/USDT",
+        timeframe="1h",
+        as_of=_as_of(),
+        lookback_days=7,
+    )
+
+    async with DataClient("http://data-mock.test", "t") as data:
+        await run_deep_dive(req, llm=fake_llm, data=data)
+
+    # 主标的 K 线：预取打 1 次，technical + risk 都读 shared 不再自拉 → 恰好 1。
+    # 退化态（shared=None）会是 technical + risk 各自拉 = 2+。
+    assert main_bars.call_count == 1
+
+
+@respx.mock
 async def test_deep_dive_with_personas_appends_master_briefs(
     fake_llm: FakeLLMClient,
 ) -> None:
