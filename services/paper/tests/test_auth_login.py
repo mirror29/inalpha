@@ -6,10 +6,11 @@
 2. 错误密码 → 401 INVALID_CREDENTIALS
 3. 不存在的邮箱 → 401 INVALID_CREDENTIALS(与密码错同一 code,不泄露账号是否存在)
 4. 邮箱大小写不敏感
+5. 失败过频 → 429 LOGIN_RATE_LIMITED
 """
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
@@ -17,11 +18,21 @@ from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 from inalpha_shared.db import get_conn
 
+from inalpha_paper.api import auth as auth_mod
+
 pytestmark = pytest.mark.integration
 
 _TEST_EMAIL = "login-test@example.com"
 _TEST_PASSWORD = "correct-horse-battery-staple"
 _TEST_SUBJECT = "user:login-test-fixture"
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_throttle() -> Iterator[None]:
+    """进程内失败计数在测试间共享,逐用例清零防串扰。"""
+    auth_mod._login_failures.clear()
+    yield
+    auth_mod._login_failures.clear()
 
 
 @pytest_asyncio.fixture
@@ -85,3 +96,21 @@ def test_login_unknown_email(client: TestClient) -> None:
     assert resp.status_code == 401
     # 与密码错同一 code —— 不泄露账号是否存在。
     assert resp.json()["code"] == "INVALID_CREDENTIALS"
+
+
+def test_login_rate_limited_after_repeated_failures(
+    client: TestClient, seeded_user: None
+) -> None:
+    for _ in range(auth_mod._LOGIN_MAX_FAILS):
+        r = client.post(
+            "/auth/login", json={"email": _TEST_EMAIL, "password": "WRONG"}
+        )
+        assert r.status_code == 401
+    # 达阈值后再试(即便密码正确)也被节流拦下。
+    r = client.post("/auth/login", json={"email": _TEST_EMAIL, "password": "WRONG"})
+    assert r.status_code == 429
+    assert r.json()["code"] == "LOGIN_RATE_LIMITED"
+    r = client.post(
+        "/auth/login", json={"email": _TEST_EMAIL, "password": _TEST_PASSWORD}
+    )
+    assert r.status_code == 429
