@@ -15,6 +15,8 @@ dependencies = [
     # (infra/docker-compose.prod.yml)。此前 alembic 只是 optuna 的传递依赖——上游
     # 换后端就会静默消失,生产迁移会无报警地跳过。
     "alembic>=1.13",
+    # 多用户登录:/auth/login 校验 users.password_hash。argon2 无 72 字节截断坑。
+    "argon2-cffi>=23",
 ]
 
 [dependency-groups]
