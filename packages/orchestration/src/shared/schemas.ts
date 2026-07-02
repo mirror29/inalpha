@@ -79,6 +79,16 @@ export const BacktestResultSchema = z.object({
       holdout: z.object({ sharpe: z.number().optional() }).optional(),
     })
     .optional(),
+  // D-12 · ADR-0027 "防看起来好陷阱"：Sharpe 重采样置信区间。
+  // includes_zero=true → Sharpe 统计上不显著，promote 前硬闸（pipeline.ts 引用）。
+  // 必须在 schema 里显式声明，否则 z.object 默认 strip 会静默丢弃这道闸的输入。
+  sharpe_ci: z
+    .object({
+      low: z.number().optional(),
+      high: z.number().optional(),
+      includes_zero: z.boolean().optional(),
+    })
+    .optional(),
   equity_curve: z.array(z.any()).optional(),
   trades: z
     .array(

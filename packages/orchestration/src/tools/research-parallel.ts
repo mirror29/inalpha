@@ -23,11 +23,8 @@ import { z } from "zod";
 import { mintServiceToken, defaultServiceSubject } from "../auth.js";
 import { ResearchClient, type ResearchPlan } from "../clients/research.js";
 import { getSettings } from "../config.js";
-
-const SymbolSchema = z.string().min(1).max(50);
-const TimeframeSchema = z.enum([
-  "1m", "5m", "15m", "30m", "1h", "4h", "1d", "1wk", "1mo",
-]);
+// D-13：复用 research.ts 的同一份 schema（含正则校验），避免两处独立漂移。
+import { SymbolSchema, TimeframeSchema } from "./research.js";
 
 /** Single-lens perspective definition. */
 const PerspectiveSchema = z.object({
