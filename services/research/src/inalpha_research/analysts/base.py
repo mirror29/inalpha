@@ -29,17 +29,27 @@ from ..schemas import AnalystBrief
 _logger = get_logger(__name__)
 
 
+def factor_lookback_bars(lookback_days: int) -> int:
+    """因子快照的 lookback_bars 统一表达式。
+
+    runner 预取路径与 technical analyst 自拉回退路径都用它，保证同一请求
+    无论走哪条路都算出相同的因子窗口（reviewer #128：避免行为随基础设施漂移）。
+    """
+    return lookback_days * 24
+
+
 @dataclass(frozen=True)
 class AnalystContext:
-    """Runner 预拉的共享数据——一次拉取，所有 analyst 复用。
+    """Runner 预拉的共享数据——一次拉取，technical analyst 复用。
 
     为 None 的字段表示该数据未预拉（analyst 可以自己调 DataClient 回退）。
     - bars：get_bars 返回 bar dict 列表
-    - fundamentals：get_fundamentals 返回单个财报 dict（含 available 标记）
     - factor_snapshot：factor.get_snapshot 返回单个快照 dict（含 top_factors）
+
+    注：不含 fundamentals——fundamental/valuation analyst 用路由后的 fund_venue，
+    与研究 venue 可能不同，预取的版本对不上（见 runner._prefetch_shared）。
     """
     bars: list[dict[str, Any]] | None = None
-    fundamentals: dict[str, Any] | None = None
     factor_snapshot: dict[str, Any] | None = None
 
 

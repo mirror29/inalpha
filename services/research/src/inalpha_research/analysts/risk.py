@@ -89,14 +89,18 @@ class RiskAnalyst(Analyst):
         lookback_days: int,
     ) -> str:
         from_ts = as_of - timedelta(days=lookback_days)
-        bars = await self._data.get_bars(
-            venue=venue,
-            symbol=symbol,
-            timeframe=timeframe,
-            from_ts=from_ts,
-            to_ts=as_of,
-            limit=2_000,
-        )
+        # D-13 · P0：优先读 runner 预取的共享 K 线（与 technical 同一批，去重往返）
+        if self._shared is not None and self._shared.bars is not None:
+            bars = self._shared.bars
+        else:
+            bars = await self._data.get_bars(
+                venue=venue,
+                symbol=symbol,
+                timeframe=timeframe,
+                from_ts=from_ts,
+                to_ts=as_of,
+                limit=2_000,
+            )
         snapshot = _build_risk_snapshot(bars)
         market_type = infer_asset_type(venue=venue, symbol=symbol)
         return _format_user_prompt(
