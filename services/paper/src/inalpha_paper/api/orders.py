@@ -123,6 +123,33 @@ async def post_submit_order(
         fee_rate=req.fee_rate,
     )
 
+    # spot BUY:在事务**外**预取 FX 汇率(持锁期间不能做 HTTP——否则 data 慢时整条
+    # DB 连接锁住,阻塞同账户所有并发下单/充值;预取后锁内用 offline_copy 零网络)。
+    spot_buy_converter: BaseCurrencyConverter | None = None
+    spot_buy_order_ccy: str | None = None
+    if req.trading_mode != "perp" and req.side == "BUY":
+        spot_buy_order_ccy = resolve_currency(req.venue, req.symbol)
+        base_ccy = "USD"  # 兜底,锁内再从真实 acct 拿
+        fx_token = (
+            authorization.removeprefix("Bearer ").strip()
+            if authorization and authorization.startswith("Bearer ")
+            else None
+        )
+        # 币种集未知(未锁无法知道真实 cash_balances),保守预取已解析的计价币。
+        # 锁内真实桶多于预取币种时由 offline_copy 排除(fail-closed),不静默猜。
+        fx_client = (
+            DataClient(settings.data_service_url, fx_token)
+            if fx_token and fx_needs_network([spot_buy_order_ccy], base_ccy)
+            else None
+        )
+        try:
+            _prefetch = BaseCurrencyConverter(base_ccy, fx_client)
+            _ = await _prefetch.rate(spot_buy_order_ccy)
+            spot_buy_converter = _prefetch.offline_copy()
+        finally:
+            if fx_client is not None:
+                await fx_client.close()
+
     # 落盘 + 持仓 + 现金（事务）
     async with db.transaction():
         # **恒锁账户行,统一全局锁序 accounts → positions**:
@@ -171,32 +198,23 @@ async def post_submit_order(
         # 各币种现金桶按 FX 折算成 base 总可用现金,notional+fee(折 base)超过可用×0.99
         # 即拒——桶允许为负(= 账户内隐式借计价货币,如 USD 户买 USDT 对),但**总折算
         # 现金不允许被买穿**。账户行已在上方 FOR UPDATE,与扣款同事务防 TOCTOU。
-        # FX:USD 稳定币本地 1:1 零网络;其余币种在锁内调 data /fx(模拟盘低并发可接
-        # 受);拿不到汇率的桶排除出可用现金、订单计价货币折不了则直接拒(fail-closed)。
+        # FX 已在事务**外**预取(offline_copy,持锁期间零 HTTP)——data 慢时不会占住
+        # DB 连接与账户行锁。锁内出现预取未覆盖的币种桶按排除处理(fail-closed)。
         if req.trading_mode != "perp" and req.side == "BUY":
             balances = {
                 cur: Decimal(str(amt))
                 for cur, amt in (acct.get("cash_balances") or {}).items()
             }
-            order_ccy = resolve_currency(req.venue, req.symbol)
             base_ccy = acct["base_currency"]
-            fx_token = (
-                authorization.removeprefix("Bearer ").strip()
-                if authorization and authorization.startswith("Bearer ")
-                else None
-            )
-            fx_client = (
-                DataClient(settings.data_service_url, fx_token)
-                if fx_token and fx_needs_network({*balances, order_ccy}, base_ccy)
-                else None
-            )
-            try:
-                converter = BaseCurrencyConverter(base_ccy, fx_client)
-                available = await convert_cash_balances(converter, balances)
-                order_ccy_rate = await converter.rate(order_ccy)
-            finally:
-                if fx_client is not None:
-                    await fx_client.close()
+            order_ccy = spot_buy_order_ccy or resolve_currency(req.venue, req.symbol)
+            # 锁内复用预取 converter:核对 base 一致(缓存命中,零 HTTP),不一致则重建
+            # (理论只在并发中途账户 base 被改的极端情形,防御性处理)。
+            lock_converter = spot_buy_converter.offline_copy() if spot_buy_converter is not None else None
+            if lock_converter is not None and lock_converter.base != base_ccy:
+                lock_converter = BaseCurrencyConverter(base_ccy, None)
+            converter = lock_converter or BaseCurrencyConverter(base_ccy, None)
+            available = await convert_cash_balances(converter, balances)
+            order_ccy_rate = await converter.rate(order_ccy)
             if violates_spot_buying_power(
                 side=req.side,
                 quantity=req.quantity,
