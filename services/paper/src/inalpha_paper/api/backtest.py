@@ -14,6 +14,7 @@ from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 from inalpha_shared.errors import UnauthorizedError, ValidationError
 
+from ..account_id import account_id_from_user
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
 from ..runner import run_backtest as _run_backtest
@@ -41,10 +42,10 @@ async def post_backtest(
     req: BacktestRequest,
     db: DBConn,
     settings: Annotated[PaperSettings, Depends(get_paper_settings)],
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> BacktestResponse:
-    """跑回测：拉数据 → 实例化策略 → 跑引擎 → 落库 → 返回报告。
+    """跑回测：拉数据 → 实例化策略 → 跑引擎 → 落库(带 account_id) → 返回报告。
 
     D-9 起：``strategy_id`` 与 ``candidate_id`` 二选一（Pydantic ``model_validator``
     保证两者必有其一）。candidate 路径下 strategy_id 校验跳过——LLM 候选不在内置
@@ -73,7 +74,9 @@ async def post_backtest(
     user_token = authorization.removeprefix("Bearer ").strip()
 
     async with DataClient(settings.data_service_url, user_token) as data_client:
-        return await _run_backtest(req, data_client, conn=db)
+        return await _run_backtest(
+            req, data_client, conn=db, account_id=str(account_id_from_user(user)),
+        )
 
 
 @router.post("/backtest/cv", response_model=CVBacktestResponse)
@@ -156,27 +159,25 @@ async def get_strategies(
 @router.get("/backtest_runs", response_model=list[BacktestRunSummary])
 async def get_backtest_runs(
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
     research_id: Annotated[UUID | None, Query()] = None,
     strategy_code: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[BacktestRunSummary]:
-    """查历史回测。
-
-    可按 ``research_id`` 或 ``strategy_code`` 过滤（同时给 → 优先用 research_id）;
-    **都不给则返回全局最近 N 条**（控制台「Agent 活动」聚合流用）。
-    用途：agent 决策"是否复用上一次回测"，避免重复计算同 params 的 backtest。
-
-    坑（单租户假设）：backtest_runs 表无 owner 列,本端点不按用户隔离 ——
-    当前部署为单操作者控制台可接受;开放多用户前必须补 owner 过滤,
-    且重新评估 limit 上限(全局最近 N 条会成为跨租户数据查探面)。
-    """
+    """查本账户历史回测(按 account_id 隔离,不再全局看别人的)。"""
+    acct = account_id_from_user(user)
     if research_id is not None:
-        rows = await backtest_runs_store.list_by_research(db, research_id, limit=limit)
+        rows = await backtest_runs_store.list_by_research(
+            db, research_id, limit=limit, account_id=str(acct),
+        )
     elif strategy_code is not None:
-        rows = await backtest_runs_store.list_by_strategy(db, strategy_code, limit=limit)
+        rows = await backtest_runs_store.list_by_strategy(
+            db, strategy_code, limit=limit, account_id=str(acct),
+        )
     else:
-        rows = await backtest_runs_store.list_recent(db, limit=limit)
+        rows = await backtest_runs_store.list_recent(
+            db, limit=limit, account_id=str(acct),
+        )
 
     return [
         BacktestRunSummary(
