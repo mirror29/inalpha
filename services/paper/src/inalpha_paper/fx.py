@@ -82,6 +82,11 @@ class BaseCurrencyConverter:
         r = await self.rate(currency)
         return None if r is None else amount * r
 
+    @property
+    def base(self) -> str:
+        """折算目标货币(构造时定);调用方核对预取 converter 与锁内账户 base 一致用。"""
+        return self._base
+
     def offline_copy(self) -> BaseCurrencyConverter:
         """复制一个**不打网络**的 converter(带走已缓存汇率)。
 

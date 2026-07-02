@@ -318,17 +318,27 @@ async def sum_other_margin_used(
 
     ``margin_used`` 由每笔 fill 后的保证金重算维护,是现成权威值;排除本
     (venue, symbol)——本仓按"成交后目标仓 IM"在调用方另算,不能重复计。
+    币种匹配在 Python 侧做:``currency IS NULL`` 的老行(多币种迁移前建仓、此后
+    无成交)按 (venue, symbol) 兜底解析——与账户快照读取层同约定;纯 SQL
+    ``currency = %s`` 会漏掉老仓保证金,聚合守门放过实际超钱包的加仓。
     读不加锁,与钱包读同级(模拟盘 TOCTOU 容忍度一致)。
     """
+    from ..execution.currency_resolver import resolve_currency
+
     async with conn.cursor() as cur:
         await cur.execute(
-            "SELECT COALESCE(SUM(margin_used), 0) AS total FROM positions "
-            "WHERE account_id = %s AND currency = %s AND quantity <> 0 "
+            "SELECT venue, symbol, currency, margin_used FROM positions "
+            "WHERE account_id = %s AND quantity <> 0 AND margin_used <> 0 "
             "AND NOT (venue = %s AND symbol = %s)",
-            (str(account_id), currency, exclude_venue, exclude_symbol),
+            (str(account_id), exclude_venue, exclude_symbol),
         )
-        row = await cur.fetchone()
-    return Decimal(str(row["total"])) if row else Decimal(0)  # type: ignore[index]
+        rows = await cur.fetchall()
+    total = Decimal(0)
+    for r in rows:
+        ccy = r["currency"] or resolve_currency(r["venue"], r["symbol"])
+        if ccy == currency:
+            total += Decimal(str(r["margin_used"]))
+    return total
 
 
 async def delete_by_account(conn: AsyncConnection, account_id: UUID) -> int:
