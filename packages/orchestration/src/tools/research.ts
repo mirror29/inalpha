@@ -4,7 +4,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { defaultServiceSubject, mintServiceToken } from "../auth.js";
+import { resolveRequestToken } from "../auth.js";
 import { ResearchClient, type PersonaKey } from "../clients/research.js";
 import { getSettings } from "../config.js";
 
@@ -29,11 +29,11 @@ export const SymbolSchema = z
     "symbol 不能为空 / 含空格；支持 crypto 'BTC/USDT' / 普通 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
   );
 
-type ToolRequestContext = { authToken?: string };
+type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown };
 
 async function getClient(ctx?: ToolRequestContext): Promise<ResearchClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return new ResearchClient({ baseUrl: settings.researchServiceUrl, token });
 }
 

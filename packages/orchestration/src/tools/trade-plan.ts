@@ -20,7 +20,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { defaultServiceSubject, mintServiceToken } from "../auth.js";
+import { resolveRequestToken } from "../auth.js";
 import { HttpClientError } from "../clients/http.js";
 import { PaperClient } from "../clients/paper.js";
 import { getSettings } from "../config.js";
@@ -39,11 +39,11 @@ const SideSchema = z.enum(["BUY", "SELL"]);
 const TypeSchema = z.enum(["MARKET", "LIMIT"]);
 const IntentSchema = z.enum(["open_long", "open_short", "close", "rebalance"]);
 
-type ToolRequestContext = { authToken?: string };
+type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown };
 
 async function getClient(ctx?: ToolRequestContext): Promise<PaperClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return new PaperClient({ baseUrl: settings.paperServiceUrl, token });
 }
 

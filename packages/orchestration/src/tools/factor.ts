@@ -8,7 +8,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { defaultServiceSubject, mintServiceToken } from "../auth.js";
+import { resolveRequestToken } from "../auth.js";
 import { FactorClient } from "../clients/factor.js";
 import { getSettings } from "../config.js";
 import {
@@ -31,11 +31,11 @@ const SymbolSchema = z
     "symbol 不能为空 / 含空格；crypto 'BTC/USDT' / 股票 'AAPL' / 指数 '^N225' / akshare 'sh.600519'",
   );
 
-type ToolRequestContext = { authToken?: string };
+type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown };
 
 async function getClient(ctx?: ToolRequestContext): Promise<FactorClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return new FactorClient({ baseUrl: settings.factorServiceUrl, token });
 }
 
