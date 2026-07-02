@@ -40,6 +40,7 @@ async def insert_run(
     started_at: datetime | None = None,
     finished_at: datetime | None = None,
     created_by: UUID | None = None,
+    account_id: str | None = None,
 ) -> UUID:
     """落一行 backtest_runs，返回生成的 run_id。
 
@@ -50,7 +51,7 @@ async def insert_run(
         status: 'done' / 'failed' / etc，CHECK 约束见 migration 0001
         research_id: 触发本次回测的 research 产物 ID（可空）
         strategy_hint: 触发本次回测的原始 strategy_hint dict（审计用）
-    """
+        account_id: 账户归属(migration 0025 补列,与 strategy_runs.account_id 同源)"""
     run_id = uuid4()
     params = config.get("params") or {}
     params_hash = compute_params_hash(strategy_code, params)
@@ -61,11 +62,11 @@ async def insert_run(
             INSERT INTO backtest_runs (
                 id, strategy_id, strategy_code, config, status, metrics,
                 research_id, params_hash, strategy_hint,
-                started_at, finished_at, created_by
+                started_at, finished_at, created_by, account_id
             ) VALUES (
                 %s, NULL, %s, %s, %s, %s,
                 %s, %s, %s,
-                %s, %s, %s
+                %s, %s, %s, %s
             )
             """,
             (
@@ -80,6 +81,7 @@ async def insert_run(
                 started_at,
                 finished_at,
                 str(created_by) if created_by else None,
+                account_id,
             ),
         )
     return run_id
@@ -90,22 +92,28 @@ async def list_by_research(
     research_id: UUID,
     *,
     limit: int = 20,
+    account_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """按 research_id 拉历史回测（按 created_at DESC）。
+    """按 research_id 拉历史回测（按 created_at DESC）,可选按 account_id 过滤。
 
     返回 dict list，含 id/strategy_code/config/metrics/params_hash/created_at。
     """
+    where = "WHERE research_id = %s"
+    params: list[Any] = [str(research_id)]
+    if account_id:
+        where += " AND account_id = %s"
+        params.append(account_id)
     async with conn.cursor() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT id, strategy_code, config, metrics, params_hash,
                    research_id, strategy_hint, created_at, status
             FROM backtest_runs
-            WHERE research_id = %s
+            {where}
             ORDER BY created_at DESC
             LIMIT %s
             """,
-            (str(research_id), limit),
+            (*params, limit),
         )
         rows = await cur.fetchall()
     return [_row_to_dict(r) for r in rows]
@@ -116,19 +124,25 @@ async def list_by_strategy(
     strategy_code: str,
     *,
     limit: int = 20,
+    account_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """按 strategy_code 拉历史回测（按 created_at DESC）。"""
+    """按 strategy_code 拉历史回测（按 created_at DESC）,可选按 account_id 过滤。"""
+    where = "WHERE strategy_code = %s"
+    params: list[Any] = [strategy_code]
+    if account_id:
+        where += " AND account_id = %s"
+        params.append(account_id)
     async with conn.cursor() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT id, strategy_code, config, metrics, params_hash,
                    research_id, strategy_hint, created_at, status
             FROM backtest_runs
-            WHERE strategy_code = %s
+            {where}
             ORDER BY created_at DESC
             LIMIT %s
             """,
-            (strategy_code, limit),
+            (*params, limit),
         )
         rows = await cur.fetchall()
     return [_row_to_dict(r) for r in rows]
@@ -174,18 +188,22 @@ async def list_recent(
     conn: AsyncConnection,
     *,
     limit: int = 20,
+    account_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """全局最近回测（按 created_at DESC）—— 控制台「Agent 活动」聚合流用。"""
+    """按 account_id(若给)查最近回测（按 created_at DESC）,供活动流/策略实验室。"""
+    where = "WHERE account_id = %s" if account_id else "WHERE 1=1"
+    params: list[Any] = [account_id] if account_id else []
     async with conn.cursor() as cur:
         await cur.execute(
-            """
+            f"""
             SELECT id, strategy_code, config, metrics, params_hash,
                    research_id, strategy_hint, created_at, status
             FROM backtest_runs
+            {where}
             ORDER BY created_at DESC
             LIMIT %s
             """,
-            (limit,),
+            (*params, limit),
         )
         rows = await cur.fetchall()
     return [_row_to_dict(r) for r in rows]

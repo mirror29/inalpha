@@ -179,7 +179,7 @@ async def get_strategy_candidate(
 )
 async def list_strategy_candidates(
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
     status: Annotated[str | None, Query(description="可选过滤 status")] = None,
     author_id: Annotated[
         UUID | None,
@@ -187,7 +187,7 @@ async def list_strategy_candidates(
     ] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[StrategyCandidateSummary]:
-    """列候选（fitness DESC, NULLS LAST, created_at DESC）。
+    """列本人候选（按 owner_account_id 隔离,fitness DESC,NULLS LAST,created_at DESC）。
 
     不返回 ``code`` 字段省带宽；要看源码用 ``GET /strategy_candidates/{id}``。
     """
@@ -196,6 +196,7 @@ async def list_strategy_candidates(
         status=status,
         author_id=author_id,
         limit=limit,
+        owner_account_id=str(account_id_from_user(user)),
     )
     return [
         StrategyCandidateSummary(
