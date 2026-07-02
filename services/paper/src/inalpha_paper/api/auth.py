@@ -93,8 +93,13 @@ async def login(body: LoginRequest, db: DBConn) -> LoginResponse:
     """校验邮箱 + 密码,成功返回用户身份;失败统一 401,失败过频 429。"""
     email_key = body.email.strip().lower()
     now = time.monotonic()
+    # 检查 + 预记必须在**同一同步块内**(两者间无 await):asyncio 单线程下无 await
+    # 即不切换协程,故此块对并发同邮箱请求是原子的——每个请求都先看到已递增的计数,
+    # 堵住"同一批并发请求在写回失败前各自免费试一把密码"的并发爆破(check-then-act
+    # 竞态)。verify 通过后再撤销这次预记。
     if _recent_failures(email_key, now) >= _LOGIN_MAX_FAILS:
         raise RateLimitedError("尝试过于频繁,请稍后再试", code="LOGIN_RATE_LIMITED")
+    _record_failure(email_key, now)  # 乐观预记;成功则在末尾清零
 
     async with db.cursor() as cur:
         await cur.execute(
@@ -108,10 +113,10 @@ async def login(body: LoginRequest, db: DBConn) -> LoginResponse:
     password_hash = row["password_hash"] if row else _DUMMY_HASH
     ok = await anyio.to_thread.run_sync(_verify_password, password_hash, body.password)
     if not row or not ok:
-        _record_failure(email_key, now)
+        # 失败:预记的那笔保留即计数,不重复记。
         raise UnauthorizedError("邮箱或密码不正确", code="INVALID_CREDENTIALS")
 
-    # 成功即清零该邮箱的失败计数(避免正常用户先错几次后被锁)。
+    # 成功即清零该邮箱的失败计数(含本次预记;避免正常用户先错几次后被锁)。
     _login_failures.pop(email_key, None)
     return LoginResponse(
         subject=row["subject"],
