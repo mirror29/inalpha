@@ -34,10 +34,13 @@ class AnalystContext:
     """Runner 预拉的共享数据——一次拉取，所有 analyst 复用。
 
     为 None 的字段表示该数据未预拉（analyst 可以自己调 DataClient 回退）。
+    - bars：get_bars 返回 bar dict 列表
+    - fundamentals：get_fundamentals 返回单个财报 dict（含 available 标记）
+    - factor_snapshot：factor.get_snapshot 返回单个快照 dict（含 top_factors）
     """
     bars: list[dict[str, Any]] | None = None
-    fundamentals: list[dict[str, Any]] | None = None
-    factor_snapshot: list[dict[str, Any]] | None = None
+    fundamentals: dict[str, Any] | None = None
+    factor_snapshot: dict[str, Any] | None = None
 
 
 class Analyst(ABC):
