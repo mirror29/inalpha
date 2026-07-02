@@ -192,6 +192,8 @@ services:
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       CONSOLE_SUBJECT: ${CONSOLE_SUBJECT:-console:dev}
       CONSOLE_EMAIL: ${CONSOLE_EMAIL:-console@inalpha.dev}
+      # 多用户登录闸门。默认 true=线上强制登录;排障可在 .env.prod 置 false。
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
       MASTRA_URL: http://mastra:4111
       PAPER_SERVICE_URL: http://paper:8002
       DATA_SERVICE_URL: http://data:8001
