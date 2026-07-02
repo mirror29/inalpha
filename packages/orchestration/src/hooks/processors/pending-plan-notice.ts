@@ -17,6 +17,7 @@
 import type { OutputProcessor } from "@mastra/core/processors";
 
 import type { PendingPlanFetcher } from "../handlers/pending-plan-check.js";
+import { AUTH_SUB_KEY } from "../with-hooks.js";
 
 /** 命中这些 tool 才查残留（plan 状态只会被这两个动作推进到"未执行"态）。 */
 const PLAN_MUTATING_TOOLS = ["trade.create_plan", "trade.approve_plan"];
@@ -58,7 +59,7 @@ export function createPendingPlanNoticeProcessor(
 
   return {
     id: "pending-plan-notice",
-    async processOutputResult({ messages, result }) {
+    async processOutputResult({ messages, result, requestContext }) {
       if (!fetcher) return messages;
       const calls = (result?.steps ?? []).flatMap((step) => step.toolCalls ?? []);
       const names = calls.map(toolNameOf);
@@ -75,9 +76,16 @@ export function createPendingPlanNoticeProcessor(
       const touchedPlans = names.some((n) => PLAN_MUTATING_TOOLS.includes(n));
       if (!touchedPlans) return messages;
 
+      // 多租户:把中间件注入的已认证 sub(AUTH_SUB_KEY)传给 fetcher,使 /plans 只查登录
+      // 用户账户——否则恒查 console:dev,对真实登录用户既漏查其 plan,又会把 console
+      // 账户的 plan_id 泄进回复(跨租户信息泄露)。
+      const authSub =
+        typeof requestContext?.get === "function"
+          ? requestContext.get(AUTH_SUB_KEY)
+          : undefined;
       let plans;
       try {
-        plans = await fetcher(undefined);
+        plans = await fetcher(typeof authSub === "string" ? authSub : undefined);
       } catch {
         return messages; // 护栏失败不阻断回复
       }
