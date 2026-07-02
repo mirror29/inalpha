@@ -2,6 +2,8 @@ import "server-only";
 
 import { SignJWT } from "jose";
 
+import { AUTH_ENABLED, readSession } from "./session";
+
 /**
  * BFF 后端接入层(**仅 server 侧**,`server-only` 防止误打包进浏览器)。
  *
@@ -32,12 +34,11 @@ export type BackendName = keyof typeof BACKENDS;
  * 接真实多租户登录时改为从 session 派生。
  */
 export const CONSOLE_SUBJECT = process.env.CONSOLE_SUBJECT ?? "console:dev";
-const SUBJECT = CONSOLE_SUBJECT;
-const EMAIL = process.env.CONSOLE_EMAIL ?? "console@inalpha.dev";
+const CONSOLE_EMAIL = process.env.CONSOLE_EMAIL ?? "console@inalpha.dev";
 const ALG = process.env.JWT_ALGORITHM ?? "HS256";
 
-/** 进程内缓存,避免每个请求都重签;到期前 60s 续签。 */
-let cached: { token: string; exp: number } | null = null;
+/** 每 subject 一份缓存,避免每请求重签;到期前 60s 续签。多用户下不同 sub 各自缓存。 */
+const tokenCache = new Map<string, { token: string; exp: number }>();
 
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
@@ -51,23 +52,48 @@ function getSecret(): Uint8Array {
 }
 
 /**
- * 自签 dev token(HS256 等对称算法 —— 后端只接受 HS256/384/512)。
- * payload 形状对齐各 service tests/conftest.py 的 make_test_token:{sub,email,exp}。
+ * 当前请求的调用身份。
+ *
+ *  - `AUTH_ENABLED`(线上):从 session cookie 派生登录用户;未登录抛 401
+ *    (middleware 已在页面 / API 层先拦一道,这里是二重保险)。
+ *  - 未启用(本地 dev):回落固定 `CONSOLE_SUBJECT` —— 行为与加登录前一致。
+ */
+async function resolveIdentity(): Promise<{ sub: string; email: string }> {
+  if (AUTH_ENABLED) {
+    const session = await readSession();
+    if (!session) {
+      throw new BackendError(401, "未登录或会话已过期,请重新登录。");
+    }
+    return { sub: session.subject, email: session.email };
+  }
+  return { sub: CONSOLE_SUBJECT, email: CONSOLE_EMAIL };
+}
+
+/** 当前登录用户的 subject —— 用作 mastra Memory 的 `resourceId`(会话隔离)。 */
+export async function getSessionSubject(): Promise<string> {
+  return (await resolveIdentity()).sub;
+}
+
+/**
+ * 铸一个短效(1h)后端 token,`sub` = 当前登录用户(或 dev 下的 console 身份)。
+ * HS256 对称算法 —— 后端只接受 HS256/384/512。payload 形状对齐各 service
+ * tests/conftest.py 的 make_test_token:{sub,email,exp}。按 sub 缓存。
  */
 export async function getServiceToken(): Promise<string> {
+  const { sub, email } = await resolveIdentity();
   const nowSec = Math.floor(Date.now() / 1000);
+  const cached = tokenCache.get(sub);
   if (cached && cached.exp - 60 > nowSec) {
     return cached.token;
   }
-  const ttl = 3600;
-  const exp = nowSec + ttl;
-  const token = await new SignJWT({ email: EMAIL })
+  const exp = nowSec + 3600;
+  const token = await new SignJWT({ email })
     .setProtectedHeader({ alg: ALG })
-    .setSubject(SUBJECT)
+    .setSubject(sub)
     .setIssuedAt(nowSec)
     .setExpirationTime(exp)
     .sign(getSecret());
-  cached = { token, exp };
+  tokenCache.set(sub, { token, exp });
   return token;
 }
 

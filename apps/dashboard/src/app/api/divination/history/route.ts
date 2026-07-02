@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { BackendError, backendFetch, CONSOLE_SUBJECT } from "@/lib/backend";
+import { BackendError, backendFetch, getSessionSubject } from "@/lib/backend";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   try {
     const data = await backendFetch<{ records: unknown[] }>("mastra", "/divination/history", {
       timeoutMs: 8000,
-      query: { subject: CONSOLE_SUBJECT, limit },
+      query: { subject: await getSessionSubject(), limit },
     });
     return NextResponse.json(data);
   } catch (err) {

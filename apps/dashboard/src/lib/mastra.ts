@@ -2,7 +2,7 @@ import "server-only";
 
 import { MastraClient } from "@mastra/client-js";
 
-import { BACKENDS, CONSOLE_SUBJECT, getServiceToken } from "./backend";
+import { BACKENDS, getServiceToken, getSessionSubject } from "./backend";
 import { stripPageContext } from "./page-context-shared";
 
 /**
@@ -87,12 +87,13 @@ export async function listChatThreads(
 ): Promise<ChatThreadSummary[]> {
   const { backfillTitles = true } = opts;
   const client = await mastraClient();
+  const resourceId = await getSessionSubject();
   // 历史下拉(backfillTitles=true):全量拉取，不因默认分页截断旧会话。
   // 活动流(backfillTitles=false):同样拉足够多，避免数据源不足被公平截断挤出。
   const perPage = backfillTitles ? 10000 : Math.max(limit, 500);
   const res = (await withMastraTimeout(
     client.listMemoryThreads({
-      resourceId: CONSOLE_SUBJECT,
+      resourceId,
       agentId: AGENT_ID,
       perPage,
       orderBy: { field: "updatedAt", direction: "DESC" },
@@ -172,17 +173,18 @@ export async function setChatThreadTitle(
   const client = await mastraClient();
   const clean = title.trim().slice(0, 60);
   if (!clean) return;
+  const resourceId = await getSessionSubject();
   try {
     await client.getMemoryThread({ threadId, agentId: AGENT_ID }).update({
       title: clean,
       metadata: {},
-      resourceId: CONSOLE_SUBJECT,
+      resourceId,
       agentId: AGENT_ID,
     });
   } catch {
     await client.createMemoryThread({
       threadId,
-      resourceId: CONSOLE_SUBJECT,
+      resourceId,
       title: clean,
       agentId: AGENT_ID,
     } as Parameters<typeof client.createMemoryThread>[0]);
