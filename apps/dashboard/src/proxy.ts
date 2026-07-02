@@ -15,7 +15,10 @@ import { routing } from "@/i18n/routing";
 
 const intl = createMiddleware(routing);
 
-const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
+// 生产强制开(fail-safe):NODE_ENV=production 恒为 true,配置缺失/拼错也不静默放行。
+// 仅非生产(本地 dev)靠 AUTH_ENABLED=true 显式 opt-in。与 session.ts 同一判断。
+const AUTH_ENABLED =
+  process.env.AUTH_ENABLED === "true" || process.env.NODE_ENV === "production";
 const SESSION_COOKIE = "inalpha_session";
 
 function getSecret(): Uint8Array | null {

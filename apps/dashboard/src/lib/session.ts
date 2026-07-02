@@ -19,8 +19,17 @@ import { SignJWT, jwtVerify } from "jose";
 /** session cookie 名。middleware(`proxy.ts`)也用这个字面量(edge 不能 import 本 server-only 模块)。 */
 export const SESSION_COOKIE = "inalpha_session";
 
-/** 线上开、dev 关。middleware 里各自读 env,不共享本常量(避免 edge 打包 server-only)。 */
-export const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
+/**
+ * 是否启用登录闸门。
+ *
+ * **生产强制开(fail-safe)**:`NODE_ENV==="production"` 时恒为 true —— 即便 `AUTH_ENABLED`
+ * 未显式设(换编排方式部署 / env 拼成 `AUTH_ENABLE`),也**绝不**静默退回"任何访客=作者
+ * 本人"。只有非生产(本地 dev)才靠 `AUTH_ENABLED=true` 显式 opt-in。
+ *
+ * middleware(`proxy.ts`)因在 edge、不能 import 本 server-only 模块,自行复刻同一判断。
+ */
+export const AUTH_ENABLED =
+  process.env.AUTH_ENABLED === "true" || process.env.NODE_ENV === "production";
 
 const ALG = "HS256";
 /** session 有效期:7 天。过期即重登(单用户,无刷新令牌)。 */
