@@ -140,17 +140,19 @@ class TechnicalAnalyst(Analyst):
         """
         if self._factor is None:
             return [], "unavailable"
-        # D-13 · P0：runner 预拉因子快照 → 跳过 DataClient 调 factor service
-        if self._shared is not None and self._shared.factor_snapshot is not None:
-            factors = self._shared.factor_snapshot
-            return (factors, "ok") if factors else ([], "insufficient")
-        snap = await self._factor.get_snapshot(
-            venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
+        # D-13 · P0：runner 预拉因子快照 → 跳过 DataClient 调 factor service。
+        # snapshot 是 dict（含 available + top_factors），跟自拉路径同解析。
+        snap = (
+            self._shared.factor_snapshot
+            if self._shared is not None and self._shared.factor_snapshot is not None
+            else await self._factor.get_snapshot(
+                venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
+            )
         )
         if not snap.get("available"):
             return [], "unavailable"
-        factors = snap.get("top_factors")
-        factors = factors if isinstance(factors, list) else []
+        raw_factors = snap.get("top_factors")
+        factors: list[dict[str, Any]] = raw_factors if isinstance(raw_factors, list) else []
         return (factors, "ok") if factors else ([], "insufficient")
 
 

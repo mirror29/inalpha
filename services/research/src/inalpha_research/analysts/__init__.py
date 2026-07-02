@@ -33,6 +33,7 @@ ALL_ANALYSTS: list[type[Analyst]] = [
 __all__ = [
     "ALL_ANALYSTS",
     "Analyst",
+    "AnalystContext",
     "FundamentalAnalyst",
     "MacroAnalyst",
     "RiskAnalyst",
