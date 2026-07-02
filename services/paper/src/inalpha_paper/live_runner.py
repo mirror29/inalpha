@@ -494,10 +494,35 @@ class LiveRunnerManager:
     async def _restore_position(
         self, session: LiveEngineSession, run: dict[str, Any]
     ) -> None:
-        """从 DB 读 run 的 (account, venue, symbol) 当前持仓，灌回 session（resume 续跑）。"""
+        """从 DB 读 run 的 (account, venue, symbol) 当前持仓，灌回 session（resume 续跑）。
+
+        同时把 run 此前的**净已实现盈亏**(closed_trades 毛盈亏 − 手续费,自
+        started_at,与 cumulative_pnl 展示同口径)灌回 session 钱包——否则重启后
+        钱包从 allocation 满额重建,亏损 run 一重启就"回血",allocation 花费记忆
+        丢失、run 级购买力失真(盈利同理:赚到的额度重启后凭空消失)。
+        """
+        started_at = run.get("started_at")
         async with get_conn() as conn:
             pos = await positions_store.get(
                 conn, account_id=run["account_id"], venue=run["venue"], symbol=run["symbol"]
+            )
+            if started_at is not None:
+                realized = await closed_trades_store.sum_realized(
+                    conn, account_id=run["account_id"], venue=run["venue"],
+                    symbol=run["symbol"], since=started_at,
+                )
+                fees = await orders_store.sum_fees(
+                    conn, account_id=run["account_id"], venue=run["venue"],
+                    symbol=run["symbol"], since=started_at,
+                )
+            else:  # 防御:无 started_at(理论只在测试构造 dict 时出现)→ 不回灌
+                realized = fees = Decimal(0)
+        net_realized = float(realized - fees)
+        if net_realized:
+            session.portfolio.adjust_cash(net_realized)
+            _logger.info(
+                "live run %s: resume 回灌净已实现 %+.4f(毛 %s − fee %s)到 session 钱包",
+                run["id"], net_realized, realized, fees,
             )
         if pos is None:
             return

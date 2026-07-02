@@ -126,6 +126,24 @@ async def list_cash_flows(
     return list(rows)  # type: ignore[arg-type]
 
 
+async def last_reset_at(
+    conn: AsyncConnection, account_id: UUID
+) -> Any | None:
+    """最近一次 reset 的时刻(datetime);从未 reset 返 None。
+
+    reset = 绩效新纪元:账户快照的 realized_pnl、风控规则的成交窗口都以它为起点
+    (旧亏损不该再触发锁、旧盈亏不该混进新一轮口径)。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT MAX(created_at) AS ts FROM account_cash_flows "
+            "WHERE account_id = %s AND kind = 'reset'",
+            (str(account_id),),
+        )
+        row = await cur.fetchone()
+    return row["ts"] if row else None  # type: ignore[index]
+
+
 async def sum_external_flows_since_reset(
     conn: AsyncConnection, account_id: UUID
 ) -> dict[str, Decimal]:

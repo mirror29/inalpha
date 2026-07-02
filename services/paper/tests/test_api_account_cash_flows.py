@@ -86,15 +86,27 @@ def test_deposit_unknown_currency_rejected(client: TestClient) -> None:
 
 
 def test_reset_clears_positions_keeps_history(client: TestClient) -> None:
-    """重置:删持仓 + 现金回基准 + reset 流水;订单历史保留(审计不可抹)。"""
+    """重置:删持仓 + 现金回基准 + reset 流水;订单历史保留(审计不可抹)。
+
+    已实现盈亏走 closed_trades + reset epoch 口径:重置前 500,重置后归零——
+    快照与成交审计源不再分叉(此前从 positions 行汇总,删行即凭空归零)。
+    """
     _, headers = _headers()
-    # 先买出一个持仓(USDT 桶变负)
+    # 买 0.1 @50000,平 0.05 @60000 → 已实现 +500(毛),持仓剩 0.05
     r = client.post(
         "/orders/submit", headers=headers,
         json={"symbol": "BTC/USDT", "side": "BUY", "type": "MARKET",
               "quantity": 0.1, "ref_price": 50_000.0},
     )
     assert r.status_code == 200, r.json()
+    r = client.post(
+        "/orders/submit", headers=headers,
+        json={"symbol": "BTC/USDT", "side": "SELL", "type": "MARKET",
+              "quantity": 0.05, "ref_price": 60_000.0},
+    )
+    assert r.status_code == 200, r.json()
+    pre = client.get("/accounts/me", headers=headers).json()
+    assert pre["realized_pnl"] == pytest.approx(500.0)
     assert client.get("/positions", headers=headers).json() != []
 
     r = client.post("/accounts/me/reset", headers=headers, json={})
@@ -107,14 +119,15 @@ def test_reset_clears_positions_keeps_history(client: TestClient) -> None:
     acct = client.get("/accounts/me", headers=headers).json()
     assert acct["cash_balances"] == {"USD": 10_000.0}  # USDT 负桶被清
     assert acct["positions_value"] == pytest.approx(0.0)
-    # 净外生入金按"最近一次 reset 之后"统计 → 重置即归零(新一轮口径)
+    # 新一轮口径:净外生入金与已实现盈亏都按"最近一次 reset 之后"统计 → 归零
     assert acct["net_external_flows"] == pytest.approx(0.0)
+    assert acct["realized_pnl"] == pytest.approx(0.0)
     assert client.get("/positions", headers=headers).json() == []
     # 历史订单仍在(审计):重置不抹交易流水
     orders = client.get(
         "/orders", headers=headers, params={"symbol": "BTC/USDT"}
     ).json()
-    assert len(orders) == 1
+    assert len(orders) == 2
 
 
 async def test_reset_blocked_by_running_run(
@@ -134,6 +147,43 @@ async def test_reset_blocked_by_running_run(
     r = client.post("/accounts/me/reset", headers=headers, json={})
     assert r.status_code == 409, r.json()
     assert r.json()["code"] == "ACCOUNT_HAS_RUNNING_RUNS"
+
+
+async def test_trade_repo_window_clamped_by_reset(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """风控成交窗口按 reset epoch 收口:旧亏损不再触发新一轮的行为型规则。
+
+    重置前 lookback 窗口内有一笔亏损平仓 → repo.refresh 能看到;reset 后同一窗口
+    refresh → 看不到(旧成交属上一轮口径,MaxDrawdown/LowProfit 不该再用它锁账户)。
+    """
+    from datetime import UTC, datetime
+
+    from inalpha_shared import db as shared_db
+
+    from inalpha_paper.execution.risk_rules.postgres_repo import (
+        PostgresTradeRepository,
+    )
+    from inalpha_paper.storage import closed_trades as closed_trades_store
+
+    sub, headers = _headers("cfrepo")
+    account_id = account_id_from_sub(sub)
+    now = datetime.now(UTC)
+    async with get_conn() as conn:
+        await closed_trades_store.insert_close(
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
+            side="long", open_ts=now, close_ts=now,
+            open_price=100.0, close_price=90.0, quantity=1.0,
+            close_profit_pct=-10.0, close_profit_abs=-10.0,
+            exit_reason="stop_loss",
+        )
+    assert shared_db._pool is not None
+    repo = PostgresTradeRepository(account_id, shared_db._pool, lookback_min=1440)
+    assert await repo.refresh() == 1  # 重置前:亏损在窗口内
+
+    r = client.post("/accounts/me/reset", headers=headers, json={})
+    assert r.status_code == 200, r.json()
+    assert await repo.refresh() == 0  # 重置后:窗口起点被 reset epoch 收口
 
 
 def test_perp_cross_position_margin_aggregated(client: TestClient) -> None:
