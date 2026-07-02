@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -116,6 +117,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     - **RiskGuardFactory**（D-9.1a, issue #8）：per-account RiskGuard cache，
       撮合前过风控拦截（每个 JWT user 派生独立 trade history 视图）
     """
+    # paper 必须单进程/单副本(硬约束):in-process live runner + 登录失败节流(进程内
+    # dict)都假设单进程。多 worker 会让 live runner 重复跑、节流按进程各自计数(在线爆破
+    # 窗口 ×N 且静默)。启动期显式报警(不 crash,避免误配直接打挂),对齐 compose WORKERS=1。
+    _workers = int(os.environ.get("WORKERS", "1") or "1")
+    if _workers > 1:
+        _logger.error(
+            "WORKERS=%d > 1:paper 必须单进程(in-process live runner + 登录节流进程内计数),"
+            "多 worker 会让节流失效(爆破窗口×%d)+ live runner 重复执行。请设 WORKERS=1。",
+            _workers,
+            _workers,
+        )
+
     pool = await init_pool(_settings.database_url)
     init_backtest_pool(_settings)
     app.state.risk_guard_factory = await _build_risk_guard_factory(pool)
