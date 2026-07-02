@@ -1,22 +1,25 @@
 /**
  * Prompt composition engine.
  *
- * Assembles instruction modules in **stability-tiered order**
- * for maximum Anthropic prompt cache hit rate:
+ * Assembles instruction modules in **stability-tiered order** —— STABLE 内容全部
+ * 放在前缀，唯一的动态内容（runtime_facts）放在**最末尾**，这样前缀缓存
+ * （Anthropic cache_control 断点，或 DeepSeek/Kimi 这类按前缀自动命中的磁盘缓存）
+ * 从第 0 字节到 STABLE 段末尾完全一致，可持续命中：
  *
- *   1. STABLE  — Tool catalog, decision pipeline, guardrails (rarely changes, ~500 lines)
- *   2. STABLE  — Strategy protocol, order flow, terminology (rarely changes, ~300 lines)
- *   3. MARKET  — Venue routing, freshness, multi-direction (changes per market, ~200 lines)
- *   4. STABLE  — Language rules + style (rarely changes but small, ~100 lines)
- *   5. DYNAMIC — Runtime facts (per-turn date injection, ~10 lines)
- *   6. SKILLS  — Conditional: progressive-disclosure skill catalog (ADR-0046)
- *   7. OPTIONAL— Divination rules (only when relevant — future optimization)
+ *   1. STABLE  — Language rules（最高优先级，语言规则）
+ *   2. STABLE  — Tool catalog（工具目录）
+ *   3. STABLE  — Decision pipeline（研究决策链路 + 质量门）
+ *   4. STABLE  — Strategy protocol, order flow（策略协议 + 下单流）
+ *   5. MARKET  — Venue routing, freshness（venue 路由 + 时效性）
+ *   6. STABLE  — Page context, style, terminology（页面上下文 + 术语翻译）
+ *   7. COND    — Divination rules（狐神签）
+ *   8. SKILLS  — Skill catalog（ADR-0046 progressive disclosure）
+ *   9. DYNAMIC — Runtime facts（**最末尾** · 每日变一次的日期注入）
  *
- * The key insight (from OpenHands/LangGraph patterns):
- * STABLE content at the TOP → cache hits every turn.
- * VOLATILE content at the BOTTOM → only the tail changes.
+ * ⚠️ **cache 关键**：runtime_facts 必须在最后，且只用 **day 粒度** dateStr
+ * （不用秒级 isoFull）——否则每次 invoke 时间戳变化会让整段前缀失效，
+ * 后面所有 STABLE 层都命不中缓存（这是本次重构的核心目的，reviewer #128 指出）。
  *
- * @param ctx Optional session context for future per-user customization
  * @returns Full instructions string ready for the orchestrator system prompt
  */
 
@@ -38,15 +41,42 @@ import { buildSkillsPromptSection } from "../../../skills/index.js";
  */
 export function buildInstructions(): string {
   const now = new Date();
+  // 只取 day 粒度——秒级时间戳会让前缀缓存每次 invoke 失效（reviewer #128）。
   const dateStr = now.toISOString().slice(0, 10);
-  const isoFull = now.toISOString();
 
-  // Layer 1 (DYNAMIC · per-turn): Runtime facts + date injection
-  // Must be first in the final prompt so the LLM sees "today's date" before
-  // the stable layers reference "now" / "as_of" concepts.
+  // ─── STABLE 前缀（从第 0 字节起完全一致，可持续命中缓存）──────────────
+
+  // Layer 1 (STABLE · 最高优先级): 输出语言规则
+  const language = LANGUAGE_RULES + "\n\n";
+
+  // Layer 2 (STABLE · 能力目录): 工具描述
+  const tools = TOOL_CATALOG + "\n\n";
+
+  // Layer 3 (STABLE · 核心工作流): 研究决策链路 + 质量门
+  const pipeline = DECISION_PIPELINE + "\n\n";
+
+  // Layer 4 (STABLE · 执行规则): 下单流 + 策略协议 + 参考表
+  const strategy = ORDER_AND_REFERENCE + "\n\n";
+
+  // Layer 5 (MARKET · 半稳定): venue 路由 + 时效性 + 归因
+  const market = MARKET_CONTEXT + "\n\n";
+
+  // Layer 6 (STABLE · 面向用户): 页面上下文 + 语言风格 + 术语翻译
+  const style = STYLE_AND_TERMS + "\n\n";
+
+  // Layer 7 (COND · 目前恒含): 狐神签规则
+  const divination = DIVINATION_RULES + "\n\n";
+
+  // Layer 8 (COND · ADR-0046): skill 目录——memoized，无 skill 时为空串
+  const skills = buildSkillsPromptSection();
+
+  // ─── DYNAMIC 尾部（唯一每日变化处，放最后不破坏上面的缓存前缀）─────────
+
+  // Layer 9 (DYNAMIC · 每日一变): runtime facts + 日期注入
+  // 放在最末尾——day 粒度 dateStr 让这段一天内不变，跨天才失效一次。
   const runtimeFacts =
     `<runtime_facts>\n` +
-    `Today (UTC) is ${dateStr}. Full ISO: ${isoFull}.\n\n` +
+    `Today (UTC) is ${dateStr}.\n\n` +
     `**Date handling rules**:\n` +
     `- Your training cutoff is months in the past; do NOT use your internal sense of "now".\n` +
     `- When the user says "近 30 天 / last 30 days / 最近 / 这周 / 本月" — **omit** ` +
@@ -54,40 +84,9 @@ export function buildInstructions(): string {
     `Server uses the real \`now\` as default.\n` +
     `- When the user gives an absolute date ("跑 2024 全年" / "from May 1 to today"), ` +
     `compute the range relative to ${dateStr}.\n` +
-    `</runtime_facts>\n\n`;
-
-  // Layer 2 (STABLE · highest priority): Output language rules
-  // Must be at the very top so no other section can override language behavior
-  const language = LANGUAGE_RULES + "\n\n";
-
-  // Layer 3 (STABLE · core identity + capability catalog): Tool descriptions
-  // Changes only when tools are added/modified — high cache hit rate
-  const tools = TOOL_CATALOG + "\n\n";
-
-  // Layer 4 (STABLE · core workflow): Research decision pipeline + quality gate
-  // The biggest stable block — cache-friendly placement after tool catalog
-  const pipeline = DECISION_PIPELINE + "\n\n";
-
-  // Layer 5 (STABLE · execution rules): Order flow, strategy protocol, reference tables
-  const strategy = ORDER_AND_REFERENCE + "\n\n";
-
-  // Layer 6 (MARKET · semi-volatile): Venue routing, freshness policy, attribution
-  // Changes when new markets are added — separated from pure STABLE for easier diff
-  const market = MARKET_CONTEXT + "\n\n";
-
-  // Layer 7 (STABLE · user-facing): Page context, language/style, terminology
-  const style = STYLE_AND_TERMS + "\n\n";
-
-  // Layer 8 (CONDITIONAL · always included for now): Divination rules
-  // Small enough (<30 lines) to include always; may become on-demand later
-  const divination = DIVINATION_RULES + "\n\n";
-
-  // Layer 9 (CONDITIONAL · ADR-0046): Skill catalog — progressive disclosure
-  // Memoized: non-zero cost only on first call; empty string when no skills exist
-  const skills = buildSkillsPromptSection();
+    `</runtime_facts>\n`;
 
   return (
-    runtimeFacts +
     language +
     tools +
     pipeline +
@@ -95,6 +94,7 @@ export function buildInstructions(): string {
     market +
     style +
     divination +
-    skills
+    skills +
+    runtimeFacts
   );
 }
