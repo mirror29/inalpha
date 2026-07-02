@@ -82,6 +82,22 @@ class BaseCurrencyConverter:
         r = await self.rate(currency)
         return None if r is None else amount * r
 
+    @property
+    def base(self) -> str:
+        """折算目标货币(构造时定);调用方核对预取 converter 与锁内账户 base 一致用。"""
+        return self._base
+
+    def offline_copy(self) -> BaseCurrencyConverter:
+        """复制一个**不打网络**的 converter(带走已缓存汇率)。
+
+        购买力守门的"事务内权威复检"用:乐观预检阶段已把涉及币种的汇率预取进缓存,
+        复检发生在 DB 行锁事务内——绝不能在持锁时发 HTTP。cache miss 的新币种(锁内
+        才出现的桶,极端罕见)按 FX 不可用处理(排除 + warning),fail-closed 不猜。
+        """
+        c = BaseCurrencyConverter(self._base, None)
+        c._cache = dict(self._cache)
+        return c
+
     def _warn(self, currency: str, reason: str) -> None:
         self._warnings.setdefault(currency, reason)
 
@@ -89,3 +105,18 @@ class BaseCurrencyConverter:
     def warnings(self) -> list[str]:
         """fx_warnings 文案列表（每币种一条，去重）。"""
         return list(self._warnings.values())
+
+
+async def convert_cash_balances(
+    converter: BaseCurrencyConverter, cash_balances: dict[str, Decimal]
+) -> Decimal:
+    """把多币种现金桶折算到 base 求和(拿不到汇率的桶排除,warning 已记在 converter)。
+
+    ``/accounts/me`` 快照与 spot BUY 购买力守门共用,保证两处"总可用现金"口径一致。
+    """
+    total = Decimal(0)
+    for cur, amt in cash_balances.items():
+        converted = await converter.convert(amt, cur)
+        if converted is not None:
+            total += converted
+    return total

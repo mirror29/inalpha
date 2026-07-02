@@ -83,6 +83,11 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     // D-9 · 候选 → 正式策略（ADR-0018 / D-9.1b：askUserChoice 接通后改回 ask）
     // 后端硬校验仍在（fitness IS NOT NULL + status='candidate'）作为第二道防线
     "paper.promote_candidate",
+
+    // 账户外生资金事件：改钱=改绩效口径，必须人点头（流水留痕是第二道防线）。
+    // reset 是破坏性操作（删全部持仓行），后端另有 running-run 409 硬守门。
+    "paper.deposit_cash",
+    "paper.reset_account",
   ],
 
   deny: [

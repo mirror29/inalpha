@@ -154,6 +154,13 @@ def is_perp_symbol(symbol: str) -> bool:
     return ":" in symbol
 
 
+class InsufficientMarginError(InalphaError):
+    """perp 开/加仓所需保证金(含其他仓已占 IM,跨仓聚合)超钱包:守门拒单。"""
+
+    code = "INSUFFICIENT_MARGIN"
+    status_code = 409
+
+
 class PerpNotEligibleError(InalphaError):
     """开杠杆/做空但标的不符合 perp 资格(非 crypto / 非永续 / 杠杆越界)。"""
 

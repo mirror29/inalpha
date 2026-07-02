@@ -38,6 +38,7 @@ async def insert(
     params: dict[str, Any] | None = None,
     trading_mode: str = "spot",
     leverage: int = 1,
+    allocation: Decimal | None = None,
 ) -> dict[str, Any]:
     """创建一行 status='running' 的 run。同 candidate 已有 running → StrategyRunConflict。"""
     try:
@@ -46,16 +47,16 @@ async def insert(
                 """
                 INSERT INTO strategy_runs (
                     candidate_id, account_id, status, venue, symbol, timeframe, params,
-                    trading_mode, leverage
-                ) VALUES (%s, %s, 'running', %s, %s, %s, %s::jsonb, %s, %s)
+                    trading_mode, leverage, allocation
+                ) VALUES (%s, %s, 'running', %s, %s, %s, %s::jsonb, %s, %s, %s)
                 RETURNING id, candidate_id, account_id, status, venue, symbol,
-                          timeframe, params, trading_mode, leverage,
+                          timeframe, params, trading_mode, leverage, allocation,
                           last_bar_ts, cumulative_pnl, run_log,
                           started_at, stopped_at
                 """,
                 (
                     str(candidate_id), str(account_id), venue, symbol, timeframe,
-                    json.dumps(params or {}), trading_mode, leverage,
+                    json.dumps(params or {}), trading_mode, leverage, allocation,
                 ),
             )
             row = await cur.fetchone()
@@ -73,8 +74,8 @@ async def get(conn: AsyncConnection, run_id: UUID) -> dict[str, Any] | None:
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-            "params, trading_mode, leverage, last_bar_ts, cumulative_pnl, run_log, "
-            "started_at, stopped_at, factor_baseline, factor_alerts "
+            "params, trading_mode, leverage, allocation, last_bar_ts, cumulative_pnl, "
+            "run_log, started_at, stopped_at, factor_baseline, factor_alerts "
             "FROM strategy_runs WHERE id = %s",
             (str(run_id),),
         )
@@ -90,9 +91,12 @@ async def list_by_account(
     candidate_id: UUID | None = None,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
+    # trading_mode / leverage / allocation 必须在列(此前漏了前两者 → list 端点
+    # _row_to_record 恒 fallback 'spot'/1,dashboard runner 列表看不出合约模式)。
     sql = (
         "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-        "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at "
+        "params, trading_mode, leverage, allocation, last_bar_ts, cumulative_pnl, "
+        "run_log, started_at, stopped_at "
         "FROM strategy_runs WHERE account_id = %s"
     )
     args: list[Any] = [str(account_id)]
@@ -122,6 +126,44 @@ async def count_running_by_account(conn: AsyncConnection, account_id: UUID) -> i
         )
         row = await cur.fetchone()
     return int(row["n"]) if row else 0
+
+
+async def sum_running_allocation(conn: AsyncConnection, account_id: UUID) -> Decimal:
+    """同账户所有 running run 已分配额度之和(自动 allocation 扣减用)。
+
+    不扣减会让多个 run 集体超额认领资本:账户 1 万先后自动起 N 个 run,现金还没
+    花出去时每个都拿到近全额 allocation,∑allocation ≫ 账户现金——账户级购买力
+    硬底虽兜得住不买穿,但 per-run 虚拟钱包虚高,表现为连环静默拒单误导用户。
+    allocation 为 NULL 的老 run 按旧语义固定 1 万计。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT COALESCE(SUM(COALESCE(allocation, 10000)), 0) AS total "
+            "FROM strategy_runs WHERE account_id = %s AND status = %s",
+            (str(account_id), _RUNNING),
+        )
+        row = await cur.fetchone()
+    return Decimal(str(row["total"])) if row else Decimal(0)  # type: ignore[index]
+
+
+async def get_running_by_symbol(
+    conn: AsyncConnection, account_id: UUID, *, venue: str, symbol: str
+) -> dict[str, Any] | None:
+    """查同账户同 (venue, symbol) 是否已有 running 的 run(issue #108 同标的守门)。
+
+    positions 主键 = (account_id, venue, symbol) 一标的一行,两个 run 撞同标的会共享
+    同一行持仓互相打架(PnL 归属错乱 / 互相平仓)——start 前用本查询拒绝第二个。
+    返回命中的第一行(带 id / candidate_id 供错误信息引用),无则 None。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id, candidate_id FROM strategy_runs "
+            "WHERE account_id = %s AND status = %s AND venue = %s AND symbol = %s "
+            "LIMIT 1",
+            (str(account_id), _RUNNING, venue, symbol),
+        )
+        row = await cur.fetchone()
+    return row  # type: ignore[return-value]
 
 
 async def set_status(
@@ -246,10 +288,12 @@ async def list_all_running(conn: AsyncConnection) -> list[dict[str, Any]]:
     多实例横向扩展时需按 runner_instance_id 限定作用域（#38.1），那之前别多副本跑。
     """
     async with conn.cursor() as cur:
+        # trading_mode / leverage / allocation 必须在列:resume 的 run dict 直接喂
+        # _build_session——此前漏了前两者,重启 resume 后 perp run 会静默降级成 spot/1×。
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
-            "params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at, "
-            "factor_baseline, factor_alerts "
+            "params, trading_mode, leverage, allocation, last_bar_ts, cumulative_pnl, "
+            "run_log, started_at, stopped_at, factor_baseline, factor_alerts "
             "FROM strategy_runs WHERE status = %s ORDER BY started_at",
             (_RUNNING,),
         )

@@ -14,7 +14,7 @@ import type {
 } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
-import { fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
+import { fmtNum, fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { PositionsTable } from "@/components/overview/PositionsTable";
@@ -81,6 +81,26 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
               </div>
               <div className="mt-1.5 font-mono text-xs text-fg-muted">
                 {run.venue} · {run.timeframe}
+                {/* 现货/合约 + 杠杆 + 资金额度:不点开持仓也知道这是什么模式在跑 */}
+                <span
+                  className={cn(
+                    "ml-2 rounded px-1 py-0.5 text-[10px]",
+                    run.trading_mode === "perp"
+                      ? "bg-gold/10 text-gold"
+                      : "bg-bg-elev text-fg-muted",
+                  )}
+                >
+                  {run.trading_mode === "perp"
+                    ? t("modePerp", { leverage: run.leverage })
+                    : t("modeSpot")}
+                </span>
+                {run.allocation !== null && (
+                  <span className="ml-2 text-fg-muted/70">
+                    {t("allocation", {
+                      amount: fmtNum(run.allocation, locale, 0),
+                    })}
+                  </span>
+                )}
               </div>
               {/* 当前所跑策略 —— 可点进策略详情(模拟盘 → 策略可追溯)。 */}
               <div className="mt-1 flex items-center gap-1.5 text-xs">

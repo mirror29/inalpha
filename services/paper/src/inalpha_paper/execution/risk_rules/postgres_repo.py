@@ -62,7 +62,12 @@ class PostgresTradeRepository:
         """从 DB 拉最近 ``lookback_min`` 分钟内 closed_trades，覆盖 cache。返回行数。
 
         调用方应周期性调（如 ClosedTradesWriter flush 后 trigger）。
+
+        **reset epoch 收口**:窗口起点不早于账户最近一次 reset——重置 = 绩效新纪元,
+        否则 lookback 窗口内的旧亏损会在重置后的"干净"账户重新触发
+        MaxDrawdown/LowProfit 锁(旧成交属上一轮口径,不该再参与风控判定)。
         """
+        from ...storage import accounts as accounts_store
         from ...storage import closed_trades as trades_store
 
         if now is None:
@@ -70,6 +75,9 @@ class PostgresTradeRepository:
         close_after = now - timedelta(minutes=self._lookback_min)
 
         async with self._db_pool.connection() as conn:
+            last_reset = await accounts_store.last_reset_at(conn, self._account_id)
+            if last_reset is not None and last_reset > close_after:
+                close_after = last_reset
             rows = await trades_store.list_recent(
                 conn,
                 account_id=self._account_id,

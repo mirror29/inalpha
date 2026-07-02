@@ -161,13 +161,25 @@ async def _isolate_risk_state_in_tests(app_with_lifespan: Any) -> AsyncIterator[
        test_api_orders.py 的 BTC/USDT 请求；session 内每个 test 前清表。
        test_api_risk.py 自带 ``risk_locks_table`` fixture 在 yield 后再 DELETE，
        两层叠加无害。
+
+    3. **重置共享 test-user 账户现金** —— 共享 sub 的账户跨测试/跨运行累计买入,
+       spot BUY 购买力守门下反复本地跑同一套件会把折算现金逐次扣穿,让老的
+       happy-path 买入用例在第 N 次运行才开始 409(隐性 flaky)。每个 test 前删
+       账户行,get_or_create 会按默认 1 万重建;positions 保留(裸空守门只会因此
+       更宽松,不产生误拒)。
     """
     from inalpha_shared.db import get_conn
+
+    from inalpha_paper.account_id import account_id_from_sub
 
     app_with_lifespan.state.risk_guard_factory = None
     async with get_conn() as conn:
         async with conn.cursor() as cur:
             await cur.execute("TRUNCATE TABLE risk_locks RESTART IDENTITY")
+            await cur.execute(
+                "DELETE FROM accounts WHERE account_id = %s",
+                (str(account_id_from_sub("test-user")),),
+            )
     yield
 
 

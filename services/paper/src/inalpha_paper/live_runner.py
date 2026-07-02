@@ -35,12 +35,14 @@ from .execution.currency_resolver import resolve_currency
 from .execution.order_executor import OrderExecutor
 from .execution.risk_guard_factory import RiskGuardFactory
 from .execution.spot_guard import (
+    InsufficientCashError,
     InsufficientPositionError,
+    violates_spot_buying_power,
     violates_spot_long_only,
 )
 from .factor_patrol import capture_factor_baseline
 from .fills import apply_fill_to_positions_and_cash
-from .fx import BaseCurrencyConverter, needs_network
+from .fx import BaseCurrencyConverter, convert_cash_balances, needs_network
 from .kernel.identifiers import InstrumentId, StrategyId
 from .model.data import Bar
 from .model.orders import Order, is_protective_order
@@ -94,7 +96,9 @@ def _classify_build_error(exc: BaseException) -> tuple[str, bool]:
 
 
 _FEE_RATE = 0.001
-_LIVE_INITIAL_CASH = 10_000.0  # session 内部持仓视图用；真实现金在 DB 账户
+# run 无 allocation(老数据)时的 fallback 额度;新 run 由 API 层落库
+# min(10000, 账户折算可用现金) 或用户显式值,session 以它为虚拟钱包做 sizing。
+_LIVE_INITIAL_CASH = 10_000.0
 _LIVE_RUNNER_APPROVER = "system:live_runner"
 _PLAN_EXPIRE_S = 300
 
@@ -459,12 +463,15 @@ class LiveRunnerManager:
         strategy_cls = load_strategy_class(code)
         verify_strategy_contract(strategy_cls)
         instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
+        # per-run 资金额度:sizing 与 run 级购买力(step 1.7 ①)都以它为上限;
+        # 老 run 行 allocation 为空 → 沿用旧语义固定 1 万。
+        allocation = run.get("allocation")
         session = LiveEngineSession(
             strategy_cls=strategy_cls,
             instrument_id=instrument_id,
             timeframe=run["timeframe"],
             params=run.get("params") or {},
-            initial_cash=_LIVE_INITIAL_CASH,
+            initial_cash=float(allocation) if allocation is not None else _LIVE_INITIAL_CASH,
             fee_rate=_FEE_RATE,
             # ADR-0052：框架级持仓保护止损（与回测共用同一阈值，行为一致）
             protective_stop_loss_pct=self._settings.protective_stop_loss_pct,
@@ -487,10 +494,35 @@ class LiveRunnerManager:
     async def _restore_position(
         self, session: LiveEngineSession, run: dict[str, Any]
     ) -> None:
-        """从 DB 读 run 的 (account, venue, symbol) 当前持仓，灌回 session（resume 续跑）。"""
+        """从 DB 读 run 的 (account, venue, symbol) 当前持仓，灌回 session（resume 续跑）。
+
+        同时把 run 此前的**净已实现盈亏**(closed_trades 毛盈亏 − 手续费,自
+        started_at,与 cumulative_pnl 展示同口径)灌回 session 钱包——否则重启后
+        钱包从 allocation 满额重建,亏损 run 一重启就"回血",allocation 花费记忆
+        丢失、run 级购买力失真(盈利同理:赚到的额度重启后凭空消失)。
+        """
+        started_at = run.get("started_at")
         async with get_conn() as conn:
             pos = await positions_store.get(
                 conn, account_id=run["account_id"], venue=run["venue"], symbol=run["symbol"]
+            )
+            if started_at is not None:
+                realized = await closed_trades_store.sum_realized(
+                    conn, account_id=run["account_id"], venue=run["venue"],
+                    symbol=run["symbol"], since=started_at,
+                )
+                fees = await orders_store.sum_fees(
+                    conn, account_id=run["account_id"], venue=run["venue"],
+                    symbol=run["symbol"], since=started_at,
+                )
+            else:  # 防御:无 started_at(理论只在测试构造 dict 时出现)→ 不回灌
+                realized = fees = Decimal(0)
+        net_realized = float(realized - fees)
+        if net_realized:
+            session.portfolio.adjust_cash(net_realized)
+            _logger.info(
+                "live run %s: resume 回灌净已实现 %+.4f(毛 %s − fee %s)到 session 钱包",
+                run["id"], net_realized, realized, fees,
             )
         if pos is None:
             return
@@ -938,7 +970,9 @@ class LiveRunnerManager:
 
         # 1.6 perp 保证金购买力守门(与回测 Portfolio.can_afford_* + HTTP 同口径:按**成交后
         # 目标仓**算 prospective IM = |cur_qty ± qty| × price / leverage——平 / 减仓 IM 降,
-        # 不误拒策略自发的 cover 单)。保护性出场(强平/止损)已在上方豁免。
+        # 不误拒策略自发的 cover 单)。**跨仓聚合(#114)**:其他活跃 perp 仓已占 IM
+        # (positions.margin_used 权威值)一并计入,多仓合计不得超钱包。
+        # 保护性出场(强平/止损)已在上方豁免。
         if (run.get("trading_mode") or "spot") == "perp" and not is_protective_exit:
             leverage = int(run.get("leverage") or 1)
             close = float(bar.close)
@@ -948,14 +982,21 @@ class LiveRunnerManager:
                 cur_pos = await positions_store.get(
                     conn, account_id=account_id, venue=venue, symbol=symbol
                 )
+                others_im = float(
+                    await positions_store.sum_other_margin_used(
+                        conn, account_id, currency=currency,
+                        exclude_venue=venue, exclude_symbol=symbol,
+                    )
+                )
             cur_qty = float(cur_pos["quantity"]) if cur_pos else 0.0
             signed_qty = order.quantity if side == "BUY" else -order.quantity
             im = abs(cur_qty + signed_qty) * close / leverage
             fee_amt = order.quantity * close * _FEE_RATE
             wallet = float((acct.get("cash_balances") or {}).get(currency, 0) or 0)
-            if im + fee_amt > wallet:
+            if others_im + im + fee_amt > wallet:
                 reason = (
-                    f"INSUFFICIENT_MARGIN: 需 IM {im:.2f} + fee {fee_amt:.4f} "
+                    f"INSUFFICIENT_MARGIN: 其他仓已占 IM {others_im:.2f} + "
+                    f"本笔目标 IM {im:.2f} + fee {fee_amt:.4f} "
                     f"超钱包 {wallet:.2f} {currency}"
                 )
                 session.reject_order(
@@ -969,6 +1010,87 @@ class LiveRunnerManager:
                         conn, run, order, bar, outcome="rejected", intent=intent, reason=reason,
                     )
                 return "rejected"
+
+        # 1.7 现货 BUY 购买力守门(与 HTTP /orders/submit 同口径,双层):
+        #   ① run 级:session Portfolio 以本 run 的 allocation 为虚拟钱包,cash 不足 =
+        #      该 run 额度花完 → 拒(多 run 共享账户时各自的资金边界)。
+        #   ② 账户级硬底:各币种现金桶按 FX 折算成 base 总可用现金,notional+fee 超过
+        #      可用×0.99 即拒——桶允许为负(隐式借计价货币),总折算现金不允许被买穿。
+        # 此处为乐观预检;plan/exec 事务内另有 FOR UPDATE 权威复检闭 TOCTOU(复用本处
+        # 预取的汇率缓存,锁内零网络)。拒单记 risk_rejected 决策行,不杀 run——下一根
+        # bar 重估(平仓回血后自然恢复)。spot 无保护性 BUY(protective 出场恒 SELL),
+        # 不需豁免;perp BUY 由 1.6 保证金守门管。
+        spot_buy_converter: BaseCurrencyConverter | None = None
+        if (run.get("trading_mode") or "spot") != "perp" and side == "BUY":
+            close = float(bar.close)
+            if not session.portfolio.can_afford_buy(order.quantity, close):
+                reason = (
+                    f"ALLOCATION_EXCEEDED: BUY {order.quantity} × {close} 超出本 run "
+                    f"剩余额度 {session.portfolio.cash:.2f}(run 虚拟钱包)"
+                )
+                session.reject_order(
+                    order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
+                )
+                async with get_conn() as conn:
+                    await runs_store.append_log(
+                        conn, run_id, "warn", f"order rejected by allocation: {reason}"
+                    )
+                    await self._record_decision(
+                        conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                        reason=reason,
+                    )
+                return "risk_rejected"
+
+            order_ccy = resolve_currency(venue, symbol)
+            async with get_conn() as conn:
+                acct = await accounts_store.get_or_create(conn, account_id)
+            balances = {
+                cur: Decimal(str(amt))
+                for cur, amt in (acct.get("cash_balances") or {}).items()
+            }
+            base_ccy = acct["base_currency"]
+            fx_client = (
+                DataClient(
+                    self._settings.data_service_url,
+                    self._mint_service_token(account_id),
+                )
+                if needs_network({*balances, order_ccy}, base_ccy)
+                else None
+            )
+            try:
+                spot_buy_converter = BaseCurrencyConverter(base_ccy, fx_client)
+                available = await convert_cash_balances(spot_buy_converter, balances)
+                order_ccy_rate = await spot_buy_converter.rate(order_ccy)
+            finally:
+                if fx_client is not None:
+                    await fx_client.close()
+            if violates_spot_buying_power(
+                side=side, quantity=order.quantity, ref_price=close,
+                fee_rate=_FEE_RATE, order_ccy_rate=order_ccy_rate,
+                available_cash_base=available,
+                trading_mode=run.get("trading_mode") or "spot",
+            ):
+                fx_note = (
+                    f"; FX warnings: {'; '.join(spot_buy_converter.warnings)}"
+                    if spot_buy_converter.warnings
+                    else ""
+                )
+                reason = (
+                    f"INSUFFICIENT_CASH: BUY 约 {order.quantity * close:.2f} {order_ccy}"
+                    f"(含手续费)超过账户折算可用 {available:.2f} {base_ccy}{fx_note}"
+                )
+                session.reject_order(
+                    order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
+                )
+                async with get_conn() as conn:
+                    await runs_store.append_log(
+                        conn, run_id, "warn", f"order rejected by buying power: {reason}"
+                    )
+                    await self._record_decision(
+                        conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                        reason=reason,
+                    )
+                return "risk_rejected"
 
         # 2. 撮合（纯函数，ref_price = bar.close）
         result = OrderExecutor.execute(
@@ -1009,7 +1131,12 @@ class LiveRunnerManager:
         )
         try:
             async with get_conn() as conn, conn.transaction():
-                await accounts_store.get_or_create(conn, account_id)  # 首单 lazy create 账户
+                # 首单 lazy create + **恒锁账户行**(统一全局锁序 accounts → positions,
+                # 与 HTTP /orders/submit、deposit/reset 同序防死锁);spot BUY / perp
+                # 开仓的权威复检都以本锁为串行化点。
+                locked_acct = await accounts_store.get_or_create(
+                    conn, account_id, for_update=True
+                )
                 # 现货 long-only 权威守门（事务内 FOR UPDATE）：闭合 step 1.5 乐观读与本 apply
                 # 跨事务的 TOCTOU——并发同账户同标的 SELL 各读旧持仓双双过 step 1.5，这里锁行
                 # 串行化，第二个读到更新后持仓 → raise 回滚（不落 plan/order/fill）转 except 拒单。
@@ -1070,6 +1197,79 @@ class LiveRunnerManager:
                             order_type=order.type.value,  # type: ignore[arg-type]
                             quantity=exec_qty, price=order.price,
                             ref_price=float(bar.close), fee_rate=_FEE_RATE,
+                        )
+                # 现货 BUY 购买力权威复检(事务内 FOR UPDATE 锁账户行):闭合 step 1.7
+                # 乐观预检与本 apply 跨事务的 TOCTOU——并发 run 各读旧余额双双过预检,
+                # 这里锁行串行化,第二个读到扣款后余额 → raise 回滚转 except 拒单。
+                # 汇率复用预检的缓存(offline_copy 不打网络,持锁期间零 HTTP);锁内才
+                # 出现的新币种桶按 FX 不可用排除(fail-closed)。
+                if (
+                    (run.get("trading_mode") or "spot") != "perp"
+                    and side == "BUY"
+                    and result["status"] == "FILLED"
+                ):
+                    locked_base_ccy = locked_acct["base_currency"]
+                    offline_fx = (
+                        spot_buy_converter.offline_copy()
+                        if spot_buy_converter is not None
+                        else BaseCurrencyConverter(locked_base_ccy, None)
+                    )
+                    locked_balances = {
+                        cur: Decimal(str(amt))
+                        for cur, amt in (locked_acct.get("cash_balances") or {}).items()
+                    }
+                    locked_available = await convert_cash_balances(
+                        offline_fx, locked_balances
+                    )
+                    locked_order_ccy = resolve_currency(venue, symbol)
+                    if violates_spot_buying_power(
+                        side=side, quantity=exec_qty, ref_price=float(bar.close),
+                        fee_rate=_FEE_RATE,
+                        order_ccy_rate=await offline_fx.rate(locked_order_ccy),
+                        available_cash_base=locked_available,
+                        trading_mode=run.get("trading_mode") or "spot",
+                    ):
+                        raise InsufficientCashError(
+                            f"INSUFFICIENT_CASH: BUY 约 "
+                            f"{exec_qty * float(bar.close):.2f} {locked_order_ccy}"
+                            f"(含手续费)超过账户折算可用 "
+                            f"{locked_available:.2f} {locked_base_ccy}"
+                        )
+                # perp 开/加仓保证金权威复检(事务内,账户行已锁):闭合 1.6 乐观预检与
+                # 落账间的 TOCTOU——两笔并发 perp 开仓在**不同 symbol**(锁不同持仓行,
+                # 互不阻塞)但同一钱包时,各读旧 others_im/wallet 双双过闸 → 合计 IM 超
+                # 钱包。账户行锁把同账户 perp 下单串行化,复检读到的都是已提交终值。
+                # 保护性平仓(is_protective_exit)不复检——上方钳量分支已保证 reduce-only。
+                elif (
+                    (run.get("trading_mode") or "spot") == "perp"
+                    and not is_protective_exit
+                    and result["status"] == "FILLED"
+                ):
+                    _leverage = int(run.get("leverage") or 1)
+                    _close = float(bar.close)
+                    _ccy = resolve_currency(venue, symbol)
+                    _locked_pos = await positions_store.get(
+                        conn, account_id=account_id, venue=venue, symbol=symbol,
+                        for_update=True,
+                    )
+                    _cur_qty = float(_locked_pos["quantity"]) if _locked_pos else 0.0
+                    _signed = exec_qty if side == "BUY" else -exec_qty
+                    _im = abs(_cur_qty + _signed) * _close / _leverage
+                    _fee = exec_qty * _close * _FEE_RATE
+                    _others_im = float(
+                        await positions_store.sum_other_margin_used(
+                            conn, account_id, currency=_ccy,
+                            exclude_venue=venue, exclude_symbol=symbol,
+                        )
+                    )
+                    _wallet = float(
+                        (locked_acct.get("cash_balances") or {}).get(_ccy, 0) or 0
+                    )
+                    if _others_im + _im + _fee > _wallet:
+                        raise perp_margin.InsufficientMarginError(
+                            f"INSUFFICIENT_MARGIN: 其他仓已占 IM {_others_im:.2f} + "
+                            f"本笔目标 IM {_im:.2f} + fee {_fee:.4f} "
+                            f"超钱包 {_wallet:.2f} {_ccy}"
                         )
                 plan = await plans_store.create(
                     conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
@@ -1145,6 +1345,40 @@ class LiveRunnerManager:
                 await runs_store.append_log(
                     conn, run_id, "warn",
                     f"order rejected by spot guard (txn race): {e.message}",
+                )
+                await self._record_decision(
+                    conn, run, order, bar, outcome="rejected", intent=intent,
+                    reason=e.message,
+                )
+            return "rejected"
+        except InsufficientCashError as e:
+            # 现货 BUY 购买力权威复检命中并发竞态(另一 run/HTTP 单先扣了款):事务已
+            # 回滚,补 session 拒单 + risk_rejected 决策行,不杀 run(下一根 bar 重估)。
+            session.reject_order(
+                order=order, strategy_id=strategy_id,
+                reason=e.message, ts_event=bar.ts_event,
+            )
+            async with get_conn() as conn:
+                await runs_store.append_log(
+                    conn, run_id, "warn",
+                    f"order rejected by buying power (txn race): {e.message}",
+                )
+                await self._record_decision(
+                    conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                    reason=e.message,
+                )
+            return "risk_rejected"
+        except perp_margin.InsufficientMarginError as e:
+            # perp 保证金权威复检命中并发竞态(另一笔先占走了保证金):事务已回滚,
+            # 补 session 拒单 + rejected 决策行(与 1.6 乐观预检同 outcome),不杀 run。
+            session.reject_order(
+                order=order, strategy_id=strategy_id,
+                reason=e.message, ts_event=bar.ts_event,
+            )
+            async with get_conn() as conn:
+                await runs_store.append_log(
+                    conn, run_id, "warn",
+                    f"order rejected by perp margin (txn race): {e.message}",
                 )
                 await self._record_decision(
                     conn, run, order, bar, outcome="rejected", intent=intent,

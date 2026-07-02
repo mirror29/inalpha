@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight, TriangleAlert } from "lucide-react";
 import type { StrategyRunRecord } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
-import { fmtDateTime, fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
+import { fmtDateTime, fmtNum, fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
 import { RunStatusBadge } from "@/components/ui/StatusBadge";
 
 /**
@@ -55,6 +55,19 @@ export function RunnerCard({
             <span className="ml-1.5 font-mono text-xs text-fg-muted">
               · {run.venue}
             </span>
+            {/* 现货/合约显式标注:perp 金色带杠杆,spot 灰色轻量 */}
+            <span
+              className={cn(
+                "ml-1.5 rounded px-1 py-0.5 font-mono text-[10px]",
+                run.trading_mode === "perp"
+                  ? "bg-gold/10 text-gold"
+                  : "bg-bg-elev text-fg-muted",
+              )}
+            >
+              {run.trading_mode === "perp"
+                ? t("modePerp", { leverage: run.leverage })
+                : t("modeSpot")}
+            </span>
           </div>
           <div className="mt-0.5 font-mono text-[11px] uppercase tracking-wider text-fg-muted/70">
             {run.timeframe}
@@ -92,6 +105,14 @@ export function RunnerCard({
             {run.candidate_id.slice(0, 8)}
           </span>
         </Meta>
+        {/* 资金额度(sizing 上限);老 run 为 null 不显示 */}
+        {run.allocation !== null && (
+          <Meta label={t("allocation")}>
+            <span className="text-fg-muted">
+              {fmtNum(run.allocation, locale, 0)}
+            </span>
+          </Meta>
+        )}
       </dl>
 
       {/* 错误角标 */}

@@ -45,20 +45,32 @@ from .test_live_session import (
 pytestmark = pytest.mark.integration
 
 
+# 测试策略买 1 BTC @ 50000 ≈ 50050(含 fee):session 虚拟钱包与账户都要盖得住,
+# 否则被 spot BUY 购买力守门拒掉(守门前这些买单是"碰巧"能成交的透支单)。
+_TEST_CASH = 100_000.0
+
+
 def _make_session() -> LiveEngineSession:
     return LiveEngineSession(
         strategy_cls=_BuyOnceStrategy,
         instrument_id=_INSTRUMENT,
         timeframe="1h",
         params={},
-        initial_cash=10_000.0,
+        initial_cash=_TEST_CASH,
         fee_rate=0.001,
     )
 
 
 async def _insert_run(account_id, candidate_id=None):  # type: ignore[no-untyped-def]
-    """插一行 run；candidate_id=None 时先建一个真候选（strategy_runs.candidate_id 有 FK）。"""
+    """插一行 run；candidate_id=None 时先建一个真候选（strategy_runs.candidate_id 有 FK）。
+
+    顺带按 ``_TEST_CASH`` 预建账户:spot BUY 购买力守门按账户折算现金放行,默认 1 万
+    盖不住测试策略的 1 BTC@50000 买单。
+    """
     async with get_conn() as conn:
+        await accounts_store.get_or_create(
+            conn, account_id, initial_cash=Decimal(str(_TEST_CASH))
+        )
         if candidate_id is None:
             # 结构可区分 salt 作 STRING 字面量（非注释）：结构指纹去重剥注释后会让
             # 注释-only / 注释-salt 候选全撞成同一个 → 同 candidate 第二次起跑 409。
@@ -998,6 +1010,36 @@ async def test_restore_position_from_db_brings_session_to_position(
     pos = session.portfolio.position(_INSTRUMENT)
     assert pos is not None and not pos.is_flat
     assert pos.quantity == 2.0
+
+
+async def test_restore_backfills_net_realized_to_session_wallet(
+    app_with_lifespan: Any,
+) -> None:
+    """resume 把 run 净已实现盈亏灌回 session 钱包——重启不"回血"也不丢盈利额度。
+
+    买 1 @50000(fee 50)→ 全平 @60000(fee 60):毛已实现 10000 − 费 110 = 9890。
+    新 session resume 后钱包应为 _TEST_CASH + 9890(持仓已 flat,无成本占用),
+    而不是回到 _TEST_CASH 满额(allocation 花费/盈利记忆丢失)。
+    """
+    manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)
+    await manager._process_bar(
+        _make_session(), run, _bar(1_700_000_000_000_000_000, close=50_000.0)
+    )
+    await manager._process_bar(
+        _sell_session(1.0), run, _bar(1_700_000_003_600_000_000, close=60_000.0)
+    )
+
+    session = _make_session()
+    # 测试 bar 是 2023 年时间戳,而 run.started_at=NOW();回灌按 started_at 过滤,
+    # 这里改成早于 bar 的时刻模拟真实时序(实际运行中 bar 恒晚于 started_at)。
+    run["started_at"] = datetime(2020, 1, 1, tzinfo=UTC)
+    await manager._restore_position(session, run)
+
+    assert session.portfolio.cash == pytest.approx(_TEST_CASH + 9_890.0)
+    pos = session.portfolio.position(_INSTRUMENT)
+    assert pos is None or pos.is_flat  # 已全平,不重建持仓
 
 
 async def test_convert_run_pnl_zero_short_circuits_no_network() -> None:

@@ -200,6 +200,15 @@ class Portfolio:
         # 与其他持仓互斥:可用 = free_margin + 本仓当前 IM(同 can_afford_buy)。单仓时 == cash。
         return prospective_margin + fee <= self.free_margin() + cur_im
 
+    def adjust_cash(self, delta: float) -> None:
+        """外生现金调整(不经 fill):live session resume 回灌历史净已实现盈亏用。
+
+        重启后 session 钱包从 initial_cash(allocation)重建,若不把 run 此前的
+        已实现盈亏(−手续费)灌回,亏损 run 一重启钱包就回血满额、allocation 花费
+        记忆丢失。除本方法与 apply_funding 外,现金只应经 fill 变动。
+        """
+        self._cash += delta
+
     def update_mark(self, instrument_id: InstrumentId, mark_price: float) -> None:
         """BacktestEngine 每根 bar 调一次，更新 mark-to-market 估值用的最新价。"""
         self._marks[instrument_id] = mark_price
