@@ -40,14 +40,18 @@ from ..fx import BaseCurrencyConverter, convert_cash_balances
 from ..fx import needs_network as fx_needs_network
 from ..schemas import (
     AccountSnapshot,
+    CashFlowRecord,
+    DepositRequest,
     OrderRecord,
     PositionRecord,
+    ResetAccountRequest,
     SubmitOrderRequest,
     SubmitOrderResponse,
 )
 from ..storage import accounts as accounts_store
 from ..storage import orders as orders_store
 from ..storage import positions as positions_store
+from ..storage import strategy_runs as runs_store
 
 router = APIRouter(tags=["orders"])
 
@@ -55,6 +59,13 @@ router = APIRouter(tags=["orders"])
 class RefPriceUnavailableError(InalphaError):
     code = "REF_PRICE_UNAVAILABLE"
     status_code = 400
+
+
+class AccountHasRunningRunsError(InalphaError):
+    """reset 前须先停掉所有 running run(否则 runner 下一根 bar 又把仓开回来)。"""
+
+    code = "ACCOUNT_HAS_RUNNING_RUNS"
+    status_code = 409
 
 
 @router.post("/orders/submit", response_model=SubmitOrderResponse)
@@ -124,7 +135,9 @@ async def post_submit_order(
         # 否则同账户同标的并发 BUY 各读旧 wallet/持仓双双过闸 → double-open、累计 IM 超钱包）。
         # 与回测 Portfolio.can_afford_buy/sell 同口径：按**成交后目标仓**算 prospective IM =
         # |cur_qty ± qty| × price / leverage——平 / 减仓 IM 降不误拒 cover;开 / 加 / 反手按目标
-        # 仓校验。跨 symbol 聚合仍留 Phase 2（#114）。raise 触发回滚 → 不落单/不落账（409）。
+        # 仓校验。**跨仓聚合(#114)**:其他活跃 perp 仓已占 IM(positions.margin_used,
+        # 每笔 fill 后重算的权威值)一并计入——多仓合计不得超钱包,堵单笔各自比全钱包的洞。
+        # raise 触发回滚 → 不落单/不落账（409）。
         if req.trading_mode == "perp":
             currency = resolve_currency(req.venue, req.symbol)
             wallet = Decimal(str((acct.get("cash_balances") or {}).get(currency, "0")))
@@ -137,11 +150,17 @@ async def post_submit_order(
             prospective_qty = abs(cur_qty + signed_qty)
             im = Decimal(str(prospective_qty * ref_price / req.leverage))
             fee_amt = Decimal(str(req.quantity * ref_price * req.fee_rate))
-            if im + fee_amt > wallet:
+            others_im = await positions_store.sum_other_margin_used(
+                db, account_id, currency=currency,
+                exclude_venue=req.venue, exclude_symbol=req.symbol,
+            )
+            if others_im + im + fee_amt > wallet:
                 raise InalphaError(
-                    f"perp 保证金不足:需 IM {im} + fee {fee_amt} 超钱包 {wallet} {currency}",
+                    f"perp 保证金不足:其他仓已占 IM {others_im} + 本笔目标 IM {im} "
+                    f"+ fee {fee_amt} 超钱包 {wallet} {currency}",
                     code="INSUFFICIENT_MARGIN", status_code=409,
-                    details={"im": str(im), "fee": str(fee_amt),
+                    details={"im": str(im), "others_im": str(others_im),
+                             "fee": str(fee_amt),
                              "wallet": str(wallet), "currency": currency},
                 )
 
@@ -442,9 +461,114 @@ async def get_my_account(
     )
 
 
+@router.post("/accounts/me/deposit", response_model=CashFlowRecord)
+async def deposit_to_my_account(
+    req: DepositRequest,
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+) -> CashFlowRecord:
+    """给当前账户充值(外生资金事件):流水行 + 余额更新同事务,先留痕再改钱。
+
+    充值不改 ``initial_cash``(充值 ≠ 赚钱;真实绩效口径由流水可还原)。
+    """
+    account_id = account_id_from_user(user)
+    async with db.transaction():
+        # 锁账户行:与购买力守门/并发充值串行化(读余额 → 变更 → 记流水)
+        acct = await accounts_store.get_or_create(db, account_id, for_update=True)
+        currency = (req.currency or acct["base_currency"]).strip().upper()
+        amount = Decimal(str(req.amount))
+        new_balance = await accounts_store.apply_cash_delta(
+            db, account_id, amount, currency=currency
+        )
+        flow = await accounts_store.record_cash_flow(
+            db, account_id, kind="deposit", currency=currency,
+            amount=amount, balance_after=new_balance, note=req.note,
+        )
+    return _row_to_cash_flow(flow)
+
+
+@router.post("/accounts/me/reset", response_model=CashFlowRecord)
+async def reset_my_account(
+    req: ResetAccountRequest,
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+) -> CashFlowRecord:
+    """重置当前账户到初始状态:删全部持仓行 + 现金回到 ``{base: initial_cash}``。
+
+    - **有 running run 时 409**(否则 runner 下一根 bar 又把仓开回来);
+    - orders / closed_trades / strategy_runs 历史全部保留(审计不可抹),重置后
+      绩效从新基准起算(``initial_cash`` 更新为本轮值);
+    - 流水 kind=reset:amount = 新初始额 − 旧折算总现金(本地汇率近似),note 记
+      旧桶明细与清仓行数,审计可还原。
+    """
+    account_id = account_id_from_user(user)
+    async with db.transaction():
+        acct = await accounts_store.get_or_create(db, account_id, for_update=True)
+        running = await runs_store.count_running_by_account(db, account_id)
+        if running > 0:
+            raise AccountHasRunningRunsError(
+                f"account has {running} running strategy_runs; stop them before reset "
+                "(a running runner would immediately re-open positions)",
+                details={"running": running},
+            )
+        base_ccy = acct["base_currency"]
+        new_initial = (
+            Decimal(str(req.initial_cash))
+            if req.initial_cash is not None
+            else Decimal(str(acct["initial_cash"]))
+        )
+        old_balances = {
+            cur: Decimal(str(amt))
+            for cur, amt in (acct.get("cash_balances") or {}).items()
+        }
+        # 旧总额只做流水 amount 的近似口径(本地汇率,拿不到的桶排除);精确旧桶
+        # 明细原样进 note,审计不失真。
+        converter = BaseCurrencyConverter(base_ccy, None)
+        old_total = await convert_cash_balances(converter, old_balances)
+        deleted = await positions_store.delete_by_account(db, account_id)
+        await accounts_store.reset_cash_balances(
+            db, account_id, initial_cash=new_initial, base_currency=base_ccy
+        )
+        note_auto = (
+            f"reset: 清持仓 {deleted} 行; 旧现金桶 "
+            + ", ".join(f"{c}={a}" for c, a in sorted(old_balances.items()))
+            + f"; 新基准 {new_initial} {base_ccy}"
+        )
+        flow = await accounts_store.record_cash_flow(
+            db, account_id, kind="reset", currency=base_ccy,
+            amount=new_initial - old_total, balance_after=new_initial,
+            note=f"{note_auto}; {req.note}" if req.note else note_auto,
+        )
+    return _row_to_cash_flow(flow)
+
+
+@router.get("/accounts/me/cash_flows", response_model=list[CashFlowRecord])
+async def list_my_cash_flows(
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[CashFlowRecord]:
+    """列当前账户外生资金流水(充值/提取/重置),最近的在前。"""
+    account_id = account_id_from_user(user)
+    rows = await accounts_store.list_cash_flows(db, account_id, limit=limit)
+    return [_row_to_cash_flow(r) for r in rows]
+
+
 # ────────────────────────────────────────────────────────────────────
 # 内部辅助
 # ────────────────────────────────────────────────────────────────────
+
+
+def _row_to_cash_flow(row: dict[str, Any]) -> CashFlowRecord:
+    return CashFlowRecord(
+        id=row["id"],
+        kind=row["kind"],
+        currency=row["currency"],
+        amount=float(row["amount"]),
+        balance_after=float(row["balance_after"]),
+        note=row.get("note"),
+        created_at=row["created_at"],
+    )
 
 
 async def _resolve_ref_price(

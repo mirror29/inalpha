@@ -772,6 +772,53 @@ class AccountSnapshot(BaseModel):
     updated_at: datetime
 
 
+class DepositRequest(BaseModel):
+    """``POST /accounts/me/deposit`` 请求体:给账户充值(外生资金事件,写流水)。"""
+
+    amount: float = Field(
+        ..., gt=0, le=1e9,
+        description="充值金额(>0);上限 1e9 防超大值",
+    )
+    currency: str | None = Field(
+        default=None, min_length=1, max_length=16,
+        description="入账币种桶;省略 = 账户 base_currency",
+    )
+    note: str | None = Field(
+        default=None, max_length=500, description="备注(留痕,可空)"
+    )
+
+
+class ResetAccountRequest(BaseModel):
+    """``POST /accounts/me/reset`` 请求体:重置账户到初始状态。
+
+    删全部持仓行 + 现金重置为 ``{base_currency: initial_cash}``;orders /
+    closed_trades / strategy_runs 历史保留(审计不可抹)。有 running run 时 409。
+    """
+
+    initial_cash: float | None = Field(
+        default=None, gt=0, le=1e9,
+        description="新一轮初始资金(base_currency 计);省略 = 沿用账户当前 initial_cash",
+    )
+    note: str | None = Field(
+        default=None, max_length=500, description="备注(留痕,可空)"
+    )
+
+
+class CashFlowRecord(BaseModel):
+    """``GET /accounts/me/cash_flows`` 元素:一笔外生资金事件。
+
+    只含 deposit / withdraw / reset(成交现金变动在 orders / closed_trades)。
+    """
+
+    id: int
+    kind: Literal["deposit", "withdraw", "reset"]
+    currency: str
+    amount: float = Field(description="带符号变更额(充值为正)")
+    balance_after: float = Field(description="变更后该币种桶余额(审计对账用)")
+    note: str | None = None
+    created_at: datetime
+
+
 # ────────────────────────────────────────────────────────────────────
 # Plan API schema
 # ────────────────────────────────────────────────────────────────────

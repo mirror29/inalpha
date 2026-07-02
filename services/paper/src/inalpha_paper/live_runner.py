@@ -945,7 +945,9 @@ class LiveRunnerManager:
 
         # 1.6 perp 保证金购买力守门(与回测 Portfolio.can_afford_* + HTTP 同口径:按**成交后
         # 目标仓**算 prospective IM = |cur_qty ± qty| × price / leverage——平 / 减仓 IM 降,
-        # 不误拒策略自发的 cover 单)。保护性出场(强平/止损)已在上方豁免。
+        # 不误拒策略自发的 cover 单)。**跨仓聚合(#114)**:其他活跃 perp 仓已占 IM
+        # (positions.margin_used 权威值)一并计入,多仓合计不得超钱包。
+        # 保护性出场(强平/止损)已在上方豁免。
         if (run.get("trading_mode") or "spot") == "perp" and not is_protective_exit:
             leverage = int(run.get("leverage") or 1)
             close = float(bar.close)
@@ -955,14 +957,21 @@ class LiveRunnerManager:
                 cur_pos = await positions_store.get(
                     conn, account_id=account_id, venue=venue, symbol=symbol
                 )
+                others_im = float(
+                    await positions_store.sum_other_margin_used(
+                        conn, account_id, currency=currency,
+                        exclude_venue=venue, exclude_symbol=symbol,
+                    )
+                )
             cur_qty = float(cur_pos["quantity"]) if cur_pos else 0.0
             signed_qty = order.quantity if side == "BUY" else -order.quantity
             im = abs(cur_qty + signed_qty) * close / leverage
             fee_amt = order.quantity * close * _FEE_RATE
             wallet = float((acct.get("cash_balances") or {}).get(currency, 0) or 0)
-            if im + fee_amt > wallet:
+            if others_im + im + fee_amt > wallet:
                 reason = (
-                    f"INSUFFICIENT_MARGIN: 需 IM {im:.2f} + fee {fee_amt:.4f} "
+                    f"INSUFFICIENT_MARGIN: 其他仓已占 IM {others_im:.2f} + "
+                    f"本笔目标 IM {im:.2f} + fee {fee_amt:.4f} "
                     f"超钱包 {wallet:.2f} {currency}"
                 )
                 session.reject_order(
