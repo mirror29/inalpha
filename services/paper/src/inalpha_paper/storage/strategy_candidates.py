@@ -177,12 +177,14 @@ async def list_candidates(
     status: str | None = None,
     author_id: UUID | None = None,
     limit: int = 50,
+    owner_account_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """列候选（按 fitness DESC, created_at DESC，未跑过回测的排最后）。
 
     Args:
         status: 可选过滤 'candidate' / 'rejected' / 'promoted'
         author_id: 可选只看某用户创建的
+        owner_account_id: 多租户——按账户过滤,填了只看本人候选,不填看全局(仅 dev)
     """
     sql = (
         "SELECT id, code, code_hash, description, author, author_id, "
@@ -191,6 +193,9 @@ async def list_candidates(
         "FROM strategy_candidates WHERE 1=1"
     )
     params: list[Any] = []
+    if owner_account_id is not None:
+        sql += " AND owner_account_id = %s"
+        params.append(owner_account_id)
     if status is not None:
         sql += " AND status = %s"
         params.append(status)
