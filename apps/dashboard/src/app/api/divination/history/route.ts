@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/divination/history?limit= —— 占卜台历史记录(BFF)。
  *
- * 转发到 mastra 的 `GET /divination/history`,注入 `subject = CONSOLE_SUBJECT`
- * (只看当前控制台身份的记录)。limit 透传(mastra 侧封顶 100)。
+ * 转发到 mastra 的 `GET /divination/history`,注入 `subject`(经 getSessionSubject()
+ * 从登录用户派生,dev 回落 console:dev,只看本人记录)。limit 透传(mastra 侧封顶 100)。
  */
 export async function GET(req: NextRequest) {
   const limit = req.nextUrl.searchParams.get("limit") ?? undefined;
