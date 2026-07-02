@@ -17,6 +17,7 @@ const STRINGS = {
     submit: "Sign in",
     submitting: "Signing in…",
     invalid: "Incorrect email or password",
+    rateLimited: "Too many attempts, try again later",
     unavailable: "Login service unavailable, try again later",
   },
   zh: {
@@ -27,6 +28,7 @@ const STRINGS = {
     submit: "登录",
     submitting: "登录中…",
     invalid: "邮箱或密码不正确",
+    rateLimited: "尝试过于频繁,请稍后再试",
     unavailable: "登录服务暂不可用,请稍后重试",
   },
 };
@@ -66,7 +68,13 @@ export function LoginForm() {
         router.refresh();
         return;
       }
-      setError(res.status === 401 ? t.invalid : t.unavailable);
+      setError(
+        res.status === 401
+          ? t.invalid
+          : res.status === 429
+            ? t.rateLimited
+            : t.unavailable,
+      );
     } catch {
       setError(t.unavailable);
     } finally {

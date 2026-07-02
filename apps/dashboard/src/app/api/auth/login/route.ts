@@ -42,6 +42,14 @@ export async function POST(req: Request): Promise<Response> {
     if (err instanceof BackendError && err.status === 401) {
       return NextResponse.json({ error: "邮箱或密码不正确" }, { status: 401 });
     }
+    // 透传 paper 的失败节流(429),否则会被误报成"登录服务不可用"(502),
+    // 用户看不到"尝试过于频繁"的真实原因。
+    if (err instanceof BackendError && err.status === 429) {
+      return NextResponse.json(
+        { error: "尝试过于频繁,请稍后再试" },
+        { status: 429 },
+      );
+    }
     return NextResponse.json({ error: "登录服务暂不可用,请稍后重试" }, { status: 502 });
   }
 }
