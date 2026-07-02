@@ -156,9 +156,11 @@ async def start_strategy_run(
         )
 
     # per-run 资金额度:显式传则原样落库(可大于账户可用——下单时账户级购买力硬底会
-    # 显式拒单,run 不死);省略则取 min(10000, 账户折算可用现金),start 时确定并落库,
-    # 使 sizing 行为可复现、可审计。折算只用本地汇率(USD 稳定币 1:1;拿不到汇率的
-    # 币种桶排除,保守),避免 start 路径依赖 data 服务。
+    # 显式拒单,run 不死);省略则取 min(10000, 账户折算可用现金 − 其他 running run
+    # 已分配额度)——不扣减已分配额度会让 N 个 run 集体超额认领资本(∑allocation ≫
+    # 现金,per-run 钱包虚高,表现为连环静默拒单)。start 时确定并落库,使 sizing 行为
+    # 可复现、可审计。折算只用本地汇率(USD 稳定币 1:1;拿不到汇率的币种桶排除,保守),
+    # 避免 start 路径依赖 data 服务。
     allocation = Decimal(str(req.allocation)) if req.allocation is not None else None
     if allocation is None:
         acct = await accounts_store.get_or_create(db, account_id)
@@ -170,14 +172,17 @@ async def start_strategy_run(
                 for cur, amt in (acct.get("cash_balances") or {}).items()
             },
         )
-        allocation = min(Decimal("10000"), available)
+        already_allocated = await runs_store.sum_running_allocation(db, account_id)
+        allocation = min(Decimal("10000"), available - already_allocated)
         if allocation <= 0:
             raise InsufficientCashForRunError(
-                f"account has no available cash for a new run "
-                f"(converted available {available:.2f} {acct['base_currency']}); "
+                f"account has no unallocated cash for a new run "
+                f"(converted available {available:.2f} {acct['base_currency']}, "
+                f"already allocated to running runs {already_allocated:.2f}); "
                 "stop a run / close positions first, or pass an explicit allocation",
                 details={
                     "available_cash_base": str(available),
+                    "already_allocated": str(already_allocated),
                     "base_currency": acct["base_currency"],
                     "fx_warnings": converter.warnings,
                 },

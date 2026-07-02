@@ -128,6 +128,24 @@ async def count_running_by_account(conn: AsyncConnection, account_id: UUID) -> i
     return int(row["n"]) if row else 0
 
 
+async def sum_running_allocation(conn: AsyncConnection, account_id: UUID) -> Decimal:
+    """同账户所有 running run 已分配额度之和(自动 allocation 扣减用)。
+
+    不扣减会让多个 run 集体超额认领资本:账户 1 万先后自动起 N 个 run,现金还没
+    花出去时每个都拿到近全额 allocation,∑allocation ≫ 账户现金——账户级购买力
+    硬底虽兜得住不买穿,但 per-run 虚拟钱包虚高,表现为连环静默拒单误导用户。
+    allocation 为 NULL 的老 run 按旧语义固定 1 万计。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT COALESCE(SUM(COALESCE(allocation, 10000)), 0) AS total "
+            "FROM strategy_runs WHERE account_id = %s AND status = %s",
+            (str(account_id), _RUNNING),
+        )
+        row = await cur.fetchone()
+    return Decimal(str(row["total"])) if row else Decimal(0)  # type: ignore[index]
+
+
 async def get_running_by_symbol(
     conn: AsyncConnection, account_id: UUID, *, venue: str, symbol: str
 ) -> dict[str, Any] | None:

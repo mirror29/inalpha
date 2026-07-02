@@ -27,7 +27,7 @@ from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
 from ..execution import perp_margin
 from ..execution import risk_guard as risk_guard_mod
-from ..execution.currency_resolver import resolve_currency
+from ..execution.currency_resolver import KNOWN_CASH_CURRENCIES, resolve_currency
 from ..execution.order_executor import OrderExecutor
 from ..execution.spot_guard import (
     InsufficientCashError,
@@ -124,12 +124,15 @@ async def post_submit_order(
 
     # 落盘 + 持仓 + 现金（事务）
     async with db.transaction():
-        # spot BUY 时锁账户行:购买力守门"读余额 → 校验 → 扣款"须与并发 BUY 串行化
-        # （TOCTOU,与下方 SELL 守门锁 positions 行同构）。其余路径不锁,避免无谓串行。
-        acct = await accounts_store.get_or_create(
-            db, account_id,
-            for_update=(req.trading_mode != "perp" and req.side == "BUY"),
-        )
+        # **恒锁账户行,统一全局锁序 accounts → positions**:
+        # - spot BUY 购买力守门 / perp 跨仓保证金聚合都要"读钱包+其他仓 IM → 校验 →
+        #   落账"原子——perp 若不锁账户行,两笔并发开仓在**不同 symbol**(锁不同持仓
+        #   行,互不阻塞)会各读旧 others_im/钱包双双过闸,合计 IM 超钱包(恰是跨仓
+        #   聚合要堵的洞);
+        # - 与 deposit/reset(先锁 accounts 再动 positions)同序,消除 spot SELL 先锁
+        #   positions 再扣 cash 的反序死锁窗口。
+        # 代价:同账户下单串行化——模拟盘量级可接受。
+        acct = await accounts_store.get_or_create(db, account_id, for_update=True)
 
         # perp 保证金购买力守门（**事务内 FOR UPDATE**，与下方 spot SELL 守门同口径防 TOCTOU：
         # 否则同账户同标的并发 BUY 各读旧 wallet/持仓双双过闸 → double-open、累计 IM 超钱包）。
@@ -155,10 +158,9 @@ async def post_submit_order(
                 exclude_venue=req.venue, exclude_symbol=req.symbol,
             )
             if others_im + im + fee_amt > wallet:
-                raise InalphaError(
+                raise perp_margin.InsufficientMarginError(
                     f"perp 保证金不足:其他仓已占 IM {others_im} + 本笔目标 IM {im} "
                     f"+ fee {fee_amt} 超钱包 {wallet} {currency}",
-                    code="INSUFFICIENT_MARGIN", status_code=409,
                     details={"im": str(im), "others_im": str(others_im),
                              "fee": str(fee_amt),
                              "wallet": str(wallet), "currency": currency},
@@ -366,9 +368,12 @@ async def get_my_account(
             realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(p["realized_pnl"])
         )
 
+    # 净外生入金(自最近一次 reset,按币种)——真实收益口径的第三项,防充值算成盈利
+    flows_by_ccy = await accounts_store.sum_external_flows_since_reset(db, account_id)
+
     # DataClient 在两种情况下才开：FX 有非本地可解析币种,或有持仓要取 mark
     # （无持仓的单币种 / crypto-USD 账户保持零网络）。
-    all_ccys = set(cash_balances) | pos_ccys
+    all_ccys = set(cash_balances) | pos_ccys | set(flows_by_ccy)
     # token 实际上必非空：get_current_user 依赖已保证 Bearer header 合法，否则先行 401；
     # 这里 token=None 分支是防御性的（理论不可达），保留以防未来调用方绕过 auth。
     token = (
@@ -441,6 +446,12 @@ async def get_my_account(
             converted = await converter.convert(amt, cur)
             if converted is not None:
                 realized_pnl_base += converted
+        # 净外生入金折算(同一 converter,汇率已缓存)
+        net_flows_base = Decimal(0)
+        for cur, amt in flows_by_ccy.items():
+            converted = await converter.convert(amt, cur)
+            if converted is not None:
+                net_flows_base += converted
         fx_warnings = converter.warnings + valuation_warnings
     finally:
         if data_client is not None:
@@ -455,6 +466,7 @@ async def get_my_account(
         positions_value=float(positions_base),
         total_equity=float(cash_base + positions_base),
         realized_pnl=float(realized_pnl_base),
+        net_external_flows=float(net_flows_base),
         fx_warnings=fx_warnings,
         created_at=acct["created_at"],
         updated_at=acct["updated_at"],
@@ -476,6 +488,14 @@ async def deposit_to_my_account(
         # 锁账户行:与购买力守门/并发充值串行化(读余额 → 变更 → 记流水)
         acct = await accounts_store.get_or_create(db, account_id, for_update=True)
         currency = (req.currency or acct["base_currency"]).strip().upper()
+        # 白名单:任意字符串会建出 FX 永远折算不了的垃圾桶(常驻 fx_warnings 且删不掉)
+        if currency not in KNOWN_CASH_CURRENCIES:
+            raise InalphaError(
+                f"unsupported deposit currency {currency!r}; "
+                f"supported: {', '.join(sorted(KNOWN_CASH_CURRENCIES))}",
+                code="UNSUPPORTED_CURRENCY",
+                status_code=422,
+            )
         amount = Decimal(str(req.amount))
         new_balance = await accounts_store.apply_cash_delta(
             db, account_id, amount, currency=currency

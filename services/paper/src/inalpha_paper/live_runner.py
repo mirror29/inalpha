@@ -1106,7 +1106,12 @@ class LiveRunnerManager:
         )
         try:
             async with get_conn() as conn, conn.transaction():
-                await accounts_store.get_or_create(conn, account_id)  # 首单 lazy create 账户
+                # 首单 lazy create + **恒锁账户行**(统一全局锁序 accounts → positions,
+                # 与 HTTP /orders/submit、deposit/reset 同序防死锁);spot BUY / perp
+                # 开仓的权威复检都以本锁为串行化点。
+                locked_acct = await accounts_store.get_or_create(
+                    conn, account_id, for_update=True
+                )
                 # 现货 long-only 权威守门（事务内 FOR UPDATE）：闭合 step 1.5 乐观读与本 apply
                 # 跨事务的 TOCTOU——并发同账户同标的 SELL 各读旧持仓双双过 step 1.5，这里锁行
                 # 串行化，第二个读到更新后持仓 → raise 回滚（不落 plan/order/fill）转 except 拒单。
@@ -1178,9 +1183,6 @@ class LiveRunnerManager:
                     and side == "BUY"
                     and result["status"] == "FILLED"
                 ):
-                    locked_acct = await accounts_store.get_or_create(
-                        conn, account_id, for_update=True
-                    )
                     locked_base_ccy = locked_acct["base_currency"]
                     offline_fx = (
                         spot_buy_converter.offline_copy()
@@ -1207,6 +1209,42 @@ class LiveRunnerManager:
                             f"{exec_qty * float(bar.close):.2f} {locked_order_ccy}"
                             f"(含手续费)超过账户折算可用 "
                             f"{locked_available:.2f} {locked_base_ccy}"
+                        )
+                # perp 开/加仓保证金权威复检(事务内,账户行已锁):闭合 1.6 乐观预检与
+                # 落账间的 TOCTOU——两笔并发 perp 开仓在**不同 symbol**(锁不同持仓行,
+                # 互不阻塞)但同一钱包时,各读旧 others_im/wallet 双双过闸 → 合计 IM 超
+                # 钱包。账户行锁把同账户 perp 下单串行化,复检读到的都是已提交终值。
+                # 保护性平仓(is_protective_exit)不复检——上方钳量分支已保证 reduce-only。
+                elif (
+                    (run.get("trading_mode") or "spot") == "perp"
+                    and not is_protective_exit
+                    and result["status"] == "FILLED"
+                ):
+                    _leverage = int(run.get("leverage") or 1)
+                    _close = float(bar.close)
+                    _ccy = resolve_currency(venue, symbol)
+                    _locked_pos = await positions_store.get(
+                        conn, account_id=account_id, venue=venue, symbol=symbol,
+                        for_update=True,
+                    )
+                    _cur_qty = float(_locked_pos["quantity"]) if _locked_pos else 0.0
+                    _signed = exec_qty if side == "BUY" else -exec_qty
+                    _im = abs(_cur_qty + _signed) * _close / _leverage
+                    _fee = exec_qty * _close * _FEE_RATE
+                    _others_im = float(
+                        await positions_store.sum_other_margin_used(
+                            conn, account_id, currency=_ccy,
+                            exclude_venue=venue, exclude_symbol=symbol,
+                        )
+                    )
+                    _wallet = float(
+                        (locked_acct.get("cash_balances") or {}).get(_ccy, 0) or 0
+                    )
+                    if _others_im + _im + _fee > _wallet:
+                        raise perp_margin.InsufficientMarginError(
+                            f"INSUFFICIENT_MARGIN: 其他仓已占 IM {_others_im:.2f} + "
+                            f"本笔目标 IM {_im:.2f} + fee {_fee:.4f} "
+                            f"超钱包 {_wallet:.2f} {_ccy}"
                         )
                 plan = await plans_store.create(
                     conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
@@ -1305,6 +1343,23 @@ class LiveRunnerManager:
                     reason=e.message,
                 )
             return "risk_rejected"
+        except perp_margin.InsufficientMarginError as e:
+            # perp 保证金权威复检命中并发竞态(另一笔先占走了保证金):事务已回滚,
+            # 补 session 拒单 + rejected 决策行(与 1.6 乐观预检同 outcome),不杀 run。
+            session.reject_order(
+                order=order, strategy_id=strategy_id,
+                reason=e.message, ts_event=bar.ts_event,
+            )
+            async with get_conn() as conn:
+                await runs_store.append_log(
+                    conn, run_id, "warn",
+                    f"order rejected by perp margin (txn race): {e.message}",
+                )
+                await self._record_decision(
+                    conn, run, order, bar, outcome="rejected", intent=intent,
+                    reason=e.message,
+                )
+            return "rejected"
 
         # 4. 回灌 session：成交更新 portfolio + 策略持仓视图；未成交清理 ExecutionEngine 状态
         # 已知残差（保护性钳量场景）：confirm_fill 按钳后量（如 0.5）增量减仓，DB 已被钳到全平

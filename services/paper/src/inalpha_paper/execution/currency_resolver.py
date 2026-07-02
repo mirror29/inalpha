@@ -39,6 +39,14 @@ _CALENDAR_CODE_TO_CURRENCY: dict[str, str] = {
 # crypto symbol 无 quote 时的默认计价货币
 _DEFAULT_CRYPTO_QUOTE = "USDT"
 
+# 账户现金桶允许的币种全集:各市场本币 + USD 稳定币(与 fx._STABLE_USD 一致)。
+# 充值端点用它做白名单——任意字符串建桶会造出 FX 永远折算不了的垃圾桶,
+# 常驻 fx_warnings 且无法删除(无 withdraw 端点)。
+KNOWN_CASH_CURRENCIES: frozenset[str] = (
+    frozenset(_CALENDAR_CODE_TO_CURRENCY.values())
+    | frozenset({"USD", "USDT", "USDC", "BUSD", "DAI"})
+)
+
 
 def _crypto_quote(symbol: str) -> str:
     """从 crypto symbol 取 quote 货币：``BTC/USDT`` → ``USDT``；无 ``/`` 兜底 USDT。
@@ -72,4 +80,4 @@ def resolve_currency(venue: str, symbol: str, *, default: str = "USD") -> str:
     return default  # fred / 未识别 venue / 未知标的 → fail-open
 
 
-__all__ = ["resolve_currency"]
+__all__ = ["KNOWN_CASH_CURRENCIES", "resolve_currency"]

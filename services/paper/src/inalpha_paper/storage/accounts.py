@@ -126,6 +126,34 @@ async def list_cash_flows(
     return list(rows)  # type: ignore[arg-type]
 
 
+async def sum_external_flows_since_reset(
+    conn: AsyncConnection, account_id: UUID
+) -> dict[str, Decimal]:
+    """自最近一次 reset 之后的净外生入金(deposit/withdraw 带符号求和),按币种。
+
+    账户快照的 ``net_external_flows`` 用:真实收益 = 权益 − 基准 − 净入金,不给
+    消费者把充值当成盈利的机会。reset 会重置基准(initial_cash),故只统计最近
+    一次 reset 之后的流水;从未 reset 则统计全部。
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT currency, COALESCE(SUM(amount), 0) AS total
+            FROM account_cash_flows
+            WHERE account_id = %s
+              AND kind IN ('deposit', 'withdraw')
+              AND created_at > COALESCE(
+                  (SELECT MAX(created_at) FROM account_cash_flows
+                   WHERE account_id = %s AND kind = 'reset'),
+                  '-infinity'::timestamptz)
+            GROUP BY currency
+            """,
+            (str(account_id), str(account_id)),
+        )
+        rows = await cur.fetchall()
+    return {r["currency"]: Decimal(str(r["total"])) for r in rows}  # type: ignore[index]
+
+
 async def reset_cash_balances(
     conn: AsyncConnection,
     account_id: UUID,
