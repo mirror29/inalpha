@@ -24,7 +24,14 @@ export const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
 
 const ALG = "HS256";
 /** session 有效期:7 天。过期即重登(单用户,无刷新令牌)。 */
-const SESSION_TTL_SEC = 7 * 24 * 3600;
+export const SESSION_TTL_SEC = 7 * 24 * 3600;
+
+/**
+ * session token 的区分标记。session cookie 与后端 service token 同用 `JWT_SECRET` 签、
+ * claim 形状一致——不加区分,泄露的 session cookie 可被当长效后端凭据重放。session token
+ * 带 `token_use:"session"`,后端 `get_current_user` 一律拒收(service token 不带此 claim)。
+ */
+const SESSION_TOKEN_USE = "session";
 
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
@@ -44,7 +51,7 @@ export interface SessionUser {
 /** 签一个 session JWT(HS256,7d)。登录成功后写进 httpOnly cookie。 */
 export async function createSessionToken(user: SessionUser): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
-  return new SignJWT({ email: user.email, roles: user.roles })
+  return new SignJWT({ email: user.email, roles: user.roles, token_use: SESSION_TOKEN_USE })
     .setProtectedHeader({ alg: ALG })
     .setSubject(user.subject)
     .setIssuedAt(nowSec)
@@ -59,7 +66,8 @@ export async function readSession(): Promise<SessionUser | null> {
   if (!raw) return null;
   try {
     const { payload } = await jwtVerify(raw, getSecret(), { algorithms: [ALG] });
-    if (!payload.sub) return null;
+    // 只认 session token(带 token_use=session)——service token 不能拿来当登录态。
+    if (!payload.sub || payload.token_use !== SESSION_TOKEN_USE) return null;
     return {
       subject: payload.sub,
       email: typeof payload.email === "string" ? payload.email : "",

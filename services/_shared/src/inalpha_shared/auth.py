@@ -85,6 +85,14 @@ async def get_current_user(
     token = authorization.removeprefix("Bearer ").strip()
     payload = verify_jwt(token, settings.jwt_secret, settings.jwt_algorithm)
 
+    # dashboard 的 session cookie 与 service token 同用 JWT_SECRET 签、claim 形状也一致,
+    # 若泄露(httpOnly+Secure 已很难)本可当长效后端凭据重放。session token 显式带
+    # ``token_use=session``,API 一律拒收——service token 不带此 claim,不受影响。
+    if payload.get("token_use") == "session":
+        raise UnauthorizedError(
+            "session token not accepted for API", code="INVALID_TOKEN_USE"
+        )
+
     sub = payload.get("sub")
     if not sub:
         raise UnauthorizedError("missing sub claim", code="INVALID_TOKEN_CLAIMS")

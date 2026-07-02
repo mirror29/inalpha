@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { BackendError, backendFetch } from "@/lib/backend";
-import { SESSION_COOKIE, SESSION_COOKIE_OPTS, createSessionToken } from "@/lib/session";
+import {
+  SESSION_COOKIE,
+  SESSION_COOKIE_OPTS,
+  SESSION_TTL_SEC,
+  createSessionToken,
+} from "@/lib/session";
 
 /**
  * 登录:校验凭据 → 落 session cookie。
@@ -35,7 +40,7 @@ export async function POST(req: Request): Promise<Response> {
     const res = NextResponse.json({ ok: true });
     res.cookies.set(SESSION_COOKIE, token, {
       ...SESSION_COOKIE_OPTS,
-      maxAge: 7 * 24 * 3600,
+      maxAge: SESSION_TTL_SEC,
     });
     return res;
   } catch (err) {
