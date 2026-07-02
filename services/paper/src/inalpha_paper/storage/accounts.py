@@ -30,12 +30,17 @@ async def get_or_create(
     *,
     initial_cash: Decimal = DEFAULT_INITIAL_CASH,
     base_currency: str = DEFAULT_BASE_CURRENCY,
+    for_update: bool = False,
 ) -> dict[str, Any]:
     """按 account_id 查账户；不存在则按默认初始资金创建。
 
     初始资金落在 ``base_currency`` 桶（``cash_balances = {base_currency: initial_cash}``）。
     幂等：UPSERT 走 ON CONFLICT DO NOTHING，并发首单不会重复初始化。
     返回最新账户行（含 ``initial_cash`` / ``base_currency`` / ``cash_balances`` dict）。
+
+    ``for_update=True``:``SELECT ... FOR UPDATE`` 锁账户行——spot BUY 购买力守门在
+    事务内复检时用,把"读余额 → 校验 → 扣款"串行化,堵并发 BUY 各读旧余额双双过闸
+    的 TOCTOU(与 positions 行 SELL 守门同构)。须在事务内调用。
     """
     async with conn.cursor() as cur:
         await cur.execute(
@@ -50,7 +55,8 @@ async def get_or_create(
         await cur.execute(
             "SELECT account_id, initial_cash, base_currency, cash_balances, "
             "created_at, updated_at "
-            "FROM accounts WHERE account_id = %s",
+            "FROM accounts WHERE account_id = %s"
+            + (" FOR UPDATE" if for_update else ""),
             (str(account_id),),
         )
         row = await cur.fetchone()

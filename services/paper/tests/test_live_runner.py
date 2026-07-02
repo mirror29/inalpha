@@ -45,20 +45,32 @@ from .test_live_session import (
 pytestmark = pytest.mark.integration
 
 
+# 测试策略买 1 BTC @ 50000 ≈ 50050(含 fee):session 虚拟钱包与账户都要盖得住,
+# 否则被 spot BUY 购买力守门拒掉(守门前这些买单是"碰巧"能成交的透支单)。
+_TEST_CASH = 100_000.0
+
+
 def _make_session() -> LiveEngineSession:
     return LiveEngineSession(
         strategy_cls=_BuyOnceStrategy,
         instrument_id=_INSTRUMENT,
         timeframe="1h",
         params={},
-        initial_cash=10_000.0,
+        initial_cash=_TEST_CASH,
         fee_rate=0.001,
     )
 
 
 async def _insert_run(account_id, candidate_id=None):  # type: ignore[no-untyped-def]
-    """插一行 run；candidate_id=None 时先建一个真候选（strategy_runs.candidate_id 有 FK）。"""
+    """插一行 run；candidate_id=None 时先建一个真候选（strategy_runs.candidate_id 有 FK）。
+
+    顺带按 ``_TEST_CASH`` 预建账户:spot BUY 购买力守门按账户折算现金放行,默认 1 万
+    盖不住测试策略的 1 BTC@50000 买单。
+    """
     async with get_conn() as conn:
+        await accounts_store.get_or_create(
+            conn, account_id, initial_cash=Decimal(str(_TEST_CASH))
+        )
         if candidate_id is None:
             # 结构可区分 salt 作 STRING 字面量（非注释）：结构指纹去重剥注释后会让
             # 注释-only / 注释-salt 候选全撞成同一个 → 同 candidate 第二次起跑 409。

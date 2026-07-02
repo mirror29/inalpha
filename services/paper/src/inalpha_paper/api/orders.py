@@ -29,9 +29,14 @@ from ..execution import perp_margin
 from ..execution import risk_guard as risk_guard_mod
 from ..execution.currency_resolver import resolve_currency
 from ..execution.order_executor import OrderExecutor
-from ..execution.spot_guard import InsufficientPositionError, violates_spot_long_only
+from ..execution.spot_guard import (
+    InsufficientCashError,
+    InsufficientPositionError,
+    violates_spot_buying_power,
+    violates_spot_long_only,
+)
 from ..fills import apply_fill_to_positions_and_cash
-from ..fx import BaseCurrencyConverter
+from ..fx import BaseCurrencyConverter, convert_cash_balances
 from ..fx import needs_network as fx_needs_network
 from ..schemas import (
     AccountSnapshot,
@@ -108,7 +113,12 @@ async def post_submit_order(
 
     # 落盘 + 持仓 + 现金（事务）
     async with db.transaction():
-        acct = await accounts_store.get_or_create(db, account_id)
+        # spot BUY 时锁账户行:购买力守门"读余额 → 校验 → 扣款"须与并发 BUY 串行化
+        # （TOCTOU,与下方 SELL 守门锁 positions 行同构）。其余路径不锁,避免无谓串行。
+        acct = await accounts_store.get_or_create(
+            db, account_id,
+            for_update=(req.trading_mode != "perp" and req.side == "BUY"),
+        )
 
         # perp 保证金购买力守门（**事务内 FOR UPDATE**，与下方 spot SELL 守门同口径防 TOCTOU：
         # 否则同账户同标的并发 BUY 各读旧 wallet/持仓双双过闸 → double-open、累计 IM 超钱包）。
@@ -133,6 +143,66 @@ async def post_submit_order(
                     code="INSUFFICIENT_MARGIN", status_code=409,
                     details={"im": str(im), "fee": str(fee_amt),
                              "wallet": str(wallet), "currency": currency},
+                )
+
+        # 现货 BUY 购买力守门（与回测 Portfolio.can_afford_buy 同口径,账户聚合层落地）：
+        # 各币种现金桶按 FX 折算成 base 总可用现金,notional+fee(折 base)超过可用×0.99
+        # 即拒——桶允许为负(= 账户内隐式借计价货币,如 USD 户买 USDT 对),但**总折算
+        # 现金不允许被买穿**。账户行已在上方 FOR UPDATE,与扣款同事务防 TOCTOU。
+        # FX:USD 稳定币本地 1:1 零网络;其余币种在锁内调 data /fx(模拟盘低并发可接
+        # 受);拿不到汇率的桶排除出可用现金、订单计价货币折不了则直接拒(fail-closed)。
+        if req.trading_mode != "perp" and req.side == "BUY":
+            balances = {
+                cur: Decimal(str(amt))
+                for cur, amt in (acct.get("cash_balances") or {}).items()
+            }
+            order_ccy = resolve_currency(req.venue, req.symbol)
+            base_ccy = acct["base_currency"]
+            fx_token = (
+                authorization.removeprefix("Bearer ").strip()
+                if authorization and authorization.startswith("Bearer ")
+                else None
+            )
+            fx_client = (
+                DataClient(settings.data_service_url, fx_token)
+                if fx_token and fx_needs_network({*balances, order_ccy}, base_ccy)
+                else None
+            )
+            try:
+                converter = BaseCurrencyConverter(base_ccy, fx_client)
+                available = await convert_cash_balances(converter, balances)
+                order_ccy_rate = await converter.rate(order_ccy)
+            finally:
+                if fx_client is not None:
+                    await fx_client.close()
+            if violates_spot_buying_power(
+                side=req.side,
+                quantity=req.quantity,
+                ref_price=ref_price,
+                fee_rate=req.fee_rate,
+                order_ccy_rate=order_ccy_rate,
+                available_cash_base=available,
+                trading_mode=req.trading_mode,
+            ):
+                fx_note = (
+                    f"; FX warnings: {'; '.join(converter.warnings)}"
+                    if converter.warnings
+                    else ""
+                )
+                raise InsufficientCashError(
+                    f"BUY 所需资金超过账户可用现金:约 {req.quantity * ref_price:.2f} "
+                    f"{order_ccy}(含手续费),账户折算可用 {available:.2f} {base_ccy}"
+                    f"{fx_note}",
+                    details={
+                        "venue": req.venue,
+                        "symbol": req.symbol,
+                        "quantity": req.quantity,
+                        "ref_price": ref_price,
+                        "order_currency": order_ccy,
+                        "available_cash_base": str(available),
+                        "base_currency": base_ccy,
+                        "fx_warnings": converter.warnings,
+                    },
                 )
 
         # 现货 long-only 守门（与回测 Portfolio.can_afford_sell 同口径）：OrderExecutor
@@ -238,10 +308,16 @@ async def get_my_account(
     user: Annotated[User, Depends(get_current_user)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> AccountSnapshot:
-    """当前账户快照：多币种 cash 桶 + 持仓估值（按 avg_open_price），折算到 base_currency。
+    """当前账户快照：多币种 cash 桶 + 持仓 mark-to-market 估值，折算到 base_currency。
 
     D-11：cash / 持仓可能跨币种，按 base_currency FX 折算汇总。本地可解析的币种
     （同币种 / USD 稳定币）不打网络；其余调 data ``/fx``，拿不到的币种排除 + warning。
+
+    持仓估值按**最新市价**（data ``/ticker`` 缓存价,与 dashboard 持仓表同源;
+    ``fresh=false`` 只读缓存不触发慢 backfill）:spot 仓贡献 ``qty × mark``;perp 仓
+    cash 即钱包、开仓不动名义,贡献未实现盈亏 ``(mark − avg) × qty``。最新价拿不到 →
+    spot 按开仓均价兜底 / perp 记 0,并入 ``fx_warnings`` 不静默(此前恒按开仓均价
+    估值,总权益基本恒等于初始资金、不反映浮盈)。
     """
     account_id = account_id_from_user(user)
     acct = await accounts_store.get_or_create(db, account_id)
@@ -255,22 +331,25 @@ async def get_my_account(
     cash_balances: dict[str, Decimal] = {
         cur: Decimal(str(amt)) for cur, amt in (acct["cash_balances"] or {}).items()
     }
-    # 持仓估值（按 avg_open_price）+ realized_pnl，都按计价货币分桶
-    # （NULL 行按 venue/symbol 兜底解析），稍后用同一个 converter 折算到 base。
-    pos_value_by_ccy: dict[str, Decimal] = {}
+    # realized_pnl 按计价货币分桶（NULL 行按 venue/symbol 兜底解析）;
+    # 持仓市值在下方 try 里逐仓取 mark 后再分桶（需要 data client）。
     realized_pnl_by_ccy: dict[str, Decimal] = {}
+    pos_ccys: set[str] = set()
+    has_open_position = False
     for p in pos_rows:
         ccy = p.get("currency") or resolve_currency(
             p["venue"], p["symbol"], default=base_currency
         )
-        value = Decimal(p["quantity"]) * Decimal(p["avg_open_price"])
-        pos_value_by_ccy[ccy] = pos_value_by_ccy.get(ccy, Decimal(0)) + value
+        pos_ccys.add(ccy)
+        if Decimal(p["quantity"]) != 0:
+            has_open_position = True
         realized_pnl_by_ccy[ccy] = (
             realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(p["realized_pnl"])
         )
 
-    # 只在存在非本地可解析币种时才开 DataClient（单币种 / crypto-USD 账户零网络）
-    all_ccys = set(cash_balances) | set(pos_value_by_ccy) | set(realized_pnl_by_ccy)
+    # DataClient 在两种情况下才开：FX 有非本地可解析币种,或有持仓要取 mark
+    # （无持仓的单币种 / crypto-USD 账户保持零网络）。
+    all_ccys = set(cash_balances) | pos_ccys
     # token 实际上必非空：get_current_user 依赖已保证 Bearer header 合法，否则先行 401；
     # 这里 token=None 分支是防御性的（理论不可达），保留以防未来调用方绕过 auth。
     token = (
@@ -280,13 +359,53 @@ async def get_my_account(
     )
     data_client = (
         DataClient(settings.data_service_url, token)
-        if token and fx_needs_network(all_ccys, base_currency)
+        if token and (fx_needs_network(all_ccys, base_currency) or has_open_position)
         else None
     )
     # try 前初始化，确保即便 convert() 抛非预期异常也不会在 return 处 NameError（CR）
     fx_warnings: list[str] = []
     try:
         converter = BaseCurrencyConverter(base_currency, data_client)
+
+        # 持仓 mark-to-market 估值,按计价货币分桶。mark 拿不到时 spot 用 avg 兜底
+        # （perp 下 (avg−avg)×qty = 0 恰为"未实现盈亏按 0 计"），并记 warning。
+        pos_value_by_ccy: dict[str, Decimal] = {}
+        valuation_warnings: list[str] = []
+        for p in pos_rows:
+            qty = Decimal(p["quantity"])
+            if qty == 0:
+                continue
+            ccy = p.get("currency") or resolve_currency(
+                p["venue"], p["symbol"], default=base_currency
+            )
+            avg = Decimal(p["avg_open_price"])
+            # perp 行:强平价非空或占用保证金非 0（spot 恒 NULL/0）
+            is_perp = p.get("liquidation_price") is not None or (
+                Decimal(str(p.get("margin_used") or 0)) != 0
+            )
+            mark: Decimal | None = None
+            if data_client is not None:
+                try:
+                    ticker = await data_client.get_ticker(
+                        venue=p["venue"], symbol=p["symbol"], fresh=False
+                    )
+                    mark = Decimal(str(ticker["price"]))
+                    if ticker.get("is_stale"):
+                        valuation_warnings.append(
+                            f"{p['venue']}/{p['symbol']} 最新价偏旧"
+                            f"（{ticker.get('stale_seconds')}s 前），估值可能不准"
+                        )
+                except Exception:
+                    mark = None
+            if mark is None:
+                valuation_warnings.append(
+                    f"{p['venue']}/{p['symbol']} 最新价不可用，"
+                    + ("perp 未实现盈亏按 0 计" if is_perp else "按开仓均价估值")
+                )
+                mark = avg
+            value = (mark - avg) * qty if is_perp else qty * mark
+            pos_value_by_ccy[ccy] = pos_value_by_ccy.get(ccy, Decimal(0)) + value
+
         cash_base = Decimal(0)
         for cur, amt in cash_balances.items():
             converted = await converter.convert(amt, cur)
@@ -303,7 +422,7 @@ async def get_my_account(
             converted = await converter.convert(amt, cur)
             if converted is not None:
                 realized_pnl_base += converted
-        fx_warnings = converter.warnings
+        fx_warnings = converter.warnings + valuation_warnings
     finally:
         if data_client is not None:
             await data_client.close()
@@ -380,4 +499,11 @@ def _decimal_to_float(row: dict[str, Any]) -> dict[str, Any]:
     for k in ("quantity", "avg_open_price", "realized_pnl", "margin_used", "liquidation_price"):
         if k in out and out[k] is not None:
             out[k] = float(out[k])
+    # trading_mode 派生(positions 表无该列):强平价非空或占用保证金非 0 → perp。
+    # 让前端显式标注现货/合约,不再靠 liquidation_price 隐式推断。
+    out["trading_mode"] = (
+        "perp"
+        if out.get("liquidation_price") is not None or (out.get("margin_used") or 0) != 0
+        else "spot"
+    )
     return out

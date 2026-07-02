@@ -189,16 +189,69 @@ async def test_start_happy_path_and_duplicate(
     body = r.json()
     assert body["status"] == "running"
     assert body["symbol"] == "BTC/USDT"
+    # 默认 allocation = min(10000, 账户折算可用现金);新账户即 10000,落库并回显
+    assert body["allocation"] == 10_000.0
     assert len(started) == 1  # manager.start 被调用
 
-    # 同 candidate 第二个 running → 409
+    # 同 candidate 第二个 running → 409(换 symbol 避开同标的守门,专测 candidate 唯一性)
     r2 = client.post(
         "/strategy_runs",
         headers=headers,
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "ETH/USDT", "timeframe": "1h"},
     )
     assert r2.status_code == 409
     assert r2.json()["code"] == "STRATEGY_RUN_ALREADY_RUNNING"
+
+
+async def test_same_symbol_second_run_conflict(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """同账户同 (venue, symbol) 第二个 run → 409 SYMBOL_RUN_CONFLICT(issue #108)。
+
+    positions 一标的一行,两个 run 撞同标的会共享持仓互相打架 → start 即拒。
+    """
+    _stub_manager(app_with_lifespan)
+    headers = _headers(client)
+    cid1 = await _make_promoted_candidate()
+    r1 = client.post(
+        "/strategy_runs", headers=headers,
+        json={"candidate_id": str(cid1), "venue": "binance", "symbol": "SOL/USDT", "timeframe": "1h"},
+    )
+    assert r1.status_code == 200, r1.json()
+
+    # 不同 candidate、同 venue+symbol → 被同标的守门拒
+    cid2 = await _make_promoted_candidate()
+    r2 = client.post(
+        "/strategy_runs", headers=headers,
+        json={"candidate_id": str(cid2), "venue": "binance", "symbol": "SOL/USDT", "timeframe": "1h"},
+    )
+    assert r2.status_code == 409, r2.json()
+    assert r2.json()["code"] == "SYMBOL_RUN_CONFLICT"
+
+    # 换 symbol 即可正常 start(守门只按标的,不锁账户)
+    r3 = client.post(
+        "/strategy_runs", headers=headers,
+        json={"candidate_id": str(cid2), "venue": "binance", "symbol": "ETH/USDT", "timeframe": "1h"},
+    )
+    assert r3.status_code == 200, r3.json()
+
+
+async def test_explicit_allocation_recorded(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    """显式 allocation 原样落库回显(可大于账户可用——下单时账户级硬底会拒单,start 不拦)。"""
+    started = _stub_manager(app_with_lifespan)
+    cid = await _make_promoted_candidate()
+    r = client.post(
+        "/strategy_runs", headers=_headers(client),
+        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT",
+              "timeframe": "1h", "allocation": 2_500.0},
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["allocation"] == 2_500.0
+    # manager 收到的 run dict 也带 allocation(runner 用它当 session 虚拟钱包)
+    assert len(started) == 1
+    assert float(started[0]["allocation"]) == 2_500.0
 
 
 async def test_list_invalid_status_rejected(client: TestClient, app_with_lifespan: Any) -> None:
@@ -332,12 +385,12 @@ async def test_per_account_run_cap(client: TestClient, app_with_lifespan: Any) -
     )
     app_with_lifespan.dependency_overrides[get_paper_settings] = lambda: small
 
-    # 起满 2 个（不同 candidate，各归本账户）
-    for _ in range(2):
+    # 起满 2 个（不同 candidate + 不同 symbol,避开同标的守门,各归本账户）
+    for symbol in ("BTC/USDT", "ETH/USDT"):
         cid = await _make_promoted_candidate(owner_account_id=acct)
         r = client.post(
             "/strategy_runs", headers=headers,
-            json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+            json={"candidate_id": str(cid), "venue": "binance", "symbol": symbol, "timeframe": "1h"},
         )
         assert r.status_code == 200, r.json()
 
@@ -345,7 +398,7 @@ async def test_per_account_run_cap(client: TestClient, app_with_lifespan: Any) -
     cid3 = await _make_promoted_candidate(owner_account_id=acct)
     r = client.post(
         "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid3), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={"candidate_id": str(cid3), "venue": "binance", "symbol": "SOL/USDT", "timeframe": "1h"},
     )
     assert r.status_code == 429
     assert r.json()["code"] == "TOO_MANY_RUNNING_RUNS"
