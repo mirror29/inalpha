@@ -54,7 +54,7 @@ async function mastraClient(): Promise<MastraClient> {
  * 取回 thread 校验其 `resourceId === 当前登录用户`;不属于 / 取不到一律 false
  * (当作不存在处理,避免跨租户读写)。
  */
-async function ownsThread(
+export async function ownsThread(
   client: MastraClient,
   threadId: string,
   resourceId: string,
