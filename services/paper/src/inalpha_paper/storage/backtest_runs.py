@@ -98,22 +98,18 @@ async def list_by_research(
 
     返回 dict list，含 id/strategy_code/config/metrics/params_hash/created_at。
     """
-    where = "WHERE research_id = %s"
-    params: list[Any] = [str(research_id)]
-    if account_id:
-        where += " AND account_id = %s"
-        params.append(account_id)
+    clause = "AND account_id = %s" if account_id else ""
     async with conn.cursor() as cur:
         await cur.execute(
             f"""
             SELECT id, strategy_code, config, metrics, params_hash,
                    research_id, strategy_hint, created_at, status
             FROM backtest_runs
-            {where}
+            WHERE research_id = %s {clause}
             ORDER BY created_at DESC
             LIMIT %s
             """,
-            (*params, limit),
+            (str(research_id), *([account_id] if account_id else []), limit),
         )
         rows = await cur.fetchall()
     return [_row_to_dict(r) for r in rows]
@@ -127,22 +123,18 @@ async def list_by_strategy(
     account_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """按 strategy_code 拉历史回测（按 created_at DESC）,可选按 account_id 过滤。"""
-    where = "WHERE strategy_code = %s"
-    params: list[Any] = [strategy_code]
-    if account_id:
-        where += " AND account_id = %s"
-        params.append(account_id)
+    clause = "AND account_id = %s" if account_id else ""
     async with conn.cursor() as cur:
         await cur.execute(
             f"""
             SELECT id, strategy_code, config, metrics, params_hash,
                    research_id, strategy_hint, created_at, status
             FROM backtest_runs
-            {where}
+            WHERE strategy_code = %s {clause}
             ORDER BY created_at DESC
             LIMIT %s
             """,
-            (*params, limit),
+            (strategy_code, *([account_id] if account_id else []), limit),
         )
         rows = await cur.fetchall()
     return [_row_to_dict(r) for r in rows]
@@ -191,19 +183,18 @@ async def list_recent(
     account_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """按 account_id(若给)查最近回测（按 created_at DESC）,供活动流/策略实验室。"""
-    where = "WHERE account_id = %s" if account_id else "WHERE 1=1"
-    params: list[Any] = [account_id] if account_id else []
+    clause = "WHERE account_id = %s" if account_id else ""
     async with conn.cursor() as cur:
         await cur.execute(
             f"""
             SELECT id, strategy_code, config, metrics, params_hash,
                    research_id, strategy_hint, created_at, status
             FROM backtest_runs
-            {where}
+            {clause}
             ORDER BY created_at DESC
             LIMIT %s
             """,
-            (*params, limit),
+            (*([account_id] if account_id else []), limit),
         )
         rows = await cur.fetchall()
     return [_row_to_dict(r) for r in rows]
