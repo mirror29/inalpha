@@ -45,9 +45,9 @@ jobs:
           gh pr diff "$PR_NUMBER" --color never > /tmp/pr_diff.txt
           echo "diff_lines=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
           # diff 太长截断（GLM 上下文窗口虽大，但 token 和成本也要考虑）
-          if [ "$(wc -c < /tmp/pr_diff.txt)" -gt 80000 ]; then
-            head -c 80000 /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
-            echo -e "\n\n[注意：diff 过大已截断至 80KB，完整 diff 请到 PR Files 页查看]" >> /tmp/pr_diff_truncated.txt
+          if [ "$(wc -c < /tmp/pr_diff.txt)" -gt 200000 ]; then
+            head -c 200000 /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
+            echo -e "\n\n[注意：diff 过大已截断至 200KB，完整 diff 请到 PR Files 页查看]" >> /tmp/pr_diff_truncated.txt
             mv /tmp/pr_diff_truncated.txt /tmp/pr_diff.txt
           fi
 
