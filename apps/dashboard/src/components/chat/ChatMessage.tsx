@@ -1,0 +1,132 @@
+"use client";
+
+import { DivinationCard } from "@/components/divination/DivinationCard";
+import { isDivinationTool, parseDivination } from "@/components/divination/types";
+import { stripPageContext } from "@/lib/page-context";
+import { ChatStreamdown } from "./ChatStreamdown";
+import { ChatToolChip } from "./ChatToolChip";
+import { inferToolState, type ToolState } from "./tool-states";
+
+/** AG-UI 消息最小形态。 */
+export type AGMessage = {
+  id: string;
+  role: "user" | "assistant" | "system" | "tool" | "reasoning" | string;
+  content?: unknown;
+  toolCalls?: { id: string; function?: { name?: string; arguments?: string } }[];
+  toolCallId?: string;
+};
+
+/** AG-UI content 兼容 string / 多模态数组 → 可显示纯文本。 */
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((p) =>
+        p && typeof p === "object" && "text" in p ? String(p.text ?? "") : "",
+      )
+      .join("");
+  }
+  return "";
+}
+
+/**
+ * 单条消息渲染：用户气泡 / agent 文本 + 工具 chip / 工具结果。
+ */
+export function ChatMessage({
+  message,
+  toolNames,
+  resolvedToolCallIds,
+  toolDone,
+  toolResultLabel,
+  toolStateLabels,
+  isStreaming,
+}: {
+  message: AGMessage;
+  toolNames: Map<string, string>;
+  resolvedToolCallIds: Set<string>;
+  toolDone: string;
+  toolResultLabel: string;
+  /** 七态 → 本地化文案（由 ChatMessageList 经 next-intl 解析后注入）。 */
+  toolStateLabels: Record<ToolState, string>;
+  isStreaming?: boolean;
+}) {
+  const text = textOf(message.content);
+
+  if (message.role === "user") {
+    return (
+      <div className="rise flex justify-end">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg rounded-br-sm bg-cyan/10 px-3 py-2 text-sm text-fg">
+          {stripPageContext(text)}
+        </div>
+      </div>
+    );
+  }
+
+  if (message.role === "tool") {
+    const toolName = toolNames.get(message.toolCallId ?? "") ?? "tool";
+    if (isDivinationTool(toolName)) {
+      const reading = parseDivination(text);
+      if (reading) {
+        return (
+          <div className="flex justify-start">
+            <DivinationCard reading={reading} className="max-w-[95%]" />
+          </div>
+        );
+      }
+    }
+    const hasError = (() => {
+      try {
+        const parsed = JSON.parse(text);
+        return Boolean(parsed?.isError || parsed?.error);
+      } catch {
+        return false;
+      }
+    })();
+    const state = inferToolState(true, hasError);
+    const stateLabel = toolStateLabels[state];
+
+    return (
+      <div className="rise flex justify-start">
+        <ChatToolChip
+          name={toolName}
+          result={text}
+          resultLabel={toolResultLabel}
+          state={state}
+          stateLabel={stateLabel}
+        />
+      </div>
+    );
+  }
+
+  // assistant
+  const calls = (message.toolCalls ?? []).filter(
+    (c) => !resolvedToolCallIds.has(c.id),
+  );
+  if (!text && calls.length === 0) return null;
+
+  return (
+    <div className="rise flex flex-col items-start gap-1.5">
+      {text && (
+        <div className="max-w-[90%] break-words rounded-lg rounded-bl-sm bg-bg-deep/60 px-3 py-2 text-sm leading-relaxed text-fg">
+          {/* 完成态 / 历史消息也走 ChatStreamdown(mode=static)：与流式态共用
+              同一条渲染管线，保住 @streamdown/code 高亮 + @streamdown/cjk 排版
+              + 空白名单图片拦截,消除"回复一结束高亮消失、闪一下降级"的回归。 */}
+          <ChatStreamdown streaming={isStreaming}>{text}</ChatStreamdown>
+        </div>
+      )}
+      {calls.map((c) => {
+        const runningState = inferToolState(false);
+        const runningLabel = toolStateLabels[runningState];
+        return (
+          <ChatToolChip
+            key={c.id}
+            name={c.function?.name ?? "tool"}
+            resultLabel={toolResultLabel}
+            state={runningState}
+            stateLabel={runningLabel}
+          />
+        );
+      })}
+    </div>
+  );
+}
