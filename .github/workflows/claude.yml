@@ -17,11 +17,7 @@ on:
 jobs:
   claude:
     name: Claude · @mention 触发（非阻塞）
-    if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    if: false  # 已由 glm.yml 替代（Claude 账号被封）
     runs-on: ubuntu-latest
     # 非阻塞：即使 Claude 挂了也不影响其他 CI
     continue-on-error: true

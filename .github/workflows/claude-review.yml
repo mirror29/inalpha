@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   review:
+    if: false  # 已由 glm-review.yml 替代（Claude 账号被封）
     name: Claude · auto-review PR diff（非阻塞）
     runs-on: ubuntu-latest
     # 🔑 非阻塞关键：即使本 job 失败，也标记为成功，不卡 PR 合并
