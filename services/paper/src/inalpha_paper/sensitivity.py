@@ -118,6 +118,7 @@ async def run_sensitivity(
     data_client: DataClient,
     *,
     conn: AsyncConnection | None = None,
+    account_id: str | None = None,
 ) -> SensitivityResponse:
     """拉一次 bars，base + 邻域并发跑引擎，返回敏感性摘要。
 
