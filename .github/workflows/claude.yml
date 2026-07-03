@@ -4,15 +4,7 @@ name: Claude
 # 本 workflow 不阻塞 CI/CD，失败不影响 PR 合并。
 # Auth: Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
 
-on:
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
-  pull_request_review:
-    types: [submitted]
-  issues:
-    types: [opened, assigned]
+if: false  # 已由 glm.yml 替代（Claude 账号被封）
 
 jobs:
   claude:

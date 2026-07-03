@@ -9,14 +9,7 @@ name: Claude PR Review
 # 本 workflow 不会阻止 PR 合并。review 评论是锦上添花，不是门禁。
 # Auth: Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
 
-on:
-  pull_request:
-    types: [opened, reopened, synchronize]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 手动指定 PR 编号（留空 = 用 workflow_dispatch 的当前分支）
-        required: false
+if: false  # 已由 glm-review.yml 替代（Claude 账号被封）
 
 # 同一 PR 新 push 立刻取消上一次 review，避免重复评论
 concurrency:
