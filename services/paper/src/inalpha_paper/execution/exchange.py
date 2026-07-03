@@ -171,6 +171,20 @@ class SimulatedExchange(Gateway):
                 )
                 remaining.append((order, strategy_id))
                 continue
+            # perp reduce-only 校验（#117）：BUY 保护单必须对应空头持仓，与 live_runner 同口径
+            if (
+                order.side == OrderSide.BUY
+                and self._portfolio is not None
+            ):
+                pos = self._portfolio.position(order.instrument_id)
+                cur_qty = pos.quantity if pos is not None else 0.0
+                if cur_qty >= 0:  # 不持空头 → 不允许保护性 BUY（无持仓可平）
+                    _logger.warning(
+                        "flush_protective_at_close: perp BUY 保护单 %s 无空头持仓(当前 %s),跳过",
+                        order.client_order_id, cur_qty,
+                    )
+                    remaining.append((order, strategy_id))
+                    continue
             self._publish_fill(order, strategy_id, order.quantity, bar.close, bar.ts_event)
             filled_count += 1
 

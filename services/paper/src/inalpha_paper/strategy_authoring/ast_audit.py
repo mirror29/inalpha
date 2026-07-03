@@ -69,6 +69,32 @@ _DENIED_NAMES: Final[frozenset[str]] = frozenset(
     }
 )
 
+# guard- 前缀字符串字面量 —— 策略代码不应硬编码（#119 纵深防御：防止借
+# guard- 前缀伪造保护单签名，绕过风控豁免 / notional 上限）
+_GUARD_PREFIX: Final[str] = "guard-"
+
+# 保护性出场 tag 字面量 —— 策略代码不应硬编码
+_PROTECTIVE_TAGS: Final[frozenset[str]] = frozenset(
+    {
+        "stop_loss",
+        "take_profit",
+        "trailing_stop_loss",
+    }
+)
+
+# 允许使用的 client_order_id 字符串前缀/子串白名单（与 guard-/保护 tag 无关）
+# LLM 策略的 client_order_id 应是通用标识符如 "strat-", "sig-", "entry-" 等
+# 具体白名单按需扩展；未命中白名单但在拒检之外的前缀视为合法（仅拒 guard- 相关）
+_ALLOWED_ORDER_ID_PREFIXES: Final[frozenset[str]] = frozenset(
+    {
+        "strat-",
+        "sig-",
+        "entry-",
+        "exit-",
+        "take-",
+    }
+)
+
 # 禁掉的 dunder 属性访问（双下划线开头）—— 走这些是经典越狱路径
 # 例：``().__class__.__bases__[0].__subclasses__()`` → 拿到 OSError 等任意类
 _ALLOWED_DUNDERS: Final[frozenset[str]] = frozenset(
@@ -246,6 +272,30 @@ class _AuditVisitor(ast.NodeVisitor):
 
     def visit_Await(self, node: ast.Await) -> None:
         self._add(node, "AWAIT_DENIED", "不允许 await")
+        self.generic_visit(node)
+
+    # ─── guard- 前缀 + 保护性 tag 字面量拦截（#119 纵深防御） ───
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        """检查字符串字面量，拦截 guard- 前缀 / 保护性 tag 硬编码。"""
+        if isinstance(node.value, str):
+            val: str = node.value
+            if val.startswith(_GUARD_PREFIX):
+                self._add(
+                    node,
+                    "GUARD_PREFIX_DENIED",
+                    f"不允许字面量 'guard-' 前缀({val[:20]!r})——该前缀为框架"
+                    "PositionGuard 保留,策略代码不应硬编码",
+                )
+            elif val in _PROTECTIVE_TAGS:
+                self._add(
+                    node,
+                    "PROTECTIVE_TAG_DENIED",
+                    f"不允许字面量保护性 tag {val!r}——该 tag 为框架持仓保护保留,"
+                    "策略代码不应硬编码",
+                )
+            elif val.startswith("strat-"):
+                pass  # 通用标识符，合法
         self.generic_visit(node)
 
     # ─── helpers ───
