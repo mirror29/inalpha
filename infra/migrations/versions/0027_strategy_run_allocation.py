@@ -1,7 +1,7 @@
 """strategy_run_allocation —— live run 的 per-run 资金额度(加列,向后兼容)
 
-Revision ID: 0026
-Revises: 0025
+Revision ID: 0027
+Revises: 0026
 Create Date: 2026-07-02
 
 背景:live run 的仓位测算此前用**固定 1 万虚拟现金**,脱离账户真实余额——多个 run
@@ -14,17 +14,13 @@ Create Date: 2026-07-02
 - nullable:老行为空 = 沿用旧语义(固定 1 万),新 run 由 API 层写入
   ``min(10000, 账户折算可用现金)`` 或用户显式值。
 - 计价按账户 ``base_currency``(与 accounts.cash_balances 折算口径一致)。
-
-注:与并行分支的 0024(users 表)同 down 0023,后并入 main 者需把链修直。
-    合入 main 后继承 0025_backtest_runs_account_id,故本迁移 Revisio ID=0026,
-    Revises=0025。
 """
 from __future__ import annotations
 
 from alembic import op
 
-revision: str = "0026"
-down_revision: str | None = "0025"
+revision: str = "0027"
+down_revision: str | None = "0026"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
 
