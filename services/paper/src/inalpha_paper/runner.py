@@ -582,6 +582,7 @@ async def run_cv(
     data_client: DataClient,
     *,
     conn: AsyncConnection | None = None,
+    account_id: str | None = None,
 ) -> CVBacktestResponse:
     """跑多路径时序交叉验证回测（ADR-0028）：拉数据 → 造策略工厂 → 切分 → 聚合分布。
 

@@ -84,7 +84,7 @@ async def post_backtest_cv(
     req: CVBacktestRequest,
     db: DBConn,
     settings: Annotated[PaperSettings, Depends(get_paper_settings)],
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> CVBacktestResponse:
     """多路径时序交叉验证回测（ADR-0028）：输出样本外 Sharpe 分布 + DSR。
@@ -110,7 +110,9 @@ async def post_backtest_cv(
     user_token = authorization.removeprefix("Bearer ").strip()
 
     async with DataClient(settings.data_service_url, user_token) as data_client:
-        return await _run_cv(req, data_client, conn=db)
+        return await _run_cv(
+            req, data_client, conn=db, account_id=str(account_id_from_user(user)),
+        )
 
 
 @router.post("/backtest/sensitivity", response_model=SensitivityResponse)
@@ -118,7 +120,7 @@ async def post_backtest_sensitivity(
     req: SensitivityRequest,
     db: DBConn,
     settings: Annotated[PaperSettings, Depends(get_paper_settings)],
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> SensitivityResponse:
     """参数邻域敏感性检查（D-12）：base + one-at-a-time ±pct 扰动各跑一次回测。
@@ -145,7 +147,9 @@ async def post_backtest_sensitivity(
     user_token = authorization.removeprefix("Bearer ").strip()
 
     async with DataClient(settings.data_service_url, user_token) as data_client:
-        return await _run_sensitivity(req, data_client, conn=db)
+        return await _run_sensitivity(
+            req, data_client, conn=db, account_id=str(account_id_from_user(user)),
+        )
 
 
 @router.get("/strategies", response_model=dict)
