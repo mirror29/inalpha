@@ -1,0 +1,191 @@
+name: GLM PR Review
+
+# PR 打开 / reopen / 每次 push 新 commit（synchronize）时自动 review diff。
+# 防邮件洪水靠三道闸而非「少触发」：① concurrency + cancel-in-progress 让同一 PR
+# 新 push 立刻取消上一轮；② review step 只维护**一条 sticky 总结评论**
+# （gh pr comment --edit-last 原地覆盖，GitHub 对编辑评论不发邮件，仅首条发一封）；
+# ③ 不逐行贴 inline 评论。需对历史 commit 重审可去 Actions 页跑 workflow_dispatch。
+# 非阻塞设计：即使 GLM 出错（API 超时、token 过期等），
+# 本 workflow 不会阻止 PR 合并。review 评论是锦上添花，不是门禁。
+# Auth: 智谱 GLM API key 存在 GitHub Actions Secret ZHIPUAI_API_KEY
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 手动指定 PR 编号（留空 = 用 workflow_dispatch 的当前分支）
+        required: false
+
+# 同一 PR 新 push 立刻取消上一次 review，避免重复评论
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: GLM-5.2 · auto-review PR
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          gh pr diff "$PR_NUMBER" --color never > /tmp/pr_diff.txt
+          echo "diff_lines=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
+          # diff 太长截断（GLM 上下文窗口虽大，但 token 和成本也要考虑）
+          if [ "$(wc -c < /tmp/pr_diff.txt)" -gt 80000 ]; then
+            head -c 80000 /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
+            echo -e "\n\n[注意：diff 过大已截断至 80KB，完整 diff 请到 PR Files 页查看]" >> /tmp/pr_diff_truncated.txt
+            mv /tmp/pr_diff_truncated.txt /tmp/pr_diff.txt
+          fi
+
+      - name: Fetch PR metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          echo "title<<EOF" >> $GITHUB_OUTPUT
+          gh pr view "$PR_NUMBER" --json title,body,headRefName,baseRefName --jq '"\(.title) | \(.headRefName) → \(.baseRefName)"' >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Call Zhipu GLM-5.2 for review
+        id: review
+        env:
+          ZHIPUAI_API_KEY: ${{ secrets.ZHIPUAI_API_KEY }}
+          PR_TITLE: ${{ steps.meta.outputs.title }}
+        run: |
+          DIFF_CONTENT=$(cat /tmp/pr_diff.txt | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')
+
+          PROMPT=$(cat << 'END_PROMPT'
+你是一个资深代码审查者。请审查以下 PR diff。
+
+## 审查要求
+1. 先一句话总结这个 PR 的目的
+2. 逐维度评估（命中才提，不硬凑）：
+   - **正确性**：边界条件、空值、off-by-one、错误假设、异常路径没处理
+   - **设计/架构**：职责放错层、越过模块边界、重复造轮子
+   - **契约/兼容**：改了公共接口/schema/API 是否破坏现有调用方
+   - **错误处理**：失败是被静默吞掉还是显式处理
+   - **资源/性能**：无界增长、N+1、循环无上限
+   - **安全**：注入、越权、密钥泄漏
+3. **severity 阈值**：只提 ≥ medium 的问题；nit/风格跳过
+4. **误报闸**：必须能说出具体失败场景，说不出就不提
+5. **不重复 lint**：ruff/tsc/mypy 已能抓的不要再提
+6. **格式要求**：用 JSON 输出，每条带 severity( critical|major|medium ) + file + line + summary + failure_scenario
+
+如果没有任何 medium 以上问题，只回复一个 JSON: {"summary": "LGTM，没发现问题", "findings": []}
+
+其他情况回复 JSON:
+{
+  "summary": "一句话总结",
+  "findings": [
+    {"severity": "major", "file": "path/to/file.py", "line": 42, "summary": "描述", "failure_scenario": "什么输入/时序下出问题"},
+    ...
+  ]
+}
+END_PROMPT
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" --request POST \
+            --url "https://yuanyuaicloud.cn/v1/chat/completions" \
+            --header "Authorization: Bearer $ZHIPUAI_API_KEY" \
+            --header "Content-Type: application/json" \
+            --data "$(python3 -c "
+import json, os
+d = {
+  'model': 'glm-5.2',
+  'messages': [
+    {'role': 'system', 'content': '''$(echo "$PROMPT" | python3 -c 'import sys; print(sys.stdin.read().replace(chr(39), chr(39)+chr(39)+chr(39)))')'''},
+    {'role': 'user', 'content': '## PR 标题\n$PR_TITLE\n\n## Diff\n$DIFF_CONTENT'}
+  ],
+  'temperature': 0.1,
+  'max_tokens': 4096
+}
+print(json.dumps(d))
+")")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "API error: $HTTP_CODE $BODY"
+            echo "result='GLM API 调用失败（HTTP $HTTP_CODE），请检查 ZHIPUAI_API_KEY 和网络连接。'" > /tmp/review_body.txt
+            exit 0
+          fi
+
+          # 提取 content
+          CONTENT=$(echo "$BODY" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read())["choices"][0]["message"]["content"])')
+          echo "$CONTENT" > /tmp/review_result.json
+
+          # 生成评论正文
+          python3 -c "
+import json, sys
+try:
+    with open('/tmp/review_result.json') as f:
+        data = json.load(f)
+except json.JSONDecodeError:
+    # 不是 JSON 也接受（模型可能直接输出自然语言）
+    with open('/tmp/review_result.json') as f:
+        text = f.read()
+    with open('/tmp/review_body.txt', 'w') as out:
+        out.write(text)
+    sys.exit(0)
+
+lines = []
+lines.append('## 🤖 GLM-5.2 PR Review')
+lines.append('')
+lines.append(data.get('summary', ''))
+lines.append('')
+
+findings = data.get('findings', [])
+if not findings:
+    lines.append('✅ 未发现 medium 以上问题。')
+else:
+    # 按 severity 排序
+    severity_order = {'critical': 0, 'major': 1, 'medium': 2}
+    findings.sort(key=lambda x: severity_order.get(x.get('severity','medium'), 99))
+
+    for f in findings:
+        sev = f.get('severity', 'medium')
+        label = {'critical': '🔴', 'major': '🟠', 'medium': '🟡'}.get(sev, '🟡')
+        file_line = f.get('file', '?')
+        if f.get('line'):
+            file_line += f':{f[\"line\"]}'
+        lines.append(f'{label} **[{sev.upper()}]** {file_line}')
+        lines.append(f'  - {f.get(\"summary\", \"\")}')
+        if f.get('failure_scenario'):
+            lines.append(f'  - *失败场景：{f[\"failure_scenario\"]}*')
+        lines.append('')
+
+with open('/tmp/review_body.txt', 'w') as out:
+    out.write('\n'.join(lines))
+"
+
+      - name: Post/Update sticky comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          REVIEW_BODY=$(cat /tmp/review_body.txt)
+          # 加标记行方便辨识
+          MARKER="<!-- glm-review -->"
+          SHA=$(git rev-parse --short HEAD)
+          FULL_BODY="${MARKER}\nReview base: ${SHA}\n\n${REVIEW_BODY}"
+          gh pr comment "$PR_NUMBER" --edit-last --create-if-none --body "$(echo -e "$FULL_BODY")"
+
+      - name: Log review status
+        if: always()
+        run: |
+          echo "GLM review completed (non-blocking)"
