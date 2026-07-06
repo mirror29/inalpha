@@ -7,18 +7,50 @@
   自己再 parse JSON
 - 提示词分两段：``system`` 是稳定角色定义（cache 友好，ADR-0014），
   ``user`` 是带 context 的动态部分
+- D-13 · P0：新增 ``shared`` 可选参数——runner 预拉 K 线/基本面/因子快照后注入，
+  避免 6 个 analyst 各自调 DataClient 拉同一批数据（往返 ×N → 去重为 1 次）。
+  ``shared`` 为 None 时回退到 analyst 自己调 DataClient（向后兼容）。
 """
 from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+from inalpha_shared import get_logger
 
 from ..data_client import DataClient
 from ..factor_client import FactorClient
 from ..llm.client import LLMClient
 from ..schemas import AnalystBrief
+
+_logger = get_logger(__name__)
+
+
+def factor_lookback_bars(lookback_days: int) -> int:
+    """因子快照的 lookback_bars 统一表达式。
+
+    runner 预取路径与 technical analyst 自拉回退路径都用它，保证同一请求
+    无论走哪条路都算出相同的因子窗口（reviewer #128：避免行为随基础设施漂移）。
+    """
+    return lookback_days * 24
+
+
+@dataclass(frozen=True)
+class AnalystContext:
+    """Runner 预拉的共享数据——一次拉取，technical analyst 复用。
+
+    为 None 的字段表示该数据未预拉（analyst 可以自己调 DataClient 回退）。
+    - bars：get_bars 返回 bar dict 列表
+    - factor_snapshot：factor.get_snapshot 返回单个快照 dict（含 top_factors）
+
+    注：不含 fundamentals——fundamental/valuation analyst 用路由后的 fund_venue，
+    与研究 venue 可能不同，预取的版本对不上（见 runner._prefetch_shared）。
+    """
+    bars: list[dict[str, Any]] | None = None
+    factor_snapshot: dict[str, Any] | None = None
 
 
 class Analyst(ABC):
@@ -33,6 +65,7 @@ class Analyst(ABC):
         llm: LLMClient,
         data: DataClient,
         factor: FactorClient | None = None,
+        shared: AnalystContext | None = None,
     ) -> None:
         if not self.type_id:
             raise NotImplementedError(f"{type(self).__name__}: type_id must be set")
@@ -41,6 +74,8 @@ class Analyst(ABC):
         # 接现成因子库（docs/miro/11）：technical analyst 用它取有效因子快照；
         # None 或服务不可用时降级回各 analyst 自带的指标计算。
         self._factor = factor
+        # D-13 · P0：共享预拉数据——为 None 时 analyst 照旧自己拉。
+        self._shared = shared
         # confidence 硬上限（D-12 双档纪律）：子类在 build_user_prompt 里按"本次
         # 拿到 live 数据与否"设值（如 fundamental 0.75/0.55、macro 0.7/0.5），
         # run() 在 parse 后代码级 clamp——prompt 里写 cap 只是软约束，LLM 不一定守。
@@ -89,7 +124,8 @@ class Analyst(ABC):
         as_of: datetime,
         lookback_days: int,
     ) -> str:
-        """构造 user prompt —— 子类按需调 ``self._data.get_bars`` 拉数据再喂进去。"""
+        """构造 user prompt —— 子类按需调 ``self._data.get_bars`` 或从
+        ``self._shared`` 读预拉数据。"""
 
     # ─── 内部 ───
 
@@ -102,14 +138,57 @@ class Analyst(ABC):
         D-8b' review B2 fix：confidence clamp 到 [0, 1]、stance fallback 到
         "neutral"（旧实现 LLM 返 1.5 / "bull" 这种非 enum 会让 pydantic 抛 →
         整条 deep_dive 链路 500，但 manager 声称"兜底不抛"——这里把锅兜住）。
+
+        D-13 · P1：静默降级变可见——每次 normalize/clamp/drop 都打 warning log。
         """
+        raw_stance = raw.get("stance")
+        raw_confidence = raw.get("confidence")
+        stance = _normalize_stance(raw_stance)
+        confidence = _clamp_unit(raw_confidence)
+
+        # D-13 · P1：静默降级变可见——LLM 返了非标准值就打 warning，方便排查。
+        if raw_stance is not None and str(raw_stance).strip().lower() != stance:
+            _logger.warning(
+                "stance_normalized",
+                analyst=self.type_id,
+                raw=raw_stance,
+                normalized=stance,
+            )
+        if raw_confidence is not None:
+            try:
+                rc = float(raw_confidence)
+                if rc < 0 or rc > 1:
+                    _logger.warning(
+                        "confidence_clamped",
+                        analyst=self.type_id,
+                        raw=rc,
+                        clamped=confidence,
+                    )
+            except (TypeError, ValueError):
+                _logger.warning(
+                    "confidence_not_numeric",
+                    analyst=self.type_id,
+                    raw=raw_confidence,
+                    default=confidence,
+                )
+
+        raw_factors = raw.get("factors")
+        parsed_factors = _safe_parse_factors(raw_factors)
+        if isinstance(raw_factors, list) and len(parsed_factors) < len(raw_factors):
+            _logger.warning(
+                "factors_dropped",
+                analyst=self.type_id,
+                raw_count=len(raw_factors),
+                parsed_count=len(parsed_factors),
+            )
+
         payload: dict[str, Any] = {
             "analyst": self.type_id,
-            "stance": _normalize_stance(raw.get("stance")),
-            "confidence": _clamp_unit(raw.get("confidence")),
+            "stance": stance,
+            "confidence": confidence,
             "summary": str(raw.get("summary", "")).strip() or "(no summary)",
             "key_points": [str(p) for p in (raw.get("key_points") or [])][:5],
-            "factors": _safe_parse_factors(raw.get("factors")),
+            "factors": parsed_factors,
             "raw_excerpt": json.dumps(raw, ensure_ascii=False)[:500],
         }
         return AnalystBrief.model_validate(payload)

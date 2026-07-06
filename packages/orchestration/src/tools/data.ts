@@ -7,7 +7,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { defaultServiceSubject, mintServiceToken } from "../auth.js";
+import { resolveRequestToken } from "../auth.js";
 import { DataClient } from "../clients/data.js";
 import { getSettings } from "../config.js";
 
@@ -36,18 +36,20 @@ const SymbolSchema = z
 type ToolRequestContext = {
   /** forward 用户 JWT 给 data-service；缺省时 fallback 自签 service token（dev 友好）。 */
   authToken?: string;
+  /** HTTP 路径下 RequestContext 是 Map;get(AUTH_SUB_KEY) 拿已认证 sub。 */
+  get?: (key: string) => unknown;
 };
 
 async function getClient(ctx?: ToolRequestContext): Promise<DataClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return new DataClient({ baseUrl: settings.dataServiceUrl, token });
 }
 
 /** backfill 专用长超时 client —— CCXT rate-limited fetch_ohlcv，大跨度可能分钟级 */
 async function getBackfillClient(ctx?: ToolRequestContext): Promise<DataClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return new DataClient({
     baseUrl: settings.dataServiceUrl,
     token,

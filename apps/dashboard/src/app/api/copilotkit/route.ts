@@ -7,7 +7,7 @@ import {
 import { getRemoteAgents } from "@ag-ui/mastra";
 import { MastraClient } from "@mastra/client-js";
 
-import { BACKENDS, CONSOLE_SUBJECT, getServiceToken } from "@/lib/backend";
+import { BACKENDS, getServiceToken, getSessionSubject } from "@/lib/backend";
 
 /**
  * 静音 @ag-ui/mastra 1.0.3 的良性日志噪音:它不认 mastra(v5 streamVNext)的
@@ -41,9 +41,9 @@ if (!(console.warn as { __inalphaFiltered?: boolean }).__inalphaFiltered) {
  *     dashboard 不背 mastra 依赖树。
  *  2. **每请求**重建 runtime,从而每次拿新鲜 JWT(`getServiceToken` 进程内缓存,到期前 60s 续签),
  *     规避长连接里 token 过期。
- *  3. **隔离**:`getRemoteAgents` 强制 `resourceId`(= JWT.sub = CONSOLE_SUBJECT),`threadId` 由前端
- *     `<CopilotKit threadId>` 传下并经 AG-UI 转发给 `agent.stream`,共同满足 memory.ts 的
- *     `assertScopedRequest`。单租户 dev 下 resourceId 固定;接真实多租户时改为从 session 派生。
+ *  3. **隔离**:`getRemoteAgents` 强制 `resourceId`(= 登录用户 sub,经 getSessionSubject()
+ *     从 session 派生;dev 未登录回落 console:dev),`threadId` 由前端 `<CopilotKit threadId>`
+ *     传下并经 AG-UI 转发给 `agent.stream`,共同满足 memory.ts 的 `assertScopedRequest`。
  *  4. LLM 在 mastra 侧,本层不需要 model adapter —— 用 `ExperimentalEmptyAdapter` 占位。
  *
  * ⚠️ **已知版本约束**:`@ag-ui/mastra`(目前最新 1.0.3)的 peerDependencies 把
@@ -57,7 +57,10 @@ if (!(console.warn as { __inalphaFiltered?: boolean }).__inalphaFiltered) {
  * @returns CopilotKit runtime 的 POST handler
  */
 export const POST = async (req: Request): Promise<Response> => {
+  // token 的 sub = 登录用户(或 dev 下 console:dev)。mastra identityMiddleware 据此
+  // 注入 authSub,tool 层再据此打给 Python(resolveRequestToken),保证 agent 写操作落登录用户账户。
   const token = await getServiceToken();
+  const resourceId = await getSessionSubject();
 
   const mastraClient = new MastraClient({
     baseUrl: BACKENDS.mastra,
@@ -66,7 +69,7 @@ export const POST = async (req: Request): Promise<Response> => {
 
   const agents = await getRemoteAgents({
     mastraClient,
-    resourceId: CONSOLE_SUBJECT,
+    resourceId,
   });
 
   // CopilotKit 1.59.5 起 `agents` 收紧为 NonEmptyRecord | Promise | factory;

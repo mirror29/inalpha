@@ -2,7 +2,7 @@ import "server-only";
 
 import { MastraClient } from "@mastra/client-js";
 
-import { BACKENDS, CONSOLE_SUBJECT, getServiceToken } from "./backend";
+import { BACKENDS, getServiceToken, getSessionSubject } from "./backend";
 import { stripPageContext } from "./page-context-shared";
 
 /**
@@ -48,6 +48,28 @@ async function mastraClient(): Promise<MastraClient> {
   });
 }
 
+/**
+ * 越权(IDOR)防护:mastra Memory 层**不**按 resourceId 自动把关(见 orchestration
+ * mastra/index.ts 注释),按 threadId 直取/直改的路径必须调用方自己校验归属。
+ * 取回 thread 校验其 `resourceId === 当前登录用户`;不属于 / 取不到一律 false
+ * (当作不存在处理,避免跨租户读写)。
+ */
+export async function ownsThread(
+  client: MastraClient,
+  threadId: string,
+  resourceId: string,
+): Promise<boolean> {
+  try {
+    const thread = (await withMastraTimeout(
+      client.getMemoryThread({ threadId, agentId: AGENT_ID }).get(),
+      "getMemoryThread",
+    )) as { resourceId?: string } | null;
+    return thread?.resourceId === resourceId;
+  } catch {
+    return false;
+  }
+}
+
 /** mastra(4111)单次读超时 —— 与 backendFetch 同档(5s)。 */
 const MASTRA_READ_TIMEOUT_MS = 5000;
 
@@ -87,12 +109,13 @@ export async function listChatThreads(
 ): Promise<ChatThreadSummary[]> {
   const { backfillTitles = true } = opts;
   const client = await mastraClient();
+  const resourceId = await getSessionSubject();
   // 历史下拉(backfillTitles=true):全量拉取，不因默认分页截断旧会话。
   // 活动流(backfillTitles=false):同样拉足够多，避免数据源不足被公平截断挤出。
   const perPage = backfillTitles ? 10000 : Math.max(limit, 500);
   const res = (await withMastraTimeout(
     client.listMemoryThreads({
-      resourceId: CONSOLE_SUBJECT,
+      resourceId,
       agentId: AGENT_ID,
       perPage,
       orderBy: { field: "updatedAt", direction: "DESC" },
@@ -150,6 +173,9 @@ export async function listChatMessages(
   threadId: string,
 ): Promise<ChatHistoryMessage[]> {
   const client = await mastraClient();
+  // 越权防护(IDOR):按 threadId 直取消息前先校验该会话属于当前登录用户,否则任何
+  // 登录用户凭一个 threadId 就能读到别人的完整对话历史。不属于 → 当作不存在返空。
+  if (!(await ownsThread(client, threadId, await getSessionSubject()))) return [];
   // MastraClient.listThreadMessages() 不传 perPage → 服务端默认 40 → 超量消息被截断。
   // 换用 MemoryThread.listMessages()（正确序列化 perPage 到 URL query）。
   const res = (await withMastraTimeout(
@@ -172,20 +198,21 @@ export async function setChatThreadTitle(
   const client = await mastraClient();
   const clean = title.trim().slice(0, 60);
   if (!clean) return;
+  const resourceId = await getSessionSubject();
+  // 越权防护(IDOR):只给属于当前登录用户的会话改标题。取不到 / 非本人 → 直接跳过,
+  // 绝不 update/create 别人的 thread(否则可篡改他人标题,甚至把会话"过继"到攻击者
+  // 名下)。thread 通常在首条消息 stream 时已建;万一还没建,标题由 listChatThreads
+  // 的回填补上,不在此 create(create 无法安全区分"不存在"与"取不到")。
+  if (!(await ownsThread(client, threadId, resourceId))) return;
   try {
     await client.getMemoryThread({ threadId, agentId: AGENT_ID }).update({
       title: clean,
       metadata: {},
-      resourceId: CONSOLE_SUBJECT,
+      resourceId,
       agentId: AGENT_ID,
     });
   } catch {
-    await client.createMemoryThread({
-      threadId,
-      resourceId: CONSOLE_SUBJECT,
-      title: clean,
-      agentId: AGENT_ID,
-    } as Parameters<typeof client.createMemoryThread>[0]);
+    // best-effort:更新失败(竞态等)不抛,标题非关键。
   }
 }
 

@@ -21,6 +21,7 @@ import {
   paperStartStrategyTool,
   paperStopStrategyTool,
   researchDeepDiveTool,
+  researchParallelDiveTool,
 } from "../src/tools/index.js";
 
 const TEST_TOKEN = "test-token-doesnt-need-to-be-real";
@@ -465,6 +466,115 @@ describe("research.deep_dive", () => {
       asOf: "not a datetime",
     });
     expect(r.success).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// research.parallel_dive —— D-13 并行多视角扇出
+// ────────────────────────────────────────────────────────────────────
+
+describe("research.parallel_dive", () => {
+  it("schema requires 2-4 perspectives", () => {
+    const base = {
+      symbol: "BTC/USDT",
+      timeframe: "1h",
+      asOf: "2026-05-21T12:00:00Z",
+    };
+    // 1 个视角 → 拒（min 2）
+    expect(
+      researchParallelDiveTool.inputSchema!.safeParse({
+        ...base,
+        perspectives: [{ lens: "bull", question: "请从多头视角分析这个标的的上涨理由" }],
+      }).success,
+    ).toBe(false);
+    // 5 个视角 → 拒（max 4）
+    expect(
+      researchParallelDiveTool.inputSchema!.safeParse({
+        ...base,
+        perspectives: Array.from({ length: 5 }, (_, i) => ({
+          lens: `p${i}`,
+          question: "分析这个标的的某个维度",
+        })),
+      }).success,
+    ).toBe(false);
+    // 2 个视角 → 收
+    expect(
+      researchParallelDiveTool.inputSchema!.safeParse({
+        ...base,
+        perspectives: [
+          { lens: "bull", question: "请从多头视角分析这个标的的上涨理由" },
+          { lens: "bear", question: "请从空头视角分析这个标的的下跌风险" },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("reuses research.ts SymbolSchema regex (rejects space)", () => {
+    const r = researchParallelDiveTool.inputSchema!.safeParse({
+      symbol: "bad symbol with space",
+      timeframe: "1h",
+      asOf: "2026-05-21T12:00:00Z",
+      perspectives: [
+        { lens: "bull", question: "请从多头视角分析这个标的的上涨理由" },
+        { lens: "bear", question: "请从空头视角分析这个标的的下跌风险" },
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("aggregates succeeded/failed lanes when one lane fails", async () => {
+    let callCount = 0;
+    mockFetch(async () => {
+      callCount += 1;
+      // 第 2 个 lane 返 500 → 该 lane 落 failed，其余照常
+      if (callCount === 2) {
+        return new Response("boom", { status: 500 });
+      }
+      return new Response(
+        JSON.stringify({
+          research_id: `rid-${callCount}`,
+          venue: "binance",
+          symbol: "BTC/USDT",
+          timeframe: "1h",
+          as_of: "2026-05-21T12:00:00Z",
+          rating: "overweight",
+          confidence: 0.6,
+          thesis: "thesis",
+          risks: ["r1"],
+          suggested_action: "hold",
+          briefs: [],
+          horizon: "swing",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    const result = (await researchParallelDiveTool.execute!(
+      {
+        venue: "binance",
+        symbol: "BTC/USDT",
+        timeframe: "1h",
+        asOf: "2026-05-21T12:00:00Z",
+        lookbackDays: 30,
+        perspectives: [
+          { lens: "bull", question: "请从多头视角分析这个标的的上涨理由" },
+          { lens: "bear", question: "请从空头视角分析这个标的的下跌风险" },
+        ],
+      } as never,
+      ctx(),
+    )) as {
+      total_lanes: number;
+      succeeded: number;
+      failed: number;
+      lanes: { lens: string }[];
+      errors: { lens: string }[];
+    };
+
+    expect(result.total_lanes).toBe(2);
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.lanes).toHaveLength(1);
+    expect(result.errors).toHaveLength(1);
   });
 });
 

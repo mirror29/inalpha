@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { BackendError, backendFetch, CONSOLE_SUBJECT } from "@/lib/backend";
+import { BackendError, backendFetch, getSessionSubject } from "@/lib/backend";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
  * POST /api/divination —— 占卜台直算端点(BFF)。
  *
  * 转发到 mastra 的 `POST /divination/cast`(纯计算、**无 LLM**、确定性),注入控制台
- * 身份 `subject = CONSOLE_SUBJECT` 做历史隶属。结果由 mastra 落库,这里只透传返回。
+ * 身份 `subject`(经 getSessionSubject() 从登录用户派生,dev 回落 console:dev)做历史隶属。结果由 mastra 落库,这里只透传返回。
  *
  * 设计:狐神签独立模块点按钮 → 本路由 → mastra 直算 → 瞬时出卦,**不触发对话栏会话**;
  * 会话式深度解读由用户主动在对话栏触发(走 `/api/copilotkit`)。
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
         mode: body["mode"],
         question: body["question"],
         symbol: body["symbol"],
-        subject: CONSOLE_SUBJECT,
+        subject: await getSessionSubject(),
       },
     });
     return NextResponse.json(record);

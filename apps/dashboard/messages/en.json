@@ -16,7 +16,8 @@
     "menu": "Menu",
     "close": "Close",
     "collapse": "Collapse sidebar",
-    "expand": "Expand sidebar"
+    "expand": "Expand sidebar",
+    "logout": "Sign out"
   },
   "theme": {
     "label": "Theme",
@@ -424,6 +425,11 @@
     "loadingHistory": "Loading history…",
     "toolRunning": "running",
     "toolDone": "done",
+    "toolPending": "pending",
+    "toolError": "error",
+    "toolDenied": "denied",
+    "toolAwaitingApproval": "awaiting approval",
+    "toolResponded": "responded",
     "toolResult": "output",
     "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",
     "errorDismiss": "Dismiss",

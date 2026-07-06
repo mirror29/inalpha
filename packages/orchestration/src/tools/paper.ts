@@ -4,7 +4,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { defaultServiceSubject, mintServiceToken } from "../auth.js";
+import { resolveRequestToken } from "../auth.js";
 import { PaperClient } from "../clients/paper.js";
 import { getSettings } from "../config.js";
 
@@ -23,7 +23,7 @@ const SymbolSchema = z
     "symbol 不能为空 / 含空格；支持 crypto 'BTC/USDT' / 普通 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
   );
 
-type ToolRequestContext = { authToken?: string };
+type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown };
 
 /**
  * perp（USDT-M 永续）回测入参——run_backtest / cv_backtest / check_sensitivity 共用，
@@ -53,7 +53,7 @@ const perpInputFields = {
 
 async function getClient(ctx?: ToolRequestContext): Promise<PaperClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return new PaperClient({ baseUrl: settings.paperServiceUrl, token });
 }
 
@@ -67,7 +67,7 @@ async function getBacktestClient(
   timeoutMs = 300_000,
 ): Promise<PaperClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return new PaperClient({ baseUrl: settings.paperServiceUrl, token, timeoutMs });
 }
 

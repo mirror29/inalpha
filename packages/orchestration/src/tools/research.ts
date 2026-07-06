@@ -4,7 +4,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { defaultServiceSubject, mintServiceToken } from "../auth.js";
+import { resolveRequestToken } from "../auth.js";
 import { ResearchClient, type PersonaKey } from "../clients/research.js";
 import { getSettings } from "../config.js";
 
@@ -14,12 +14,13 @@ const PersonaSchema = z.enum([
 ]);
 
 // D-9 multi-market：与 tools/data.ts 保持一致。
-const TimeframeSchema = z.enum([
+// D-13：导出给 research-parallel.ts 复用，避免同一概念在两处独立漂移。
+export const TimeframeSchema = z.enum([
   "1m", "5m", "15m", "30m", "1h", "4h",
   "1d", "1wk", "1mo", "1q", "1y",
 ]);
 
-const SymbolSchema = z
+export const SymbolSchema = z
   .string()
   .min(1)
   .max(50)
@@ -28,11 +29,11 @@ const SymbolSchema = z
     "symbol 不能为空 / 含空格；支持 crypto 'BTC/USDT' / 普通 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
   );
 
-type ToolRequestContext = { authToken?: string };
+type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown };
 
 async function getClient(ctx?: ToolRequestContext): Promise<ResearchClient> {
   const settings = getSettings();
-  const token = ctx?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+  const token = await resolveRequestToken(ctx);
   return new ResearchClient({ baseUrl: settings.researchServiceUrl, token });
 }
 

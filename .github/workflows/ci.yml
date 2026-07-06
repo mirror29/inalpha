@@ -92,6 +92,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Type check
         run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
       - name: Build (Next.js dynamic app)
         run: pnpm build
 

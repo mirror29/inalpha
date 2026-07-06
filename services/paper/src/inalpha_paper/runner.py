@@ -80,6 +80,7 @@ async def run_backtest(
     data_client: DataClient,
     *,
     conn: AsyncConnection | None = None,
+    account_id: str | None = None,
 ) -> BacktestResponse:
     """执行一次完整 backtest：拉 bars → 实例化 strategy → 跑 engine → 组装响应。
 
@@ -284,6 +285,7 @@ async def run_backtest(
             started_at=started_at,
             finished_at=finished_at,
             validation=validation,
+            account_id=account_id,
         )
         # 6a. candidate 路径：回写 candidates 表（最近一次 metrics / fitness）
         if req.candidate_id is not None:
@@ -479,6 +481,7 @@ async def _persist_run(
     started_at: datetime,
     finished_at: datetime,
     validation: ValidationBlock | None = None,
+    account_id: str | None = None,
 ) -> UUID | None:
     """写一行 backtest_runs + 逐笔成交(同一事务)。失败 log warning 后返 None，不阻断回测响应。
 
@@ -535,6 +538,7 @@ async def _persist_run(
                 strategy_hint=req.strategy_hint,
                 started_at=started_at,
                 finished_at=finished_at,
+                account_id=account_id,
             )
             if report.fills:
                 await backtest_trades_store.insert_fills(conn, run_id, report.fills)
@@ -578,6 +582,7 @@ async def run_cv(
     data_client: DataClient,
     *,
     conn: AsyncConnection | None = None,
+    account_id: str | None = None,
 ) -> CVBacktestResponse:
     """跑多路径时序交叉验证回测（ADR-0028）：拉数据 → 造策略工厂 → 切分 → 聚合分布。
 

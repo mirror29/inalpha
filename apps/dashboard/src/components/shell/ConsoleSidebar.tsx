@@ -20,6 +20,7 @@ import {
 
 import { Link, usePathname } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
+import { AccountControl } from "./AccountControl";
 import { LocaleSwitcher } from "./LocaleSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -374,6 +375,7 @@ function SidebarBody({
       {/* Footer —— 控制区(主题 / 语言)+ 折叠开关 + build 标记。 */}
       {collapsed ? (
         <div className="flex flex-col items-center gap-3 border-t border-border-subtle px-2 py-3">
+          <AccountControl collapsed />
           <ThemeToggle />
           {onToggleCollapsed && (
             <button
@@ -389,6 +391,7 @@ function SidebarBody({
         </div>
       ) : (
         <div className="flex flex-col gap-3 border-t border-border-subtle px-4 py-3">
+          <AccountControl collapsed={false} />
           <div className="flex items-center justify-between">
             <ThemeToggle />
             <LocaleSwitcher />

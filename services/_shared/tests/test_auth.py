@@ -105,6 +105,25 @@ def test_get_current_user_expired_token(app_with_auth: FastAPI) -> None:
     assert r.json()["code"] == "TOKEN_EXPIRED"
 
 
+def test_get_current_user_rejects_session_token(app_with_auth: FastAPI) -> None:
+    """带 token_use=session 的 dashboard session cookie 不能当后端凭据用。"""
+    client = TestClient(app_with_auth)
+    token = make_token({"email": "a@b.c", "token_use": "session"})
+    r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 401
+    assert r.json()["code"] == "INVALID_TOKEN_USE"
+
+
+def test_get_current_user_accepts_service_token_without_token_use(
+    app_with_auth: FastAPI,
+) -> None:
+    """service token 不带 token_use → 正常放行(确认拒收只针对 session)。"""
+    client = TestClient(app_with_auth)
+    token = make_token({"email": "a@b.c"})
+    r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+
+
 def test_get_current_user_no_sub(app_with_auth: FastAPI) -> None:
     client = TestClient(app_with_auth)
     # 手动构造一个没有 sub 的 token

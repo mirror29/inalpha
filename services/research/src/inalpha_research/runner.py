@@ -13,11 +13,13 @@ D-9 起新增辩论阶段（``settings.max_debate_rounds`` 控制），research-
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, get_args
+from datetime import timedelta
+from typing import TYPE_CHECKING, Any, get_args
 
 from inalpha_shared import get_logger
 
 from .analysts import ALL_ANALYSTS
+from .analysts.base import AnalystContext, factor_lookback_bars
 from .analysts.personas import PERSONA_ANALYSTS
 from .config import get_research_settings
 from .debate import assess_disagreement, run_debate
@@ -31,6 +33,49 @@ if TYPE_CHECKING:
     from .data_client import DataClient
     from .factor_client import FactorClient
     from .llm.client import LLMClient
+
+
+async def _prefetch_shared(
+    req: DeepDiveRequest,
+    *,
+    data: DataClient,
+    factor: FactorClient | None,
+) -> AnalystContext | None:
+    """D-13 · P0：一次预拉 K 线 + 因子快照，注入 technical analyst 复用。
+
+    每项独立容错（gather return_exceptions）：失败的那项回退 None，
+    对应 analyst 会在 build_user_prompt 里自己拉。全挂则返回 None。
+
+    **不预取 fundamentals**：fundamental/valuation analyst 用的是
+    ``fundamentals_route`` 路由后的 fund_venue（可能 ≠ 研究 venue），
+    预取的 req.venue 版本对不上它们的需求——接进去反而喂错数据源。
+    预取范围因此限于 bars + factor_snapshot（消费方明确 = technical）。
+    """
+    from_ts = req.as_of - timedelta(days=req.lookback_days)
+
+    async def _bars() -> list[dict[str, Any]]:
+        return await data.get_bars(
+            venue=req.venue, symbol=req.symbol, timeframe=req.timeframe,
+            from_ts=from_ts, to_ts=req.as_of, limit=2_000,
+        )
+
+    async def _factor() -> dict[str, Any] | None:
+        if factor is None:
+            return None
+        return await factor.get_snapshot(
+            venue=req.venue, symbol=req.symbol, timeframe=req.timeframe,
+            as_of=req.as_of, lookback_bars=factor_lookback_bars(req.lookback_days),
+        )
+
+    pre_bars, pre_factor = await asyncio.gather(
+        _bars(), _factor(), return_exceptions=True,
+    )
+    return AnalystContext(
+        bars=None if isinstance(pre_bars, BaseException) else pre_bars,
+        factor_snapshot=(
+            None if isinstance(pre_factor, BaseException) else pre_factor
+        ),
+    )
 
 
 async def run_deep_dive(
@@ -55,6 +100,12 @@ async def run_deep_dive(
     """
     settings = get_research_settings()
 
+    # ─── 0) 数据预取（D-13 · P0）────────────────────────────────────
+    # 6 个 analyst 各自调 DataClient 拉同一批 K 线 → N 次重复往返。
+    # 一次预拉后注入所有 analyst，延迟 -30%、服务端负载 -60%。
+    # 单个预取失败不阻断整链：回退为 None，analyst 在 build_user_prompt 里自己拉。
+    shared = await _prefetch_shared(req, data=data, factor=factor)
+
     # ─── 1) analyst 并行 ────────────────────────────────────────────
     # 核心 analyst 永远跑；ADR-0037 §A：req.personas 指定的投资大师人格按需追加
     # （无效 key 静默忽略，不阻断主链路）。
@@ -65,7 +116,7 @@ async def run_deep_dive(
         persona_cls = PERSONA_ANALYSTS.get(key)
         if persona_cls is not None:
             analyst_classes.append(persona_cls)
-    analysts = [cls(llm=llm, data=data, factor=factor) for cls in analyst_classes]
+    analysts = [cls(llm=llm, data=data, factor=factor, shared=shared) for cls in analyst_classes]
 
     coros = [
         a.run(
@@ -130,7 +181,10 @@ async def run_deep_dive(
             debate_log = outcome.turns
             debate_stop_reason = outcome.stop_reason
 
-    # ─── 3) Manager 综合 ────────────────────────────────────────────
+    # ─── 3) Manager 综合 ─
+    # 注：prompt 侧的 token 压缩（key_points 截断）在 manager._format_user_prompt
+    # 内完成，不在此处改 briefs——runner 直接把完整 briefs 传下去，保证返回给
+    # 调用方的 ResearchPlan.briefs 保留 raw_excerpt（debug/复盘用）与完整 key_points。
     manager = ResearchManager(llm=llm)
     plan = await manager.synthesize(
         venue=req.venue,

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ..researchers.base import infer_asset_type
-from .base import Analyst
+from .base import Analyst, factor_lookback_bars
 
 _SYSTEM = """
 You are a technical analyst covering any asset class.
@@ -87,14 +87,18 @@ class TechnicalAnalyst(Analyst):
         lookback_days: int,
     ) -> str:
         from_ts = as_of - timedelta(days=lookback_days)
-        bars = await self._data.get_bars(
-            venue=venue,
-            symbol=symbol,
-            timeframe=timeframe,
-            from_ts=from_ts,
-            to_ts=as_of,
-            limit=2_000,
-        )
+        # D-13 · P0：优先从共享预取数据读 K 线（runner 前置拉取，避免重复往返）
+        if self._shared is not None and self._shared.bars is not None:
+            bars = self._shared.bars
+        else:
+            bars = await self._data.get_bars(
+                venue=venue,
+                symbol=symbol,
+                timeframe=timeframe,
+                from_ts=from_ts,
+                to_ts=as_of,
+                limit=2_000,
+            )
 
         # 提炼最近 N 根 + 算几个粗指标喂给 LLM（factor 服务不可用时的兜底）
         recent = bars[-60:]
@@ -105,7 +109,8 @@ class TechnicalAnalyst(Analyst):
 
         # 接现成因子库（docs/miro/11）：取"经前瞻收益/IC 验证有效"的因子排序，优先喂这块
         effective_factors, factor_status = await self._fetch_effective_factors(
-            venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
+            venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of,
+            lookback_days=lookback_days,
         )
 
         return _format_user_prompt(
@@ -122,7 +127,8 @@ class TechnicalAnalyst(Analyst):
         )
 
     async def _fetch_effective_factors(
-        self, *, venue: str, symbol: str, timeframe: str, as_of: datetime
+        self, *, venue: str, symbol: str, timeframe: str, as_of: datetime,
+        lookback_days: int,
     ) -> tuple[list[dict[str, Any]], str]:
         """返回 ``(top 有效因子, 状态)``。状态用于区分两种"空列表"，避免误导：
 
@@ -136,13 +142,22 @@ class TechnicalAnalyst(Analyst):
         """
         if self._factor is None:
             return [], "unavailable"
-        snap = await self._factor.get_snapshot(
-            venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of
+        # D-13 · P0：runner 预拉因子快照 → 跳过 DataClient 调 factor service。
+        # snapshot 是 dict（含 available + top_factors），跟自拉路径同解析。
+        # lookback_bars 与 runner._prefetch_shared 用同一表达式（factor_lookback_bars），
+        # 保证"预取命中"与"自拉回退"两条路径算出同一个因子窗口，行为不随基础设施漂移。
+        snap = (
+            self._shared.factor_snapshot
+            if self._shared is not None and self._shared.factor_snapshot is not None
+            else await self._factor.get_snapshot(
+                venue=venue, symbol=symbol, timeframe=timeframe, as_of=as_of,
+                lookback_bars=factor_lookback_bars(lookback_days),
+            )
         )
         if not snap.get("available"):
             return [], "unavailable"
-        factors = snap.get("top_factors")
-        factors = factors if isinstance(factors, list) else []
+        raw_factors = snap.get("top_factors")
+        factors: list[dict[str, Any]] = raw_factors if isinstance(raw_factors, list) else []
         return (factors, "ok") if factors else ([], "insufficient")
 
 

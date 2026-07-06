@@ -1,6 +1,6 @@
 name: PR Assistant
 
-# 在 PR/issue/review comment 里 @glm 触发 GLM-5.2 对话。
+# 在 PR/issue/review comment 里 @claude 触发 GLM-5.2 对话。
 # 本 workflow 不阻塞 CI/CD，失败不影响 PR 合并。
 
 on:
@@ -48,7 +48,7 @@ jobs:
                 echo "## Issue #$N"
                 gh issue view "$N" --json title,body --jq '"### \(.title)\n\n\(.body // "(no body)")"'
                 echo ""
-                echo "### @glm comment"
+                echo "### @claude comment"
                 echo "${{ github.event.comment.body }}"
               } > /tmp/glm_context.txt
               echo "target=$N" >> $GITHUB_OUTPUT
@@ -60,7 +60,7 @@ jobs:
                 echo "## PR #$N Review Comment"
                 echo "File: ${{ github.event.comment.path }}"
                 echo ""
-                echo "### @glm comment"
+                echo "### @claude comment"
                 echo "${{ github.event.comment.body }}"
               } > /tmp/glm_context.txt
               echo "target=$N" >> $GITHUB_OUTPUT
@@ -71,7 +71,7 @@ jobs:
               {
                 echo "## PR #$N Review"
                 echo ""
-                echo "### @glm comment"
+                echo "### @claude comment"
                 echo "${{ github.event.review.body }}"
               } > /tmp/glm_context.txt
               echo "target=$N" >> $GITHUB_OUTPUT

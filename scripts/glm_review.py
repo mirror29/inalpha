@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""GLM-5.2 PR review 脚本（glm-review.yml 调用,也可本地跑）。
+"""GLM-5.2 PR review——claude-review.yml 调用,也可本地跑。
 
-读入:
-- ``/tmp/pr_diff.txt``   PR 完整 diff(workflow 前一步 ``gh pr diff`` 落盘)
+环境:
+- ``ZHIPUAI_API_KEY``(必填)
+- ``GLM_BASE_URL``(默认 https://yuanyuaicloud.cn/v1)
+- ``GLM_MODEL``(默认 glm-5.2)
+
+输入:
+- ``/tmp/pr_diff.txt``   PR diff(claude-review.yml 前一步 ``gh pr diff`` 落盘)
 - ``/tmp/pr_title.txt``  PR 标题
-- 环境变量 ``ZHIPUAI_API_KEY``(必填) / ``GLM_BASE_URL`` / ``GLM_MODEL``(可选覆盖)
 
 输出:
-- ``/tmp/review_body.txt``  渲染好的 markdown 评论正文(后一步 gh pr comment 贴出)
+- ``/tmp/review_body.txt``  渲染好的 markdown(后一步 gh pr comment 贴出)
 
-非阻塞约定:任何失败(网络/超时/解析)都写一条失败说明后 exit 0,
-不让 review 挂掉 PR 的 checks——review 是锦上添花,不是门禁。
-
-不做 diff 截断:GLM-5.2 与 Claude 同级 1M 上下文,全量 diff 直接喂。
-只在 Python 里构造请求体,绕开 YAML/heredoc/shell 三层转义地狱
-(2026-07-03 教训:workflow 内嵌 heredoc 顶格中文直接打断 YAML 块标量,
-整个文件解析失败,每次 push 报一封失败邮件)。
+约定:任何失败都写 failure 说明后 exit 0,不让 review 挂 PR checks。
+不截断 diff——GLM-5.2 1M 上下文,全量喂。
 """
 from __future__ import annotations
 
@@ -107,7 +106,7 @@ def _call_glm(api_key: str, title: str, diff: str) -> str:
     }
     req = urllib.request.Request(
         f"{BASE_URL}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
+        data=json.dumps(payload).encode(),
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -115,18 +114,8 @@ def _call_glm(api_key: str, title: str, diff: str) -> str:
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
-        body = json.loads(resp.read().decode("utf-8"))
+        body = json.loads(resp.read())
     return body["choices"][0]["message"]["content"]
-
-
-def _extract_json(content: str) -> dict | None:
-    # 不再需要 JSON 提取——GLM 现在直接输出自然语言评论
-    return None
-
-
-def _render(result: dict | None, diff: str) -> str:
-    # 只取模型原始输出，不做 JSON 渲染
-    return content  # via caller
 
 
 def main() -> None:
@@ -148,8 +137,9 @@ def main() -> None:
     try:
         content = _call_glm(api_key, title, diff)
     except urllib.error.HTTPError as e:
-        _fail(f"GLM API HTTP {e.code}：{e.read().decode('utf-8', 'replace')[:300]}")
-    except Exception as e:  # 网络/超时等,一律非阻塞
+        body = e.read().decode("utf-8", "replace")[:300]
+        _fail(f"GLM API HTTP {e.code}：{body}")
+    except Exception as e:
         _fail(f"GLM API 调用失败：{e}")
 
     body = "## 🤖 GLM-5.2 PR Review\n\n" + content

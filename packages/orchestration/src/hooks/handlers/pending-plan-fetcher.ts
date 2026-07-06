@@ -8,9 +8,9 @@
  * 何时用：scheduler runner 的 Stop hook 循环、orchestrator 的输出 processor。
  * 何时不用：测试请直接注入返回固定数组的假 fetcher（handler 本来就是注入式）。
  *
- * 坑：paper ``/plans`` 没有 session 过滤——本 fetcher **忽略 sessionId 全局查**。
- * 单租户 dev console（agent 与控制台同账户）下行为正确；多租户化时需 paper 侧
- * 加 subject/session 维度过滤后再收紧这里。
+ * 多租户：paper ``/plans`` 按调用方 token 的 ``sub`` 派生 account 过滤，故本 fetcher
+ * 用传入的 ``sessionId``（chat 路径 = 已认证 sub）当 token 的 sub；缺省(dev/无会话)
+ * 回落 ``defaultServiceSubject``。scheduler 路径显式传 ``opts.token`` 优先。
  */
 import { defaultServiceSubject, mintServiceToken } from "../../auth.js";
 import { PaperClient } from "../../clients/paper.js";
@@ -32,10 +32,14 @@ export type PaperPendingPlanFetcherOptions = {
 export function createPaperPendingPlanFetcher(
   opts: PaperPendingPlanFetcherOptions = {},
 ): PendingPlanFetcher {
-  return async (_sessionId) => {
+  return async (sessionId) => {
     const settings = getSettings();
+    // 多租户隔离:chat 路径把已认证 sub 经 sessionId 传进来 → 按该用户 sub 铸 token,
+    // 使 /plans 只查该用户的账户(否则恒查 console:dev,对真实登录用户既漏查其 plan、
+    // 又会把 console 账户的 plan_id 泄进回复)。scheduler 路径显式传 opts.token 优先。
     const token =
-      opts.token ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+      opts.token ??
+      (await mintServiceToken({ sub: sessionId || defaultServiceSubject() }));
     const client = new PaperClient({ baseUrl: settings.paperServiceUrl, token });
     const lists = await Promise.all(
       PENDING_STATUSES.map((status) =>
