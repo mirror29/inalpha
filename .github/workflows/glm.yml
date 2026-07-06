@@ -1,4 +1,8 @@
-name: GLM @mention
+name: GLM @mention 互动
+
+# 在 PR/issue/review comment 里 @glm 触发 GLM-5.2 对话。
+# 本 workflow 不阻塞 CI/CD，失败不影响 PR 合并。
+# Auth: 智谱 GLM API key 存在 GitHub Actions Secret ZHIPUAI_API_KEY
 
 on:
   issue_comment:
@@ -12,7 +16,7 @@ on:
 
 jobs:
   glm:
-    name: GLM-5.2 · @glm
+    name: GLM-5.2 · @glm 触发
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@glm')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@glm')) ||
@@ -29,83 +33,110 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Collect context
-        id: ctx
+        id: context
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           case "${{ github.event_name }}" in
             issue_comment)
-              N="${{ github.event.issue.number }}"
-              {
-                echo "## Issue #$N"
-                gh issue view "$N" --json title,body --jq '"### \(.title)\n\n\(.body // "(no body)")"'
-                echo ""
-                echo "### @glm comment"
-                echo "${{ github.event.comment.body }}"
-              } > /tmp/glm_context.txt
-              echo "target=$N" >> $GITHUB_OUTPUT
+              ISSUE_NUM="${{ github.event.issue.number }}"
+              echo "context<<EOF" >> $GITHUB_OUTPUT
+              echo "## Issue #$ISSUE_NUM" >> $GITHUB_OUTPUT
+              gh issue view "$ISSUE_NUM" --json title,body --jq '"### \(.title)\n\n\(.body // "无正文")"' >> $GITHUB_OUTPUT
+              echo "" >> $GITHUB_OUTPUT
+              echo "### @glm 评论" >> $GITHUB_OUTPUT
+              echo "${{ github.event.comment.body }}" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+              echo "target=$ISSUE_NUM" >> $GITHUB_OUTPUT
               echo "type=issue" >> $GITHUB_OUTPUT
               ;;
             pull_request_review_comment)
-              N="${{ github.event.pull_request.number }}"
-              {
-                echo "## PR #$N Review Comment"
-                echo "File: ${{ github.event.comment.path }}"
-                echo ""
-                echo "### @glm comment"
-                echo "${{ github.event.comment.body }}"
-              } > /tmp/glm_context.txt
-              echo "target=$N" >> $GITHUB_OUTPUT
+              PR_NUM="${{ github.event.pull_request.number }}"
+              echo "context<<EOF" >> $GITHUB_OUTPUT
+              echo "## PR #$PR_NUM Review Comment" >> $GITHUB_OUTPUT
+              echo "File: ${{ github.event.comment.path }}" >> $GITHUB_OUTPUT
+              echo "" >> $GITHUB_OUTPUT
+              echo "### @glm 评论" >> $GITHUB_OUTPUT
+              echo "${{ github.event.comment.body }}" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+              echo "target=$PR_NUM" >> $GITHUB_OUTPUT
               echo "type=pr" >> $GITHUB_OUTPUT
               ;;
             pull_request_review)
-              N="${{ github.event.pull_request.number }}"
-              {
-                echo "## PR #$N Review"
-                echo ""
-                echo "### @glm comment"
-                echo "${{ github.event.review.body }}"
-              } > /tmp/glm_context.txt
-              echo "target=$N" >> $GITHUB_OUTPUT
+              PR_NUM="${{ github.event.pull_request.number }}"
+              echo "context<<EOF" >> $GITHUB_OUTPUT
+              echo "## PR #$PR_NUM Review" >> $GITHUB_OUTPUT
+              echo "" >> $GITHUB_OUTPUT
+              echo "### @glm 评论" >> $GITHUB_OUTPUT
+              echo "${{ github.event.review.body }}" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+              echo "target=$PR_NUM" >> $GITHUB_OUTPUT
               echo "type=pr" >> $GITHUB_OUTPUT
               ;;
             issues)
-              N="${{ github.event.issue.number }}"
-              {
-                echo "## Issue #$N"
-                echo "### ${{ github.event.issue.title }}"
-                echo ""
-                echo "### Body"
-                echo "${{ github.event.issue.body }}"
-              } > /tmp/glm_context.txt
-              echo "target=$N" >> $GITHUB_OUTPUT
+              ISSUE_NUM="${{ github.event.issue.number }}"
+              echo "context<<EOF" >> $GITHUB_OUTPUT
+              echo "## Issue #$ISSUE_NUM" >> $GITHUB_OUTPUT
+              echo "### 标题" >> $GITHUB_OUTPUT
+              echo "${{ github.event.issue.title }}" >> $GITHUB_OUTPUT
+              echo "" >> $GITHUB_OUTPUT
+              echo "### 正文" >> $GITHUB_OUTPUT
+              echo "${{ github.event.issue.body }}" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+              echo "target=$ISSUE_NUM" >> $GITHUB_OUTPUT
               echo "type=issue" >> $GITHUB_OUTPUT
               ;;
           esac
 
-      - name: Call GLM-5.2
+      - name: Call Zhipu GLM-5.2
+        id: call
         env:
           ZHIPUAI_API_KEY: ${{ secrets.ZHIPUAI_API_KEY }}
-          CONTEXT_FILE: /tmp/glm_context.txt
+          CONTEXT: ${{ steps.context.outputs.context }}
+          TARGET: ${{ steps.context.outputs.target }}
+          TYPE: ${{ steps.context.outputs.type }}
         run: |
-          export CONTEXT=$(cat "$CONTEXT_FILE")
-          python3 scripts/glm_mention.py
+          # 用 python3 构造请求体，避免 bash JSON 转义坑
+          RESPONSE=$(curl -s -w "\n%{http_code}" --request POST \
+            --url "https://yuanyuaicloud.cn/v1/chat/completions" \
+            --header "Authorization: Bearer $ZHIPUAI_API_KEY" \
+            --header "Content-Type: application/json" \
+            --data "$(python3 -c "
+import json, os
+ctx = os.environ.get('CONTEXT', '')
+d = {
+  'model': 'glm-5.2',
+  'messages': [
+    {'role': 'system', 'content': '你是 Inalpha 仓库的 AI 助手。用户通过 @glm 触发你的回复。请用中文回答。'},
+    {'role': 'user', 'content': ctx}
+  ],
+  'temperature': 0.7,
+  'max_tokens': 2048
+}
+print(json.dumps(d))
+")")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "API error: $HTTP_CODE $BODY"
+            exit 0
+          fi
+
+          CONTENT=$(echo "$BODY" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read())["choices"][0]["message"]["content"])')
+          echo "$CONTENT" > /tmp/glm_reply.txt
 
       - name: Post reply
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET: ${{ steps.ctx.outputs.target }}
-          TYPE: ${{ steps.ctx.outputs.type }}
+          TARGET: ${{ steps.context.outputs.target }}
+          TYPE: ${{ steps.context.outputs.type }}
         run: |
-          if [ ! -f /tmp/glm_reply.txt ]; then exit 0; fi
           REPLY=$(cat /tmp/glm_reply.txt)
           if [ "$TYPE" = "issue" ]; then
-            gh issue comment "$TARGET" --body "🤖 **GLM-5.2**: $REPLY"
+            gh issue comment "$TARGET" --body "🤖 **GLM-5.2**:\n\n$REPLY"
           else
-            gh pr comment "$TARGET" --body "🤖 **GLM-5.2**: $REPLY"
+            gh pr comment "$TARGET" --body "🤖 **GLM-5.2**:\n\n$REPLY"
           fi

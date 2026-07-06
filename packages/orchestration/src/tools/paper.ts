@@ -768,19 +768,129 @@ export const paperGetAccountTool = createTool({
     返回（D-11）：
     - cash / positions_value / total_equity 均已折算到 base_currency（默认 USD）
     - cash_balances 给出折算前的按币种原始桶（如 {"USD": 5000, "USDT": -1000}）
-    - fx_warnings：折算时 FX 不可用 / 偏旧的币种告警
+    - positions_value 按**最新市价** mark-to-market（spot = qty×最新价含浮盈；
+      perp 贡献未实现盈亏），total_equity 随行情浮动
+    - net_external_flows：自最近一次重置以来的净充值。**报告收益率必须减掉它**：
+      真实收益 = total_equity − initial_cash − net_external_flows（充值 ≠ 盈利）
+    - fx_warnings：估值告警（FX 或最新价不可用 / 偏旧）
 
     坑：
-    - 持仓估值用 avg_open_price 兜底（D-8b 不接实时 mark）；实际权益略偏保守
-    - **fx_warnings 非空时必须原样转告用户**——表示某些币种 FX 拿不到被排除出估值，
-      或汇率偏旧，总权益可能不完整（金融时效硬约束）
-    - 默认初始 10000，首次下单时 lazy create
+    - **fx_warnings 非空时必须原样转告用户**——某些币种 FX 拿不到被排除出估值，
+      或某持仓最新价拿不到按开仓均价兜底，总权益可能不完整（金融时效硬约束）
+    - 默认初始 10000，首次下单时 lazy create；用户要改资金 → paper.deposit_cash /
+      paper.reset_account
   `.trim(),
   inputSchema: z.object({}),
   execute: async (_input, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
     return await client.getAccount();
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────
+// 账户外生资金事件：充值 / 重置 / 流水
+// ────────────────────────────────────────────────────────────────────
+
+export const paperDepositCashTool = createTool({
+  id: "paper.deposit_cash",
+  description: `
+    给模拟盘账户充值（虚拟资金）。入指定币种桶（默认账户 base_currency），
+    后端写资金流水留痕（审计可还原），**不改 initial_cash**——充值 ≠ 赚钱，
+    总收益率分母不动。
+
+    何时用：
+    - 用户明确说"给我的账户充 X / 加点钱 / 把可用资金加到 X"
+    - 账户现金不够想开新仓 / 起新 runner（先告知用户现状，用户确认充值再调）
+
+    何时不用：
+    - 用户想"重新开始 / 清空重来" → paper.reset_account（重置基准，充值不清持仓）
+    - 用户只是问余额 → paper.get_account
+    - **用户没有明确要求改资金时绝不要主动充值**——改钱=改绩效口径
+
+    坑：
+    - permission ask：调用会弹气泡让用户确认，调前必须在对话里说清金额和币种
+    - crypto 交易花的是 USDT 桶：给 crypto 加钱通常应传 currency="USDT"
+      （不传默认 base_currency 如 USD，靠 1:1 折算也能过购买力守门，但桶会更花）
+    - 已在跑的 runner 的 allocation 不会随充值变——新额度对新 run 生效
+  `.trim(),
+  inputSchema: z.object({
+    amount: z.number().positive().max(1e9).describe("充值金额(>0)"),
+    currency: z
+      .string()
+      .min(1)
+      .max(16)
+      .optional()
+      .describe("入账币种桶(如 USDT);省略 = 账户 base_currency"),
+    note: z.string().max(500).optional().describe("备注(落流水审计,建议写原因)"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.depositCash(inputData);
+  },
+});
+
+export const paperResetAccountTool = createTool({
+  id: "paper.reset_account",
+  description: `
+    重置模拟盘账户到初始状态：**删全部持仓行** + 现金回 {base_currency: initial_cash}
+    （可传新基准金额）。orders / closed_trades / strategy_runs 历史全部保留（审计
+    不可抹），重置后绩效从新基准起算。
+
+    何时用：
+    - 用户明确说"重置账户 / 清空重来 / 重新开始 / 把账户恢复到初始状态"
+
+    何时不用：
+    - 只想加钱 → paper.deposit_cash（重置会清持仓,加钱不会）
+    - 有 running 的 live runner → 先 paper.stop_strategy 停掉（否则后端 409
+      ACCOUNT_HAS_RUNNING_RUNS——runner 下一根 bar 会把仓开回来）
+    - **用户没有明确要求重置时绝不要主动调**——这是破坏性操作（持仓直接消失）
+
+    坑：
+    - permission ask：调用会弹气泡确认；调前必须在对话里报告将被清掉的持仓
+      （先 paper.list_positions 给用户看），等用户明确同意
+    - 重置不可撤销（持仓行删除;但逐笔历史在 orders/closed_trades 可查）
+    - initialCash 省略 = 沿用当前基准(默认 10000)
+  `.trim(),
+  inputSchema: z.object({
+    initialCash: z
+      .number()
+      .positive()
+      .max(1e9)
+      .optional()
+      .describe("新一轮初始资金(base_currency 计);省略 = 沿用当前 initial_cash"),
+    note: z.string().max(500).optional().describe("备注(落流水审计,建议写重置原因)"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.resetAccount(inputData);
+  },
+});
+
+export const paperListCashFlowsTool = createTool({
+  id: "paper.list_cash_flows",
+  description: `
+    列账户外生资金流水（充值 / 提取 / 重置留痕），最近的在前。
+
+    何时用：
+    - 用户问"我充过几次钱 / 什么时候重置过 / 资金变动记录"
+    - 解释总收益率口径时（初始 10000 + 充值 5000 的账户,权益 16000 ≠ 赚 60%）
+
+    何时不用：
+    - 查成交现金变动 → paper.list_orders（成交不在本流水里,两套口径互补）
+
+    返回：每行 { kind: deposit|withdraw|reset, currency, amount(带符号),
+    balance_after(变更后桶余额), note, created_at }
+  `.trim(),
+  inputSchema: z.object({
+    limit: z.number().int().min(1).max(500).default(50).describe("最多返回条数"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getClient(tc);
+    return await client.listCashFlows(inputData.limit);
   },
 });
 
@@ -806,7 +916,13 @@ export const paperStartStrategyTool = createTool({
     坑：
     - **promote ≠ 自动跑**：promote 只是状态切换，必须再调本工具才真正按行情跑
     - 同一个 candidate 同时只能有一个 running（再起会 409）；先 stop 再换 symbol
+    - 同账户同 venue+symbol 同时只能有一个 running（撞会 409 SYMBOL_RUN_CONFLICT，
+      两个 run 会共享同一行持仓互相打架）；换策略先 stop 旧 run
     - candidate 表不含 venue/symbol/timeframe，必须在这里指定
+    - allocation 是该 run 的资金额度（sizing 上限）；省略时服务端取
+      min(10000, 账户可用现金 − 其他 running run 已分配额度)。默认 1 万的账户起
+      **第二个** runner 时未分配额度通常已是 0 → 422——要么显式传较小的 allocation
+      （并建议第一个也用显式额度），要么先 paper.deposit_cash 充值
     - 机器自动审批下单（approved_by=system:live_runner），正当性靠"人先 promote + 人显式 start"
   `.trim(),
   inputSchema: z.object({
@@ -836,6 +952,15 @@ export const paperStartStrategyTool = createTool({
       .max(20)
       .default(1)
       .describe("杠杆倍数（perp 用，1..20）；spot 恒 1"),
+    allocation: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        "本 run 的资金额度（账户 base_currency 计）：sizing 与 run 级购买力以它为上限，" +
+        "多 run 共享账户时各自的资金边界。省略 → 服务端取 min(10000, 账户折算可用现金)。" +
+        "用户没明确给金额就不要传。",
+      ),
   }),
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
@@ -848,6 +973,7 @@ export const paperStartStrategyTool = createTool({
       params: inputData.params,
       tradingMode: inputData.tradingMode,
       leverage: inputData.leverage,
+      allocation: inputData.allocation,
     });
   },
 });
@@ -926,6 +1052,9 @@ export const paperTools = [
   paperListOrdersTool,
   paperListPositionsTool,
   paperGetAccountTool,
+  paperDepositCashTool,
+  paperResetAccountTool,
+  paperListCashFlowsTool,
   paperComposeStrategyTool,
   paperListBacktestRunsTool,
   paperListBacktestTradesTool,

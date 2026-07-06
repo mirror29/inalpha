@@ -36,8 +36,10 @@ export interface PositionRecord {
   leverage: number;
   /** perp 该仓占用保证金；spot 为 0。 */
   margin_used: number;
-  /** perp 强平价（mark 穿越即强平）；spot 为 null。null 也用来判定是否 perp 仓。 */
+  /** perp 强平价（mark 穿越即强平）；spot 为 null。 */
   liquidation_price: number | null;
+  /** 后端派生:现货 spot / 合约 perp——UI 判定用这个,别再靠 liquidation_price 推断。 */
+  trading_mode: "spot" | "perp";
 }
 
 /** GET /orders 元素。 */
@@ -82,6 +84,12 @@ export interface StrategyRunRecord {
   symbol: string;
   timeframe: string;
   params: Record<string, unknown>;
+  /** 现货 spot / 合约 perp(USDT-M 永续)。 */
+  trading_mode: "spot" | "perp";
+  /** 杠杆倍数;spot 恒 1。 */
+  leverage: number;
+  /** 本 run 的资金额度(账户 base_currency 计);老数据为 null(旧语义固定 1 万)。 */
+  allocation: number | null;
   last_bar_ts: string | null;
   cumulative_pnl: number;
   /** 运行日志(滚动窗口,最近 N 条):起跑 / 出单 / 停止 / 退避 / 错误。 */

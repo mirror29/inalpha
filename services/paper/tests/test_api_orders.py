@@ -222,6 +222,81 @@ def test_submit_negative_quantity_rejected(
     assert r.status_code == 400
 
 
+def test_spot_buy_insufficient_cash_rejected(client: TestClient) -> None:
+    """spot BUY 超过账户折算可用现金 → 409 INSUFFICIENT_CASH,不落账。
+
+    账户初始 10000 USD;买 0.5 BTC @ 50000 = 25000 USDT(1:1 折 USD)远超可用 → 拒。
+    独立账户(fresh sub):订单表不 truncate,共享 test-user 会带上别的用例的流水。
+    """
+    from .conftest import fresh_account_token
+
+    _, token = fresh_account_token("bp")
+    headers = {"Authorization": f"Bearer {token}"}
+    r = client.post(
+        "/orders/submit",
+        headers=headers,
+        json={
+            "symbol": "BTC/USDT",
+            "side": "BUY",
+            "type": "MARKET",
+            "quantity": 0.5,
+            "ref_price": 50_000.0,
+        },
+    )
+    assert r.status_code == 409, r.json()
+    assert r.json()["code"] == "INSUFFICIENT_CASH"
+    listed = client.get("/orders", headers=headers, params={"symbol": "BTC/USDT"})
+    assert listed.status_code == 200
+    assert listed.json() == []
+
+
+def test_spot_buy_cross_currency_within_converted_cash_ok(client: TestClient) -> None:
+    """USD 开户买 USDT 计价对:USDT 桶允许为负,但总折算现金不被买穿。
+
+    买 0.1 BTC @ 50000 = 5005(USDT,含 fee):USDT 桶 → 负,USD 桶不动,
+    折算总现金仍为正 → 放行;随后再买 0.12 BTC(6006 > 剩余 4995×0.99)→ 拒。
+    """
+    from .conftest import fresh_account_token
+
+    _, token = fresh_account_token("bp")
+    headers = {"Authorization": f"Bearer {token}"}
+    r1 = client.post(
+        "/orders/submit",
+        headers=headers,
+        json={
+            "symbol": "BTC/USDT",
+            "side": "BUY",
+            "type": "MARKET",
+            "quantity": 0.1,
+            "ref_price": 50_000.0,
+        },
+    )
+    assert r1.status_code == 200, r1.json()
+    assert r1.json()["status"] == "FILLED"
+
+    acct = client.get("/accounts/me", headers=headers)
+    assert acct.status_code == 200
+    body = acct.json()
+    # USDT 桶为负(账户内隐式借计价货币),USD 桶原封不动,总折算现金为正
+    assert body["cash_balances"]["USDT"] < 0
+    assert body["cash_balances"]["USD"] == 10_000.0
+    assert 0 < body["cash"] < 10_000.0
+
+    r2 = client.post(
+        "/orders/submit",
+        headers=headers,
+        json={
+            "symbol": "BTC/USDT",
+            "side": "BUY",
+            "type": "MARKET",
+            "quantity": 0.12,
+            "ref_price": 50_000.0,
+        },
+    )
+    assert r2.status_code == 409, r2.json()
+    assert r2.json()["code"] == "INSUFFICIENT_CASH"
+
+
 def test_submit_naked_short_rejected(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:

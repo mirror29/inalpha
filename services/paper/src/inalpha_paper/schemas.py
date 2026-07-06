@@ -725,6 +725,12 @@ class PositionRecord(BaseModel):
     liquidation_price: float | None = Field(
         default=None, description="perp 强平价（mark 穿越即强平）；spot 为 null"
     )
+    trading_mode: Literal["spot", "perp"] = Field(
+        default="spot",
+        description="派生字段(positions 表无该列):强平价非空或占用保证金非 0 → perp。"
+        "前端据此显式标注现货/合约,不要再靠 liquidation_price 隐式推断。"
+        "已平仓(quantity=0)的 perp 行保证金已清零,会派生成 spot——无敞口,可接受",
+    )
     updated_at: datetime
 
 
@@ -746,22 +752,78 @@ class AccountSnapshot(BaseModel):
     )
     positions_value: float = Field(
         default=0.0,
-        description="所有持仓按 avg_open_price 估值并折算到 base_currency（D-8b 不接实时 mark）",
+        description="持仓 mark-to-market 估值折算到 base_currency:spot 仓 = qty×最新价"
+        "（含未实现盈亏）;perp 仓 cash 即钱包,贡献未实现盈亏 (mark−avg)×qty。"
+        "最新价拿不到的仓 spot 按开仓均价兜底 / perp 记 0,见 fx_warnings",
     )
     total_equity: float = Field(
-        default=0.0, description="base_currency 计：cash + positions_value"
+        default=0.0, description="base_currency 计：cash + positions_value（含未实现盈亏）"
     )
     realized_pnl: float = Field(
         default=0.0,
-        description="所有持仓累计实现 PnL，按各自计价货币折算到 base_currency 后汇总",
+        description="自最近一次重置以来的累计实现 PnL(closed_trades 成交审计口径,"
+        "毛盈亏不含手续费),按各计价货币折算到 base_currency 后汇总",
+    )
+    net_external_flows: float = Field(
+        default=0.0,
+        description="自最近一次重置以来的净外生入金(充值−提取,折 base_currency)。"
+        "真实收益 = total_equity − initial_cash − net_external_flows——"
+        "不减它会把充值当成盈利(1 万户充 1 万显示 +100%)",
     )
     fx_warnings: list[str] = Field(
         default_factory=list,
-        description="D-11：折算时 FX 不可用 / 偏旧的币种告警；非空时估值可能不完整，"
-        "agent 须把告警原样转告用户",
+        description="D-11：估值告警——FX 不可用 / 偏旧的币种,或持仓最新价不可用 / 偏旧;"
+        "非空时估值可能不完整，agent 须把告警原样转告用户",
     )
     created_at: datetime
     updated_at: datetime
+
+
+class DepositRequest(BaseModel):
+    """``POST /accounts/me/deposit`` 请求体:给账户充值(外生资金事件,写流水)。"""
+
+    amount: float = Field(
+        ..., gt=0, le=1e9,
+        description="充值金额(>0);上限 1e9 防超大值",
+    )
+    currency: str | None = Field(
+        default=None, min_length=1, max_length=16,
+        description="入账币种桶;省略 = 账户 base_currency",
+    )
+    note: str | None = Field(
+        default=None, max_length=500, description="备注(留痕,可空)"
+    )
+
+
+class ResetAccountRequest(BaseModel):
+    """``POST /accounts/me/reset`` 请求体:重置账户到初始状态。
+
+    删全部持仓行 + 现金重置为 ``{base_currency: initial_cash}``;orders /
+    closed_trades / strategy_runs 历史保留(审计不可抹)。有 running run 时 409。
+    """
+
+    initial_cash: float | None = Field(
+        default=None, gt=0, le=1e9,
+        description="新一轮初始资金(base_currency 计);省略 = 沿用账户当前 initial_cash",
+    )
+    note: str | None = Field(
+        default=None, max_length=500, description="备注(留痕,可空)"
+    )
+
+
+class CashFlowRecord(BaseModel):
+    """``GET /accounts/me/cash_flows`` 元素:一笔外生资金事件。
+
+    只含 deposit / withdraw / reset(成交现金变动在 orders / closed_trades)。
+    """
+
+    id: int
+    kind: Literal["deposit", "withdraw", "reset"]
+    currency: str
+    amount: float = Field(description="带符号变更额(充值为正)")
+    balance_after: float = Field(description="变更后该币种桶余额(审计对账用)")
+    note: str | None = None
+    created_at: datetime
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -868,6 +930,12 @@ class StartStrategyRunRequest(BaseModel):
         "仅 crypto 永续标的 BTC/USDT:USDT 生效)。perp 须配做空逻辑的策略,否则会告警。",
     )
     leverage: int = Field(default=1, ge=1, le=20, description="杠杆倍数(perp 用,1..20);spot 恒 1")
+    allocation: float | None = Field(
+        default=None, gt=0, le=1e9,
+        description="本 run 的资金额度(账户 base_currency 计):sizing 与 run 级购买力"
+        "都以它为上限,多 run 共享账户时各自的资金边界。省略时服务端取 "
+        "min(10000, 账户折算可用现金);账户可用 ≤0 时拒绝 start",
+    )
 
 
 class StrategyRunRecord(BaseModel):
@@ -883,6 +951,10 @@ class StrategyRunRecord(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     trading_mode: str = "spot"
     leverage: int = 1
+    allocation: float | None = Field(
+        default=None,
+        description="本 run 的资金额度(账户 base_currency 计);老数据为 null(旧语义固定 1 万)",
+    )
     last_bar_ts: datetime | None = None
     cumulative_pnl: float = 0.0
     run_log: list[dict[str, Any]] = Field(

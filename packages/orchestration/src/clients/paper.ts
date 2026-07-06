@@ -482,13 +482,33 @@ export type AccountSnapshot = {
   cash: number;
   /** D-11：折算前的按币种现金桶（如 {"USD": 5000, "USDT": -1000}）。 */
   cash_balances: Record<string, number>;
+  /** mark-to-market：spot 仓 qty×最新价（含浮盈）；perp 仓贡献未实现盈亏。 */
   positions_value: number;
+  /** cash + positions_value（含未实现盈亏）。 */
   total_equity: number;
   realized_pnl: number;
-  /** D-11：折算时 FX 不可用 / 偏旧的币种告警；非空时须原样转告用户。 */
+  /**
+   * 自最近一次重置以来的净外生入金（充值−提取，折 base）。
+   * 真实收益 = total_equity − initial_cash − net_external_flows——不减它会把充值当成盈利。
+   */
+  net_external_flows: number;
+  /** D-11：估值告警（FX 或最新价不可用 / 偏旧）；非空时须原样转告用户。 */
   fx_warnings: string[];
   created_at: string;
   updated_at: string;
+};
+
+/** 外生资金事件流水一行(充值/提取/重置留痕;成交现金变动在 orders/closed_trades)。 */
+export type CashFlowRecord = {
+  id: number;
+  kind: "deposit" | "withdraw" | "reset";
+  currency: string;
+  /** 带符号变更额(充值为正)。 */
+  amount: number;
+  /** 变更后该币种桶余额(审计对账用)。 */
+  balance_after: number;
+  note: string | null;
+  created_at: string;
 };
 
 /** D-11 · live runner（issue #1）。 */
@@ -501,6 +521,12 @@ export type StrategyRunRecord = {
   symbol: string;
   timeframe: string;
   params: Record<string, unknown>;
+  /** spot（现货 long-only）或 perp（USDT-M 永续，做空/杠杆）。 */
+  trading_mode: "spot" | "perp";
+  /** 杠杆倍数；spot 恒 1。 */
+  leverage: number;
+  /** 本 run 的资金额度（账户 base_currency 计）；老数据为 null（旧语义固定 1 万）。 */
+  allocation: number | null;
   last_bar_ts: string | null;
   cumulative_pnl: number;
   error_log: Array<Record<string, unknown>>;
@@ -519,6 +545,11 @@ export type StartStrategyParams = {
   tradingMode?: "spot" | "perp";
   /** 杠杆倍数（perp 用，1..20）；spot 恒 1。 */
   leverage?: number;
+  /**
+   * 本 run 的资金额度（账户 base_currency 计）：sizing 与 run 级购买力以它为上限。
+   * 省略时服务端取 min(10000, 账户折算可用现金)；账户可用 ≤0 时 422 拒绝 start。
+   */
+  allocation?: number;
 };
 
 /** D-11 · live runner 决策复盘日志一行。 */
@@ -821,6 +852,40 @@ export class PaperClient {
     return await this.http.get<AccountSnapshot>("/accounts/me");
   }
 
+  /** 充值(外生资金事件,后端写流水留痕;不改 initial_cash)。 */
+  async depositCash(params: {
+    amount: number;
+    currency?: string;
+    note?: string;
+  }): Promise<CashFlowRecord> {
+    return await this.http.post<CashFlowRecord>("/accounts/me/deposit", {
+      amount: params.amount,
+      currency: params.currency ?? null,
+      note: params.note ?? null,
+    });
+  }
+
+  /**
+   * 重置账户:删全部持仓 + 现金回 {base: initial_cash}。
+   * 有 running run 时后端 409 ACCOUNT_HAS_RUNNING_RUNS;历史订单/复盘保留。
+   */
+  async resetAccount(params: {
+    initialCash?: number;
+    note?: string;
+  }): Promise<CashFlowRecord> {
+    return await this.http.post<CashFlowRecord>("/accounts/me/reset", {
+      initial_cash: params.initialCash ?? null,
+      note: params.note ?? null,
+    });
+  }
+
+  /** 外生资金流水(充值/提取/重置留痕),最近的在前。 */
+  async listCashFlows(limit = 50): Promise<CashFlowRecord[]> {
+    return await this.http.get<CashFlowRecord[]>("/accounts/me/cash_flows", {
+      limit,
+    });
+  }
+
   // ────────────────────────────────────────────────────────────────────
   // D-11 · live runner（issue #1）
   // ────────────────────────────────────────────────────────────────────
@@ -834,6 +899,7 @@ export class PaperClient {
       params: params.params ?? {},
       trading_mode: params.tradingMode ?? "spot",
       leverage: params.leverage ?? 1,
+      allocation: params.allocation,
     });
   }
 
