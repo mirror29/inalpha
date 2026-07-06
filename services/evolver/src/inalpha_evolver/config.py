@@ -51,6 +51,12 @@ class EvolverSettings(BaseSettings):
         description="LLM API key。留空 = 用默认凭证链。",
     )
 
+    deepseek_api_key: str = Field(
+        default="",
+        alias="DEEPSEEK_API_KEY",
+        description="DeepSeek API key（优先于 LLM_API_KEY）。",
+    )
+
     llm_base_url: str = Field(
         default="https://api.deepseek.com/v1",
         alias="LLM_BASE_URL",
@@ -62,6 +68,11 @@ class EvolverSettings(BaseSettings):
         alias="LLM_MODEL",
         description="LLM 模型 ID。",
     )
+
+    @property
+    def effective_llm_api_key(self) -> str:
+        """优先读 DEEPSEEK_API_KEY，fallback 到 LLM_API_KEY。"""
+        return self.deepseek_api_key or self.llm_api_key
 
     # ---- 演化默认值 ----
     default_universe: list[str] = Field(

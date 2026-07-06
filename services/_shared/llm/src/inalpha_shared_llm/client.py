@@ -35,8 +35,9 @@ class LLMClient:
             from openai import AsyncOpenAI
 
             kwargs: dict[str, Any] = {}
-            if self.settings.llm_api_key:
-                kwargs["api_key"] = self.settings.llm_api_key
+            key = self.settings.effective_api_key
+            if key:
+                kwargs["api_key"] = key
             if self.settings.llm_base_url:
                 kwargs["base_url"] = self.settings.llm_base_url
             if self.settings.llm_timeout_s:

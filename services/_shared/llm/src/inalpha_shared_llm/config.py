@@ -18,6 +18,16 @@ class LLMSettings(BaseSettings):
         alias="LLM_API_KEY",
         description="LLM API key。留空 = 用默认凭证链（环境变量 / .env）。",
     )
+    deepseek_api_key: str = Field(
+        default="",
+        alias="DEEPSEEK_API_KEY",
+        description="DeepSeek API key（fallback 到 LLM_API_KEY）。",
+    )
+
+    @property
+    def effective_api_key(self) -> str:
+        """优先 DEEPSEEK_API_KEY，再 LLM_API_KEY。"""
+        return self.deepseek_api_key or self.llm_api_key
     llm_base_url: str = Field(
         default="https://api.deepseek.com/v1",
         alias="LLM_BASE_URL",
