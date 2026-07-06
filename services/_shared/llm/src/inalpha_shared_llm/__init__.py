@@ -1,9 +1,10 @@
-from .client import LLMClient, CacheMetrics
+from .client import CacheMetrics, LLMClient, MockLLMClient
 from .types import MutationRequest, MutationResponse
 
 __all__ = [
-    "LLMClient",
     "CacheMetrics",
+    "LLMClient",
+    "MockLLMClient",
     "MutationRequest",
     "MutationResponse",
 ]

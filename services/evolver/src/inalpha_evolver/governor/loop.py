@@ -8,8 +8,6 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from inalpha_paper.strategy_authoring.fitness import calmar_from_report
-
 from ..evaluator import Evaluator
 from ..exceptions import DiffApplyError, EvaluationError, EvaluationTimeoutError, LLMError, SandboxError
 from ..mutator import Mutator

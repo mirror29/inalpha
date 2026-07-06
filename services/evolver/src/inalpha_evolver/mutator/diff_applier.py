@@ -115,6 +115,14 @@ def apply_diff(
 
         # 在 pos 位置应用替换
         # src_lines 包含 context + removed 行，tgt_lines 包含 context + added 行
+        # 确保 pos + len(src_lines) 不越界（fuzz 偏移后可能超出）
+        if pos + len(src_lines) > len(lines):
+            raise DiffApplyError(
+                f"hunk 行号 {source_start} 匹配位置 {pos} 超出源码范围 "
+                f"(lines={len(lines)}, src_len={len(src_lines)})",
+                original=original,
+                failed_diff=unified_diff,
+            )
         lines = lines[:pos] + tgt_lines + lines[pos + len(src_lines) :]
 
     return "".join(lines)

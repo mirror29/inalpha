@@ -51,8 +51,14 @@ class EvolverSettings(BaseSettings):
         description="LLM API key。留空 = 用默认凭证链。",
     )
 
+    llm_base_url: str = Field(
+        default="https://api.deepseek.com/v1",
+        alias="LLM_BASE_URL",
+        description="OpenAI-compatible API base URL。默认 DeepSeek。",
+    )
+
     llm_model: str = Field(
-        default="claude-sonnet-4-20250514",
+        default="deepseek-chat",
         alias="LLM_MODEL",
         description="LLM 模型 ID。",
     )

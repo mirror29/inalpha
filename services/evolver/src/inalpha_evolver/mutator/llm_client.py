@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from hashlib import sha256
 
-from inalpha_shared_llm.client import LLMClient as SharedLLMClient
+from inalpha_shared_llm import LLMClient as SharedLLMClient
 from inalpha_shared_llm.client import MockLLMClient as SharedMockLLMClient
 from inalpha_shared_llm.types import MutationRequest
 

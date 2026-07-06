@@ -7,13 +7,13 @@
 from __future__ import annotations
 
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from ..governor import run_one_generation
-from ..mutator.mock_client import MockMutator
+from ..mutator import Mutator
 from .schemas import CandidateResponse, RunStatusResponse, StartRunRequest
 
 logger = logging.getLogger(__name__)
@@ -40,13 +40,10 @@ async def start_run(request: StartRunRequest) -> RunStatusResponse:
     Returns 202 Accepted + run_id 用于后续轮询。
     """
     config_dict = request.config.model_dump() if request.config else {}
-    run_id = UUID(int=0)  # placeholder
+    run_id = uuid4()
 
-    # 用 mock mutator 构建响应
-    _diffs = [
-        "--- a/strategy.py\n+++ b/strategy.py\n@@ -0,0 +1,5 @@\n+print('mock')\n",
-    ]
-    mutator = MockMutator(diffs=_diffs * request.budget)
+    # 用真实 Mutator（走 GLM-5.2 / DeepSeek API）
+    mutator = Mutator()
 
     run = await run_one_generation(
         run_id=run_id,

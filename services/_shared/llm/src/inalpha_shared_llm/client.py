@@ -1,12 +1,11 @@
-"""Anthropic SDK 异步封装 —— ADR-0014 cache 友好接口。
+"""通用 LLM 客户端 —— OpenAI-compat provider 封装。
 
 设计要点：
 
-- ``mutate()`` 是核心入口，接收 ADR-0014 风格的 (system_prompt, user_prompt) 分体，
-  system_prompt 走 prompt caching（前缀缓存）
-- ``cache_control`` 加到 system block，让 Anthropic 自动管理缓存（约 5min TTL）
-- ``CacheMetrics`` 从响应头解析 ``cache_creation_input_tokens`` /
-  ``cache_read_input_tokens`` 字段
+- ``mutate()`` 是核心入口，接收 (system_prompt, user_prompt) 分体
+- 走 ``openai.AsyncOpenAI`` SDK（DeepSeek / GLM-5.2 / OpenAI / Kimi / Zhipu 都是兼容接口）
+- system prompt 作为 messages 数组的第一个 system role 消息
+- CacheMetrics 从 openai usage 字段解析（与 Anthropic 的 cache 字段略有不同）
 """
 from __future__ import annotations
 
@@ -22,70 +21,67 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class LLMClient:
-    """Anthropic LLM 客户端。"""
+    """OpenAI-compat LLM 客户端。
+
+    支持所有 OpenAI 兼容的服务：DeepSeek、GLM-5.2、OpenAI、Kimi、Zhipu、Ollama 等。
+    """
 
     settings: LLMSettings = field(default_factory=get_llm_settings)
-    _client: Any | None = None  # 延迟初始化，避免 import time 建 client
+    _client: Any | None = None  # 延迟初始化
 
     async def _ensure_client(self) -> Any:
-        """延迟初始化 Anthropic async client。"""
+        """延迟初始化 AsyncOpenAI client。"""
         if self._client is None:
-            # lazy import：只有调 LLM 时才触发 anthropic 包的 import
-            from anthropic import AsyncAnthropic
+            from openai import AsyncOpenAI
 
             kwargs: dict[str, Any] = {}
-            if self.settings.anthropic_api_key:
-                kwargs["api_key"] = self.settings.anthropic_api_key
-            self._client = AsyncAnthropic(**kwargs)
+            if self.settings.llm_api_key:
+                kwargs["api_key"] = self.settings.llm_api_key
+            if self.settings.llm_base_url:
+                kwargs["base_url"] = self.settings.llm_base_url
+            if self.settings.llm_timeout_s:
+                kwargs["timeout"] = float(self.settings.llm_timeout_s)
+            self._client = AsyncOpenAI(**kwargs)
         return self._client
 
     async def mutate(self, request: MutationRequest) -> MutationResponse:
         """执行一次 LLM 变异调用。
 
         Args:
-            request: 含 system_prompt（cacheable）+ user_prompt（动态）+ 参数
+            request: 含 system_prompt + user_prompt + 参数
 
         Returns:
-            ``MutationResponse``，含 LLM 回复文本 + 缓存统计
+            ``MutationResponse``，含 LLM 回复文本 + token 统计
 
         Raises:
-            anthropic.APIError / anthropic.APITimeoutError: 底层 API 异常
+            openai.APIError / openai.APITimeoutError: 底层 API 异常
         """
         client = await self._ensure_client()
 
-        message = await client.messages.create(
-            model=self.settings.anthropic_model,
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": request.system_prompt},
+            {"role": "user", "content": request.user_prompt},
+        ]
+
+        completion = await client.chat.completions.create(
+            model=self.settings.llm_model,
+            messages=messages,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
-            system=[
-                {
-                    "type": "text",
-                    "text": request.system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[
-                {"role": "user", "content": request.user_prompt},
-            ],
-            extra_headers={
-                "anthropic-beta": "prompt-caching-2024-07-31",
-            },
         )
 
-        # 从消息模型提取 token 使用统计
-        usage = message.usage
+        # 从响应提取 token 使用统计
+        usage = completion.usage
 
         cache_metrics = CacheMetrics(
-            cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0),
-            cache_write_tokens=getattr(usage, "cache_creation_input_tokens", 0),
-            input_tokens=usage.input_tokens if usage else 0,
-            output_tokens=usage.output_tokens if usage else 0,
+            cache_read_tokens=0,  # OpenAI compat 无 Anthropic 风格的 cache
+            cache_write_tokens=0,
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
         )
 
-        # 合并 content blocks 为纯文本
-        content = "".join(
-            block.text for block in message.content if block.type == "text"
-        )
+        # 合并 choices 文本
+        content = completion.choices[0].message.content or ""
 
         return MutationResponse(content=content, cache_metrics=cache_metrics)
 

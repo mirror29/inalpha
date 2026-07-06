@@ -1,3 +1,4 @@
+"""LLM 客户端通用配置。"""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -12,22 +13,27 @@ class LLMSettings(BaseSettings):
     环境变量前缀无强制，但建议 ``LLM_*`` 命名空间到对接的 service settings 中。
     """
 
-    anthropic_api_key: str = Field(
+    llm_api_key: str = Field(
         default="",
-        alias="ANTHROPIC_API_KEY",
-        description="Anthropic API key。留空 = 用默认凭证链（环境变量 / .env）。",
+        alias="LLM_API_KEY",
+        description="LLM API key。留空 = 用默认凭证链（环境变量 / .env）。",
     )
-    anthropic_model: str = Field(
-        default="claude-sonnet-4-20250514",
-        alias="ANTHROPIC_MODEL",
-        description="Anthropic 模型 ID。默认 sonnet 4，兼顾质量与 cache 命中。",
+    llm_base_url: str = Field(
+        default="https://api.deepseek.com/v1",
+        alias="LLM_BASE_URL",
+        description="OpenAI-compatible API base URL。默认 DeepSeek。",
+    )
+    llm_model: str = Field(
+        default="deepseek-chat",
+        alias="LLM_MODEL",
+        description="LLM 模型 ID。",
     )
     llm_timeout_s: int = Field(
         default=120,
         alias="LLM_TIMEOUT_S",
         ge=1,
         le=600,
-        description="单次 LLM mutate 调用的超时秒数。",
+        description="单次 LLM 调用的超时秒数。",
     )
     llm_max_tokens: int = Field(
         default=4096,
