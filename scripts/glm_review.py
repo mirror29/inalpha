@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import urllib.error
 import urllib.request
@@ -35,30 +34,57 @@ MODEL = os.environ.get("GLM_MODEL", "glm-5.2")
 TIMEOUT_S = 900  # 全量 diff + 1M 上下文,给足推理时间
 
 SYSTEM_PROMPT = """\
-你是一个资深代码审查者。请审查以下 PR diff。
+你是这个仓库的资深 reviewer。目标：在合并前尽量拦住真正的 bug、设计缺陷、架构失误。
+**不要只对着固定清单打勾**——清单覆盖不到新功能。要先理解再评审。
 
-## 审查要求
-1. 先一句话总结这个 PR 的目的
-2. 逐维度评估（命中才提，不硬凑）：
-   - **正确性**：边界条件、空值、off-by-one、错误假设、异常路径没处理
-   - **设计/架构**：职责放错层、越过模块边界、重复造轮子
-   - **契约/兼容**：改了公共接口/schema/API 是否破坏现有调用方
-   - **错误处理**：失败是被静默吞掉还是显式处理
-   - **资源/性能**：无界增长、N+1、循环无上限
-   - **安全**：注入、越权、密钥泄漏
-3. **severity 阈值**：只提 >= medium 的问题；nit/风格跳过
-4. **误报闸**：必须能说出具体失败场景，说不出就不提；file/line 必须
-   来自 diff 里真实出现的文件路径，禁止编造
-5. **不重复 lint**：ruff/tsc/mypy 已能抓的不要再提
-6. **格式**：只输出 JSON（不要 markdown 围栏），schema:
-   {"summary": "一句话总结",
-    "findings": [{"severity": "critical|major|medium", "file": "路径",
-                  "line": 42, "summary": "描述", "failure_scenario": "场景"}]}
-   没有 medium 以上问题时 findings 给空数组。
-"""
+## Step 1 · 读项目规则（每次都重新读，规则会随项目迭代而变）
+
+- 用 Read 读仓库根 `CLAUDE.md`；改动目录附近若有 `AGENTS.md` / 相关 `docs/` / ADR 也读。
+- 把里面的硬约束当成本次 review 的**项目专属规则**——
+  CLAUDE.md 更新了，你的评审标准就自动跟着更新，**无需改这个 workflow**。
+- 这是项目规则的唯一权威来源；下面 Step 4 的清单只是提示，以你读到的为准。
+
+## Step 2 · 重建意图 + 圈定影响面
+
+- 先一句话说清这个 PR 想做什么。
+- 用 Read / Grep / Glob 看 diff **以外**的代码：改动的函数 / 接口 / 契约有哪些调用方？
+  碰了哪些模块边界（Inalpha 是 Next.js → Mastra(TS) → Python services 三层）？
+- 只有理解了"改动如何与系统其余部分交互"，才谈得上架构评审。
+
+## Step 3 · 通用工程评审（适用任何功能，新增功能也自动覆盖）
+
+逐维度想，命中才提：
+1. **正确性**：边界条件、空值、off-by-one、错误假设、异常路径没处理
+2. **设计 / 架构**：职责放错层、越过模块边界、重复造轮子（该复用的没复用）、抽象层级不当
+3. **契约 / 兼容**：改了公共接口 / schema / config / API 是否破坏现有调用方；向后兼容与迁移
+4. **状态 / 数据流**：状态归属是否清晰、有无单一真相源、并发下 id/counter/nonce 是否冲突、多步状态变更中途失败是否回滚
+5. **错误处理**：失败是被静默吞掉还是显式处理；降级路径是否一致
+6. **资源 / 性能**：HTTP / DB / 循环 / 回填跨度有无上限；有无 N+1、无界增长
+7. **可测性**：新逻辑有无测试；关键边界 / 失败路径是否覆盖
+8. **安全**：注入、越权、密钥泄漏、不可信输入直接进危险路径
+
+## Step 4 · 本仓库历史踩过的坑（提示，不是全部）
+
+顺手扫一眼，但**不要**因为只查这些就忽略 Step 3 的通用维度（权威定义见 Step 1 的 CLAUDE.md）：
+- 漏 git add：新 import 的实现文件没出现在 diff
+- 异常处理：子类 override 是否真生效
+- 时间精度：float64 时间戳大数值丢精度
+- LLM / prompt：硬编码语言 / 市场 / 品种、tool description 缺三段式、prompt 预设具体输入示例
+- 金融时效性：要"现价 / 最新"却没传 fresh=True、判 freshness 看 bar 数量而非 bars[-1].ts 距 as_of 的间隔
+- 多空：long-only 策略加了 SHORT/COVER，或用 SELL 表示做空（应 SHORT 开空、COVER 平空）
+
+## review 行为
+
+- **severity 阈值**：只提 >= medium 的问题；nit / 风格 -> 跳过
+- **不重复 lint**：ruff / tsc / mypy 已能抓的不要再提
+- **误报闸**：设计 / 架构类意见必须能说出"在什么输入 / 时序下会真的出问题"的具体失败场景，
+  说不出就降级或不提——宁可漏报一条主观的，不要用噪音淹没真问题
+- 用中文写 review，每条 finding 用 `[critical|major|medium] file:line — 一句描述 — 依据(CLAUDE.md §X 或 通用原则:<维度>)` 格式
+- 没问题 -> 一段中文 LGTM，不硬挑刺
+- 只维护一条 sticky 评论，不要逐行贴 inline 评论"""
 
 _SEV_ORDER = {"critical": 0, "major": 1, "medium": 2}
-_SEV_ICON = {"critical": "🔴", "major": "🟠", "medium": "🟡"}
+_SEV_ICON = {"critical": "🔴", "major": "🟠", "medium": "🟡"}  # unused, kept for reference
 
 
 def _fail(msg: str) -> None:
@@ -94,37 +120,13 @@ def _call_glm(api_key: str, title: str, diff: str) -> str:
 
 
 def _extract_json(content: str) -> dict | None:
-    """从模型输出提取 JSON(容忍 ```json 围栏 / 前后废话)。"""
-    m = re.search(r"\{.*\}", content, re.DOTALL)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group())
-    except json.JSONDecodeError:
-        return None
+    # 不再需要 JSON 提取——GLM 现在直接输出自然语言评论
+    return None
 
 
-def _render(result: dict, diff: str) -> str:
-    lines = ["## 🤖 GLM-5.2 PR Review", "", result.get("summary", ""), ""]
-    findings = result.get("findings") or []
-    if not findings:
-        lines.append("✅ 未发现 medium 以上问题。")
-        return "\n".join(lines)
-
-    findings.sort(key=lambda x: _SEV_ORDER.get(x.get("severity", "medium"), 99))
-    for f in findings:
-        sev = f.get("severity", "medium")
-        loc = f.get("file", "?")
-        if f.get("line"):
-            loc += f":{f['line']}"
-        # 幻觉标记:file 路径不在 diff 里出现 → 明示低可信,别让读者白查
-        tag = "" if f.get("file", "") and f["file"] in diff else " ⚠️*路径不在 diff 中,可能是误报*"
-        lines.append(f"{_SEV_ICON.get(sev, '🟡')} **[{sev.upper()}]** `{loc}`{tag}")
-        lines.append(f"  - {f.get('summary', '')}")
-        if f.get("failure_scenario"):
-            lines.append(f"  - *失败场景：{f['failure_scenario']}*")
-        lines.append("")
-    return "\n".join(lines)
+def _render(result: dict | None, diff: str) -> str:
+    # 只取模型原始输出，不做 JSON 渲染
+    return content  # via caller
 
 
 def main() -> None:
@@ -150,10 +152,7 @@ def main() -> None:
     except Exception as e:  # 网络/超时等,一律非阻塞
         _fail(f"GLM API 调用失败：{e}")
 
-    result = _extract_json(content)
-    body = _render(result, diff) if result else (
-        "## 🤖 GLM-5.2 PR Review\n\n" + content  # 非 JSON 输出原样贴
-    )
+    body = "## 🤖 GLM-5.2 PR Review\n\n" + content
     with open(OUT_PATH, "w") as f:
         f.write(body)
     print(f"glm_review: done, {len(body)} chars → {OUT_PATH}")

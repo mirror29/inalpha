@@ -1,8 +1,7 @@
-name: Claude
+name: PR Assistant
 
-# 互动入口：在 PR / issue / review comment 里 @claude 触发对话。
+# 在 PR/issue/review comment 里 @glm 触发 GLM-5.2 对话。
 # 本 workflow 不阻塞 CI/CD，失败不影响 PR 合并。
-# Auth: Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
 
 on:
   issue_comment:
@@ -15,23 +14,101 @@ on:
     types: [opened, assigned]
 
 jobs:
-  claude:
-    name: Claude · @mention 触发（非阻塞）
-    if: false  # 已由 glm.yml 替代（Claude 账号被封）
+  glm:
+    name: GLM-5.2 · @mention 触发
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
-    # 非阻塞：即使 Claude 挂了也不影响其他 CI
     continue-on-error: true
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
       issues: write
-      id-token: write
-      actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: actions/setup-python@v5
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          python-version: "3.12"
+
+      - name: Collect context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "${{ github.event_name }}" in
+            issue_comment)
+              N="${{ github.event.issue.number }}"
+              {
+                echo "## Issue #$N"
+                gh issue view "$N" --json title,body --jq '"### \(.title)\n\n\(.body // "(no body)")"'
+                echo ""
+                echo "### @glm comment"
+                echo "${{ github.event.comment.body }}"
+              } > /tmp/glm_context.txt
+              echo "target=$N" >> $GITHUB_OUTPUT
+              echo "type=issue" >> $GITHUB_OUTPUT
+              ;;
+            pull_request_review_comment)
+              N="${{ github.event.pull_request.number }}"
+              {
+                echo "## PR #$N Review Comment"
+                echo "File: ${{ github.event.comment.path }}"
+                echo ""
+                echo "### @glm comment"
+                echo "${{ github.event.comment.body }}"
+              } > /tmp/glm_context.txt
+              echo "target=$N" >> $GITHUB_OUTPUT
+              echo "type=pr" >> $GITHUB_OUTPUT
+              ;;
+            pull_request_review)
+              N="${{ github.event.pull_request.number }}"
+              {
+                echo "## PR #$N Review"
+                echo ""
+                echo "### @glm comment"
+                echo "${{ github.event.review.body }}"
+              } > /tmp/glm_context.txt
+              echo "target=$N" >> $GITHUB_OUTPUT
+              echo "type=pr" >> $GITHUB_OUTPUT
+              ;;
+            issues)
+              N="${{ github.event.issue.number }}"
+              {
+                echo "## Issue #$N"
+                echo "### ${{ github.event.issue.title }}"
+                echo ""
+                echo "### Body"
+                echo "${{ github.event.issue.body }}"
+              } > /tmp/glm_context.txt
+              echo "target=$N" >> $GITHUB_OUTPUT
+              echo "type=issue" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Call GLM-5.2
+        env:
+          ZHIPUAI_API_KEY: ${{ secrets.ZHIPUAI_API_KEY }}
+          CONTEXT_FILE: /tmp/glm_context.txt
+        run: |
+          export CONTEXT=$(cat "$CONTEXT_FILE")
+          python3 scripts/glm_mention.py
+
+      - name: Post reply
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.ctx.outputs.target }}
+          TYPE: ${{ steps.ctx.outputs.type }}
+        run: |
+          if [ ! -f /tmp/glm_reply.txt ]; then exit 0; fi
+          REPLY=$(cat /tmp/glm_reply.txt)
+          if [ "$TYPE" = "issue" ]; then
+            gh issue comment "$TARGET" --body "🤖 **GLM-5.2**: $REPLY"
+          else
+            gh pr comment "$TARGET" --body "🤖 **GLM-5.2**: $REPLY"
+          fi
