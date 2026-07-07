@@ -135,6 +135,9 @@ data.* / paper.run_backtest 的 fromTs / toTs 都是 optional，省略时默认"
   状态切换、不会自动开始交易**。接下来有两条路：(1) 走 trade.create_plan 手动下单；
   (2) 调 **paper.start_strategy** 把它放到模拟盘**按行情自动跑**（D-11 live runner 已实现）。
   start 是独立的人工动作——不要 promote 完就默认替用户起。
+  此外 promote 成功时系统会**自动触发一轮演化**（E2 hook，budget=2 小规模探索），
+  以你刚 promote 的代码为种子继续变异探索下一代表现更好的候选。这是后台异步运行的，
+  几轮对话后可用 evolver.get_evolution 查看结果。
 - 用户问"可以下单了吗 / live runner 能用了吗"——status='candidate' 时先让他 promote；
   status='promoted' 时如实说"**能**：手动下单走 trade.create_plan，或 paper.start_strategy
   让它自动盯盘跑模拟盘"。**不要再说"自动按行情运行还没实现 / 在 E2 排队"——D-11 已经做了。**
