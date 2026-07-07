@@ -17,5 +17,5 @@ def assert_safe(code: str) -> None:
     """
     result = audit_strategy_code(code)
     if not result.ok:
-        issues = ", ".join(f"{f.name}: {f.message}" for f in result.findings)
+        issues = ", ".join(f"{f.code}: {f.message}" for f in result.findings)
         raise SandboxError(f"AST 审计拒绝：{issues}")

@@ -86,7 +86,7 @@ def test_fuzz_minus_1() -> None:
 
 
 def test_fuzz_too_large() -> None:
-    """fuzz 超出 max_fuzz：抛 DiffApplyError。"""
+    """fuzz 超出 max_fuzz 但全文件扫描仍能找到（max_fuzz>0 时启用全扫描）。"""
     diff = _diff(
         "--- a/strategy.py",
         "+++ b/strategy.py",
@@ -98,8 +98,9 @@ def test_fuzz_too_large() -> None:
         "         z = 3",
         "         return x + y + z",
     )
-    with pytest.raises(DiffApplyError):
-        apply_diff(_SOURCE, diff, max_fuzz=2)
+    # max_fuzz=2 > 0 → 启用全文件滑动窗口搜索 → 能匹配
+    result = apply_diff(_SOURCE, diff, max_fuzz=2)
+    assert "y = 20" in result
 
 
 def test_strict_fails_with_offset() -> None:
@@ -186,7 +187,7 @@ def test_multi_hunk() -> None:
 
 
 def test_nonexistent_hunk() -> None:
-    """hunk 引用的行号完全不存在 → 抛异常。"""
+    """hunk 行号完全错误但内容匹配 → 全扫描能修复位置。"""
     diff = _diff(
         "--- a/strategy.py",
         "+++ b/strategy.py",
@@ -198,8 +199,9 @@ def test_nonexistent_hunk() -> None:
         "         z = 3",
         "         return x + y + z",
     )
-    with pytest.raises(DiffApplyError):
-        apply_diff(_SOURCE, diff, max_fuzz=3)
+    # max_fuzz=3 > 0 → 全扫描能匹配 → 成功应用
+    result = apply_diff(_SOURCE, diff, max_fuzz=3)
+    assert "y = 20" in result
 
 
 def test_parse_error() -> None:

@@ -61,20 +61,39 @@ SYSTEM_PROMPT: Final[str] = """# 策略变异助手
 """
 
 
+def _fmt(report: dict[str, Any], key: str, default: str = "N/A") -> str:
+    """安全取值，None / 缺字段 → default。"""
+    v = report.get(key)
+    if v is None:
+        return default
+    return str(v)
+
+
+def _fmt_pct(report: dict[str, Any], key: str, default: str = "N/A") -> str:
+    """取值并格式化为百分比（None → default）。"""
+    v = report.get(key)
+    if v is None:
+        return default
+    try:
+        return f"{float(v):.2f}%"
+    except (TypeError, ValueError):
+        return str(v)
+
+
 def _format_report(report: dict[str, Any] | None) -> str:
     """将 BacktestReport dict 格式化为可读的摘要。"""
     if not report:
         return "（无回测数据）"
     lines = [
-        f"夏普比率(Sharpe):     {report.get('sharpe', 'N/A')}",
-        f"索提诺比率(Sortino):  {report.get('sortino', 'N/A')}",
-        f"卡玛比率(Calmar):     {report.get('calmar', 'N/A')}",
-        f"最大回撤:             {report.get('max_drawdown_pct', 'N/A'):.2f}%",
-        f"累计收益:             {report.get('total_return_pct', 'N/A'):.2f}%",
-        f"交易次数:             {report.get('num_trades', 'N/A')}",
-        f"处理 Bar 数:          {report.get('num_bars_processed', 'N/A')}",
-        f"年化波动率:           {report.get('volatility', 'N/A')}",
-        f"胜率:                 {report.get('win_rate', 'N/A')}",
+        f"夏普比率(Sharpe):     {_fmt(report, 'sharpe')}",
+        f"索提诺比率(Sortino):  {_fmt(report, 'sortino')}",
+        f"卡玛比率(Calmar):     {_fmt(report, 'calmar')}",
+        f"最大回撤:             {_fmt_pct(report, 'max_drawdown_pct')}",
+        f"累计收益:             {_fmt_pct(report, 'total_return_pct')}",
+        f"交易次数:             {_fmt(report, 'num_trades')}",
+        f"处理 Bar 数:          {_fmt(report, 'num_bars_processed')}",
+        f"年化波动率:           {_fmt(report, 'volatility')}",
+        f"胜率:                 {_fmt(report, 'win_rate')}",
     ]
     return "\n".join(lines)
 

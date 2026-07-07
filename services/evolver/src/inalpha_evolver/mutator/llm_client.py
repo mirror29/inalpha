@@ -13,6 +13,35 @@ from .diff_applier import apply_diff
 from .prompt_templates import SYSTEM_PROMPT, build_user_prompt
 
 
+def _clean_llm_diff(content: str) -> str:
+    """清洗 LLM 输出：剥 markdown fence + 提取 diff 块。
+
+    DeepSeek / GLM-5.2 常把 diff 包在 ```diff ... ``` 里，甚至可能在 diff 前后
+    加额外说明文字。
+    """
+    # 1) 如果内容以 ``` 开头，先剥掉外层 fence
+    text = content.strip()
+    lines = text.split("\n")
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() in ("```", "```diff"):
+        lines = lines[:-1]
+    text = "\n".join(lines).strip()
+
+    # 2) 在内容中找 diff 块（以 --- a/ 开头）
+    marker = "--- a/"
+    idx = text.find(marker)
+    if idx >= 0:
+        text = text[idx:]
+
+    # 3) 截断在 ``` 之前（如果还有内嵌的 fence）
+    end = text.find("\n```")
+    if end >= 0:
+        text = text[:end]
+
+    return text.strip()
+
+
 @dataclass(slots=True)
 class MutationResult:
     """单次变异的结果。"""
@@ -66,6 +95,7 @@ class Mutator:
         request = MutationRequest(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=user_prompt,
+            max_tokens=8192,  # diff 可能很长，DeepSeek 需要足够输出空间
         )
 
         try:
@@ -73,7 +103,7 @@ class Mutator:
         except Exception as exc:
             raise LLMError(f"LLM 变异调用失败：{exc}") from exc
 
-        raw_diff = response.content.strip()
+        raw_diff = _clean_llm_diff(response.content)
 
         # 空 diff = LLM 认为无需改动
         if not raw_diff or not raw_diff.startswith("---"):
