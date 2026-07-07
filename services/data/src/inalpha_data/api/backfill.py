@@ -136,12 +136,22 @@ async def backfill_bars(
             )
             break
         if not bars:
-            _logger.info(
-                "backfill_no_more_bars",
-                venue=req.venue,
-                symbol=req.symbol,
-                cursor=cursor.isoformat(),
-            )
+            if fetched_total == 0:
+                # 首批就空——上游根本没返数据，比增量结束严重
+                _logger.warning(
+                    "backfill_no_more_bars_first_batch_empty",
+                    venue=req.venue,
+                    symbol=req.symbol,
+                    timeframe=req.timeframe,
+                    cursor=cursor.isoformat(),
+                )
+            else:
+                _logger.info(
+                    "backfill_no_more_bars",
+                    venue=req.venue,
+                    symbol=req.symbol,
+                    cursor=cursor.isoformat(),
+                )
             break
 
         # 过滤掉超过 to_ts 的 bar

@@ -50,6 +50,15 @@ _PERIOD_MAP: dict[str, str] = {
     "1mo": "monthly",
 }
 
+#: 串行锁——akshare 走公开页聚合（东财/同花顺/中证等），并发突发会触发反爬；
+#: 进程级串行 + 最小间隔把突发摊成节流串行，避免 429/空返（yfinance 同类模式）。
+_FETCH_LOCK = asyncio.Lock()
+#: 最小拉取间隔（秒）。公开页比 Yahoo API 更脆弱，≥1s；A 股数据走东财/同花顺
+#: 直连配方，memory ``a_stock_data_recipes`` 已记录"防封串行≥1s"。
+_MIN_FETCH_INTERVAL_S = 1.0
+#: 锁内单次拉取超时上限——TCP 挂起时快速放锁，不把整个 panel 拖死。
+_FETCH_TIMEOUT_S = 30.0
+_last_fetch_mono: float = 0.0
 
 #: 允许的市场前缀
 _ALLOWED_PREFIXES = frozenset({"sh", "sz", "hk", "jp", "uk", "de"})
@@ -160,14 +169,24 @@ class AkshareConnector:
             limit=limit,
         )
 
-        rows = await asyncio.to_thread(
-            _fetch_sync,
-            prefix=prefix,
-            code=code,
-            period=period,
-            start_str=start_str,
-            end_str=end_str,
-        )
+        try:
+            rows = await self._throttled_fetch_sync(
+                prefix=prefix,
+                code=code,
+                period=period,
+                start_str=start_str,
+                end_str=end_str,
+            )
+        except Exception as exc:
+            _logger.warning(
+                "akshare_fetch_bars_failed",
+                symbol=symbol,
+                timeframe=timeframe,
+                start_str=start_str,
+                end_str=end_str,
+                error=str(exc),
+            )
+            return []
 
         # akshare 返的是 DataFrame；列名中文 / 英文都见过，做防御性归一化
         out: list[tuple[datetime, float, float, float, float, float]] = []
@@ -184,10 +203,57 @@ class AkshareConnector:
             ts = _parse_date(ts_raw)
             out.append((ts, o or 0.0, h or 0.0, low or 0.0, c, v or 0.0))
 
+        if not out and rows:
+            # 上游返了行但全部被列名解析跳过 → 列名漂移告警
+            _logger.warning(
+                "akshare_fetch_bars_all_rows_skipped",
+                symbol=symbol,
+                timeframe=timeframe,
+                row_count=len(rows),
+                sample_keys=list(rows[0].keys()) if rows else [],
+            )
+
         # 按 limit 截断尾部（akshare 不接 limit，整段返）
         if limit and len(out) > limit:
             out = out[-limit:]
         return out
+
+    @staticmethod
+    async def _throttled_fetch_sync(
+        *,
+        prefix: str,
+        code: str,
+        period: str,
+        start_str: str,
+        end_str: str,
+    ) -> list[dict[str, Any]]:
+        """串行 + 最小间隔跑 akshare fetch，防并发突发触发反爬。
+
+        进程级 ``_FETCH_LOCK`` 保证同一时刻只有一个 akshare 请求在飞；锁内再补足
+        ``_MIN_FETCH_INTERVAL_S`` 的最小间隔。锁内每请求超时 ``_FETCH_TIMEOUT_S``，
+        TCP 挂起时快速放锁让队列继续。
+
+        对齐 yfinance ``_throttled_fetch_sync`` 模式。
+        """
+        global _last_fetch_mono
+        async with _FETCH_LOCK:
+            try:
+                wait = _MIN_FETCH_INTERVAL_S - (time.monotonic() - _last_fetch_mono)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                return await asyncio.wait_for(
+                    asyncio.to_thread(
+                        _fetch_sync,
+                        prefix=prefix,
+                        code=code,
+                        period=period,
+                        start_str=start_str,
+                        end_str=end_str,
+                    ),
+                    timeout=_FETCH_TIMEOUT_S,
+                )
+            finally:
+                _last_fetch_mono = time.monotonic()
 
     async def fetch_financials(
         self, symbol: str, as_of: str | None = None
@@ -647,6 +713,14 @@ def _fetch_sync(
         raise ValueError(f"unreachable: prefix {prefix!r} should be filtered earlier")
 
     if df is None or len(df) == 0:
+        _logger.warning(
+            "akshare_fetch_empty",
+            prefix=prefix,
+            code=code,
+            period=period,
+            start_str=start_str,
+            end_str=end_str,
+        )
         return []
     return df.to_dict(orient="records")  # type: ignore[no-any-return]
 
