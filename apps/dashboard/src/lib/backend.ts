@@ -24,6 +24,7 @@ export const BACKENDS = {
   research: process.env.RESEARCH_SERVICE_URL ?? "http://127.0.0.1:8003",
   mastra: process.env.MASTRA_URL ?? "http://127.0.0.1:4111",
   factor: process.env.FACTOR_SERVICE_URL ?? "http://127.0.0.1:8004",
+  evolver: process.env.EVOLVER_SERVICE_URL ?? "http://127.0.0.1:8005",
 } as const;
 
 export type BackendName = keyof typeof BACKENDS;

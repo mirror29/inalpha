@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   Sigma,
   Sparkles,
+  Workflow,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -40,6 +41,8 @@ const NAV: NavItem[] = [
   { key: "runners", href: "/runners", icon: Radio },
   { key: "factors", href: "/factors", icon: Sigma },
   { key: "risk", href: "/risk", icon: ShieldAlert },
+  // E2 策略演化引擎（LLM 自动变异 + 评估）
+  { key: "evolution", href: "/evolution", icon: Workflow },
   // 玄学彩蛋占卜台(纯娱乐)
   { key: "divination", href: "/divination", icon: Sparkles },
   { key: "activity", href: "/activity", icon: Activity },
