@@ -38,12 +38,10 @@ def _subprocess_worker(
 ) -> None:
     """子进程入口：设 rlimit + 执行回测 + pipe 回传。"""
     try:
-        # 内存限制（虚拟内存，含 numpy 数组爆炸）
         resource.setrlimit(
             resource.RLIMIT_AS,
             (memory_mb * 1024 * 1024,) * 2,
         )
-        # CPU 时间限制
         resource.setrlimit(
             resource.RLIMIT_CPU,
             (cpu_s, cpu_s + 20),
@@ -54,6 +52,37 @@ def _subprocess_worker(
         pipe_conn.send({"err": str(exc)})
     finally:
         pipe_conn.close()
+
+
+@dataclass(slots=True)
+class MockEvaluator:
+    """测试用评估器 —— 返回预设的 canned report，不启子进程。
+
+    用于验证 LLM 变异链路，无需 data service / paper 运行。
+    """
+
+    async def evaluate(
+        self,
+        source_code: str,
+        universe: list[str],
+        period_from: str = "2025-01-01",
+        period_to: str = "2025-12-31",
+        timeframe: str = "1h",
+        initial_cash: float = 10000.0,
+        fee_rate: float = 0.001,
+    ) -> EvaluationResult:
+        canned = {
+            "sharpe": 1.0,
+            "calmar": 0.5,
+            "max_drawdown_pct": 15.0,
+            "num_trades": 50,
+            "num_bars_processed": 5000,
+        }
+        return EvaluationResult(
+            report=canned,
+            fitness=compute_fitness_from_report(canned, timeframe),
+            data_epoch=int(datetime.now().timestamp() * 1000),
+        )
 
 
 @dataclass(slots=True)
@@ -78,30 +107,12 @@ class Evaluator:
         initial_cash: float = 10000.0,
         fee_rate: float = 0.001,
     ) -> EvaluationResult:
-        """评估单个候选策略。
-
-        Args:
-            source_code: 候选策略源码。
-            universe: 标的列表（E1 只取第一个）。
-            period_from: 回测起始日期。
-            period_to: 回测截止日期。
-            timeframe: 数据频率。
-            initial_cash: 初始本金。
-            fee_rate: 手续费率。
-
-        Returns:
-            ``EvaluationResult`` 含 fitness + serialized report。
-
-        Raises:
-            EvaluationError: 回测异常。
-            EvaluationTimeoutError: 超时。
-        """
-        # E1 单标的
+        """评估单个候选策略（E1 需要 data service 运行）。"""
         symbol = universe[0] if universe else "BTCUSDT"
 
-        # 构造 partial 函数（picklable）
         fn = partial(
             run_engine_in_subprocess,
+            bars=[],  # TODO: 从 data service 拉 bars
             instrument_id=symbol,
             timeframe=timeframe,
             strategy_id=None,
@@ -109,33 +120,24 @@ class Evaluator:
             params={},
             initial_cash=initial_cash,
             fee_rate=fee_rate,
-            period_from=period_from,
-            period_to=period_to,
         )
 
-        # 在子进程中运行
         loop = asyncio.get_running_loop()
         report = await loop.run_in_executor(
-            None,  # 默认线程池
+            None,
             self._run_in_subprocess,
             fn,
         )
 
         fitness = compute_fitness_from_report(report, timeframe)
-
-        data_epoch = int(datetime.now().timestamp() * 1000)
-
         return EvaluationResult(
             report=report,
             fitness=fitness,
-            data_epoch=data_epoch,
+            data_epoch=int(datetime.now().timestamp() * 1000),
         )
 
     def _run_in_subprocess(self, fn: partial) -> dict[str, Any]:
-        """在子进程中执行回测函数，带资源限制。
-
-        注意：此方法在线程池中执行（非 asyncio 事件循环线程）。
-        """
+        """在子进程中执行回测函数，带资源限制。"""
         ctx = multiprocessing.get_context("spawn")
 
         parent_conn, child_conn = multiprocessing.Pipe()
@@ -148,8 +150,8 @@ class Evaluator:
         p.join(timeout=self.timeout_s)
 
         if p.is_alive():
-            p.kill()  # SIGKILL
-            p.join()  # reap zombie
+            p.kill()
+            p.join()
             raise EvaluationTimeoutError(
                 f"回测子进程超时 ({self.timeout_s}s)"
             )

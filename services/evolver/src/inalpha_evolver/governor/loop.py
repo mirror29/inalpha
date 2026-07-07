@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from ..evaluator import Evaluator
+from ..evaluator import Evaluator, MockEvaluator
 from ..exceptions import DiffApplyError, EvaluationError, EvaluationTimeoutError, LLMError, SandboxError
 from ..mutator import Mutator
 from ..mutator.mock_client import MockMutator
@@ -25,7 +25,7 @@ async def run_one_generation(
     budget: int,
     config: dict | None = None,
     mutator: Mutator | MockMutator | None = None,
-    evaluator: Evaluator | None = None,
+    evaluator: Evaluator | MockEvaluator | None = None,
     conn: object | None = None,
 ) -> EvolutionRun:
     """执行单代演化循环。
@@ -42,7 +42,7 @@ async def run_one_generation(
         更新后的 ``EvolutionRun`` 对象（含统计计数器）。
     """
     mutator = mutator or Mutator()
-    evaluator = evaluator or Evaluator()
+    evaluator = evaluator or MockEvaluator()
     hints = HintGenerator()
 
     # 配置

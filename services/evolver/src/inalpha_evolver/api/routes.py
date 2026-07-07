@@ -25,6 +25,19 @@ _runs: dict[UUID, RunStatusResponse] = {}
 _candidates: dict[UUID, CandidateResponse] = {}
 
 
+@router.get("/runs", response_model=list[RunStatusResponse])
+async def list_runs() -> list[RunStatusResponse]:
+    """列出所有演化运行（按 started_at 降序）。
+
+    E1 内存存储，返回全部。E2 改为 DB 分页查询。
+    """
+    return sorted(
+        _runs.values(),
+        key=lambda r: r.started_at,
+        reverse=True,
+    )
+
+
 @router.post("/runs", response_model=RunStatusResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_run(request: StartRunRequest) -> RunStatusResponse:
     """启动一次演化运行。
