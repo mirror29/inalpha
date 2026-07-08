@@ -12,6 +12,7 @@
     "factors": "Factors",
     "risk": "Risk",
     "divination": "Omikuji",
+    "evolution": "Evolution",
     "soon": "soon",
     "menu": "Menu",
     "close": "Close",
@@ -475,6 +476,32 @@
     "posPresent": "Present",
     "posFuture": "Future",
     "disclaimer": "The omikuji is a perspective, not a signal · not investment advice · the trade still answers to data and risk"
+  },
+  "evolution": {
+    "title": "Evolution",
+    "subtitle": "LLM-driven strategy mutation and evaluation — each run spawns candidates through code mutation, AST audit, sandboxing, and backtest evaluation.",
+    "runs": "Total runs",
+    "running": "Running",
+    "llmCost": "LLM cost",
+    "rejected": "Rejected",
+    "evolutionRuns": "Evolution Runs",
+    "empty": "No evolution runs yet. Trigger one via the chat agent: \"run evolution\" or \"evolve sma_cross\".",
+    "truncated": "Showing the latest {n} — earlier ones aren't listed here.",
+    "filter": {
+      "all": "All",
+      "done": "Done",
+      "running": "Running"
+    },
+    "col": {
+      "run": "Run",
+      "status": "Status",
+      "seed": "Seed",
+      "budget": "Budget",
+      "candidates": "Candidates",
+      "rejected": "Blocked",
+      "cost": "Cost",
+      "time": "Time"
+    }
   },
   "backtests": {
     "back": "Agent Activity",

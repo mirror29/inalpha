@@ -16,6 +16,7 @@
 import {
   HookRunner,
   defaultAuditRegistration,
+  defaultEvolutionOnPromoteRegistration,
   defaultFactorExpressionAuditRegistration,
   defaultGridSizeCapRegistration,
   defaultIdempotencyRegistrations,
@@ -48,6 +49,8 @@ function buildDefaultRunner(
   runner.register(defaultStrategyCodeAuditRegistration());
   // D-12 · 因子发现 L1：自定义因子表达式外围拦截（负 lag / 未来命名 / 超长）
   runner.register(defaultFactorExpressionAuditRegistration());
+  // E2 演化引擎：promote 成功后自动以 promoted 源码为种子跑一代演化
+  runner.register(defaultEvolutionOnPromoteRegistration());
   // ADR-0025 follow-up：DeepSeek 在 Mastra agent loop 偶尔 retry 同 swarm 调用
   // 多次（同 input 同输出）；这对 hook 把重复 deny 掉并把上次结果摘要给 LLM
   const idem = defaultIdempotencyRegistrations();

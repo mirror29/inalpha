@@ -1,5 +1,7 @@
 export { DataClient } from "./data.js";
 export type { Bar, BackfillResult } from "./data.js";
+export { EvolverClient } from "./evolver.js";
+export type { CandidateResult, EvolutionConfig, RunStatusResult } from "./evolver.js";
 export { PaperClient } from "./paper.js";
 export type {
   AccountSnapshot,

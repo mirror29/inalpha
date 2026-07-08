@@ -97,6 +97,11 @@ import {
   rejectTradePlanTool,
   tradePlanTools,
 } from "./trade-plan.js";
+import {
+  evolverGetEvolutionTool,
+  evolverRunEvolutionTool,
+  evolverTools,
+} from "./evolver.js";
 
 export {
   approveTradePlanTool,
@@ -191,6 +196,8 @@ export const allTools = [
   riskUnlockTool,
   // 玄学彩蛋（六爻 / 塔罗）—— 纯娱乐，硬隔离于决策
   ...divinationTools,
+  // E2 演化引擎（LLM 驱动策略变异 + 沙盒 + 评估）
+  ...evolverTools,
 ] as const;
 
 /** 给 trader subagent 用（不含 risk 的 approve/reject）。 */
@@ -316,6 +323,9 @@ export const orchestratorToolList = [
   // 玄学彩蛋（六爻 / 塔罗）—— 仅用户明确点名时召唤，输出禁入决策
   divinationCastHexagramTool,
   divinationDrawTarotTool,
+  // E2 演化引擎（LLM 驱动策略变异 + 沙盒 + 评估）
+  evolverRunEvolutionTool,
+  evolverGetEvolutionTool,
 ] as const;
 
 /** 名字 → tool 索引，给 framework 路由用。 */

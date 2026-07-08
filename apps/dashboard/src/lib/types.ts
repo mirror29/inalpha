@@ -506,6 +506,58 @@ export interface ActivityPayload {
     orders: boolean;
     backtests: boolean;
     conversations: boolean;
+    evolution: boolean;
   };
+  asOf: string;
+}
+
+// ── E2 策略演化 ──
+
+/** 演化运行中的候选摘要（对应 evolver CandidateResponse）。 */
+export interface EvolutionCandidateSummary {
+  candidate_id: string;
+  run_id: string;
+  generation: number;
+  parent_id: string | null;
+  source_hash: string;
+  mutation_hint: string | null;
+  fitness: number | null;
+  report: Record<string, unknown> | null;
+  overfitting_risk: string;
+  status: string;
+  created_at: string | null;
+}
+
+/** 演化运行摘要（对应 evolver RunStatusResponse，不含候选列表）。 */
+export interface EvolutionRunSummary {
+  run_id: string;
+  seed_strategy_id: string;
+  budget: number;
+  config: Record<string, unknown> | null;
+  status: string;
+  llm_cost_usd: number;
+  candidates_count: number;
+  rejected_ast: number;
+  rejected_contract: number;
+  failed_eval: number;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+/** 演化运行详情=摘要 + 全部候选列表。 */
+export interface EvolutionRun extends EvolutionRunSummary {
+  candidates: EvolutionCandidateSummary[];
+}
+
+/** GET /api/evolution —— 演化运行列表负载。 */
+export interface EvolutionPayload {
+  runs: EvolutionRunSummary[];
+  truncated: boolean;
+  asOf: string;
+}
+
+/** GET /api/evolution/[runId] —— 单个演化运行详情负载。 */
+export interface EvolutionRunDetailPayload {
+  run: EvolutionRun | null;
   asOf: string;
 }

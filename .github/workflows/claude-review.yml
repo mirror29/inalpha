@@ -5,11 +5,20 @@ name: Claude PR Review
 # 新 push 立刻取消上一轮；② review step 只维护**一条 sticky 总结评论**
 # （gh pr comment --edit-last 原地覆盖，GitHub 对编辑评论不发邮件，仅首条发一封）；
 # ③ 不逐行贴 inline 评论。需对历史 commit 重审可去 Actions 页跑 workflow_dispatch。
-# 非阻塞设计：即使 Claude 出错（API 超时、token 过期等），
+# 非阻塞设计：即使 GLM 出错（API 超时、token 过期等），
 # 本 workflow 不会阻止 PR 合并。review 评论是锦上添花，不是门禁。
-# Auth: Max/Pro 订阅 OAuth（CLAUDE_CODE_OAUTH_TOKEN），本地 `claude setup-token` 生成
+# Auth: 智谱 GLM API key 存在 GitHub Actions Secret ZHIPUAI_API_KEY
+#
+# 改编自原始 claude-review.yml——只换了底层模型为 GLM-5.2，prompt 和编排逻辑保留。
 
-if: false  # 已由 glm-review.yml 替代（Claude 账号被封）
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 手动指定 PR 编号（留空 = 用 workflow_dispatch 的当前分支）
+        required: false
 
 # 同一 PR 新 push 立刻取消上一次 review，避免重复评论
 concurrency:
@@ -28,87 +37,49 @@ jobs:
       issues: write
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           # 0 = 拉全历史，让 git log / git blame / git show 有上下文（架构评审需要）
           fetch-depth: 0
 
-      - name: Claude Code Review
-        id: review
-        # 内层 step 也 continue-on-error，防止 action 抛异常
-        continue-on-error: true
-        uses: anthropics/claude-code-action@v1
+      - uses: actions/setup-python@v5
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          python-version: "3.12"
 
-            你是这个仓库的资深 reviewer。目标：在合并前尽量拦住真正的 bug、设计缺陷、架构失误。
-            **不要只对着固定清单打勾**——清单覆盖不到新功能。要先理解再评审。
+      - name: Fetch PR diff + metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          gh pr diff "$PR_NUMBER" --color never > /tmp/pr_diff.txt
+          echo "diff_lines=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
+          gh pr view "$PR_NUMBER" --json title,body,headRefName,baseRefName --jq '"\(.title) | \(.headRefName) → \(.baseRefName)"' > /tmp/pr_title.txt
 
-            ## Step 1 · 读项目规则（每次都重新读，规则会随项目迭代而变）
+      - name: GLM-5.2 · review
+        id: review
+        # 内层 step 也 continue-on-error，防止 Python 抛异常
+        continue-on-error: true
+        env:
+          ZHIPUAI_API_KEY: ${{ secrets.ZHIPUAI_API_KEY }}
+        run: python3 scripts/glm_review.py
 
-            - 用 Read 读仓库根 `CLAUDE.md`；改动目录附近若有 `AGENTS.md` / 相关 `docs/` / ADR 也读。
-            - 把里面的硬约束当成本次 review 的**项目专属规则**——
-              CLAUDE.md 更新了，你的评审标准就自动跟着更新，**无需改这个 workflow**。
-            - 这是项目规则的唯一权威来源；下面 Step 4 的清单只是提示，以你读到的为准。
-
-            ## Step 2 · 重建意图 + 圈定影响面
-
-            - 先一句话说清这个 PR 想做什么。
-            - 用 Read / Grep / Glob 看 diff **以外**的代码：改动的函数 / 接口 / 契约有哪些调用方？
-              碰了哪些模块边界（Inalpha 是 Next.js → Mastra(TS) → Python services 三层）？
-            - 只有理解了"改动如何与系统其余部分交互"，才谈得上架构评审。
-
-            ## Step 3 · 通用工程评审（适用任何功能，新增功能也自动覆盖）
-
-            逐维度想，命中才提：
-            1. **正确性**：边界条件、空值、off-by-one、错误假设、异常路径没处理
-            2. **设计 / 架构**：职责放错层、越过模块边界、重复造轮子（该复用的没复用）、抽象层级不当
-            3. **契约 / 兼容**：改了公共接口 / schema / config / API 是否破坏现有调用方；向后兼容与迁移
-            4. **状态 / 数据流**：状态归属是否清晰、有无单一真相源、并发下 id/counter/nonce 是否冲突、多步状态变更中途失败是否回滚
-            5. **错误处理**：失败是被静默吞掉还是显式处理；降级路径是否一致
-            6. **资源 / 性能**：HTTP / DB / 循环 / 回填跨度有无上限；有无 N+1、无界增长
-            7. **可测性**：新逻辑有无测试；关键边界 / 失败路径是否覆盖
-            8. **安全**：注入、越权、密钥泄漏、不可信输入直接进危险路径
-
-            ## Step 4 · 本仓库历史踩过的坑（提示，不是全部）
-
-            顺手扫一眼，但**不要**因为只查这些就忽略 Step 3 的通用维度（权威定义见 Step 1 的 CLAUDE.md）：
-            - 漏 git add：新 import 的实现文件没出现在 diff
-            - 异常处理：子类 override 是否真生效
-            - 时间精度：float64 时间戳大数值丢精度
-            - LLM / prompt：硬编码语言 / 市场 / 品种、tool description 缺三段式、prompt 预设具体输入示例
-            - 金融时效性：要"现价 / 最新"却没传 fresh=True、判 freshness 看 bar 数量而非 bars[-1].ts 距 as_of 的间隔
-            - 多空：long-only 策略加了 SHORT/COVER，或用 SELL 表示做空（应 SHORT 开空、COVER 平空）
-
-            ## review 行为
-
-            - PR 分支已 checkout 在当前工作目录
-            - **severity 阈值**：只提 ≥ medium 的问题；nit / 风格 → 跳过
-            - **不重复 lint**：ruff / tsc / mypy 已能抓的不要再提
-            - **误报闸**：设计 / 架构类意见必须能说出"在什么输入 / 时序下会真的出问题"的具体失败场景，
-              说不出就降级或不提——宁可漏报一条主观的，不要用噪音淹没真问题
-            - **只维护一条 sticky 总结评论**，**不**逐行贴 inline 评论。每次 review 都用
-              `gh pr comment <PR> --edit-last --create-if-none --body "..."` **原地覆盖**上一轮结论
-              （首次没有评论时 `--create-if-none` 自动新建；之后编辑同一条，GitHub 对编辑不发邮件，
-              避免每次 push 一封邮件洪水）。**不要**用裸 `gh pr comment` 新建评论。
-              把所有 finding 汇总进这一条，每条用
-              `[critical|major|medium] file:line — 一句描述 — 依据(CLAUDE.md §X 或 通用原则:<维度>)` 写清位置。
-              评论开头带一行 `<!-- claude-review -->` 标记 + 本轮 commit 短 sha，方便辨识这是哪一轮。
-            - 评论结构：1) 必修（critical / major）2) 可选优化（medium）；没问题 → 一段中文 LGTM，不硬挑刺
-            - 只维护这一条 GitHub 评论，不要把审查文字当聊天消息发
-
-          claude_args: |
-            --allowedTools "Read,Grep,Glob,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
-
-      # 即使 Claude 挂了，也记录一下方便排查
+      # 即使 GLM 挂了，也记录一下方便排查
       - name: Log review status
         if: always()
         run: |
           if [ "${{ steps.review.outcome }}" = "success" ]; then
-            echo "Claude review completed successfully"
+            echo "GLM review completed successfully"
           else
-            echo "Claude review skipped or failed (non-blocking) — outcome: ${{ steps.review.outcome }}"
+            echo "GLM review skipped or failed (non-blocking) — outcome: ${{ steps.review.outcome }}"
           fi
+
+      - name: Post/Update sticky comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          BODY=$(cat /tmp/review_body.txt)
+          MARKER="<!-- claude-review -->"
+          SHA=$(git rev-parse --short HEAD)
+          FULL_BODY="${MARKER}\nReview base: ${SHA}\n\n${BODY}"
+          gh pr comment "$PR_NUMBER" --edit-last --create-if-none --body "$(echo -e "$FULL_BODY")"

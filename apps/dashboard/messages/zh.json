@@ -12,6 +12,7 @@
     "factors": "因子库",
     "risk": "风控",
     "divination": "狐神签",
+    "evolution": "策略演化",
     "soon": "即将",
     "menu": "菜单",
     "close": "关闭",
@@ -475,6 +476,32 @@
     "posPresent": "现在",
     "posFuture": "未来",
     "disclaimer": "狐神之签，只作参照 · 非投资建议 · 落子仍归数据与风控"
+  },
+  "evolution": {
+    "title": "策略演化",
+    "subtitle": "LLM 驱动的策略自动变异与评估 —— 每轮运行通过代码变异、AST 审计、沙盒执行、回测评估产出候选策略。",
+    "runs": "总运行轮次",
+    "running": "运行中",
+    "llmCost": "LLM 费用",
+    "rejected": "已拦",
+    "evolutionRuns": "演化运行",
+    "empty": "暂无演化记录。通过 Agent 对话触发：\"演化一下 sma_cross\" 或 \"帮我优化策略\"。",
+    "truncated": "仅展示最近 {n} 条，更早的记录未列出。",
+    "filter": {
+      "all": "全部",
+      "done": "已完成",
+      "running": "运行中"
+    },
+    "col": {
+      "run": "运行",
+      "status": "状态",
+      "seed": "种子",
+      "budget": "预算",
+      "candidates": "候选",
+      "rejected": "阻断",
+      "cost": "费用",
+      "time": "时间"
+    }
   },
   "backtests": {
     "back": "Agent 活动",

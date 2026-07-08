@@ -70,5 +70,11 @@ export type {
   AnalystQuorumCheckOptions,
 } from "./handlers/analyst-quorum-check.js";
 
+export {
+  createEvolutionOnPromoteHandler,
+  defaultEvolutionOnPromoteRegistration,
+} from "./handlers/evolution-on-promote.js";
+export type { EvolutionOnPromoteOptions } from "./handlers/evolution-on-promote.js";
+
 export { StopHookRunner, formatStopNotice } from "./stop-runner.js";
 export type { StopDecision } from "./stop-runner.js";
