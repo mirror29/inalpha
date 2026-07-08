@@ -13,6 +13,9 @@ dependencies = [
     "alpaca-py>=0.30.0",
     # akshare 走东方财富 / 同花顺等公开页，零 key；同步库，需 asyncio.to_thread 包装
     "akshare>=1.13.0",
+    # baostock（证券宝）A 股日/周/月 K 线——免费零 key，有真实成交量；
+    # 东财 push2his 2026-07 失效后替代 akshare 做 A 股行情源
+    "baostock>=0.9.0",
     # yfinance 全球兜底（韩 / 澳 / 印 / 巴西 / 全球指数等 akshare 没覆盖的）
     # 零 key，反爬偶发；同步库
     "yfinance>=0.2.40",

@@ -18,10 +18,11 @@ export const MARKET_CONTEXT = `
 | 美股（NYSE / NASDAQ）          | yfinance  | 大写字母 ticker（如 AAPL）       |
 | A 股沪市（6 开头代码）          | akshare   | 'sh.' + 6 位代码                  |
 | A 股深市（0 / 3 开头代码）      | akshare   | 'sz.' + 6 位代码                  |
-| 港股                            | akshare   | 'hk.' + 5 位代码                  |
-| 日股                            | akshare   | 'jp.' + 4 位代码（或 yfinance code.T） |
-| 英股                            | akshare   | 'uk.' + ticker（或 yfinance ticker.L）|
-| 德股                            | akshare   | 'de.' + ticker（或 yfinance ticker.DE）|
+| A 股指数（上证/深证/沪深300等）  | akshare   | 'sh.' / 'sz.' + 6 位代码（如 sh.000001 上证指数） |
+| 港股                            | yfinance  | 5 位代码 + '.HK'（如 0700.HK）     |
+| 日股                            | yfinance  | 4 位代码 + '.T'（如 6758.T）       |
+| 英股                            | yfinance  | ticker + '.L'（如 BARC.L）         |
+| 德股                            | yfinance  | ticker + '.DE'（如 SAP.DE）        |
 | 韩股                            | yfinance  | 6 位代码 + '.KS'                  |
 | 澳股                            | yfinance  | ticker + '.AX'                    |
 | 印 / 加 / 巴 / 法等其它单股    | yfinance  | ticker + '.NS' / '.TO' / '.SA' / '.PA' 等 |
@@ -31,14 +32,15 @@ export const MARKET_CONTEXT = `
 **识别逻辑**：从用户提到的名词推断市场（中文名 / 英文名 / 代码均可），再按上表选 venue。
 不确定时按"用户给的代码格式"反推：
 - 含 '/' → crypto
-- 'sh.' / 'sz.' / 'hk.' / 'jp.' / 'uk.' / 'de.' 前缀 → akshare
+- 'sh.' / 'sz.' 前缀 → akshare
+- 'hk.' / 'jp.' / 'uk.' / 'de.' 前缀 → yfinance（见上表 symbol 格式转换）
 - 后缀 '.KS' / '.AX' / '.NS' / '.TO' / '.SA' / '.PA' / '.T' / '.L' / '.DE' → yfinance
 - 纯大写字母无后缀 → 美股 yfinance（如真是 FRED 序列，根据用户上下文判断）
 - '^' 开头 → yfinance 指数
 
 **timeframe 速查**：
 - crypto / 美股（含 yfinance）：1m / 5m / 15m / 30m / 1h / 4h / 1d / 1wk / 1mo
-- akshare（中港日英德）：仅日级 1d / 1wk / 1mo（**不要传分钟级**）
+- akshare（仅 A 股，baostock 源）：日级 1d / 1wk / 1mo（**不要传分钟级**）
 - fred：仅 1d / 1wk / 1mo / 1q / 1y
 - 不支持时后端 422 拒，**不要自己脑补**
 

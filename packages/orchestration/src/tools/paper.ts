@@ -931,7 +931,8 @@ export const paperStartStrategyTool = createTool({
       .string()
       .describe(
         "数据源 venue，**必填**：按 symbol 的市场分类推导，不要留空 / 默认 binance。" +
-        "crypto→binance；美股 / 全球指数→yfinance(或 alpaca)；A股 sh./sz. + 港股 hk.→akshare。" +
+        "crypto→binance；美股/全球指数→yfinance(或 alpaca)；A股 sh./sz.→akshare；" +
+        "港股/日股/英股/德股→yfinance。" +
         "venue 与 symbol 市场不符会喂错行情、策略空跑或报错。",
       ),
     symbol: SymbolSchema,
