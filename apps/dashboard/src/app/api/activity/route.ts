@@ -97,6 +97,7 @@ export async function GET() {
     orders: true,
     backtests: true,
     conversations: true,
+    evolution: true,  // #133 E1 演化引擎；dashboard 未连 evolver 服务时保持默认 true
   };
   const events: ActivityEvent[] = [];
   let schedulerRunning = false;
