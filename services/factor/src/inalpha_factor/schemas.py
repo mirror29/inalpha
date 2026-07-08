@@ -469,6 +469,7 @@ class FactorCandidateRecord(BaseModel):
     name: str | None = None
     hypothesis: str
     proposed_by: str
+    owner_account_id: UUID | None = None
     venue: str | None = None
     symbol: str | None = None
     timeframe: str | None = None
