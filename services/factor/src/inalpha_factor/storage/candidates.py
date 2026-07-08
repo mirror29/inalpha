@@ -19,8 +19,9 @@ from psycopg import AsyncConnection
 
 _COLUMNS = (
     "id, expression, expression_hash, name, hypothesis, proposed_by, "
-    "venue, symbol, timeframe, test_results, batch_id, n_tested, status, "
-    "reviewed_by, reviewed_at, review_note, created_at, updated_at"
+    "owner_account_id, venue, symbol, timeframe, test_results, batch_id, "
+    "n_tested, status, reviewed_by, reviewed_at, review_note, "
+    "created_at, updated_at"
 )
 
 
@@ -36,6 +37,7 @@ async def insert_candidate(
     hypothesis: str,
     name: str | None = None,
     proposed_by: str = "agent",
+    owner_account_id: UUID | None = None,
     venue: str | None = None,
     symbol: str | None = None,
     timeframe: str | None = None,
@@ -51,14 +53,16 @@ async def insert_candidate(
             """
             INSERT INTO factor_candidates (
                 id, expression, expression_hash, name, hypothesis, proposed_by,
-                venue, symbol, timeframe, test_results, batch_id, n_tested
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                owner_account_id, venue, symbol, timeframe, test_results,
+                batch_id, n_tested
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (expression_hash) DO NOTHING
             RETURNING id
             """,
             (
                 str(candidate_id), expression, expr_hash, name, hypothesis,
-                proposed_by, venue, symbol, timeframe,
+                proposed_by, str(owner_account_id) if owner_account_id else None,
+                venue, symbol, timeframe,
                 json.dumps(test_results or {}, default=str),
                 str(batch_id) if batch_id else None, n_tested,
             ),
@@ -96,6 +100,7 @@ async def list_candidates(
     conn: AsyncConnection,
     *,
     status: str | None = None,
+    owner_account_id: UUID | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     sql = f"SELECT {_COLUMNS} FROM factor_candidates WHERE 1=1"
@@ -103,6 +108,9 @@ async def list_candidates(
     if status is not None:
         sql += " AND status = %s"
         params.append(status)
+    if owner_account_id is not None:
+        sql += " AND owner_account_id = %s"
+        params.append(str(owner_account_id))
     sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
     async with conn.cursor() as cur:
