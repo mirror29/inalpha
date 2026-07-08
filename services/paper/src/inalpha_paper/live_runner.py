@@ -993,11 +993,15 @@ class LiveRunnerManager:
             im = abs(cur_qty + signed_qty) * close / leverage
             fee_amt = order.quantity * close * _FEE_RATE
             wallet = float((acct.get("cash_balances") or {}).get(currency, 0) or 0)
-            if others_im + im + fee_amt > wallet:
+            # perp 专用 wallet:现货桶可为负(其他 spot 策略共用),取 max(0,桶)+本 run 额度
+            # 作为可用——perp 只动保证金和已实现盈亏,不应被现货交易拖垮(ADR-0061)。
+            perp_allocation = float(run.get("allocation") or 0)
+            perp_wallet = max(0.0, wallet) + perp_allocation
+            if others_im + im + fee_amt > perp_wallet:
                 reason = (
                     f"INSUFFICIENT_MARGIN: 其他仓已占 IM {others_im:.2f} + "
                     f"本笔目标 IM {im:.2f} + fee {fee_amt:.4f} "
-                    f"超钱包 {wallet:.2f} {currency}"
+                    f"超 perp 钱包 {perp_wallet:.2f} {currency}"
                 )
                 session.reject_order(
                     order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
@@ -1321,6 +1325,13 @@ class LiveRunnerManager:
                 )
                 # 决策复盘日志（与订单同事务，原子）
                 filled = result["status"] == "FILLED"
+                # 平仓盈亏：apply_fill 返回的 realized_pnl ≠ 0 时即为平/减仓盈亏
+                rpnl_val = float(realized_pnl) if filled else 0.0
+                notional_val = float(result.get("notional") or 0)
+                cp_abs = Decimal(str(realized_pnl)) if (filled and abs(rpnl_val) > 1e-9) else None
+                cp_pct = (Decimal(str(rpnl_val)) / Decimal(str(notional_val)) * 100
+                          if (filled and abs(rpnl_val) > 1e-9 and notional_val > 1e-9)
+                          else None)
                 await self._record_decision(
                     conn, run, order, bar,
                     outcome="filled" if filled else "rejected",
@@ -1333,6 +1344,8 @@ class LiveRunnerManager:
                     # 钳量分支 = 精确 locked_qty（与 orders 落账 / apply_fill 同源）；
                     # 普通 / rejected 路径 = 意图量 exec_qty。
                     quantity=clamped_fill if clamped_fill is not None else Decimal(str(exec_qty)),
+                    closed_profit_abs=cp_abs,
+                    closed_profit_pct=cp_pct,
                 )
         except InsufficientPositionError as e:
             # 事务内 FOR UPDATE 守门命中并发竞态：事务已回滚（无 plan/order/fill），
@@ -1426,12 +1439,17 @@ class LiveRunnerManager:
         fee: Decimal | None = None,
         reason: str | None = None,
         quantity: Decimal | None = None,
+        closed_profit_abs: Decimal | None = None,
+        closed_profit_pct: Decimal | None = None,
     ) -> None:
         """记一行决策复盘日志（策略在某根 bar 的下单意图 + 撮合结果）。
 
         ``quantity`` 缺省记 ``order.quantity``（策略意图量）；保护性出场钳量分叉时显式传
         钳后量（``exec_qty``），让决策行的 quantity 与 ``orders`` 表落账量一致，避免复盘
         面板显示「SELL 1.0 filled」而落账实为 0.5 的对不上。
+
+        ``closed_profit_abs``/``closed_profit_pct``：平/减仓的已实现盈亏（信源：orders.realized_pnl
+        或 apply_fill_to_positions_and_cash 返回值），供复盘面板显示本次平仓收益。
         """
         await runs_store.insert_decision(
             conn,
@@ -1442,14 +1460,16 @@ class LiveRunnerManager:
             quantity=quantity if quantity is not None else Decimal(str(order.quantity)),
             order_type=order.type.value,
             limit_price=Decimal(str(order.price)) if order.price is not None else None,
-            tag=order.tag,  # 策略可经 Order.tag 透传语义意图（stop_loss / take_profit / ...）
-            intent=intent,  # open_long / open_short / close（补 side 缺失的多空语义）
+            tag=order.tag,
+            intent=intent,
             outcome=outcome,
             fill_price=fill_price,
             fee=fee,
             plan_id=plan_id,
             order_id=order_id,
             reason=reason,
+            closed_profit_abs=closed_profit_abs,
+            closed_profit_pct=closed_profit_pct,
         )
 
     # ─── 工具 ───

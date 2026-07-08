@@ -997,6 +997,16 @@ class StrategyRunDecisionRecord(BaseModel):
     outcome: Literal["filled", "rejected", "risk_rejected"]
     fill_price: float | None = None
     fee: float | None = None
+    closed_profit_abs: float | None = Field(
+        default=None,
+        description="平/减仓产生的已实现盈亏(毛口径,不含手续费);开/加仓为 None。"
+        "正=盈利,负=亏损。与 closed_trades.close_profit_abs 同口径。",
+    )
+    closed_profit_pct: float | None = Field(
+        default=None,
+        description="平/减仓盈亏百分比(相对被平名义);开/加仓为 None。"
+        "计算: realzed_pnl / notional × 100。",
+    )
     plan_id: UUID | None = None
     order_id: str | None = None
     reason: str | None = None

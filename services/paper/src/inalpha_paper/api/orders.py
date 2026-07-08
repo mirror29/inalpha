@@ -172,6 +172,9 @@ async def post_submit_order(
         if req.trading_mode == "perp":
             currency = resolve_currency(req.venue, req.symbol)
             wallet = Decimal(str((acct.get("cash_balances") or {}).get(currency, "0")))
+            # perp 专用 wallet:现货桶可为负(其他 spot 策略共用),取 max(0,桶)作为可用——
+            # perp 只动保证金和已实现盈亏,不应被现货搭配坑(ADR-0061)。
+            perp_wallet = max(Decimal(0), wallet)
             cur_pos = await positions_store.get(
                 db, account_id=account_id, venue=req.venue, symbol=req.symbol,
                 for_update=True,
@@ -185,13 +188,13 @@ async def post_submit_order(
                 db, account_id, currency=currency,
                 exclude_venue=req.venue, exclude_symbol=req.symbol,
             )
-            if others_im + im + fee_amt > wallet:
+            if others_im + im + fee_amt > perp_wallet:
                 raise perp_margin.InsufficientMarginError(
                     f"perp 保证金不足:其他仓已占 IM {others_im} + 本笔目标 IM {im} "
-                    f"+ fee {fee_amt} 超钱包 {wallet} {currency}",
+                    f"+ fee {fee_amt} 超 perp 钱包 {perp_wallet} {currency}",
                     details={"im": str(im), "others_im": str(others_im),
                              "fee": str(fee_amt),
-                             "wallet": str(wallet), "currency": currency},
+                             "perp_wallet": str(perp_wallet), "currency": currency},
                 )
 
         # 现货 BUY 购买力守门（与回测 Portfolio.can_afford_buy 同口径,账户聚合层落地）：
