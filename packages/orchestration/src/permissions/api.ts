@@ -17,6 +17,7 @@ import type { Context, Handler } from "hono";
 
 import { pendingApprovals } from "./pending.js";
 import { listHistory } from "./repo.js";
+import { AUTH_SUB_KEY } from "../hooks/with-hooks.js";
 
 interface ApiRouteSpec {
   path: string;
@@ -32,7 +33,14 @@ const listApprovalHistory: Handler = async (c: Context) => {
   const rawLimit = Number(c.req.query("limit") ?? "50");
   const limit = Number.isFinite(rawLimit) ? rawLimit : 50;
   try {
-    return c.json({ history: await listHistory(limit) });
+    // 从 requestContext 取已认证主体 sub（#91 身份注入 middleware 写入的）。
+    // 有 sub → 按用户过滤；无 sub（本地 dev 无 Bearer token / token 无 sub）→ 返回全部。
+    const rc = c.get("requestContext") as { get?: (k: string) => unknown } | undefined;
+    const authSub =
+      typeof rc?.get === "function"
+        ? (rc.get(AUTH_SUB_KEY) as string | undefined)
+        : undefined;
+    return c.json({ history: await listHistory(authSub, limit) });
   } catch (err) {
     console.error("[permissions] listHistory 失败:", err);
     return c.json({ error: "history_unavailable" }, 503);

@@ -39,6 +39,7 @@ export interface ApprovalHistoryRow {
   toolName: string;
   toolInput: unknown;
   sessionId: string | null;
+  authSub: string | null;
   status: ApprovalStatus;
   via: "user" | "timeout" | "restart" | null;
   createdAt: string; // ISO
@@ -81,15 +82,19 @@ export async function closePool(): Promise<void> {
   await p.end();
 }
 
-/** 注册挂起时插一行 status=pending。fail-open：失败只 log。 */
-export async function insertPending(view: PendingApprovalView): Promise<void> {
+/**
+ * 注册挂起时插一行 status=pending。fail-open：失败只 log。
+ *
+ * @param authSub Bearer JWT 的 sub（账户主体）。缺失时 auth_sub 落 NULL（老数据 / 本地 dev 无鉴权）。
+ */
+export async function insertPending(view: PendingApprovalView, authSub?: string): Promise<void> {
   try {
     const pool = getPoolOrNull();
     if (!pool) return;
     await pool.query(
       `INSERT INTO pending_approvals
-         (request_id, tool_name, tool_input, session_id, status, created_at, deadline)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6)
+         (request_id, tool_name, tool_input, session_id, auth_sub, status, created_at, deadline)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)
        ON CONFLICT (request_id) DO NOTHING`,
       [
         view.requestId,
@@ -98,6 +103,7 @@ export async function insertPending(view: PendingApprovalView): Promise<void> {
         // 两条持久化路径处理对称，凭据/PII 不以明文落 pending_approvals。
         JSON.stringify(maskSensitive(view.toolInput ?? null)),
         view.sessionId ?? null,
+        authSub ?? null,
         view.createdAt,
         view.deadline,
       ],
@@ -153,25 +159,42 @@ export async function sweepStalePending(): Promise<number> {
  * 审批历史（含终态），按创建时间倒序。DB 不可用 / 查询中途断连均返回空数组
  * （与 insertPending / markResolved / sweepStalePending 同 fail-open 约定：repo 层
  *  自吞错误，不把异常抛给 handler，保证调用路径返回形态稳定）。
+ *
+ * @param authSub 可选账户主体过滤。有值时只返回该 sub 的记录（含 auth_sub=NULL 的旧行兼容）；
+ *                无值（undefined）返回全部记录（本地 dev 无鉴权场景）。
  */
-export async function listHistory(limit = 50): Promise<ApprovalHistoryRow[]> {
+export async function listHistory(authSub?: string, limit = 50): Promise<ApprovalHistoryRow[]> {
   try {
     const pool = getPoolOrNull();
     if (!pool) return [];
     const capped = Math.min(Math.max(1, limit), 200);
-    const { rows } = await pool.query(
-      `SELECT request_id, tool_name, tool_input, session_id, status, via,
-              created_at, deadline, resolved_at
-         FROM pending_approvals
-        ORDER BY created_at DESC
-        LIMIT $1`,
-      [capped],
-    );
+    let sql: string;
+    const params: unknown[] = [capped];
+    if (authSub !== undefined) {
+      sql =
+        `SELECT request_id, tool_name, tool_input, session_id, auth_sub, status, via,
+                created_at, deadline, resolved_at
+           FROM pending_approvals
+          WHERE auth_sub IS NULL OR auth_sub = $2
+          ORDER BY created_at DESC
+          LIMIT $1`;
+      params.push(authSub);
+    } else {
+      // 无 authSub（本地 dev 无 Bearer token / token 无 sub）→ 返回全部
+      sql =
+        `SELECT request_id, tool_name, tool_input, session_id, auth_sub, status, via,
+                created_at, deadline, resolved_at
+           FROM pending_approvals
+          ORDER BY created_at DESC
+          LIMIT $1`;
+    }
+    const { rows } = await pool.query(sql, params);
     return rows.map((r) => ({
       requestId: String(r.request_id),
       toolName: String(r.tool_name),
       toolInput: r.tool_input,
       sessionId: r.session_id === null ? null : String(r.session_id),
+      authSub: r.auth_sub === null ? null : String(r.auth_sub),
       status: r.status as ApprovalStatus,
       via: (r.via ?? null) as ApprovalHistoryRow["via"],
       createdAt: toIso(r.created_at),

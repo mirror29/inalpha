@@ -280,6 +280,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
               toolName,
               toolInput: effectiveInput,
               sessionId,
+              authSub: sessionId,
               timeoutMs,
             });
             return {
