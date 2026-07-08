@@ -46,6 +46,7 @@ export interface PendingRequestArgs {
   toolName: string;
   toolInput: unknown;
   sessionId?: string;
+  authSub?: string;
   timeoutMs?: number;
 }
 
@@ -75,7 +76,7 @@ const defaultPendingTelemetrySink: PendingTelemetrySink = (r) => {
  * fire-and-forget；决策语义（fail-closed deny）完全由内存 Promise 保证。
  */
 export interface ApprovalPersistence {
-  insertPending(view: PendingApprovalView): Promise<void>;
+  insertPending(view: PendingApprovalView, authSub?: string): Promise<void>;
   markResolved(
     requestId: string,
     decision: PendingDecision,
@@ -175,7 +176,7 @@ export class PendingApprovalsStore {
       };
       this.pending.set(requestId, record);
       const { resolve: _r, timer: _t, ...view } = record;
-      this.persist((p) => p.insertPending(view));
+      this.persist((p) => p.insertPending(view, args.authSub));
     });
   }
 
