@@ -51,7 +51,9 @@
       "partialMark": "some marks unavailable",
       "openPositions": "{count} positions",
       "running": "running",
-      "ofRuns": "of {total} runs"
+      "ofRuns": "of {total} runs",
+      "marginLocked": "locked {amount} as margin",
+      "availableCash": "available {amount}"
     },
     "fxWarning": {
       "title": "FX conversion incomplete",

@@ -351,6 +351,7 @@ export interface AccountShape {
   positions_value?: number;
   total_equity?: number;
   cash_balances?: Record<string, number>;
+  perp_margin_locked?: number;
   fx_warnings?: string[];
 }
 
@@ -395,6 +396,13 @@ export function AccountView({ a }: { a: AccountShape }) {
             : []),
         ]}
       />
+      {a.perp_margin_locked != null && a.perp_margin_locked > 0 && (
+        <div className="rounded-sm border border-gold/40 bg-gold/10 px-1.5 py-1">
+          <span className="font-mono text-[10px] text-gold">
+            🔒 {fmtNum(a.perp_margin_locked)} {ccy} locked as margin
+          </span>
+        </div>
+      )}
       {a.cash_balances && Object.keys(a.cash_balances).length > 0 && (
         <div className="flex flex-wrap gap-1">
           {Object.entries(a.cash_balances).map(([c, n]) => (

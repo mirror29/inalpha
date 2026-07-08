@@ -471,6 +471,23 @@ async def get_my_account(
             converted = await converter.convert(amt, cur)
             if converted is not None:
                 positions_base += converted
+        # perp 保证金冻结：汇总所有 perp 活跃仓的 margin_used，按币种折 base。
+        # 供前端"现金"卡展示"已冻结 X，可用 Y"——与现货桶区分（ADR-0061）。
+        margin_by_ccy: dict[str, Decimal] = {}
+        for p in pos_rows:
+            mu = Decimal(str(p.get("margin_used") or 0))
+            if mu == 0:
+                continue
+            ccy = p.get("currency") or resolve_currency(
+                p["venue"], p["symbol"], default=base_currency
+            )
+            margin_by_ccy[ccy] = margin_by_ccy.get(ccy, Decimal(0)) + mu
+        perp_margin_base = Decimal(0)
+        for cur, amt in margin_by_ccy.items():
+            converted = await converter.convert(amt, cur)
+            if converted is not None:
+                perp_margin_base += converted
+
         # realized_pnl 同样按币种折算（汇率已缓存，无额外网络）；FX 不可用的币种排除
         realized_pnl_base = Decimal(0)
         for cur, amt in realized_pnl_by_ccy.items():
@@ -495,6 +512,7 @@ async def get_my_account(
         cash=float(cash_base),
         cash_balances={cur: float(amt) for cur, amt in cash_balances.items()},
         positions_value=float(positions_base),
+        perp_margin_locked=float(perp_margin_base),
         total_equity=float(cash_base + positions_base),
         realized_pnl=float(realized_pnl_base),
         net_external_flows=float(net_flows_base),

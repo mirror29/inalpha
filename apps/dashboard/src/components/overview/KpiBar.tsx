@@ -59,6 +59,24 @@ export function KpiBar({ data }: { data: OverviewPayload }) {
 
       <KpiCard label={t("cash")} i={2}>
         <Figure>{fmtMoney(account.cash, ccy, locale)}</Figure>
+        {account.perp_margin_locked > 0 && (
+          <div className="mt-1.5 flex flex-col gap-0.5">
+            <Sub>
+              {t("marginLocked", {
+                amount: fmtMoney(account.perp_margin_locked, ccy, locale),
+              })}
+            </Sub>
+            <Sub>
+              {t("availableCash", {
+                amount: fmtMoney(
+                  account.cash - account.perp_margin_locked,
+                  ccy,
+                  locale,
+                ),
+              })}
+            </Sub>
+          </div>
+        )}
         <CashBuckets balances={account.cash_balances} base={ccy} />
       </KpiCard>
 

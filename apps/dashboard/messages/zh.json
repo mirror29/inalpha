@@ -51,7 +51,9 @@
       "partialMark": "部分持仓缺最新价",
       "openPositions": "{count} 个持仓",
       "running": "运行中",
-      "ofRuns": "共 {total} 个 run"
+      "ofRuns": "共 {total} 个 run",
+      "marginLocked": "冻结保证金 {amount}",
+      "availableCash": "可用 {amount}"
     },
     "fxWarning": {
       "title": "汇率折算不完整",

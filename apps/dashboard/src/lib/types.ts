@@ -14,6 +14,8 @@ export interface AccountSnapshot {
   /** 折算前的按币种现金桶,如 {"USD": 5000, "USDT": -1000}。 */
   cash_balances: Record<string, number>;
   positions_value: number;
+  /** 所有 perp 活跃仓的保证金占用之和(∑ margin_used),折 base_currency。无 perp 时为 0。 */
+  perp_margin_locked: number;
   total_equity: number;
   realized_pnl: number;
   /** 非空 → FX 折算不完整,UI 必须显式告警。 */

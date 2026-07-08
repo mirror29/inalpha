@@ -756,6 +756,12 @@ class AccountSnapshot(BaseModel):
         "（含未实现盈亏）;perp 仓 cash 即钱包,贡献未实现盈亏 (mark−avg)×qty。"
         "最新价拿不到的仓 spot 按开仓均价兜底 / perp 记 0,见 fx_warnings",
     )
+    perp_margin_locked: float = Field(
+        default=0.0,
+        description="所有 perp 活跃仓位的保证金占用之和(∑ margin_used),折 base_currency。"
+        "该部分现金已被锁定、不可用于新开仓;现货可用现金 = cash − perp_margin_locked(近似)。"
+        "无 perp 仓位时为 0。",
+    )
     total_equity: float = Field(
         default=0.0, description="base_currency 计：cash + positions_value（含未实现盈亏）"
     )
