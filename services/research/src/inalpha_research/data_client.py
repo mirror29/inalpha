@@ -10,7 +10,10 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from inalpha_shared import get_logger
 from inalpha_shared.errors import InalphaError
+
+_logger = get_logger(__name__)
 
 
 class DataServiceError(InalphaError):
@@ -138,8 +141,14 @@ class DataClient:
                 # backfill 跨度大时 30s 可能不够（yfinance 1d/180d ~5s，akshare 较慢）
                 timeout=60.0,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.warning(
+                "research_backfill_failed",
+                venue=venue,
+                symbol=symbol,
+                timeframe=timeframe,
+                error=str(exc),
+            )
 
     async def get_news(
         self,
