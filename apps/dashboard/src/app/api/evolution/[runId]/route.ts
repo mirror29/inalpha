@@ -20,7 +20,7 @@ export async function GET(
       timeoutMs: 5000,
     });
     const payload: EvolutionRunDetailPayload = {
-      run: data,
+      run: data as EvolutionRunDetailPayload["run"],
       asOf: new Date().toISOString(),
     };
     return NextResponse.json(payload, {
