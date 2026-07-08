@@ -34,6 +34,7 @@ baostock（证券宝）做 A 股全栈数据源：
 from __future__ import annotations
 
 import asyncio
+import threading as _threading
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -72,7 +73,6 @@ _last_fetch_mono: float = 0.0
 # baostock login 需 ~4.3s/次；每个 fetch 单独 login+logout 会把跑批拖慢一个数量级。
 # 进程级单次 login、close_connector 时 logout；_FETCH_LOCK 已确保同一时刻只有一个
 # baostock 调在飞，无并发问题。
-import threading as _threading
 _bs_logged_in: bool = False
 _bs_lock = _threading.Lock()
 
@@ -568,7 +568,7 @@ class AkshareConnector:
         while rs.next():
             rd = rs.get_row_data()
             if rd and rd[0]:
-                rows.append(dict(zip(rs.fields, rd)))
+                rows.append(dict(zip(rs.fields, rd, strict=True)))
         return rows
 
     async def fetch_index_constituents(self, index_code: str) -> list[dict[str, Any]]:
@@ -649,10 +649,6 @@ def _fetch_financials_baostock_sync(
     - ``dividends``: list[dict]，分红记录
     - ``_period``: ``(year, quarter)`` 实际命中的财报期
     """
-    import math as _math
-
-    import baostock as bs
-
     _ensure_bs_login()
     return _query_baostock_financials(symbol, as_of)
 
@@ -661,6 +657,8 @@ def _query_baostock_financials(
     symbol: str, as_of: datetime | None
 ) -> dict[str, Any]:
     """查询 baostock 四大报表 + 分红，返回拍平的指标 dict。"""
+    import math as _math
+
     import baostock as bs
 
     now = datetime.now(UTC)
@@ -689,7 +687,7 @@ def _query_baostock_financials(
                 while rs.next():
                     row_data = rs.get_row_data()
                     if row_data and row_data[0]:
-                        rows.append(dict(zip(rs.fields, row_data)))
+                        rows.append(dict(zip(rs.fields, row_data, strict=True)))
                 for row in rows:
                     pub = str(row.get("pubDate", ""))
                     if pub and _period_ok(pub):
@@ -712,7 +710,7 @@ def _query_baostock_financials(
             while rs.next():
                 rd = rs.get_row_data()
                 if rd and rd[0]:
-                    profit_annual = dict(zip(rs.fields, rd))
+                    profit_annual = dict(zip(rs.fields, rd, strict=True))
                     break
     # ── 负债表（同一年/季）──
     balance = None
@@ -722,7 +720,7 @@ def _query_baostock_financials(
             while rs.next():
                 rd = rs.get_row_data()
                 if rd and rd[0]:
-                    balance = dict(zip(rs.fields, rd))
+                    balance = dict(zip(rs.fields, rd, strict=True))
                     break
     # ── 成长指标 ──
     growth = None
@@ -732,7 +730,7 @@ def _query_baostock_financials(
             while rs.next():
                 rd = rs.get_row_data()
                 if rd and rd[0]:
-                    growth = dict(zip(rs.fields, rd))
+                    growth = dict(zip(rs.fields, rd, strict=True))
                     break
     # ── 现金流量表 ──
     cash_flow = None
@@ -742,7 +740,7 @@ def _query_baostock_financials(
             while rs.next():
                 rd = rs.get_row_data()
                 if rd and rd[0]:
-                    cash_flow = dict(zip(rs.fields, rd))
+                    cash_flow = dict(zip(rs.fields, rd, strict=True))
                     break
     # ── 营运能力 ──
     operation = None
@@ -752,7 +750,7 @@ def _query_baostock_financials(
             while rs.next():
                 rd = rs.get_row_data()
                 if rd and rd[0]:
-                    operation = dict(zip(rs.fields, rd))
+                    operation = dict(zip(rs.fields, rd, strict=True))
                     break
     # ── 杜邦分解 ──
     dupont = None
@@ -762,7 +760,7 @@ def _query_baostock_financials(
             while rs.next():
                 rd = rs.get_row_data()
                 if rd and rd[0]:
-                    dupont = dict(zip(rs.fields, rd))
+                    dupont = dict(zip(rs.fields, rd, strict=True))
                     break
     # ── 分红 ──
     dividends: list[dict[str, Any]] = []
@@ -772,7 +770,7 @@ def _query_baostock_financials(
             while rs.next():
                 rd = rs.get_row_data()
                 if rd and rd[0]:
-                    div = dict(zip(rs.fields, rd))
+                    div = dict(zip(rs.fields, rd, strict=True))
                     pub = str(div.get("dividPlanAnnounceDate", ""))
                     if pub and _period_ok(pub):
                         dividends.append(div)
@@ -1128,7 +1126,7 @@ def _fetch_constituents_sync(*, index_code: str) -> list[dict[str, Any]]:
                 while rs.next():
                     rd = rs.get_row_data()
                     if rd and rd[0]:
-                        row = dict(zip(rs.fields, rd))
+                        row = dict(zip(rs.fields, rd, strict=True))
                         raw_code = str(row.get("code", "")).strip()
                         out.append({
                             "code": _cn_symbol(raw_code),
