@@ -200,8 +200,14 @@ class DataClient:
                     from_ts=from_ts,
                     to_ts=to_ts,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                _logger.warning(
+                    "paper_backfill_failed",
+                    venue=venue,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    error=str(exc),
+                )
 
         try:
             r = await self._client.get(

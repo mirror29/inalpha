@@ -13,7 +13,10 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from inalpha_shared import get_logger
 from inalpha_shared.errors import InalphaError
+
+_logger = get_logger(__name__)
 
 #: GET /bars 连接级瞬时失败的重试：data-service 在 --reload 重启窗口或并发突发被打满时
 #: 会短暂连不上（httpx.RequestError，秒级恢复）。有界重试 + 短退避把瞬时抖动吸收掉，
@@ -181,5 +184,11 @@ class DataClient:
                 },
                 timeout=60.0,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.warning(
+                "factor_backfill_failed",
+                venue=venue,
+                symbol=symbol,
+                timeframe=timeframe,
+                error=str(exc),
+            )
