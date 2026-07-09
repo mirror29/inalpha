@@ -84,7 +84,20 @@ def _ensure_bs_login() -> None:
         return
     with _bs_lock:
         if _bs_logged_in:
-            return
+            # 已登录，但需要验证连接是否真的有效（fork 后状态可能不一致）
+            import baostock as bs
+            try:
+                # 用一个轻量查询测试连接
+                rs = bs.query_trade_dates(start_date="2024-01-01", end_date="2024-01-01")
+                if rs is not None and rs.error_code == "0":
+                    return  # 连接有效
+                # 连接失效，重新 login
+                _logger.warning("baostock_connection_stale", error_code=getattr(rs, 'error_code', None))
+                _bs_logged_in = False
+            except Exception as exc:
+                _logger.warning("baostock_connection_check_failed", error=str(exc))
+                _bs_logged_in = False
+
         import baostock as bs
         lg = bs.login()
         if lg.error_code != "0":
@@ -631,7 +644,14 @@ def _fetch_financials_sync(
     if prefix in ("sh", "sz"):
         return _fetch_financials_baostock_sync(symbol=f"{prefix}.{code}", as_of=as_of)
     else:
+        # 港股东财源当前不可用，打日志后静默返回空（orchestrator 路由到 yfinance）
         raw = ak.stock_hk_financial_abstract(symbol=code)
+        if raw is None:
+            _logger.warning("akshare_hk_financials_none", prefix=prefix, code=code)
+            return {}
+        if isinstance(raw, dict) and not raw.get("data"):
+            _logger.warning("akshare_hk_financials_empty", prefix=prefix, code=code)
+            return {}
         return _flatten_financial_abstract(raw, as_of=as_of, publish_lag_days=publish_lag_days)
 
 
@@ -1062,6 +1082,7 @@ def _fetch_sync(
                 end_str=end_str,
             )
             return []
+        # df 非 None 且非空，安全调用 to_dict
         return df.to_dict(orient="records")  # type: ignore[no-any-return]
     elif prefix == "jp":
         # stock_jp_hist 在 akshare ≥1.18.63 已删除；orchestrator 将 jp 路由到 yfinance
