@@ -413,7 +413,7 @@
       },
       {
         "question": "Can I trade real money with Inalpha right now?",
-        "answer": "No — and that's deliberate. As of Phase D-11, Inalpha ships an autonomous paper runner: promoted strategies trade a simulated account on live market data, gated by two human checkpoints (you promote, you start), machine-approved through plan/exec, with a full decision-replay log. But every order is matched locally — there is no live brokerage integration, and real-capital trading is out of the current plan. The kernel is designed to extend to live execution later; that is not today's scope. Do not route real money through Inalpha."
+        "answer": "No — and that's deliberate. Inalpha ships an autonomous paper runner: promoted strategies trade a simulated account on live market data, gated by two human checkpoints (you promote, you start), machine-approved through plan/exec, with a full decision-replay log. But every order is matched locally — there is no live brokerage integration, and real-capital trading is out of the current plan. The kernel is designed to extend to live execution later; that is not today's scope. Do not route real money through Inalpha."
       },
       {
         "question": "What markets and asset classes does Inalpha cover?",

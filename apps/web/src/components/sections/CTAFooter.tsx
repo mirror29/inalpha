@@ -12,13 +12,14 @@ import { StatCounter } from "@/components/primitives/StatCounter";
 import type { GithubStats } from "@/lib/github";
 import { LINKS } from "@/lib/links";
 import { fadeUp } from "@/lib/motion";
-import { releaseFootline } from "@/lib/release-meta";
 
 const TOTAL_MARKETS = 12;
 
 interface CTAFooterProps {
   /** build 时抓的真实快照；null（拉取失败）时整组隐藏，不放假数字。 */
   stats?: GithubStats | null;
+  /** "Updated 2026.07.09" 串，server component 注入。 */
+  updateTag?: string;
 }
 
 /**
@@ -26,7 +27,7 @@ interface CTAFooterProps {
  * Get started 下展示仓库的 star / contributor / commit / markets + alpha 标，
  * 与「star it · read it」的号召自然成对。
  */
-export function CTAFooter({ stats = null }: CTAFooterProps = {}) {
+export function CTAFooter({ stats = null, updateTag }: CTAFooterProps = {}) {
   const t = useTranslations("cta");
   const tf = useTranslations("footer");
   const tc = useTranslations("coverage");
@@ -151,8 +152,8 @@ export function CTAFooter({ stats = null }: CTAFooterProps = {}) {
             <p className="mt-1.5 text-fg-muted">DESIGN.md §10</p>
           </div>
           <div className="col-span-6 md:col-span-3">
-            <p className="text-fg/40">rev</p>
-            <p className="mt-1.5 text-fg-muted">{releaseFootline}</p>
+            <p className="text-fg/40">updated</p>
+            <p className="mt-1.5 text-fg-muted">{updateTag ?? "—"}</p>
           </div>
           <div className="col-span-6 md:col-span-3">
             <p className="text-fg/40">© rights</p>
