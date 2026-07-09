@@ -117,6 +117,10 @@ export interface StrategyRunDecisionRecord {
   outcome: "filled" | "rejected" | "risk_rejected";
   fill_price: number | null;
   fee: number | null;
+  /** 平/减仓产生的已实现盈亏(毛口径,不含手续费);开/加仓为 null。 */
+  closed_profit_abs: number | null;
+  /** 平/减仓盈亏百分比(相对被平名义);开/加仓为 null。 */
+  closed_profit_pct: number | null;
   plan_id: string | null;
   order_id: string | null;
   /** 拒单原因(风控 / 其他);outcome 非 filled 时通常有值。 */

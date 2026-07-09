@@ -106,6 +106,8 @@ export function BacktestChart({
         outcome: "filled" as const,
         fill_price: tr.fill_price,
         fee: tr.fee,
+        closed_profit_abs: tr.realized_pnl ?? null,
+        closed_profit_pct: null,
         plan_id: null,
         order_id: null,
         reason: null,
