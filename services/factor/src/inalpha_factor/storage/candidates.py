@@ -19,8 +19,9 @@ from psycopg import AsyncConnection
 
 _COLUMNS = (
     "id, expression, expression_hash, name, hypothesis, proposed_by, "
-    "venue, symbol, timeframe, test_results, batch_id, n_tested, status, "
-    "reviewed_by, reviewed_at, review_note, created_at, updated_at"
+    "owner_account_id, venue, symbol, timeframe, test_results, batch_id, "
+    "n_tested, status, reviewed_by, reviewed_at, review_note, "
+    "created_at, updated_at"
 )
 
 
@@ -36,6 +37,7 @@ async def insert_candidate(
     hypothesis: str,
     name: str | None = None,
     proposed_by: str = "agent",
+    owner_account_id: UUID | None = None,
     venue: str | None = None,
     symbol: str | None = None,
     timeframe: str | None = None,
@@ -51,14 +53,16 @@ async def insert_candidate(
             """
             INSERT INTO factor_candidates (
                 id, expression, expression_hash, name, hypothesis, proposed_by,
-                venue, symbol, timeframe, test_results, batch_id, n_tested
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                owner_account_id, venue, symbol, timeframe, test_results,
+                batch_id, n_tested
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (expression_hash) DO NOTHING
             RETURNING id
             """,
             (
                 str(candidate_id), expression, expr_hash, name, hypothesis,
-                proposed_by, venue, symbol, timeframe,
+                proposed_by, str(owner_account_id) if owner_account_id else None,
+                venue, symbol, timeframe,
                 json.dumps(test_results or {}, default=str),
                 str(batch_id) if batch_id else None, n_tested,
             ),
@@ -96,6 +100,7 @@ async def list_candidates(
     conn: AsyncConnection,
     *,
     status: str | None = None,
+    owner_account_id: UUID | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     sql = f"SELECT {_COLUMNS} FROM factor_candidates WHERE 1=1"
@@ -103,6 +108,9 @@ async def list_candidates(
     if status is not None:
         sql += " AND status = %s"
         params.append(status)
+    if owner_account_id is not None:
+        sql += " AND owner_account_id = %s"
+        params.append(str(owner_account_id))
     sql += " ORDER BY created_at DESC LIMIT %s"
     params.append(limit)
     async with conn.cursor() as cur:
@@ -118,22 +126,26 @@ async def review(
     action: str,  # "register" | "reject"
     reviewed_by: str,
     note: str | None = None,
+    owner_account_id: UUID | None = None,
 ) -> dict[str, Any] | None:
     """人工审核：pending_review → registered / rejected。
 
     只迁移当前 pending_review 的行（重复审核 / 状态错位返 None，调用方转 409）。
+    owner_account_id 用于权限检查（TOCTOU 防护）：只允许所有者审核。
     """
     new_status = "registered" if action == "register" else "rejected"
     async with conn.cursor() as cur:
+        # WHERE 中原子检查 status + owner_account_id，防止 TOCTOU
         await cur.execute(
             f"""
             UPDATE factor_candidates
             SET status = %s, reviewed_by = %s, reviewed_at = NOW(),
                 review_note = %s, updated_at = NOW()
             WHERE id = %s AND status = 'pending_review'
+                AND (owner_account_id IS NULL OR owner_account_id = %s)
             RETURNING {_COLUMNS}
             """,
-            (new_status, reviewed_by, note, str(candidate_id)),
+            (new_status, reviewed_by, note, str(candidate_id), str(owner_account_id) if owner_account_id else None),
         )
         row = await cur.fetchone()
     return row  # type: ignore[return-value]

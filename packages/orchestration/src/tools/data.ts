@@ -21,7 +21,7 @@ const TimeframeSchema = z.enum([
 //   - crypto:      'BTC/USDT' (CCXT)
 //   - 美股 / FRED:  'AAPL' / 'DFF' (plain alphanumeric)
 //   - 指数:         '^N225' / '^FTSE' (Yahoo 指数前缀)
-//   - akshare:     'sh.600519' / 'hk.00700' / 'jp.6758' (prefix.code)
+//   - akshare:     'sh.600519' / 'sz.000001' (prefix.code，仅 A 股)
 //   - yfinance:    '005930.KS' / 'BHP.AX' / 'BARC.L' (code.suffix)
 // Python 后端再做精细校验；zod 只做"非空 + 字符集 + 长度"防呆。
 const SymbolSchema = z
@@ -203,8 +203,8 @@ export const dataBackfillBarsTool = createTool({
     - 用户问"这个时段还没数据" → 先 backfill
     - **想要"最新现价"但 data.get_bars 返回的是 stale 数据**（数小时前）→ backfill 最近 1 天
     - **venue 按 symbol 所属市场自动选**（详 orchestrator system prompt 市场→venue 路由表）：
-      crypto→binance、美股/全球指数/韩澳印加巴法等单股→yfinance、A/港/日/英/德股→akshare、
-      美股专业 feed→alpaca、FRED 宏观→fred
+      crypto→binance、美股/全球指数/韩澳印加巴法等单股→yfinance、A股→akshare（baostock 源，日/周/月）、
+      港/日/英/德股→yfinance、美股专业 feed→alpaca、FRED 宏观→fred
 
     何时不用：
     - 已有数据 → 直接 data.get_bars
@@ -220,7 +220,7 @@ export const dataBackfillBarsTool = createTool({
 
     坑：
     - **不要"为了保险拉一年 1m"**——既慢又没必要。需要近期价用 1h timeframe + 1 周即可
-    - **akshare 仅日级**（1d/1wk/1mo）；**fred 仅日级及以上**（1d/1wk/1mo/1q/1y）；
+    - **akshare 日级 1d/1wk/1mo**（baostock 源，A 股）；**fred 仅日级及以上**（1d/1wk/1mo/1q/1y）；
       venue/timeframe 不匹配后端返 422 并带 supported_timeframes，按响应改一次再调，不要瞎重试
     - 不要在 LLM 单 turn 里循环 backfill 多个标的，分多次 tool call
     - tool 超时上限 5 分钟；超过这个跨度的 backfill 拆成多次小窗口调用
@@ -280,8 +280,8 @@ export const dataGetTickerTool = createTool({
     何时不用：
     - 要历史走势 / 做技术分析 → 用 data.get_bars
     - 要 N 根 K 线 → 用 data.get_bars
-    - A 股 / 港股 / FRED 想要"实时"价 → akshare/fred 没这能力，改 fresh=false 走 DB
-      cache（先 backfill_bars 灌一遍最新数据再调）
+    - A 股 / FRED 想要"实时"价 → akshare/fred 没这能力，改 fresh=false 走 DB
+      cache（先 backfill_bars 灌一遍最新数据再调）；港股走 yfinance 有实时 ticker
 
     坑：
     - 默认 fresh=true！想要 DB cache 必须显式传 fresh:false
@@ -313,7 +313,7 @@ export const dataGetFundamentalsTool = createTool({
   id: "data.get_fundamentals",
   description: `
     拉标的的财报基本面数据（市盈率、ROE、营收增速等）。
-    支持 venue=akshare（A股/港股）和 venue=yfinance（美股/全球）。
+    支持 venue=akshare（A股）和 venue=yfinance（美股/港股/全球）。
 
     何时用：研究个股基本面 / 看估值是否合理 / deep_dive 前预拉数据
     何时不用：加密货币（无传统财报）/ 指数和宏观（走 FRED 或专用数据源）

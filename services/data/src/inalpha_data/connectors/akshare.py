@@ -1,31 +1,40 @@
-"""akshare 全球股市 connector（A股 + 港股 + 日股 + 英股 + 德股）。
+"""akshare connector —— A股走 baostock（证券宝）+ 港股走 akshare 东财源。
 
-为什么用 akshare：
+baostock（证券宝）做 A 股全栈数据源：
 
-- 中港日英德主要市场全覆盖，零 API key
-- 同步库（基于 requests + pandas），需 ``asyncio.to_thread`` 包装跑线程池
-- 覆盖广但单源（聚合公开页），偶发反爬；MVP 阶段够用
-- **韩 / 澳 / 印 / 巴西**等市场 akshare 没标准接口 → 走 ``yfinance`` connector 兜底
+- **K 线**：日/周/月线，OHLCV 齐全（含真实成交量）
+- **财报**：利润表 + 负债表 + 成长指标 + 现金流比率 + 分红记录
+- **交易日历**：A 股交易/非交易日查询
+- **指数成分**：沪深300 / 上证50 / 中证500 当前成分股
+- **全部免费零 key**，无需注册
+
+**2026-07 更新**：
+
+- A股（sh/sz）：东财 push2his 失效 → 全部能力切 baostock
+  - K 线：日/周/月 + volume
+  - 财报：利润/负债/成长/现金流/分红（baostock pubDate 做 PIT）
+  - 交易日历：query_trade_dates
+  - 指数成分：沪深300/上证50/中证500
+- 港股（hk）：东财 ``stock_hk_hist`` 保留作 fallback（push2his 同失效），
+  orchestrator 默认路由到 yfinance
+- 日股 / 英股 / 德股：``stock_jp_hist`` / ``stock_uk_hist`` / ``stock_de_hist``
+  在 akshare ≥1.18.63 中已删除；orchestrator 路由到 yfinance
 
 **symbol 格式约定**（venue=``"akshare"``）：
 
-- A股沪市：``"sh.600519"``  → akshare ``stock_zh_a_hist`` symbol=``"600519"``
-- A股深市：``"sz.000001"``  → 同上
-- 港股   ：``"hk.00700"``  → akshare ``stock_hk_hist`` symbol=``"00700"``
-- 日股   ：``"jp.6758"``    → akshare ``stock_jp_hist`` symbol=``"6758"``（索尼）
-- 英股   ：``"uk.BARC"``    → akshare ``stock_uk_hist`` symbol=``"BARC"``（巴克莱）
-- 德股   ：``"de.SAP"``     → akshare ``stock_de_hist`` symbol=``"SAP"``
+- A股沪市：``"sh.600519"``  → baostock ``"sh.600519"``
+- A股深市：``"sz.000001"``  → baostock ``"sz.000001"``
+- 港股   ：``"hk.00700"``  → akshare ``stock_hk_hist``（东财源，当前不可用）
 
-**timeframe 支持**（MVP 限制）：
+**timeframe 支持**：
 
-- ``"1d"`` / ``"1wk"`` / ``"1mo"``  → 直接传 ``period``
-- 分钟级走 ``stock_zh_a_minute``（仅 A股），暂不实现，留 ``NotImplementedError``
-
-历史窗口：akshare 默认拉 20 年起，足够做长期回测。
+- ``"1d"`` / ``"1wk"`` / ``"1mo"`` → baostock ``frequency="d"/"w"/"m"``
+- 分钟级走 ``NotImplementedError``，可换 venue=yfinance 取近 60 天分钟线
 """
 from __future__ import annotations
 
 import asyncio
+import threading as _threading
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -59,6 +68,50 @@ _MIN_FETCH_INTERVAL_S = 1.0
 #: 锁内单次拉取超时上限——TCP 挂起时快速放锁，不把整个 panel 拖死。
 _FETCH_TIMEOUT_S = 30.0
 _last_fetch_mono: float = 0.0
+
+# ── baostock 持久会话 ────────────────────────────────────────────────
+# baostock login 需 ~4.3s/次；每个 fetch 单独 login+logout 会把跑批拖慢一个数量级。
+# 进程级单次 login、close_connector 时 logout；_FETCH_LOCK 已确保同一时刻只有一个
+# baostock 调在飞，无并发问题。
+_bs_logged_in: bool = False
+_bs_lock = _threading.Lock()
+
+
+def _ensure_bs_login() -> None:
+    """惰性 login baostock——首次调时登一次，后续复用。
+
+    注意：当前实现不 fork-safe。在 uvicorn 多 worker 模式下（fork），
+    子进程继承 `_bs_logged_in=True` 但连接已关闭，会导致后续调用失败。
+    建议：使用 `--workers 1` 或 `preload=False` 启动 uvicorn。
+    """
+    global _bs_logged_in
+    if _bs_logged_in:
+        # 快速路径：已登录，跳过锁（GIL 保证 bool 读原子）
+        return
+
+    with _bs_lock:
+        if _bs_logged_in:
+            # 另一个线程刚登完，直接返回
+            return
+        import baostock as bs
+        lg = bs.login()
+        if lg.error_code != "0":
+            _logger.warning("baostock_login_failed", error_code=lg.error_code, error_msg=lg.error_msg)
+        else:
+            _bs_logged_in = True
+
+
+def _bs_session_logout() -> None:
+    """登出 baostock（close_connector 时调一次）。"""
+    global _bs_logged_in
+    if not _bs_logged_in:
+        return
+    with _bs_lock:
+        if not _bs_logged_in:
+            return
+        import baostock as bs
+        bs.logout()
+        _bs_logged_in = False
 
 #: 允许的市场前缀
 _ALLOWED_PREFIXES = frozenset({"sh", "sz", "hk", "jp", "uk", "de"})
@@ -260,13 +313,14 @@ class AkshareConnector:
     ) -> dict[str, Any]:
         """拉 A股 / 港股 财报基本面数据。
 
-        A-share: ``ak.stock_financial_abstract(symbol=code)``
+        A-share: baostock 利润表 + 负债表 + 成长指标 + 现金流 + 分红
         HK stock: ``ak.stock_hk_financial_abstract(symbol=code)``
 
-        akshare 返回字段因市场不同有差异，做防御性字段映射；缺失字段置 None 不抛异常。
+        baostock 返回字段因市场不同有差异，做防御性字段映射；缺失字段置 None 不抛异常。
 
         ``as_of``（ISO 时间串，ADR-0053 阶段 A）：point-in-time 截断——只取"报告期末 +
-        发布滞后 <= as_of"的财报期，防回测看到当时还没披露的财报（未来函数）。缓存为
+        发布滞后 <= as_of"的财报期，防回测看到当时还没披露的财报（未来函数）。baostock 路径
+        用实际的 ``pubDate`` 字段做 PIT 判定（比滞后估算天数更精确）。缓存为
         **PIT-aware**：按 ``(symbol, as_of 截断到天)`` 分格，同一天的 PIT 查询复用、非 PIT
         (None) 自成一格（#102 CR）。
 
@@ -343,55 +397,61 @@ class AkshareConnector:
         from datetime import datetime as dt_dt
 
         indicators: dict[str, float | None] = {}
-        # raw 由 _flatten_abstract 拍平成 {指标名: 最新期值}。
-        # 键名以 stock_financial_abstract 实际「指标」列为准（2026-06 实测）；
-        # 旧的简写键保留作其他市场 / 版本 / 未来估值源的前向兼容（命中即用，命不中无害）。
-        _indicator_map = {
-            # 盈利
-            "净资产收益率(ROE)": "roe",
-            "净资产收益率": "roe",
-            "毛利率": "gross_margin",
-            "销售净利率": "net_margin",
-            "净利率": "net_margin",
-            # 成长
-            "营业总收入增长率": "revenue_yoy",
-            "营业收入同比增长": "revenue_yoy",
-            "归属母公司净利润增长率": "profit_yoy",
-            "归属净利润同比增长": "profit_yoy",
-            # 杠杆（A股摘要给的是资产负债率；近似填入 leverage 槽，前端按杠杆指标展示）
-            "资产负债率": "debt_to_equity",
-            # 估值：stock_financial_abstract 不含，A股另走 Baidu 源补齐(见下方)。
-            # 以下键留作前向兼容(摘要/其他市场若带了即用,命不中无害)。
-            "总市值": "market_cap",
-            "流通市值": "market_cap",
-            "市盈率": "pe_ratio",
-            "市净率": "pb_ratio",
-            # 财务质量项（供应链瓶颈调研的红旗检查：存货应收增速 vs 收入、现金流）
-            # akshare 摘要表字段随版本/市场浮动，防御性映射：缺了置 None 不报错
-            "经营现金流量净额": "operating_cashflow",
-            "每股经营现金流": "ocf_per_share",
-            "存货周转率": "inventory_turnover",
-            "存货周转天数": "inventory_days",
-            "应收账款周转率": "receivables_turnover",
-            "应收账款周转天数": "receivables_days",
-            "流动比率": "current_ratio",
-            "速动比率": "quick_ratio",
-        }
-        for cn_key, en_key in _indicator_map.items():
-            val = raw.get(cn_key)
-            if val is not None:
-                try:
-                    indicators[en_key] = float(val)
-                except (TypeError, ValueError):
-                    pass
 
-        # 单位归一:akshare 摘要的 ROE / 利润率 / 增长率均为**百分数**(如 18.8 表示
-        # 18.8%);yfinance 同名字段是**分数**(0.188)。统一成分数对齐 yfinance,
-        # 前端按分数 ×100 展示。(debt_to_equity / 估值字段不在此列,保持原值。)
-        for _pct_key in ("roe", "gross_margin", "net_margin", "revenue_yoy", "profit_yoy"):
-            v = indicators.get(_pct_key)
-            if v is not None:
-                indicators[_pct_key] = v / 100.0
+        # baostock 路径（sh/sz）：raw 中已有预映射的 _indicators，直接取用
+        if isinstance(raw, dict) and "_indicators" in raw:
+            indicators = {k: v for k, v in raw["_indicators"].items()}
+        else:
+            # akshare 东财路径（hk）：通过 _indicator_map 将中文指标名映射为英文 key
+            # raw 由 _flatten_abstract 拍平成 {指标名: 最新期值}。
+            # 键名以 stock_financial_abstract 实际「指标」列为准（2026-06 实测）；
+            # 旧的简写键保留作其他市场 / 版本 / 未来估值源的前向兼容（命中即用，命不中无害）。
+            _indicator_map = {
+                # 盈利
+                "净资产收益率(ROE)": "roe",
+                "净资产收益率": "roe",
+                "毛利率": "gross_margin",
+                "销售净利率": "net_margin",
+                "净利率": "net_margin",
+                # 成长
+                "营业总收入增长率": "revenue_yoy",
+                "营业收入同比增长": "revenue_yoy",
+                "归属母公司净利润增长率": "profit_yoy",
+                "归属净利润同比增长": "profit_yoy",
+                # 杠杆
+                "资产负债率": "debt_to_equity",
+                # 估值
+                "总市值": "market_cap",
+                "流通市值": "market_cap",
+                "市盈率": "pe_ratio",
+                "市净率": "pb_ratio",
+                # 财务质量项
+                "经营现金流量净额": "operating_cashflow",
+                "每股经营现金流": "ocf_per_share",
+                "存货周转率": "inventory_turnover",
+                "存货周转天数": "inventory_days",
+                "应收账款周转率": "receivables_turnover",
+                "应收账款周转天数": "receivables_days",
+                "流动比率": "current_ratio",
+                "速动比率": "quick_ratio",
+            }
+            for cn_key, en_key in _indicator_map.items():
+                val = raw.get(cn_key)
+                if val is not None:
+                    try:
+                        indicators[en_key] = float(val)
+                    except (TypeError, ValueError):
+                        pass
+
+            # 单位归一:akshare 摘要的 ROE / 利润率 / 增长率均为**百分数**(如 18.8 表示
+            # 18.8%);yfinance 同名字段是**分数**(0.188)。统一成分数对齐 yfinance,
+            # 前端按分数 ×100 展示。
+            # 注：baostock 路径在上方 _fetch_financials_baostock_sync 已返回分数，
+            #     不需要走这步 /100 归一。
+            for _pct_key in ("roe", "gross_margin", "net_margin", "revenue_yoy", "profit_yoy"):
+                v = indicators.get(_pct_key)
+                if v is not None:
+                    indicators[_pct_key] = v / 100.0
 
         # 估值(总市值/PE/PB)不在财报摘要里 → A股另走 Baidu 源补齐(best-effort,
         # 失败只记日志不阻断已拿到的盈利/成长/财务指标)。
@@ -491,6 +551,34 @@ class AkshareConnector:
             })
         return out
 
+    async def fetch_trade_calendar(
+        self, start_date: str, end_date: str
+    ) -> list[dict[str, Any]]:
+        """查询 A 股交易日历（baostock ``query_trade_dates``）。
+
+        Args:
+            start_date: 起始日期 ``"YYYY-MM-DD"``
+            end_date: 结束日期 ``"YYYY-MM-DD"``
+
+        Returns:
+            ``[{calendar_date, is_trading_day}]``——is_trading_day ``"1"`` 表交易日，
+            ``"0"`` 表非交易日（周末/节假日）。空列表 = 拉取失败。
+        """
+        import baostock as bs
+
+        _logger.debug("akshare_fetch_trade_calendar", start=start_date, end=end_date)
+        _ensure_bs_login()
+        rs = bs.query_trade_dates(start_date=start_date, end_date=end_date)
+        if rs is None or rs.error_code != "0":
+            _logger.warning("baostock_trade_calendar_failed", start=start_date, end=end_date)
+            return []
+        rows: list[dict[str, Any]] = []
+        while rs.next():
+            rd = rs.get_row_data()
+            if rd and rd[0]:
+                rows.append(dict(zip(rs.fields, rd, strict=True)))
+        return rows
+
     async def fetch_index_constituents(self, index_code: str) -> list[dict[str, Any]]:
         """拉指数**当前**成分（中证指数网，零 key）。
 
@@ -541,22 +629,288 @@ def _fetch_financials_sync(
     as_of: datetime | None = None,
     publish_lag_days: int = FINANCIALS_PUBLISH_LAG_DAYS,
 ) -> dict[str, Any]:
-    """同步调 akshare 财报接口 —— 按前缀路由,返回 ``{指标名: 最新期值}``。
+    """同步调财报接口 —— 按前缀路由。
 
-    ``stock_financial_abstract`` / ``stock_hk_financial_abstract`` 返回的是
-    「指标 × 报告期日期列」的**转置表**(行=指标名,列=各报告期,如 20260331)。
-    旧实现 ``raw.iloc[-1].to_dict()`` 只取了**最后一行**(单个指标)→ 上层
-    ``raw.get("净资产收益率")`` 全落空、indicators 恒为 null。这里改为遍历整表、
-    每个指标取最新一期的**非空**值,拍平成 {指标名: 值} 供上层按名映射。
+    - A股（sh/sz）→ baostock（利润表 + 负债表 + 成长指标 + 现金流 + 分红）
+    - 港股（hk）   → akshare ``stock_hk_financial_abstract``（东财源）
     """
     import akshare as ak
 
     if prefix in ("sh", "sz"):
-        raw = ak.stock_financial_abstract(symbol=code)
+        return _fetch_financials_baostock_sync(symbol=f"{prefix}.{code}", as_of=as_of)
     else:
+        # 港股东财源当前不可用，打日志后静默返回空（orchestrator 路由到 yfinance）
         raw = ak.stock_hk_financial_abstract(symbol=code)
+        if raw is None:
+            _logger.warning("akshare_hk_financials_none", prefix=prefix, code=code)
+            return {}
+        # akshare 返回 DataFrame，非 dict
+        if hasattr(raw, "empty") and raw.empty:
+            _logger.warning("akshare_hk_financials_empty", prefix=prefix, code=code)
+            return {}
+        return _flatten_financial_abstract(raw, as_of=as_of, publish_lag_days=publish_lag_days)
 
-    return _flatten_financial_abstract(raw, as_of=as_of, publish_lag_days=publish_lag_days)
+
+def _fetch_financials_baostock_sync(
+    *, symbol: str, as_of: datetime | None = None
+) -> dict[str, Any]:
+    """baostock 财报全量（利润/负债/成长/现金流/分红）→ 拍平成指标映射。
+
+    baostock 各财报 API 返回**结构化字段**（非 akshare 转置表），各自有 ``pubDate``
+    精确公告日期。PIT 模式下直接用 ``pubDate <= as_of`` 判定，比滞后天数估算更准。
+
+    返回 dict：
+    - ``_indicators``: ``{英文指标名: float|None}``——直接可喂 fetch_financials 的 indicators 槽
+    - ``profit`` / ``balance`` / ``growth`` / ``cash_flow``: dict，原始财报数据
+    - ``dividends``: list[dict]，分红记录
+    - ``_period``: ``(year, quarter)`` 实际命中的财报期
+    """
+    _ensure_bs_login()
+    return _query_baostock_financials(symbol, as_of)
+
+
+def _query_baostock_financials(
+    symbol: str, as_of: datetime | None
+) -> dict[str, Any]:
+    """查询 baostock 四大报表 + 分红，返回拍平的指标 dict。"""
+    import math as _math
+
+    import baostock as bs
+
+    now = datetime.now(UTC)
+    ref = as_of if as_of is not None else now
+
+    def _period_ok(pub_date_str: str) -> bool:
+        """publish date 是否 <= as_of（PIT 守门）。
+
+        解析失败时返回 False（宁可少拿数据，不要泄漏未来数据）。
+        """
+        if as_of is None:
+            return True
+        if not pub_date_str:
+            return False
+        # 尝试多种日期格式
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+            try:
+                pub = datetime.strptime(pub_date_str, fmt).replace(tzinfo=UTC)
+                return pub <= as_of
+            except ValueError:
+                continue
+        # 所有格式都解析失败 → 打日志并拒绝
+        _logger.warning(
+            "pit_pubdate_parse_failed",
+            pub_date=pub_date_str,
+            as_of=str(as_of),
+        )
+        return False
+
+    # 从当前年份往回搜，找第一个有数据且 pubDate <= as_of 的财报期
+    def _query_first(
+        query_fn, year_range: range, quarter_range: range
+    ) -> tuple[dict[str, Any] | None, int, int]:
+        for y in year_range:
+            for q in quarter_range:
+                rs = query_fn(y, q)
+                if rs is None or rs.error_code != "0":
+                    continue
+                rows: list[dict[str, Any]] = []
+                while rs.next():
+                    row_data = rs.get_row_data()
+                    if row_data and row_data[0]:
+                        rows.append(dict(zip(rs.fields, row_data, strict=True)))
+                for row in rows:
+                    pub = str(row.get("pubDate", ""))
+                    if pub and _period_ok(pub):
+                        return row, y, q
+                # 该期数据存在但 pubDate > as_of → 继续搜更早的期
+        return None, 0, 0
+
+    # ── 利润表 ──
+    profit, py, pq = _query_first(
+        lambda y, q: bs.query_profit_data(symbol, year=y, quarter=q),
+        range(ref.year, ref.year - 10, -1),  # 扩大到 10 年，覆盖退市股/停牌股
+        range(4, 0, -1),
+    )
+    # Q1 季报可能缺 MBRevenue（营收）和 gpMargin（毛利率），
+    # 此时补拉上一年 Q4 取这些字段，保证实时研究中指标齐全（非 PIT）。
+    # PIT 模式下 py 可能被截断到较早年份，补拉也用 ref.year - 1 保证拿到最新可用数据
+    profit_annual: dict[str, Any] | None = None
+    if profit is not None and as_of is None and not profit.get("MBRevenue"):
+        fallback_year = ref.year - 1 if as_of else py - 1
+        rs = bs.query_profit_data(symbol, year=fallback_year, quarter=4)
+        if rs is not None and rs.error_code == "0":
+            while rs.next():
+                rd = rs.get_row_data()
+                if rd and rd[0]:
+                    profit_annual = dict(zip(rs.fields, rd, strict=True))
+                    break
+    # ── 负债表（同一年/季，若无数据则尝试年报）──
+    balance = None
+    if py:
+        rs = bs.query_balance_data(symbol, year=py, quarter=pq)
+        if rs is not None and rs.error_code == "0":
+            while rs.next():
+                rd = rs.get_row_data()
+                if rd and rd[0]:
+                    balance = dict(zip(rs.fields, rd, strict=True))
+                    break
+        # 该季无数据，尝试年报（Q4）
+        if balance is None:
+            rs = bs.query_balance_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        balance = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 成长指标（同一年/季，若无数据则尝试年报）──
+    growth = None
+    if py:
+        rs = bs.query_growth_data(symbol, year=py, quarter=pq)
+        if rs is not None and rs.error_code == "0":
+            while rs.next():
+                rd = rs.get_row_data()
+                if rd and rd[0]:
+                    growth = dict(zip(rs.fields, rd, strict=True))
+                    break
+        if growth is None:
+            rs = bs.query_growth_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        growth = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 现金流量表（同一年/季，若无数据则尝试年报）──
+    cash_flow = None
+    if py:
+        rs = bs.query_cash_flow_data(symbol, year=py, quarter=pq)
+        if rs is not None and rs.error_code == "0":
+            while rs.next():
+                rd = rs.get_row_data()
+                if rd and rd[0]:
+                    cash_flow = dict(zip(rs.fields, rd, strict=True))
+                    break
+        if cash_flow is None:
+            rs = bs.query_cash_flow_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        cash_flow = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 营运能力（同一年/季，若无数据则尝试年报）──
+    operation = None
+    if py:
+        rs = bs.query_operation_data(symbol, year=py, quarter=pq)
+        if rs is not None and rs.error_code == "0":
+            while rs.next():
+                rd = rs.get_row_data()
+                if rd and rd[0]:
+                    operation = dict(zip(rs.fields, rd, strict=True))
+                    break
+        if operation is None:
+            rs = bs.query_operation_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        operation = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 杜邦分解（同一年/季，若无数据则尝试年报）──
+    dupont = None
+    if py:
+        rs = bs.query_dupont_data(symbol, year=py, quarter=pq)
+        if rs is not None and rs.error_code == "0":
+            while rs.next():
+                rd = rs.get_row_data()
+                if rd and rd[0]:
+                    dupont = dict(zip(rs.fields, rd, strict=True))
+                    break
+        if dupont is None:
+            rs = bs.query_dupont_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        dupont = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 分红 ──
+    dividends: list[dict[str, Any]] = []
+    # 根据 as_of 动态计算分红年份范围，覆盖回测场景
+    dividend_years = range(ref.year, ref.year - 5, -1)
+    for rep_year in (str(y) for y in dividend_years):
+        rs = bs.query_dividend_data(symbol, year=rep_year, yearType="report")
+        if rs is not None and rs.error_code == "0":
+            while rs.next():
+                rd = rs.get_row_data()
+                if rd and rd[0]:
+                    div = dict(zip(rs.fields, rd, strict=True))
+                    pub = str(div.get("dividPlanAnnounceDate", ""))
+                    if pub and _period_ok(pub):
+                        dividends.append(div)
+
+    def _f(val: Any) -> float | None:
+        if val is None:
+            return None
+        if isinstance(val, float) and _math.isnan(val):
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
+    # baostock 返回的比率类字段已是分数（如 0.344620 = 34.46%），与 yfinance 对齐，
+    # **不需要** /100 归一。绝对值字段原始单位保持（营收/净利 → 元对齐 yfinance）。
+    indicators: dict[str, float | None] = {}
+    if profit:
+        _p = profit
+        _pa = profit_annual
+        indicators["roe"] = _f(_p.get("roeAvg"))
+        indicators["gross_margin"] = _f(_p.get("gpMargin") or (_pa or {}).get("gpMargin"))
+        indicators["net_margin"] = _f(_p.get("npMargin") or (_pa or {}).get("npMargin"))
+        indicators["eps_ttm"] = _f(_p.get("epsTTM"))
+        indicators["revenue"] = _f(_p.get("MBRevenue") or (_pa or {}).get("MBRevenue"))
+        indicators["net_profit"] = _f(_p.get("netProfit") or (_pa or {}).get("netProfit"))
+    if balance:
+        indicators["current_ratio"] = _f(balance.get("currentRatio"))
+        indicators["quick_ratio"] = _f(balance.get("quickRatio"))
+        indicators["debt_to_equity"] = _f(balance.get("liabilityToAsset"))
+        indicators["equity_multiplier"] = _f(balance.get("assetToEquity"))  # 权益乘数
+    if growth:
+        indicators["profit_yoy"] = _f(growth.get("YOYPNI"))
+        indicators["revenue_yoy"] = _f(growth.get("YOYNI"))       # 归属净利润同比
+        indicators["equity_yoy"] = _f(growth.get("YOYEquity"))    # 净资产同比
+        indicators["asset_yoy"] = _f(growth.get("YOYAsset"))      # 总资产同比
+        indicators["eps_yoy"] = _f(growth.get("YOYEPSBasic"))     # EPS 同比
+    if cash_flow:
+        indicators["ocf_to_revenue"] = _f(cash_flow.get("CFOToOR"))
+        indicators["ocf_to_profit"] = _f(cash_flow.get("CFOToNP"))
+    if operation:
+        indicators["inventory_turnover"] = _f(operation.get("INVTurnRatio"))
+        indicators["inventory_days"] = _f(operation.get("INVTurnDays"))
+        indicators["receivables_turnover"] = _f(operation.get("NRTurnRatio"))
+        indicators["receivables_days"] = _f(operation.get("NRTurnDays"))
+        indicators["asset_turnover"] = _f(operation.get("AssetTurnRatio"))
+    if dupont:
+        indicators["dupont_roe"] = _f(dupont.get("dupontROE"))
+        indicators["dupont_net_margin"] = _f(dupont.get("dupontNitogr"))
+        indicators["dupont_asset_turnover"] = _f(dupont.get("dupontAssetTurn"))
+        indicators["dupont_equity_multiplier"] = _f(dupont.get("dupontAssetStoEquity"))
+        indicators["dupont_tax_burden"] = _f(dupont.get("dupontTaxBurden"))
+        indicators["dupont_interest_burden"] = _f(dupont.get("dupontIntburden"))
+
+    return {
+        "_indicators": indicators,
+        "_period": {"year": py, "quarter": pq} if py else None,
+        "profit": profit,
+        "balance": balance,
+        "growth": growth,
+        "cash_flow": cash_flow,
+        "operation": operation,
+        "dupont": dupont,
+        "dividends": dividends,
+    }
 
 
 def _flatten_financial_abstract(
@@ -565,11 +919,7 @@ def _flatten_financial_abstract(
     as_of: datetime | None = None,
     publish_lag_days: int = FINANCIALS_PUBLISH_LAG_DAYS,
 ) -> dict[str, Any]:
-    """转置财报表 → ``{指标名: 最新非空值}``;结构不符时退化兜底,绝不抛错。
-
-    ``as_of`` 非空时只保留"报告期末 + 发布滞后 <= as_of"的报告期列（PIT 防未来函数：
-    回测在 as_of 时刻不应看到当时还没披露的财报）；过滤后无可用期 → 返回 ``{}``。
-    """
+    """转置财报表 → ``{指标名: 最新非空值}``；仅港股路径使用。"""
     import math
 
     if raw is None:
@@ -578,21 +928,16 @@ def _flatten_financial_abstract(
         return raw if isinstance(raw, dict) else {}
 
     cols = [str(c) for c in raw.columns]
-    # 8 位数字列即报告期(20260331);新→旧排序,优先取最近一期。
     date_cols = sorted(
         (c for c in raw.columns if str(c).isdigit() and len(str(c)) == 8),
         key=lambda c: str(c),
         reverse=True,
     )
-    # PIT 截断：剔除 as_of 时尚未发布的报告期（ADR-0053 阶段 A）
     if as_of is not None:
         date_cols = [c for c in date_cols if _period_publishable(str(c), as_of, publish_lag_days)]
         if not date_cols:
             return {}
     if "指标" not in cols or not date_cols:
-        # 不是预期的转置表 → 退回最后一行(旧行为)兜底,至少不丢数据。
-        # 但 PIT 模式下**绝不走 iloc[-1] 后门**：它返回全部列(含未披露报告期),会让
-        # 格式异常时偷看未来财报、PIT 约束失效(#100 CR)。宁可返空也不泄漏。
         if as_of is not None:
             return {}
         if len(raw) == 0:
@@ -612,7 +957,7 @@ def _flatten_financial_abstract(
             if isinstance(val, float) and math.isnan(val):
                 continue
             out[str(name)] = val
-            break  # 该指标已取到最新非空值
+            break
     return out
 
 
@@ -668,6 +1013,69 @@ def _fetch_news_sync(symbol: str) -> list[dict[str, Any]]:
     return []
 
 
+def _fetch_baostock_sync(
+    *,
+    symbol: str,
+    frequency: str,
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    """同步调 baostock（证券宝）—— 免费零 key，A 股日/周/月 K 线。
+
+    ``symbol`` 格式 ``"sh.600519"`` / ``"sz.000001"``（与 akshare 旧格式一致）。
+    ``frequency`` 为 ``"d"/"w"/"m"``。
+    ``start_date`` / ``end_date`` 为 ``YYYYMMDD``（akshare 上层格式），内部转
+    ``YYYY-MM-DD``（baostock 要求）。
+    返回 list[dict] 含 date/open/high/low/close/volume/amount 字段。
+    """
+    import baostock as bs
+
+    # baostock 要求 YYYY-MM-DD 格式
+    start_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+    end_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+
+    _ensure_bs_login()
+
+    rs = bs.query_history_k_data_plus(
+        symbol,
+        "date,open,high,low,close,volume,amount",
+        start_date=start_fmt,
+        end_date=end_fmt,
+        frequency=frequency,
+        adjustflag="3",
+    )
+
+    if rs is None or rs.error_code != "0":
+        _logger.warning(
+            "baostock_query_failed",
+            symbol=symbol,
+            frequency=frequency,
+            start=start_fmt,
+            end=end_fmt,
+            error_code=getattr(rs, "error_code", None),
+            error_msg=getattr(rs, "error_msg", None),
+        )
+        return []
+
+    rows: list[dict[str, Any]] = []
+    while rs.next():
+        row_data = rs.get_row_data()
+        if not row_data or row_data[0] == "":
+            continue
+        date_str, open_s, high_s, low_s, close_s, vol_s, amt_s = row_data[:7]
+        rows.append({
+            "date": date_str,
+            "open": open_s,
+            "high": high_s,
+            "low": low_s,
+            "close": close_s,
+            "volume": vol_s,
+            "amount": amt_s,
+        })
+
+    return rows
+
+
 def _fetch_sync(
     *,
     prefix: str,
@@ -676,17 +1084,17 @@ def _fetch_sync(
     start_str: str,
     end_str: str,
 ) -> list[dict[str, Any]]:
-    """同步调 akshare —— 按市场前缀路由到对应函数。
+    """同步调数据源 —— 按市场前缀路由。
 
     单独抽函数让 ``asyncio.to_thread`` 序列化参数更明确，也方便测试 monkeypatch。
 
-    支持的 akshare 入口：
+    路由：
+    - A股（sh/sz）→ baostock（证券宝，免费零 key，日/周/月 + volume）
+    - 港股（hk）  → akshare ``stock_hk_hist``（东财源，当前 push2his 失效）
 
-    - ``stock_zh_a_hist``：A股（sh/sz）
-    - ``stock_hk_hist``  ：港股（hk）
-    - ``stock_jp_hist``  ：日股（jp）
-    - ``stock_uk_hist``  ：英股（uk）
-    - ``stock_de_hist``  ：德股（de）
+    .. deprecated::
+        ``stock_jp_hist`` / ``stock_uk_hist`` / ``stock_de_hist`` 在 akshare ≥1.18.63
+        中已删除。日/英/德股由 orchestrator 路由到 yfinance。
     """
     import akshare as ak
 
@@ -698,31 +1106,59 @@ def _fetch_sync(
     )
 
     if prefix in ("sh", "sz"):
-        # A股 daily / weekly / monthly；带 adjust 参数
-        df = ak.stock_zh_a_hist(adjust="", **common)
+        # A股走 baostock（证券宝）。东财 push2his 2026-07 起失效，腾讯源仅日线且无 volume；
+        # baostock 免费零 key、日/周/月全支持、有真实成交量。
+        # symbol 格式 "sh.600519" / "sz.000001"（与 _parse_symbol 产物一致，零转换）。
+        # period 已由上层 fetch_bars 经 _PERIOD_MAP 转为 "daily"/"weekly"/"monthly"
+        _baostock_freq = {"daily": "d", "weekly": "w", "monthly": "m"}
+        baostock_freq = _baostock_freq.get(period)
+        if baostock_freq is None:
+            raise NotImplementedError(
+                f"baostock does not support period {period!r}; "
+                f"supported: {sorted(_baostock_freq.keys())}"
+            )
+        return _fetch_baostock_sync(
+            symbol=f"{prefix}.{code}",
+            frequency=baostock_freq,
+            start_date=start_str,
+            end_date=end_str,
+        )
     elif prefix == "hk":
+        # 港股走东财 stock_hk_hist（push2his API，当前不可用；orchestrator 已将
+        # hk 前缀默认路由到 yfinance，这里保留作 fallback——东财恢复后自动生效）
         df = ak.stock_hk_hist(adjust="", **common)
+        if df is None or len(df) == 0:
+            _logger.warning(
+                "akshare_fetch_empty",
+                prefix=prefix,
+                code=code,
+                period=period,
+                start_str=start_str,
+                end_str=end_str,
+            )
+            return []
+        # df 非 None 且非空，安全调用 to_dict
+        return df.to_dict(orient="records")  # type: ignore[no-any-return]
     elif prefix == "jp":
-        # akshare 0.13+：stock_jp_hist 不接 adjust 参数
-        df = ak.stock_jp_hist(**common)
+        # stock_jp_hist 在 akshare ≥1.18.63 已删除；orchestrator 将 jp 路由到 yfinance
+        raise NotImplementedError(
+            "akshare stock_jp_hist was removed in akshare >=1.18.63; "
+            "use yfinance venue with symbol format 'CODE.T' (e.g. '6758.T')"
+        )
     elif prefix == "uk":
-        df = ak.stock_uk_hist(**common)
+        # stock_uk_hist 在 akshare ≥1.18.63 已删除
+        raise NotImplementedError(
+            "akshare stock_uk_hist was removed in akshare >=1.18.63; "
+            "use yfinance venue with symbol format 'TICKER.L' (e.g. 'BARC.L')"
+        )
     elif prefix == "de":
-        df = ak.stock_de_hist(**common)
+        # stock_de_hist 在 akshare ≥1.18.63 已删除
+        raise NotImplementedError(
+            "akshare stock_de_hist was removed in akshare >=1.18.63; "
+            "use yfinance venue with symbol format 'TICKER.DE' (e.g. 'SAP.DE')"
+        )
     else:
         raise ValueError(f"unreachable: prefix {prefix!r} should be filtered earlier")
-
-    if df is None or len(df) == 0:
-        _logger.warning(
-            "akshare_fetch_empty",
-            prefix=prefix,
-            code=code,
-            period=period,
-            start_str=start_str,
-            end_str=end_str,
-        )
-        return []
-    return df.to_dict(orient="records")  # type: ignore[no-any-return]
 
 
 def _cn_symbol(raw_code: str) -> str:
@@ -739,12 +1175,46 @@ def _cn_symbol(raw_code: str) -> str:
 
 
 def _fetch_constituents_sync(*, index_code: str) -> list[dict[str, Any]]:
-    """同步调 akshare 取指数**当前**成分（带权重优先，回退无权重接口）。
+    """同步取指数成分——A股三大指数走 baostock，其余走 akshare fallback。
 
-    akshare 列名随接口/版本变动 → 用模糊匹配抽 代码/名称/权重，不硬钉列名。
+    baostock 支持的指数代码：
+    - ``"000300"`` → 沪深300（``bs.query_hs300_stocks()``）
+    - ``"000016"`` → 上证50  （``bs.query_sz50_stocks()``）
+    - ``"000905"`` → 中证500（``bs.query_zz500_stocks()``）
+
+    baostock 无权重数据（weight 恒 None），其余指数退到原 akshare 东财源。
     """
     import akshare as ak
+    import baostock as bs
 
+    _BS_INDEX_MAP = {
+        "000300": bs.query_hs300_stocks,
+        "000016": bs.query_sz50_stocks,
+        "000905": bs.query_zz500_stocks,
+    }
+    query_fn = _BS_INDEX_MAP.get(index_code)
+    if query_fn is not None:
+        _ensure_bs_login()
+        try:
+            rs = query_fn()
+            if rs is not None and rs.error_code == "0":
+                out: list[dict[str, Any]] = []
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        row = dict(zip(rs.fields, rd, strict=True))
+                        raw_code = str(row.get("code", "")).strip()
+                        out.append({
+                            "code": _cn_symbol(raw_code),
+                            "name": str(row.get("code_name", "")).strip() or None,
+                            "weight": None,  # baostock 无权重
+                        })
+                if out:
+                    return out
+        except Exception as exc:
+            _logger.warning("baostock_constituents_failed", index_code=index_code, error=str(exc))
+
+    # akshare 东财 fallback（其他指数 / baostock 失败时）
     df = None
     try:
         df = ak.index_stock_cons_weight_csindex(symbol=index_code)
@@ -758,9 +1228,6 @@ def _fetch_constituents_sync(*, index_code: str) -> list[dict[str, Any]]:
     cols = [str(c) for c in df.columns]
 
     def _find(*keys: str) -> str | None:
-        # key 优先（非列优先）：精确 key 先全列扫一遍，宽松兜底 key 最后才用。
-        # 中证返回表同时含「指数代码/指数名称」与「成分券代码/成分券名称」，列优先 +
-        # 宽松 "代码" 会先命中排在前面的「指数代码」，把 300 只成分全错写成指数自身。
         for k in keys:
             for c in cols:
                 if k in c:
@@ -778,16 +1245,14 @@ def _fetch_constituents_sync(*, index_code: str) -> list[dict[str, Any]]:
         raw = row.get(code_col)
         if raw is None:
             continue
-        code = str(raw).strip().zfill(6)
-        if not code.isdigit() or len(code) != 6:
+        code_str = str(raw).strip().zfill(6)
+        if not code_str.isdigit() or len(code_str) != 6:
             continue
-        out.append(
-            {
-                "code": _cn_symbol(code),
-                "name": str(row.get(name_col)).strip() if name_col else None,
-                "weight": _to_float(row.get(weight_col)) if weight_col else None,
-            }
-        )
+        out.append({
+            "code": _cn_symbol(code_str),
+            "name": str(row.get(name_col)).strip() if name_col else None,
+            "weight": _to_float(row.get(weight_col)) if weight_col else None,
+        })
     return out
 
 
@@ -837,6 +1302,7 @@ async def close_connector() -> None:
     await _connector.close()
     unregister_connector(VENUE)
     _connector = None
+    _bs_session_logout()
 
 
 def get_connector() -> AkshareConnector:
