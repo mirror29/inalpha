@@ -126,22 +126,26 @@ async def review(
     action: str,  # "register" | "reject"
     reviewed_by: str,
     note: str | None = None,
+    owner_account_id: UUID | None = None,
 ) -> dict[str, Any] | None:
     """人工审核：pending_review → registered / rejected。
 
     只迁移当前 pending_review 的行（重复审核 / 状态错位返 None，调用方转 409）。
+    owner_account_id 用于权限检查（TOCTOU 防护）：只允许所有者审核。
     """
     new_status = "registered" if action == "register" else "rejected"
     async with conn.cursor() as cur:
+        # WHERE 中原子检查 status + owner_account_id，防止 TOCTOU
         await cur.execute(
             f"""
             UPDATE factor_candidates
             SET status = %s, reviewed_by = %s, reviewed_at = NOW(),
                 review_note = %s, updated_at = NOW()
             WHERE id = %s AND status = 'pending_review'
+                AND (owner_account_id IS NULL OR owner_account_id = %s)
             RETURNING {_COLUMNS}
             """,
-            (new_status, reviewed_by, note, str(candidate_id)),
+            (new_status, reviewed_by, note, str(candidate_id), str(owner_account_id) if owner_account_id else None),
         )
         row = await cur.fetchone()
     return row  # type: ignore[return-value]

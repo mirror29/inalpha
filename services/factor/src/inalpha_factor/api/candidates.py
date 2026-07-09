@@ -122,23 +122,26 @@ async def review_candidate(
     account_id = account_id_from_user(user)
     _require_db(request)
     async with get_conn() as conn:
-        existing = await candidates_store.get_candidate(conn, candidate_id)
-        if existing is None:
-            raise NotFoundError(
-                f"factor candidate {candidate_id} not found",
-                code="FACTOR_CANDIDATE_NOT_FOUND",
-            )
-        if existing["owner_account_id"] is not None and existing["owner_account_id"] != account_id:
-            raise NotFoundError(
-                f"factor candidate {candidate_id} not found",
-                code="FACTOR_CANDIDATE_NOT_FOUND",
-            )
+        # TOCTOU 防护：权限检查在 review 的 SQL WHERE 中原子完成，不再先查后改
         row = await candidates_store.review(
             conn, candidate_id,
             action=req.action, reviewed_by=req.reviewed_by, note=req.note,
+            owner_account_id=account_id,
         )
         if row is None:
-            # review 返回 None → 状态不是 pending_review
+            # review 返回 None → 可能是 404 或 403
+            existing = await candidates_store.get_candidate(conn, candidate_id)
+            if existing is None:
+                raise NotFoundError(
+                    f"factor candidate {candidate_id} not found",
+                    code="FACTOR_CANDIDATE_NOT_FOUND",
+                )
+            if existing["owner_account_id"] is not None and existing["owner_account_id"] != account_id:
+                raise NotFoundError(
+                    f"factor candidate {candidate_id} not found",
+                    code="FACTOR_CANDIDATE_NOT_FOUND",
+                )
+            # 状态不是 pending_review
             raise ConflictError(
                 f"factor candidate {candidate_id} is '{existing['status']}'; "
                 "only pending_review rows can be reviewed",

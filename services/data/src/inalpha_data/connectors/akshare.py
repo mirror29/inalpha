@@ -78,26 +78,20 @@ _bs_lock = _threading.Lock()
 
 
 def _ensure_bs_login() -> None:
-    """惰性 login baostock——首次调时登一次，后续复用。"""
+    """惰性 login baostock——首次调时登一次，后续复用。
+
+    fork 安全：进程 fork 后 `_bs_logged_in` 可能为 True 但连接已失效，
+    用探活查询检测后重新 login。
+    """
     global _bs_logged_in
     if _bs_logged_in:
+        # 快速路径：已登录，跳过锁（GIL 保证 bool 读原子）
         return
+
     with _bs_lock:
         if _bs_logged_in:
-            # 已登录，但需要验证连接是否真的有效（fork 后状态可能不一致）
-            import baostock as bs
-            try:
-                # 用一个轻量查询测试连接
-                rs = bs.query_trade_dates(start_date="2024-01-01", end_date="2024-01-01")
-                if rs is not None and rs.error_code == "0":
-                    return  # 连接有效
-                # 连接失效，重新 login
-                _logger.warning("baostock_connection_stale", error_code=getattr(rs, 'error_code', None))
-                _bs_logged_in = False
-            except Exception as exc:
-                _logger.warning("baostock_connection_check_failed", error=str(exc))
-                _bs_logged_in = False
-
+            # 另一个线程刚登完，直接返回
+            return
         import baostock as bs
         lg = bs.login()
         if lg.error_code != "0":
@@ -649,7 +643,8 @@ def _fetch_financials_sync(
         if raw is None:
             _logger.warning("akshare_hk_financials_none", prefix=prefix, code=code)
             return {}
-        if isinstance(raw, dict) and not raw.get("data"):
+        # akshare 返回 DataFrame，非 dict
+        if hasattr(raw, "empty") and raw.empty:
             _logger.warning("akshare_hk_financials_empty", prefix=prefix, code=code)
             return {}
         return _flatten_financial_abstract(raw, as_of=as_of, publish_lag_days=publish_lag_days)
@@ -723,9 +718,11 @@ def _query_baostock_financials(
     )
     # Q1 季报可能缺 MBRevenue（营收）和 gpMargin（毛利率），
     # 此时补拉上一年 Q4 取这些字段，保证实时研究中指标齐全（非 PIT）。
+    # PIT 模式下 py 可能被截断到较早年份，补拉也用 ref.year - 1 保证拿到最新可用数据
     profit_annual: dict[str, Any] | None = None
     if profit is not None and as_of is None and not profit.get("MBRevenue"):
-        rs = bs.query_profit_data(symbol, year=py - 1, quarter=4)
+        fallback_year = ref.year - 1 if as_of else py - 1
+        rs = bs.query_profit_data(symbol, year=fallback_year, quarter=4)
         if rs is not None and rs.error_code == "0":
             while rs.next():
                 rd = rs.get_row_data()
