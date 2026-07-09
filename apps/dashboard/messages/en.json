@@ -68,7 +68,8 @@
         "avgPrice": "Avg Open",
         "mark": "Mark",
         "unrealized": "Unrealized",
-        "realized": "Realized PnL"
+        "realized": "Realized PnL",
+        "liqPrice": "Liq."
       },
       "leverageTitle": "{leverage}× leverage · margin {margin}",
       "liqStale": "Liquidation price (mark crossing it triggers liquidation)",
@@ -144,7 +145,7 @@
       "cumulativePnl": "Cumulative PnL",
       "winRate": "Win Rate",
       "decisions": "Decisions",
-      "filledOf": "{filled}/{total} filled",
+      "wonOf": "{won}/{total} won",
       "blocked": "Risk Blocked",
       "neverRan": "no bars yet"
     },

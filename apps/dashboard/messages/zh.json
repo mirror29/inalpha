@@ -68,7 +68,8 @@
         "avgPrice": "开仓均价",
         "mark": "最新价",
         "unrealized": "浮动盈亏",
-        "realized": "已实现盈亏"
+        "realized": "已实现盈亏",
+        "liqPrice": "强平价"
       },
       "leverageTitle": "{leverage}× 杠杆 · 占用保证金 {margin}",
       "liqStale": "强平价（mark 穿越即强平）",
@@ -144,7 +145,7 @@
       "cumulativePnl": "累计盈亏",
       "winRate": "胜率",
       "decisions": "决策数",
-      "filledOf": "{filled}/{total} 成交",
+      "wonOf": "{won}/{total} 盈利",
       "blocked": "风控拦截",
       "neverRan": "尚无 bar"
     },
