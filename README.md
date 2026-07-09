@@ -16,7 +16,7 @@
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-C8463C.svg" alt="License" /></a>
-  <img src="https://img.shields.io/badge/status-alpha%20·%20Phase%20D--12-9E7B4B.svg" alt="Phase" />
+  <img src="https://img.shields.io/badge/status-alpha-9E7B4B.svg" alt="Status" />
   <img src="https://img.shields.io/badge/built%20with-Mastra%20%2B%20FastAPI-D4A744.svg" alt="Built with" />
   <img src="https://img.shields.io/badge/python-3.12+-1A1714.svg" alt="Python" />
   <img src="https://img.shields.io/badge/typescript-5.x-1A1714.svg" alt="TypeScript" />
@@ -47,7 +47,7 @@ Several capability lines sit on top of that harness:
 
 The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha** (the quant term for excess return) — a companion that reads your direction and keeps every step on the record.
 
-> **Status:** Inalpha is in **alpha** (Phase D-12 — factor-library closure: 79 factors with lineage & decay watch (alert-only, no auto-trim), a restricted-DSL factor-discovery L1, and a three-party research debate — on top of D-11 multi-market paper trading (cross-currency cash + a live runner that auto-runs promoted strategies on live bars), D-10 multi-market data, and D-9 LLM-authored strategies + risk engine). Read the code, weigh in on design — **do not run this against real money** (real-money trading is out of scope).
+> **Status:** Inalpha is in **alpha** — 79 factors with lineage & decay watch (alert-only, no auto-trim), a restricted-DSL factor-discovery L1, and a three-party research debate, on top of multi-market paper trading (cross-currency cash + a live runner that auto-runs promoted strategies on live bars), multi-market data, and LLM-authored strategies + risk engine. Read the code, weigh in on design — **do not run this against real money** (real-money trading is out of scope).
 
 ---
 
@@ -87,11 +87,11 @@ The **Operator Console** (`apps/dashboard`) is the home base — a runtime dashb
 <tr>
 <td width="50%" valign="top">
 <img src="assets/screenshots/en/paper-1.png" alt="Runner Detail — Chart" />
-<br /><sub><strong>Runner Detail — Chart</strong> — drill into a paper runner: cumulative PnL, decisions count, risk-blocked tally, and last-bar freshness, with every entry/exit plotted on live bars.</sub>
+<br /><sub><strong>Runner Detail — Chart</strong> — drill into a paper runner: cumulative PnL (with %), win rate, decisions count, and risk-blocked tally, with every entry/exit plotted on live bars.</sub>
 </td>
 <td width="50%" valign="top">
 <img src="assets/screenshots/en/paper-2.png" alt="Runner Detail — Positions & Decisions" />
-<br /><sub><strong>Runner Detail — Positions &amp; Decisions</strong> — open positions, a per-bar decision timeline (side · qty · fill · fee), and the instrument's effective factors ranked by current IC.</sub>
+<br /><sub><strong>Runner Detail — Positions &amp; Decisions</strong> — open positions, a per-bar decision timeline (side · qty · fill · closed PnL), and the instrument's effective factors ranked by current IC.</sub>
 </td>
 </tr>
 </table>
