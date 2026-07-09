@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useLocale, useNow, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CircleAlert, Info, TriangleAlert } from "lucide-react";
 import useSWR from "swr";
 
@@ -179,9 +179,17 @@ function RunnerStats({
   const filled = decisions.filter((d) => d.outcome === "filled").length;
   const blocked = decisions.filter((d) => d.outcome === "risk_rejected").length;
 
-  // 胜率 = 成交决策数 / 总决策数
+  // 胜率 = 平仓盈利笔数 / 平仓总笔数（有 closed_profit_abs 的决策才算平仓）
+  const closedDecisions = decisions.filter(
+    (d) => d.closed_profit_abs !== null,
+  );
+  const wonDecisions = closedDecisions.filter(
+    (d) => (d.closed_profit_abs ?? 0) > 0,
+  ).length;
   const winRate =
-    decisions.length > 0 ? (filled / decisions.length) * 100 : null;
+    closedDecisions.length > 0
+      ? (wonDecisions / closedDecisions.length) * 100
+      : null;
 
   // 盈亏百分比 = 累计盈亏 / 资金额度
   const pnlPct =
@@ -206,7 +214,7 @@ function RunnerStats({
         <Figure>
           {winRate !== null ? `${winRate.toFixed(1)}%` : "—"}
         </Figure>
-        <Sub>{t("filledOf", { filled, total: decisions.length })}</Sub>
+        <Sub>{t("wonOf", { won: wonDecisions, total: closedDecisions.length })}</Sub>
       </StatCard>
       <StatCard label={t("decisions")}>
         <Figure>{decisions.length}</Figure>
