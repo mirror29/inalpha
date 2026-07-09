@@ -80,8 +80,9 @@ _bs_lock = _threading.Lock()
 def _ensure_bs_login() -> None:
     """惰性 login baostock——首次调时登一次，后续复用。
 
-    fork 安全：进程 fork 后 `_bs_logged_in` 可能为 True 但连接已失效，
-    用探活查询检测后重新 login。
+    注意：当前实现不 fork-safe。在 uvicorn 多 worker 模式下（fork），
+    子进程继承 `_bs_logged_in=True` 但连接已关闭，会导致后续调用失败。
+    建议：使用 `--workers 1` 或 `preload=False` 启动 uvicorn。
     """
     global _bs_logged_in
     if _bs_logged_in:
@@ -680,14 +681,28 @@ def _query_baostock_financials(
     ref = as_of if as_of is not None else now
 
     def _period_ok(pub_date_str: str) -> bool:
-        """publish date 是否 <= as_of（PIT 守门）。"""
+        """publish date 是否 <= as_of（PIT 守门）。
+
+        解析失败时返回 False（宁可少拿数据，不要泄漏未来数据）。
+        """
         if as_of is None:
             return True
-        try:
-            pub = datetime.strptime(pub_date_str, "%Y-%m-%d").replace(tzinfo=UTC)
-            return pub <= as_of
-        except (ValueError, TypeError):
-            return True  # 解析失败放行，宁可多拿不少拿
+        if not pub_date_str:
+            return False
+        # 尝试多种日期格式
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+            try:
+                pub = datetime.strptime(pub_date_str, fmt).replace(tzinfo=UTC)
+                return pub <= as_of
+            except ValueError:
+                continue
+        # 所有格式都解析失败 → 打日志并拒绝
+        _logger.warning(
+            "pit_pubdate_parse_failed",
+            pub_date=pub_date_str,
+            as_of=str(as_of),
+        )
+        return False
 
     # 从当前年份往回搜，找第一个有数据且 pubDate <= as_of 的财报期
     def _query_first(
@@ -713,7 +728,7 @@ def _query_baostock_financials(
     # ── 利润表 ──
     profit, py, pq = _query_first(
         lambda y, q: bs.query_profit_data(symbol, year=y, quarter=q),
-        range(ref.year, ref.year - 4, -1),
+        range(ref.year, ref.year - 10, -1),  # 扩大到 10 年，覆盖退市股/停牌股
         range(4, 0, -1),
     )
     # Q1 季报可能缺 MBRevenue（营收）和 gpMargin（毛利率），
@@ -729,7 +744,7 @@ def _query_baostock_financials(
                 if rd and rd[0]:
                     profit_annual = dict(zip(rs.fields, rd, strict=True))
                     break
-    # ── 负债表（同一年/季）──
+    # ── 负债表（同一年/季，若无数据则尝试年报）──
     balance = None
     if py:
         rs = bs.query_balance_data(symbol, year=py, quarter=pq)
@@ -739,7 +754,16 @@ def _query_baostock_financials(
                 if rd and rd[0]:
                     balance = dict(zip(rs.fields, rd, strict=True))
                     break
-    # ── 成长指标 ──
+        # 该季无数据，尝试年报（Q4）
+        if balance is None:
+            rs = bs.query_balance_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        balance = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 成长指标（同一年/季，若无数据则尝试年报）──
     growth = None
     if py:
         rs = bs.query_growth_data(symbol, year=py, quarter=pq)
@@ -749,7 +773,15 @@ def _query_baostock_financials(
                 if rd and rd[0]:
                     growth = dict(zip(rs.fields, rd, strict=True))
                     break
-    # ── 现金流量表 ──
+        if growth is None:
+            rs = bs.query_growth_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        growth = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 现金流量表（同一年/季，若无数据则尝试年报）──
     cash_flow = None
     if py:
         rs = bs.query_cash_flow_data(symbol, year=py, quarter=pq)
@@ -759,7 +791,15 @@ def _query_baostock_financials(
                 if rd and rd[0]:
                     cash_flow = dict(zip(rs.fields, rd, strict=True))
                     break
-    # ── 营运能力 ──
+        if cash_flow is None:
+            rs = bs.query_cash_flow_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        cash_flow = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 营运能力（同一年/季，若无数据则尝试年报）──
     operation = None
     if py:
         rs = bs.query_operation_data(symbol, year=py, quarter=pq)
@@ -769,7 +809,15 @@ def _query_baostock_financials(
                 if rd and rd[0]:
                     operation = dict(zip(rs.fields, rd, strict=True))
                     break
-    # ── 杜邦分解 ──
+        if operation is None:
+            rs = bs.query_operation_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        operation = dict(zip(rs.fields, rd, strict=True))
+                        break
+    # ── 杜邦分解（同一年/季，若无数据则尝试年报）──
     dupont = None
     if py:
         rs = bs.query_dupont_data(symbol, year=py, quarter=pq)
@@ -779,9 +827,19 @@ def _query_baostock_financials(
                 if rd and rd[0]:
                     dupont = dict(zip(rs.fields, rd, strict=True))
                     break
+        if dupont is None:
+            rs = bs.query_dupont_data(symbol, year=py, quarter=4)
+            if rs is not None and rs.error_code == "0":
+                while rs.next():
+                    rd = rs.get_row_data()
+                    if rd and rd[0]:
+                        dupont = dict(zip(rs.fields, rd, strict=True))
+                        break
     # ── 分红 ──
     dividends: list[dict[str, Any]] = []
-    for rep_year in ("2025", "2024", "2023"):
+    # 根据 as_of 动态计算分红年份范围，覆盖回测场景
+    dividend_years = range(ref.year, ref.year - 5, -1)
+    for rep_year in (str(y) for y in dividend_years):
         rs = bs.query_dividend_data(symbol, year=rep_year, yearType="report")
         if rs is not None and rs.error_code == "0":
             while rs.next():
