@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from "next-intl";
 
 import type { StrategyRunDecisionRecord } from "@/lib/types";
 import { cn } from "@/lib/cn";
-import { fmtNum, fmtQty } from "@/lib/format";
+import { fmtNum, fmtQty, fmtSigned, pnlColor } from "@/lib/format";
 import { Pager, usePager } from "@/components/ui/Pager";
 import { Panel } from "@/components/ui/Panel";
 import { DecisionOutcomeBadge } from "@/components/ui/StatusBadge";
@@ -64,7 +64,7 @@ export function DecisionTimeline({
                 <Th>{t("col.side")}</Th>
                 <Th right>{t("col.qty")}</Th>
                 <Th right>{t("col.fill")}</Th>
-                <Th right>{t("col.fee")}</Th>
+                <Th right>{t("col.closedPnl")}</Th>
                 <Th>{t("col.outcome")}</Th>
                 <Th>{t("col.reason")}</Th>
               </TableHeadRow>
@@ -119,11 +119,19 @@ export function DecisionTimeline({
                         fmtNum(d.fill_price, locale, 4)
                       )}
                     </Td>
-                    <Td right mono muted>
-                      {d.fee === null || d.fee === 0 ? (
+                    <Td right mono>
+                      {d.closed_profit_abs === null ? (
                         <span className="text-fg-muted/50">—</span>
                       ) : (
-                        fmtNum(d.fee, locale, 4)
+                        <span className={pnlColor(d.closed_profit_abs)}>
+                          {fmtSigned(d.closed_profit_abs, null, locale)}
+                          {d.closed_profit_pct !== null && (
+                            <span className="ml-1 text-[10px]">
+                              ({d.closed_profit_pct >= 0 ? "+" : ""}
+                              {d.closed_profit_pct.toFixed(2)}%)
+                            </span>
+                          )}
+                        </span>
                       )}
                     </Td>
                     <Td>

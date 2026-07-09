@@ -67,10 +67,8 @@
         "qty": "数量",
         "avgPrice": "开仓均价",
         "mark": "最新价",
-        "liqPrice": "强平价",
         "unrealized": "浮动盈亏",
-        "realized": "已实现盈亏",
-        "margin": "保证金"
+        "realized": "已实现盈亏"
       },
       "leverageTitle": "{leverage}× 杠杆 · 占用保证金 {margin}",
       "liqStale": "强平价（mark 穿越即强平）",
@@ -143,11 +141,11 @@
       "errored": "错误"
     },
     "stats": {
-      "cumulativePnl": "累计盈亏（净）",
+      "cumulativePnl": "累计盈亏",
+      "winRate": "胜率",
       "decisions": "决策数",
-      "filledOf": "{filled} 成交",
+      "filledOf": "{filled}/{total} 成交",
       "blocked": "风控拦截",
-      "lastBar": "最后 bar",
       "neverRan": "尚无 bar"
     },
     "card": {
@@ -188,7 +186,7 @@
         "side": "方向",
         "qty": "数量",
         "fill": "成交",
-        "fee": "手续费",
+        "closedPnl": "平仓盈亏",
         "outcome": "结果",
         "reason": "原因"
       },

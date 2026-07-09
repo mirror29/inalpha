@@ -14,7 +14,7 @@ import type {
 } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
-import { fmtNum, fmtRelative, fmtSigned, pnlColor } from "@/lib/format";
+import { fmtNum, fmtSigned, pnlColor } from "@/lib/format";
 import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { PositionsTable } from "@/components/overview/PositionsTable";
@@ -165,7 +165,7 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
   );
 }
 
-/** 当前模拟盘指标条:累计盈亏 / 决策数 / 风控拦截 / 最后 bar。 */
+/** 当前模拟盘指标条:累计盈亏(含%) / 决策数 / 风控拦截 / 胜率。 */
 function RunnerStats({
   run,
   decisions,
@@ -175,9 +175,19 @@ function RunnerStats({
 }) {
   const t = useTranslations("runners.stats");
   const locale = useLocale();
-  const now = useNow({ updateInterval: 10_000 });
+
   const filled = decisions.filter((d) => d.outcome === "filled").length;
   const blocked = decisions.filter((d) => d.outcome === "risk_rejected").length;
+
+  // 胜率 = 成交决策数 / 总决策数
+  const winRate =
+    decisions.length > 0 ? (filled / decisions.length) * 100 : null;
+
+  // 盈亏百分比 = 累计盈亏 / 资金额度
+  const pnlPct =
+    run.allocation && run.allocation > 0
+      ? (run.cumulative_pnl / run.allocation) * 100
+      : null;
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -185,21 +195,25 @@ function RunnerStats({
         <Figure className={pnlColor(run.cumulative_pnl)}>
           {fmtSigned(run.cumulative_pnl, null, locale)}
         </Figure>
+        {pnlPct !== null && (
+          <Sub className={pnlColor(pnlPct)}>
+            {pnlPct >= 0 ? "+" : ""}
+            {pnlPct.toFixed(2)}%
+          </Sub>
+        )}
+      </StatCard>
+      <StatCard label={t("winRate")}>
+        <Figure>
+          {winRate !== null ? `${winRate.toFixed(1)}%` : "—"}
+        </Figure>
+        <Sub>{t("filledOf", { filled, total: decisions.length })}</Sub>
       </StatCard>
       <StatCard label={t("decisions")}>
         <Figure>{decisions.length}</Figure>
-        <Sub>{t("filledOf", { filled })}</Sub>
       </StatCard>
       <StatCard label={t("blocked")}>
         <Figure className={blocked > 0 ? "text-fox-red" : undefined}>
           {blocked}
-        </Figure>
-      </StatCard>
-      <StatCard label={t("lastBar")}>
-        <Figure className="text-lg">
-          {run.last_bar_ts
-            ? fmtRelative(run.last_bar_ts, now.getTime(), locale)
-            : t("neverRan")}
         </Figure>
       </StatCard>
     </div>
@@ -245,9 +259,9 @@ function Figure({
   );
 }
 
-function Sub({ children }: { children: React.ReactNode }) {
+function Sub({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className="tnum mt-1 font-mono text-[11px] text-fg-muted/80">
+    <div className={cn("tnum mt-1 font-mono text-[11px] text-fg-muted/80", className)}>
       {children}
     </div>
   );
