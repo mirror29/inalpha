@@ -14,7 +14,7 @@ import { UnifiedKernel } from "@/components/sections/UnifiedKernel";
 import { TickerStrip } from "@/components/primitives/TickerStrip";
 import { getGithubStats } from "@/lib/github";
 import { REPO_COORDS } from "@/lib/links";
-import { RELEASE } from "@/lib/release-meta";
+import { getUpdateTag } from "@/lib/release-meta";
 
 export default async function HomePage({
   params,
@@ -31,12 +31,12 @@ export default async function HomePage({
     repo: REPO_COORDS.name,
   });
 
+  const updateTag = await getUpdateTag();
+
   const tickerItems = [
     "INALPHA",
     "OPEN-SOURCE QUANT AGENT FRAMEWORK",
-    RELEASE.phase,
-    `REV ${RELEASE.rev}`,
-    RELEASE.dateDot,
+    updateTag,
     "AN ORACLE THAT KEEPS A LEDGER",
     "FACTOR TIMING · RANK IC",
     "INVESTING LEGENDS PANEL",
@@ -70,7 +70,7 @@ export default async function HomePage({
         <FAQ />
       </main>
 
-      <CTAFooter stats={githubStats} />
+      <CTAFooter stats={githubStats} updateTag={updateTag} />
     </div>
   );
 }

@@ -84,7 +84,7 @@ const JSON_LD = {
           name: "Can I trade real money with Inalpha?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "No, and that's deliberate. As of Phase D-11 Inalpha ships an autonomous paper runner — promoted strategies trade a simulated account on live market data, machine-approved through plan/exec with a full decision-replay log. But orders are matched locally; there is no live brokerage integration and real-capital trading is out of the current plan.",
+            text: "No, and that's deliberate. Inalpha ships an autonomous paper runner — promoted strategies trade a simulated account on live market data, machine-approved through plan/exec with a full decision-replay log. But orders are matched locally; there is no live brokerage integration and real-capital trading is out of the current plan.",
           },
         },
         {
@@ -188,7 +188,7 @@ const JSON_LD = {
           name: "现在能用 Inalpha 交易真金白银吗？",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "不能，这是当前的有意设计。到 Phase D-11 为止 Inalpha 已带无人值守模拟盘 runner——promoted 策略在真实行情上自动跑模拟账户，经 plan/exec 机器审批、留完整决策复盘日志。但订单一律本地撮合，没有接入实盘券商，真金交易不在当前计划内。",
+            text: "不能，这是当前的有意设计。Inalpha 已带无人值守模拟盘 runner——promoted 策略在真实行情上自动跑模拟账户，经 plan/exec 机器审批、留完整决策复盘日志。但订单一律本地撮合，没有接入实盘券商，真金交易不在当前计划内。",
           },
         },
         {

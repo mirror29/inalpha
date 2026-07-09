@@ -268,14 +268,10 @@ export function KitClient({ locale }: KitClientProps) {
   const tickerItems = [
     "INALPHA",
     "PRIMITIVE LEDGER",
-    "D-9",
-    "REV 0.9",
-    "2026.05.26",
     "9 PRIMITIVES",
     "12 LINKS",
     "ALPHA QUALITY",
     "AGPL-3.0",
-    "BACKTEST = PAPER = LIVE",
     "AGENTS FIRST-CLASS",
   ];
 
@@ -338,10 +334,6 @@ export function KitClient({ locale }: KitClientProps) {
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3 border border-fg/12 bg-bg-deep/60 p-5 font-mono text-[11px] uppercase tracking-[0.22em]">
                 <dt className="text-fg-muted/60">project</dt>
                 <dd className="text-fg">Inalpha</dd>
-                <dt className="text-fg-muted/60">rev</dt>
-                <dd className="text-fg">0.9 · D-9</dd>
-                <dt className="text-fg-muted/60">date</dt>
-                <dd className="text-fg">2026.05.26</dd>
                 <dt className="text-fg-muted/60">stack</dt>
                 <dd className="text-fg">next 16 · tw 4</dd>
                 <dt className="text-fg-muted/60">font</dt>
@@ -380,8 +372,6 @@ export function KitClient({ locale }: KitClientProps) {
             flowing
             meta={{
               title: "INALPHA · SYSTEM SCHEMATIC",
-              rev: "0.9-D9",
-              date: "2026.05.26",
               counts: "9 NODES · 12 LINKS",
             }}
           />
@@ -526,9 +516,7 @@ export function KitClient({ locale }: KitClientProps) {
             </div>
             <div className="col-span-6 md:col-span-3">
               <p className="text-fg/40">rev</p>
-              <p className="mt-1 text-fg-muted">
-                0.9-D9 · {new Date().getFullYear()}.05.26
-              </p>
+              <p className="mt-1 text-fg-muted">—</p>
             </div>
           </div>
         </footer>
