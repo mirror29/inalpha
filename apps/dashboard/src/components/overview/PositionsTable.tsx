@@ -50,8 +50,6 @@ export function PositionsTable({
                 <Th right>{t("col.qty")}</Th>
                 <Th right>{t("col.avgPrice")}</Th>
                 <Th right>{t("col.mark")}</Th>
-                <Th right>{t("col.margin")}</Th>
-                <Th right>{t("col.liqPrice")}</Th>
                 <Th right>{t("col.unrealized")}</Th>
                 <Th right>{t("col.realized")}</Th>
               </TableHeadRow>
@@ -89,6 +87,18 @@ export function PositionsTable({
                           {p.leverage}×
                         </span>
                       )}
+                      {/* 保证金 + 强平价移入 instrument 下小字，仅 perp 显示 */}
+                      {isPerp && (
+                        <div className="mt-0.5 font-mono text-[10px] text-fg-muted/60">
+                          {t("marginTitle")}: {fmtNum(p.margin_used, locale, 2)}
+                          {p.liquidation_price !== null && (
+                            <>
+                              {" · "}
+                              {t("col.liqPrice")}: {fmtNum(p.liquidation_price, locale, 4)}
+                            </>
+                          )}
+                        </div>
+                      )}
                     </Td>
                     <Td right mono>
                       <span className={p.quantity < 0 ? "text-fox-red" : "text-fg"}>
@@ -115,24 +125,6 @@ export function PositionsTable({
                               title={tStatus("stale")}
                             />
                           )}
-                        </span>
-                      )}
-                    </Td>
-                    <Td right mono>
-                      {!isPerp ? (
-                        <span className="text-fg-muted/50">—</span>
-                      ) : (
-                        <span className="text-fg" title={t("marginTitle")}>
-                          {fmtNum(p.margin_used, locale, 2)}
-                        </span>
-                      )}
-                    </Td>
-                    <Td right mono>
-                      {!isPerp || p.liquidation_price === null ? (
-                        <span className="text-fg-muted/50">—</span>
-                      ) : (
-                        <span className="text-fox-red" title={t("liqStale")}>
-                          {fmtNum(p.liquidation_price, locale, 4)}
                         </span>
                       )}
                     </Td>
