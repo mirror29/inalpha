@@ -321,6 +321,8 @@ def _row_to_decision(row: dict[str, Any]) -> StrategyRunDecisionRecord:
         outcome=row["outcome"],
         fill_price=_f(row.get("fill_price")),
         fee=_f(row.get("fee")),
+        closed_profit_abs=_f(row.get("closed_profit_abs")),
+        closed_profit_pct=_f(row.get("closed_profit_pct")),
         plan_id=row.get("plan_id"),
         order_id=row.get("order_id"),
         reason=row.get("reason"),
