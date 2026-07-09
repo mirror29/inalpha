@@ -18,6 +18,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import useSWR from "swr";
 
 import { Link, usePathname } from "@/i18n/navigation";
 import { cn } from "@/lib/cn";
@@ -62,6 +63,12 @@ export function ConsoleSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // 获取 GitHub last update 日期。
+  const { data: versionData } = useSWR<{ date: string }>("/api/version", (url: string) =>
+    fetch(url).then((r) => r.json()),
+  );
+  const buildDate = versionData?.date ?? "—";
 
   // 桌面折叠态持久化(mount 后读,避免 SSR/CSR 首帧不一致)。
   useEffect(() => {
@@ -135,6 +142,7 @@ export function ConsoleSidebar() {
           pathname={pathname}
           collapsed={collapsed}
           onToggleCollapsed={toggleCollapsed}
+          buildDate={buildDate}
         />
       </aside>
 
@@ -159,6 +167,7 @@ export function ConsoleSidebar() {
           collapsed={false}
           onNavigate={() => setMobileOpen(false)}
           onMobileClose={() => setMobileOpen(false)}
+          buildDate={buildDate}
         />
       </aside>
     </>
@@ -173,6 +182,7 @@ function SidebarBody({
   onToggleCollapsed,
   onNavigate,
   onMobileClose,
+  buildDate,
 }: {
   t: ReturnType<typeof useTranslations>;
   pathname: string;
@@ -180,6 +190,7 @@ function SidebarBody({
   onToggleCollapsed?: () => void;
   onNavigate?: () => void;
   onMobileClose?: () => void;
+  buildDate: string;
 }) {
   // 折叠态气泡:label + 触发项的视口坐标。挂 body 的 portal + fixed 定位,
   // 脱离 aside(z-10 + backdrop-blur)的层叠上下文 —— 否则在 aside 内无论写多大
@@ -401,7 +412,7 @@ function SidebarBody({
           </div>
           <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted/60">
             <span className="size-1.5 shrink-0 rounded-full bg-seal" />
-            <span>Build · D-11</span>
+            <span>Build · {buildDate}</span>
           </div>
         </div>
       )}
