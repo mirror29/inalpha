@@ -776,6 +776,18 @@ class AccountSnapshot(BaseModel):
         "真实收益 = total_equity − initial_cash − net_external_flows——"
         "不减它会把充值当成盈利(1 万户充 1 万显示 +100%)",
     )
+    win_rate: float | None = Field(
+        default=None,
+        description="胜率（百分比）= 盈利笔数 / 总平仓笔数 × 100；无平仓时为 None",
+    )
+    win_count: int = Field(
+        default=0,
+        description="盈利笔数（自最近一次 reset）",
+    )
+    loss_count: int = Field(
+        default=0,
+        description="亏损笔数（自最近一次 reset，不含持平）",
+    )
     fx_warnings: list[str] = Field(
         default_factory=list,
         description="D-11：估值告警——FX 不可用 / 偏旧的币种,或持仓最新价不可用 / 偏旧;"

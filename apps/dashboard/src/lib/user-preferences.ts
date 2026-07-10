@@ -150,31 +150,39 @@ export async function getUserLLMConfigs(subject: string): Promise<{
   const configs = preferences.configs || [];
   const activeId = preferences.active_config_id;
 
-  const displayConfigs: UserLLMConfigDisplay[] = configs.map((config) => {
-    const encrypted: EncryptedData = {
-      ciphertext: config.api_key_encrypted,
-      nonce: config.api_key_nonce,
-      tag: config.api_key_tag,
-    };
+  const displayConfigs: UserLLMConfigDisplay[] = await Promise.all(
+    configs.map(async (config) => {
+      const encrypted: EncryptedData = {
+        ciphertext: config.api_key_encrypted,
+        nonce: config.api_key_nonce,
+        tag: config.api_key_tag,
+      };
 
-    // 解密后掩码（用于显示）
-    // 注意：这里暂时用占位符，实际实现时需优化
-    const maskedKey = `sk-***...${config.api_key_encrypted.slice(-4)}`;
+      // 解密后掩码（用于显示）
+      let maskedKey: string;
+      try {
+        const plaintext = await decryptApiKey(encrypted);
+        maskedKey = maskApiKey(plaintext);
+      } catch {
+        // 解密失败时显示占位符
+        maskedKey = "***";
+      }
 
-    return {
-      id: config.id,
-      provider: config.provider,
-      model: config.model,
-      api_key_masked: maskedKey,
-      base_url:
-        config.custom_base_url || PROVIDER_BASE_URLS[config.provider],
-      custom_provider_name: config.custom_provider_name,
-      label: config.label,
-      is_active: config.id === activeId,
-      created_at: config.created_at,
-      updated_at: config.updated_at,
-    };
-  });
+      return {
+        id: config.id,
+        provider: config.provider,
+        model: config.model,
+        api_key_masked: maskedKey,
+        base_url:
+          config.custom_base_url || PROVIDER_BASE_URLS[config.provider],
+        custom_provider_name: config.custom_provider_name,
+        label: config.label,
+        is_active: config.id === activeId,
+        created_at: config.created_at,
+        updated_at: config.updated_at,
+      };
+    }),
+  );
 
   return {
     configs: displayConfigs,
@@ -333,51 +341,6 @@ export async function activateUserLLMConfig(
     ...preferences,
     active_config_id: configId,
   });
-}
-
-/**
- * 揭示完整 API key（需二次验证）。
- *
- * @param subject 用户 subject
- * @param configId 配置 ID
- * @param verification 验证密码（TODO: 实现验证逻辑）
- * @returns 完整 API key + 过期时间
- */
-export async function revealUserApiKey(
-  subject: string,
-  configId: string,
-  verification: string,
-): Promise<{ api_key: string; expires_at: string }> {
-  // TODO: 验证用户密码
-  // const user = await getUserBySubject(subject);
-  // if (!verifyPassword(verification, user.password_hash)) {
-  //   throw new Error("Verification failed");
-  // }
-
-  const preferences = await getUserPreferences(subject);
-  const configs = preferences.configs || [];
-
-  const config = configs.find((c) => c.id === configId);
-  if (!config) {
-    throw new Error(`Config ${configId} not found`);
-  }
-
-  // 解密 API key
-  const encrypted: EncryptedData = {
-    ciphertext: config.api_key_encrypted,
-    nonce: config.api_key_nonce,
-    tag: config.api_key_tag,
-  };
-
-  const apiKey = await decryptApiKey(encrypted);
-
-  // 30 秒后过期
-  const expiresAt = new Date(Date.now() + 30_000).toISOString();
-
-  // TODO: 日志记录揭示操作（审计）
-  // await auditLog("api_key_revealed", { subject, configId, expiresAt });
-
-  return { api_key: apiKey, expires_at: expiresAt };
 }
 
 /**

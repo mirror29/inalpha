@@ -41,7 +41,7 @@ export const TOOL_CATALOG = `
 
 **基本面**（D-10 新 · baostock/yfinance 财报）：
 - data.get_fundamentals —— 拉 PE/PB/ROE/营收增速 等财报指标。
-  对 A股用 venue=baostock，美股/港股用 venue=yfinance
+  对 A股用 venue=baostock（支持 1d/1wk/1mo + 分钟级 5m/15m/30m/1h），美股/港股用 venue=yfinance
 
 **市场级行情（D-12+ 新 · 行情归因专用，无需 symbol）**：
 - data.get_market_news —— 市场级财经快讯流。用户问"某市场 / 大盘今天有什么消息 /

@@ -37,8 +37,8 @@ export function KpiBar({ data }: { data: OverviewPayload }) {
     else unrealizedSum += p.unrealized_pnl;
   }
 
-  // 总收益率 / 累计净盈亏(权益相对起始资金)。
-  const netPnl = account.total_equity - account.initial_cash;
+  // 总收益率 / 累计净盈亏(真实收益口径:扣除外生入金)。
+  const netPnl = account.total_equity - account.initial_cash - account.net_external_flows;
   const returnPct = fmtReturnPct(netPnl, account.initial_cash, locale);
 
   return (
@@ -91,11 +91,24 @@ export function KpiBar({ data }: { data: OverviewPayload }) {
         </Sub>
       </KpiCard>
 
-      <KpiCard label={t("realizedPnl")} i={4}>
-        <Figure className={pnlColor(account.realized_pnl)}>
-          {fmtSigned(account.realized_pnl, ccy, locale)}
+      <KpiCard label={t("winRate")} i={4}>
+        <Figure
+          className={
+            account.win_rate !== null && account.win_rate >= 50
+              ? "text-bull"
+              : undefined
+          }
+        >
+          {account.win_rate !== null
+            ? `${account.win_rate.toFixed(1)}%`
+            : "—"}
         </Figure>
-        <Sub>{t("convertedTo", { ccy })}</Sub>
+        <Sub>
+          {t("wonOf", {
+            won: account.win_count,
+            total: account.win_count + account.loss_count,
+          })}
+        </Sub>
       </KpiCard>
 
       <KpiCard label={t("activeRunners")} accent="bull" i={5}>
