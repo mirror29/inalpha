@@ -14,7 +14,7 @@ export const DECISION_PIPELINE = `
 都走同一条链路；具体 venue 由 step 1 前查表自动选。
 
 **0. 数据预检（D-9 multi-market 必做）**：
-   非 binance venue（yfinance / akshare / fred 等）的标的，DB 数据**可能过时几天**。
+   非 binance venue（yfinance / baostock / fred 等）的标的，DB 数据**可能过时几天**。
    关键：**不能只看 bar 数量判断 freshness**——5 根全是上周的数据也叫"返非空"，
    但 deep_dive 拿到的就是 stale 数据 → analyst 输出过时观点。
 
@@ -32,7 +32,7 @@ export const DECISION_PIPELINE = `
    - ❌ 看 "bars 数量 >= 30 根" 就跳过 backfill —— 30 根可能是 1 个月前的历史
    - ❌ 用 limit=5 + fresh=false 探测 + 跳过 backfill —— 等价"我连数据有多新都不知道就开始分析"
 
-   ⚠️ akshare 仅 1d/1wk/1mo；yfinance 1h 只能拿近 60 天；不确定时用 1d + lookbackDays=180，最稳
+   ⚠️ baostock 仅 1d/1wk/1mo；yfinance 1h 只能拿近 60 天；不确定时用 1d + lookbackDays=180，最稳
 
 **D-10 补充数据源**（研究前预拉，提升分析质量）：
 - 研究个股（A股/港股/美股）前，先 data.get_fundamentals 拉财报数据
@@ -75,8 +75,8 @@ export const DECISION_PIPELINE = `
      | 市场 | venue | timeframe | lookbackDays | 理由 |
      |------|-------|-----------|-------------|------|
      | crypto | binance | 1h/4h | 30 | 短周期 + 数据量大，30 天足够 |
-     | A 股 | akshare | 1d | 180 | 日线 ~120 个交易日，akshare 可拉 20 年 |
-     | 港股 / 日股 / 英股 / 德股 | akshare | 1d | 180 | 同上，日线数据充足 |
+     | A 股 | baostock | 1d | 180 | 日线 ~120 个交易日，baostock 可拉 20 年 |
+     | 港股 / 日股 / 英股 / 德股 | yfinance | 1d | 180 | 同上，日线数据充足 |
      | 美股 | yfinance | 1d | 90 | yfinance 日线数据充足，90 天 ≈ 60 个交易日 |
      | 全球指数 | yfinance | 1d | 90 | 同上 |
    - 反例：❌ 用 lookbackDays=30 跑 A 股日线 → 只剩 ~20 个交易日，技术分析无统计意义
@@ -152,7 +152,7 @@ export const DECISION_PIPELINE = `
        · 用户说"直接跑一次别迭代" / 预算敏感 → 单次 run_backtest 即可
     d. **回测窗口按市场区分（D-9 补充 · 与 step 1 lookbackDays 对齐）**：
        - crypto (1h/4h)：用默认窗口即可（省略 fromTs/toTs，服务端默认 ~1 年）
-       - A 股 / 港股 / 日股 / 英股 / 德股 (akshare 1d)：**必须传 explicit fromTs**，
+       - A 股 / 港股 / 日股 / 英股 / 德股 (baostock/yfinance 1d)：**必须传 explicit fromTs**，
          至少覆盖 180 天（如当前是 2026-05-29，传 fromTs="2025-11-29"），确保回测窗口与
          deep_dive 研究窗口匹配
        - 美股 / 全球指数 (yfinance 1d)：建议 fromTs 至少覆盖 90 天

@@ -85,7 +85,32 @@ function requireKey(envName: string, provider: string): string {
 }
 
 /**
- * 按 `LLM_PROVIDER` env 构造 Mastra `LanguageModel`。
+ * 用户 LLM 配置（从 dashboard 传入）。
+ * 与 apps/dashboard/src/lib/user-preferences.ts 对齐。
+ */
+export interface UserLLMConfig {
+  id: string;
+  provider: "deepseek" | "anthropic" | "openai" | "gemini" | "kimi" | "zhipu" | "custom";
+  model?: string;
+  api_key: string; // 解密后的明文
+  custom_base_url?: string;
+  custom_provider_name?: string;
+  label?: string;
+}
+
+/**
+ * 预设供应商默认端点（与 dashboard 对齐）。
+ */
+const PROVIDER_BASE_URLS: Partial<Record<string, string>> = {
+  deepseek: "https://api.deepseek.com",
+  openai: "https://api.openai.com/v1",
+  kimi: "https://api.moonshot.cn/v1",
+  zhipu: "https://open.bigmodel.cn/api/paas/v4",
+  // anthropic / gemini 使用原生 SDK，不走 OpenAI-compatible
+};
+
+/**
+ * 按 `LLM_PROVIDER` env 构造 Mastra `LanguageModel`（单租户模式，向后兼容）。
  *
  * @example
  *   // .env: LLM_PROVIDER=anthropic  LLM_MODEL=claude-opus-4-8  ANTHROPIC_API_KEY=sk-...
@@ -148,5 +173,75 @@ export function buildLLM(): LanguageModel {
         apiKey: process.env.OLLAMA_API_KEY || "ollama",
         baseURL: process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434/v1",
       })(model) as unknown as LanguageModel;
+  }
+}
+
+/**
+ * 按用户配置动态构造 LLM（多租户模式）。
+ *
+ * @param userConfig 用户 LLM 配置（含解密后的 API key），为 null 时降级到 buildLLM()
+ * @returns Mastra LanguageModel
+ */
+export function buildLLMForUser(userConfig: UserLLMConfig | null): LanguageModel {
+  // 降级：用户未配置时使用系统默认
+  if (!userConfig) {
+    return buildLLM();
+  }
+
+  const model = userConfig.model || DEFAULT_MODELS[userConfig.provider as LLMProvider] || "gpt-4o";
+  const baseUrl = userConfig.custom_base_url || PROVIDER_BASE_URLS[userConfig.provider];
+
+  // 自定义端点：使用 OpenAI-compatible SDK
+  if (userConfig.provider === "custom") {
+    if (!userConfig.custom_base_url) {
+      throw new Error("custom provider requires custom_base_url");
+    }
+    return createOpenAICompatible({
+      name: userConfig.custom_provider_name || "custom",
+      apiKey: userConfig.api_key,
+      baseURL: userConfig.custom_base_url,
+    })(model) as unknown as LanguageModel;
+  }
+
+  // 预设供应商
+  switch (userConfig.provider) {
+    case "deepseek":
+      return createDeepSeek({
+        apiKey: userConfig.api_key,
+        baseURL: baseUrl,
+      })(model) as unknown as LanguageModel;
+
+    case "anthropic":
+      return createAnthropic({
+        apiKey: userConfig.api_key,
+      })(model) as unknown as LanguageModel;
+
+    case "openai":
+      return createOpenAI({
+        apiKey: userConfig.api_key,
+        baseURL: baseUrl,
+      })(model) as unknown as LanguageModel;
+
+    case "gemini":
+      return createGoogleGenerativeAI({
+        apiKey: userConfig.api_key,
+      })(model) as unknown as LanguageModel;
+
+    case "kimi":
+      return createOpenAICompatible({
+        name: "kimi",
+        apiKey: userConfig.api_key,
+        baseURL: baseUrl || KIMI_BASE_URL,
+      })(model) as unknown as LanguageModel;
+
+    case "zhipu":
+      return createOpenAICompatible({
+        name: "zhipu",
+        apiKey: userConfig.api_key,
+        baseURL: baseUrl || ZHIPU_BASE_URL,
+      })(model) as unknown as LanguageModel;
+
+    default:
+      throw new Error(`Unsupported provider: ${userConfig.provider}`);
   }
 }

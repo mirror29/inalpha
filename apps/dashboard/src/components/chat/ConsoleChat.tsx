@@ -39,12 +39,36 @@ export function ConsoleChat() {
 
   // mount 后恢复持久化状态;首次无 thread 则生成稳定 id,且**默认打开**。
   useEffect(() => {
-    let id = localStorage.getItem(LS_THREAD);
-    if (!id) {
-      id = crypto.randomUUID();
+    const storedId = localStorage.getItem(LS_THREAD);
+    if (!storedId) {
+      // 从未有过 threadId → 直接生成新 threadId
+      const id = crypto.randomUUID();
       localStorage.setItem(LS_THREAD, id);
+      setThreadId(id);
+    } else {
+      // 有历史 threadId → 异步校验归属（切换用户后旧 threadId 可能属前用户 → 403）
+      fetch("/api/check-thread", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: storedId }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.valid) {
+            setThreadId(storedId);
+          } else {
+            // 不属于当前用户 → 生成新 threadId
+            const id = crypto.randomUUID();
+            localStorage.setItem(LS_THREAD, id);
+            setThreadId(id);
+          }
+        })
+        .catch(() => {
+          // 网络失败 / 后端挂 → 仍用旧 threadId，等实际发消息时若 403 再回退
+          setThreadId(storedId);
+        });
     }
-    setThreadId(id);
+
     setOpen(localStorage.getItem(LS_OPEN) !== "0"); // 默认开,除非显式存过 "0"
     const w = Number(localStorage.getItem(LS_WIDTH));
     if (w >= CHAT_MIN_WIDTH && w <= CHAT_MAX_WIDTH) setWidth(w);

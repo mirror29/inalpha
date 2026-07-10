@@ -339,6 +339,21 @@ function stringifyToolPayload(v: unknown): string {
 }
 
 /**
+ * 校验某个 threadId 是否属于当前登录用户。
+ *
+ * 用于前端 mount 时判断是否该清旧 threadId（切换用户后旧 threadId 属于前用户 → 生成新 threadId）。
+ * 不属于 / 取不到 / 后端异常 → false（前端据此生成新 threadId）。
+ */
+export async function checkThreadOwnership(threadId: string): Promise<boolean> {
+  try {
+    const client = await mastraClient();
+    return ownsThread(client, threadId, await getSessionSubject());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 把一条 DB 消息展开成 0..N 条 AG 消息，**严格保留 parts 原始顺序**。
  *
  * Mastra V2 把一轮 assistant 的「工具调用 + 结果」与「最终文字答复」存在同一条消息的

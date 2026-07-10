@@ -29,7 +29,8 @@ baostock（证券宝）做 A 股全栈数据源：
 **timeframe 支持**：
 
 - ``"1d"`` / ``"1wk"`` / ``"1mo"`` → baostock ``frequency="d"/"w"/"m"``
-- 分钟级走 ``NotImplementedError``，可换 venue=yfinance 取近 60 天分钟线
+- ``"5m"`` / ``"15m"`` / ``"30m"`` / ``"1h"`` → baostock ``frequency="5"/"15"/"30"/"60"``
+- 不支持 1 分钟（baostock 限制）
 """
 from __future__ import annotations
 
@@ -52,11 +53,17 @@ VENUE = "akshare"
 #: 重复打源站,兼顾防封与延迟。基本面日级更新,60s 内复用不损时效。
 _FIN_CACHE_TTL_S = 60.0
 
-# akshare 的 ``period`` 字符串映射（仅日级及以上；分钟级要走另一个接口）
+# akshare 的 ``period`` 字符串映射（日级 + 分钟级）
+# baostock frequency 参数：日级 "d"/"w"/"m"，分钟级 "5"/"15"/"30"/"60"
 _PERIOD_MAP: dict[str, str] = {
     "1d": "daily",
     "1wk": "weekly",
     "1mo": "monthly",
+    # 分钟级（baostock 支持 5/15/30/60 分钟）
+    "5m": "5",
+    "15m": "15",
+    "30m": "30",
+    "1h": "60",
 }
 
 #: 串行锁——akshare 走公开页聚合（东财/同花顺/中证等），并发突发会触发反爬；
@@ -194,7 +201,7 @@ class AkshareConnector:
 
         Args:
             symbol: ``"sh.600519"`` / ``"sz.000001"`` / ``"hk.00700"``
-            timeframe: 仅支持 ``"1d"`` / ``"1wk"`` / ``"1mo"`` （MVP）
+            timeframe: 支持 ``"1d"`` / ``"1wk"`` / ``"1mo"`` 及分钟级 ``"5m"`` / ``"15m"`` / ``"30m"`` / ``"1h"``
             since: UTC datetime；akshare 接 ``YYYYMMDD`` 字符串
             limit: 不直接生效（akshare 不接 limit，整段拉回；上层切片）
 
@@ -203,8 +210,8 @@ class AkshareConnector:
         """
         if timeframe not in _PERIOD_MAP:
             raise NotImplementedError(
-                f"akshare connector MVP only supports {sorted(_PERIOD_MAP)}; "
-                f"intra-day not implemented yet"
+                f"akshare connector only supports {sorted(_PERIOD_MAP)}; "
+                f"got {timeframe!r}"
             )
 
         prefix, code = _parse_symbol(symbol)
@@ -1020,13 +1027,13 @@ def _fetch_baostock_sync(
     start_date: str,
     end_date: str,
 ) -> list[dict[str, Any]]:
-    """同步调 baostock（证券宝）—— 免费零 key，A 股日/周/月 K 线。
+    """同步调 baostock（证券宝）—— 免费零 key，A 股日/周/月/分钟 K 线。
 
     ``symbol`` 格式 ``"sh.600519"`` / ``"sz.000001"``（与 akshare 旧格式一致）。
-    ``frequency`` 为 ``"d"/"w"/"m"``。
+    ``frequency`` 为 ``"d"/"w"/"m"``（日级）或 ``"5"/"15"/"30"/"60"``（分钟级）。
     ``start_date`` / ``end_date`` 为 ``YYYYMMDD``（akshare 上层格式），内部转
     ``YYYY-MM-DD``（baostock 要求）。
-    返回 list[dict] 含 date/open/high/low/close/volume/amount 字段。
+    返回 list[dict] 含 date/open/high/low/close/volume/amount 字段，分钟级额外含 time。
     """
     import baostock as bs
 
@@ -1036,9 +1043,13 @@ def _fetch_baostock_sync(
 
     _ensure_bs_login()
 
+    # 分钟级需要 time 字段
+    is_intraday = frequency.isdigit()
+    fields = "date,time,open,high,low,close,volume,amount" if is_intraday else "date,open,high,low,close,volume,amount"
+
     rs = bs.query_history_k_data_plus(
         symbol,
-        "date,open,high,low,close,volume,amount",
+        fields,
         start_date=start_fmt,
         end_date=end_fmt,
         frequency=frequency,
@@ -1062,16 +1073,31 @@ def _fetch_baostock_sync(
         row_data = rs.get_row_data()
         if not row_data or row_data[0] == "":
             continue
-        date_str, open_s, high_s, low_s, close_s, vol_s, amt_s = row_data[:7]
-        rows.append({
-            "date": date_str,
-            "open": open_s,
-            "high": high_s,
-            "low": low_s,
-            "close": close_s,
-            "volume": vol_s,
-            "amount": amt_s,
-        })
+        # 分钟级: [date, time, open, high, low, close, volume, amount]
+        # 日级:   [date, open, high, low, close, volume, amount]
+        if is_intraday and len(row_data) >= 8:
+            date_str, time_str, open_s, high_s, low_s, close_s, vol_s, amt_s = row_data[:8]
+            rows.append({
+                "date": date_str,
+                "time": time_str,
+                "open": open_s,
+                "high": high_s,
+                "low": low_s,
+                "close": close_s,
+                "volume": vol_s,
+                "amount": amt_s,
+            })
+        else:
+            date_str, open_s, high_s, low_s, close_s, vol_s, amt_s = row_data[:7]
+            rows.append({
+                "date": date_str,
+                "open": open_s,
+                "high": high_s,
+                "low": low_s,
+                "close": close_s,
+                "volume": vol_s,
+                "amount": amt_s,
+            })
 
     return rows
 
@@ -1089,7 +1115,7 @@ def _fetch_sync(
     单独抽函数让 ``asyncio.to_thread`` 序列化参数更明确，也方便测试 monkeypatch。
 
     路由：
-    - A股（sh/sz）→ baostock（证券宝，免费零 key，日/周/月 + volume）
+    - A股（sh/sz）→ baostock（证券宝，免费零 key，日/周/月/分钟 + volume）
     - 港股（hk）  → akshare ``stock_hk_hist``（东财源，当前 push2his 失效）
 
     .. deprecated::
@@ -1107,10 +1133,19 @@ def _fetch_sync(
 
     if prefix in ("sh", "sz"):
         # A股走 baostock（证券宝）。东财 push2his 2026-07 起失效，腾讯源仅日线且无 volume；
-        # baostock 免费零 key、日/周/月全支持、有真实成交量。
+        # baostock 免费零 key、日/周/月/分钟全支持、有真实成交量。
         # symbol 格式 "sh.600519" / "sz.000001"（与 _parse_symbol 产物一致，零转换）。
-        # period 已由上层 fetch_bars 经 _PERIOD_MAP 转为 "daily"/"weekly"/"monthly"
-        _baostock_freq = {"daily": "d", "weekly": "w", "monthly": "m"}
+        # period 已由上层 fetch_bars 经 _PERIOD_MAP 转为 "daily"/"weekly"/"monthly"/"5"/"15"/"30"/"60"
+        _baostock_freq = {
+            "daily": "d",
+            "weekly": "w",
+            "monthly": "m",
+            # 分钟级直接透传
+            "5": "5",
+            "15": "15",
+            "30": "30",
+            "60": "60",
+        }
         baostock_freq = _baostock_freq.get(period)
         if baostock_freq is None:
             raise NotImplementedError(
