@@ -43,7 +43,7 @@ export const swarmRunBacktestGridTool = createTool({
     - symbols：标的数组（**任意 venue/格式**，1-8 个），同 grid 内所有 symbol
       应属同一 venue —— grid 不跨 venue
     - venue：跟 symbols 配套，按市场分类选（crypto→binance / 美股→yfinance 或 alpaca /
-      A 股→akshare / 港股/日股/英股/德股→yfinance / 全球→yfinance / FRED→fred）
+      A 股→akshare（baostock 源，支持日级 + 分钟级） / 港股/日股/英股/德股→yfinance / 全球→yfinance / FRED→fred）
 
     坑：
     - (strategies + candidateIds) × symbols ≤ 20（grid-size-cap hook deny 超出请求）
