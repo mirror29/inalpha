@@ -1,10 +1,17 @@
 /**
  * 加密服务单元测试。
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { encryptApiKey, decryptApiKey, maskApiKey } from "./encryption";
 
 describe("Encryption Service", () => {
+  beforeAll(() => {
+    // 测试环境设置默认密钥
+    if (!process.env.LLM_CONFIG_ENCRYPTION_KEY && !process.env.JWT_SECRET) {
+      process.env.JWT_SECRET = "test-jwt-secret-for-unit-tests-32bytes";
+    }
+  });
+
   it("should encrypt and decrypt correctly", async () => {
     const plaintext = "sk-test-key-1234567890";
 
@@ -65,14 +72,10 @@ describe("Encryption Service", () => {
     // 长于 8 字符的 key
     expect(maskApiKey("sk-1234567890abcdef")).toBe("sk-1***cdef");
 
-    // 等于 8 字符的 key
+    // 等于 8 字符的 key（现在也会掩码）
     expect(maskApiKey("12345678")).toBe("1234***5678");
 
     // 短于 8 字符的 key
     expect(maskApiKey("short")).toBe("***");
   });
-});
-
-describe("User Preferences", () => {
-  // TODO: 添加用户配置 CRUD 测试（需要 mock 数据库）
 });
