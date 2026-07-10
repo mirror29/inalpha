@@ -88,7 +88,7 @@ async function getEncryptionKey(): Promise<CryptoKey> {
   // 导入为 CryptoKey 对象
   return crypto.subtle.importKey(
     "raw",
-    keyBytes,
+    keyBytes.buffer as ArrayBuffer, // 显式转换为 ArrayBuffer
     { name: ALGORITHM },
     false, // 不可导出
     ["encrypt", "decrypt"],
