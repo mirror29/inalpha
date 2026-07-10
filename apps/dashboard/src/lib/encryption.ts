@@ -14,7 +14,10 @@
  *  const plaintext = decryptApiKey(encrypted);
  *  // 'sk-test-key-12345'
  */
-import "server-only";
+// server-only 仅在非测试环境导入
+if (process.env.NODE_ENV !== 'test') {
+  require('server-only');
+}
 
 const ALGORITHM = "AES-GCM";
 const KEY_LENGTH = 256; // bits
