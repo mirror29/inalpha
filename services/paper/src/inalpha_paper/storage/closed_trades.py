@@ -191,3 +191,47 @@ async def count_by_account(
         )
         row = await cur.fetchone()
     return int(row["cnt"])  # type: ignore[index]
+
+
+async def count_win_loss_by_account(
+    conn: AsyncConnection,
+    *,
+    account_id: UUID,
+    since: datetime | None = None,
+) -> dict[str, int]:
+    """统计账户平仓笔数（盈利/亏损/持平）。
+
+    Args:
+        account_id: 账户 ID
+        since: 起始时间（通常为最近一次 reset）；None = 全历史
+
+    Returns:
+        {"wins": int, "losses": int, "total": int}
+        - wins: close_profit_abs > 0 的笔数
+        - losses: close_profit_abs < 0 的笔数（不包含持平）
+        - total: 总平仓笔数
+    """
+    sql = (
+        "SELECT "
+        "COUNT(*) AS total, "
+        "COUNT(*) FILTER (WHERE close_profit_abs > 0) AS wins, "
+        "COUNT(*) FILTER (WHERE close_profit_abs = 0) AS ties "
+        "FROM closed_trades WHERE account_id = %s"
+    )
+    args: list[Any] = [str(account_id)]
+    if since is not None:
+        sql += " AND close_ts > %s"
+        args.append(since)
+    async with conn.cursor() as cur:
+        await cur.execute(sql, tuple(args))
+        row = await cur.fetchone()
+    if row is None:
+        return {"wins": 0, "losses": 0, "total": 0}
+    total = int(row["total"])
+    wins = int(row["wins"])
+    ties = int(row["ties"])
+    return {
+        "wins": wins,
+        "losses": total - wins - ties,
+        "total": total,
+    }

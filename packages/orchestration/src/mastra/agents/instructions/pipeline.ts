@@ -32,7 +32,7 @@ export const DECISION_PIPELINE = `
    - ❌ 看 "bars 数量 >= 30 根" 就跳过 backfill —— 30 根可能是 1 个月前的历史
    - ❌ 用 limit=5 + fresh=false 探测 + 跳过 backfill —— 等价"我连数据有多新都不知道就开始分析"
 
-   ⚠️ baostock 仅 1d/1wk/1mo；yfinance 1h 只能拿近 60 天；不确定时用 1d + lookbackDays=180，最稳
+   ⚠️ baostock 支持 1d/1wk/1mo 和分钟级 5m/15m/30m/1h；yfinance 1h 只能拿近 60 天；不确定时用 1d + lookbackDays=180，最稳
 
 **D-10 补充数据源**（研究前预拉，提升分析质量）：
 - 研究个股（A股/港股/美股）前，先 data.get_fundamentals 拉财报数据

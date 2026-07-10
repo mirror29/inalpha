@@ -18,6 +18,14 @@ export interface AccountSnapshot {
   perp_margin_locked: number;
   total_equity: number;
   realized_pnl: number;
+  /** 自最近一次重置以来的净外生入金(充值−提取,折 base_currency)。 */
+  net_external_flows: number;
+  /** 胜率(百分比) = 盈利笔数 / 总平仓笔数 × 100;无平仓时为 null。 */
+  win_rate: number | null;
+  /** 盈利笔数(自最近一次 reset)。 */
+  win_count: number;
+  /** 亏损笔数(自最近一次 reset)。 */
+  loss_count: number;
   /** 非空 → FX 折算不完整,UI 必须显式告警。 */
   fx_warnings: string[];
   created_at: string;

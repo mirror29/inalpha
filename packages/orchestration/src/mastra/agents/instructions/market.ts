@@ -40,8 +40,10 @@ export const MARKET_CONTEXT = `
 
 **timeframe 速查**：
 - crypto / 美股（含 yfinance）：1m / 5m / 15m / 30m / 1h / 4h / 1d / 1wk / 1mo
-- baostock（仅 A 股）：日级 1d / 1wk / 1mo（**不要传分钟级**）
-  ⚠️ baostock 限制：每日 API 请求 ≤ 5 万次、禁止并发连接——超限会被拉黑
+- baostock（仅 A 股）：
+  - 日级：1d / 1wk / 1mo
+  - 分钟级：5m / 15m / 30m / 1h（**不支持 1m**）
+  - ⚠️ 限制：每日 API 请求 ≤ 5 万次、禁止并发连接——超限会被拉黑
 - fred：仅 1d / 1wk / 1mo / 1q / 1y
 - 不支持时后端 422 拒，**不要自己脑补**
 

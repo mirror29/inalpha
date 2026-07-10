@@ -397,6 +397,13 @@ async def get_my_account(
             realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(str(r["realized"]))
         )
 
+    # 胜率统计（自最近一次 reset 起算）
+    win_loss = await closed_trades_store.count_win_loss_by_account(
+        db, account_id=account_id, since=reset_ts
+    )
+    total_trades = win_loss["total"]
+    win_rate_pct = (win_loss["wins"] / total_trades * 100.0) if total_trades > 0 else None
+
     # 净外生入金(自最近一次 reset,按币种)——真实收益口径的第三项,防充值算成盈利
     flows_by_ccy = await accounts_store.sum_external_flows_since_reset(db, account_id)
 
@@ -516,6 +523,9 @@ async def get_my_account(
         total_equity=float(cash_base + positions_base),
         realized_pnl=float(realized_pnl_base),
         net_external_flows=float(net_flows_base),
+        win_rate=win_rate_pct,
+        win_count=win_loss["wins"],
+        loss_count=win_loss["losses"],
         fx_warnings=fx_warnings,
         created_at=acct["created_at"],
         updated_at=acct["updated_at"],
