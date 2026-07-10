@@ -251,7 +251,8 @@ class AkshareConnector:
         # akshare 返的是 DataFrame；列名中文 / 英文都见过，做防御性归一化
         out: list[tuple[datetime, float, float, float, float, float]] = []
         for r in rows:
-            ts_raw = r.get("日期") or r.get("date") or r.get("Date")
+            # 日级：用 date 字段；分钟级：用 time 字段（格式 YYYYMMDDHHMMSS）
+            ts_raw = r.get("日期") or r.get("date") or r.get("Date") or r.get("time")
             o = _to_float(r.get("开盘") or r.get("open"))
             h = _to_float(r.get("最高") or r.get("high"))
             low = _to_float(r.get("最低") or r.get("low"))
@@ -1301,7 +1302,10 @@ def _to_float(v: Any) -> float | None:
 
 
 def _parse_date(v: Any) -> datetime:
-    """akshare 日期是 ``datetime.date`` / ``str`` / ``pd.Timestamp``，统一成 UTC aware。"""
+    """akshare 日期是 ``datetime.date`` / ``str`` / ``pd.Timestamp``，统一成 UTC aware。
+
+    分钟级时间格式：``"YYYYMMDDHHMMSS"``（如 ``"20260709093500000"``）。
+    """
     if isinstance(v, datetime):
         return v if v.tzinfo else v.replace(tzinfo=UTC)
     # pd.Timestamp 兼容
@@ -1311,8 +1315,18 @@ def _parse_date(v: Any) -> datetime:
     # date 转 datetime
     if hasattr(v, "year") and not hasattr(v, "hour"):
         return datetime(v.year, v.month, v.day, tzinfo=UTC)
-    # 字符串 "2025-05-21"
-    return datetime.fromisoformat(str(v)).replace(tzinfo=UTC)
+    # 字符串解析
+    s = str(v)
+    # 分钟级：YYYYMMDDHHMMSS（14 位数字）
+    if len(s) == 14 and s.isdigit():
+        # 20260709093500000 → 2026-07-09 09:35:00
+        return datetime(
+            int(s[:4]), int(s[4:6]), int(s[6:8]),
+            int(s[8:10]), int(s[10:12]), int(s[12:14]),
+            tzinfo=UTC
+        )
+    # 日级：YYYY-MM-DD 或 YYYYMMDD
+    return datetime.fromisoformat(s).replace(tzinfo=UTC)
 
 
 # ---------- module-level singleton ----------

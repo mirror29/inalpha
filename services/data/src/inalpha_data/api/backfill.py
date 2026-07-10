@@ -33,11 +33,20 @@ _MAX_BARS_PER_REQUEST = 50_000
 
 
 # venue → 该 venue 支持的 timeframe → 秒数
-# 注：akshare MVP 只支持日级（1d / 1wk / 1mo）；yfinance 含分钟级（Yahoo 窗口限制）
+# baostock（akshare venue）支持日级 + 分钟级（5/15/30/60 分钟）
 _VENUE_TIMEFRAME_SECONDS: dict[str, dict[str, int]] = {
     "binance": BINANCE_TIMEFRAME_SECONDS,
     "alpaca": ALPACA_TIMEFRAME_SECONDS,
-    "akshare": {"1d": 86400, "1wk": 604800, "1mo": 2_592_000},
+    "akshare": {
+        "1d": 86400,
+        "1wk": 604800,
+        "1mo": 2_592_000,
+        # 分钟级（baostock 支持）
+        "5m": 300,
+        "15m": 900,
+        "30m": 1800,
+        "1h": 3600,
+    },
     "yfinance": YFINANCE_TIMEFRAME_SECONDS,
     "fred": FRED_TIMEFRAME_SECONDS,
 }
