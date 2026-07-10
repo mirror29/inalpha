@@ -18,7 +18,7 @@ async def symbols_search(
     _user: Annotated[User, Depends(get_current_user)],
     query: Annotated[str, Query(min_length=1, max_length=80, description="公司名 / 代码片段")],
     venue: Annotated[
-        str, Query(description="auto / akshare（A股表）/ yfinance（Yahoo 全球）")
+        str, Query(description="auto / baostock（A股表，仅日 K）/ yfinance（Yahoo 全球）")
     ] = "auto",
     max_results: Annotated[int, Query(ge=1, le=20)] = 10,
 ) -> SymbolSearchResponse:

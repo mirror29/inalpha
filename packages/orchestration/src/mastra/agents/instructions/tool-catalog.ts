@@ -21,7 +21,7 @@ export const TOOL_CATALOG = `
 - **data.search_symbol —— 公司名 → ticker 解析**。从新闻 / 研究里拿到公司名要落
   行情 / 财报前先解析；**禁止凭训练记忆猜代码**（可能错 / 过时）。A股返 sh./sz. 格式，
   其他市场返 yahoo 格式（venue 字段标明配哪个数据源）。
-  **你已判断出市场分类时显式传 venue**（美股/港股/全球 → yfinance，A股 → akshare）；
+  **你已判断出市场分类时显式传 venue**（美股/港股/全球 → yfinance，A股 → baostock）；
   query 的语言 ≠ 市场——中文名问美股公司极常见，别把市场判断丢给 auto 兜底。
 
 **Web 搜索**（D-10 新 · 零 key，ddgs 聚合多引擎）：
@@ -39,9 +39,9 @@ export const TOOL_CATALOG = `
   · 消息面所有来源都空 → **不要编造新闻**，回复里显式声明"消息面数据当前不可用，
     以下仅基于 <实际拿到的维度>"，其余维度照常完成（§3.1）
 
-**基本面**（D-10 新 · akshare/yfinance 财报）：
+**基本面**（D-10 新 · baostock/yfinance 财报）：
 - data.get_fundamentals —— 拉 PE/PB/ROE/营收增速 等财报指标。
-  对 A股/港股用 venue=akshare，美股用 venue=yfinance
+  对 A股用 venue=baostock，美股/港股用 venue=yfinance
 
 **市场级行情（D-12+ 新 · 行情归因专用，无需 symbol）**：
 - data.get_market_news —— 市场级财经快讯流。用户问"某市场 / 大盘今天有什么消息 /

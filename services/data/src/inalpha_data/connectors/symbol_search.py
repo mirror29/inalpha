@@ -5,9 +5,9 @@ get_fundamentals 必须先有 symbol——靠 LLM 训练记忆猜代码会撞时
 （记忆可能 stale / 编错），所以给一条可溯源的解析路径。
 
 两个来源（零 key）：
-- akshare ``stock_info_a_code_name()``：A股全量 code/name 表。进程内缓存
-  （TTL 1 天，表一天内不变），子串匹配中文名 / 代码前缀。
-  输出 symbol 与本服务 akshare connector 约定一致（``sh.600519`` / ``sz.000001``）。
+- baostock ``query_stock_basic()``：A股全量 code/name 表（证券宝开源接口）。
+  进程内缓存（TTL 1 天，表一天内不变），子串匹配中文名 / 代码前缀。
+  输出 symbol 格式与本服务约定一致（``sh.600519`` / ``sz.000001``）。
 - yfinance ``Search``：Yahoo 全球检索（美 / 港 / 日韩欧等），输出原生 yahoo
   symbol（``AAPL`` / ``0700.HK``），与 yfinance connector 直接可用。
 
@@ -15,6 +15,7 @@ venue="auto"：query 含 CJK → A股表与 yahoo **并行都查、轮替合并*
 只走 yahoo。语言只决定"是否多查一路 A股"，**不决定市场**——中文用户问美股 /
 港股公司（中文名）极常见，串行补位会让 A股结果挤掉 yahoo 候选、跨市场同名
 歧义时单边呈现（§3 不预设语言/市场）。
+
 失败语义：尽力而为，异常一律返 []。
 """
 
@@ -46,12 +47,54 @@ def _a_share_prefix(code: str) -> str | None:
 
 
 def _load_a_share_table_sync() -> list[dict[str, str]]:
-    import akshare as ak
+    """从 baostock 拉A股全量 code/name 表（替代 akshare）。
 
-    raw = ak.stock_info_a_code_name()
-    if raw is None or (hasattr(raw, "empty") and raw.empty):
+    baostock 是证券宝开源接口，已用于 A股日 K 线（更稳定）。
+    query_stock_basic() 返回全市场证券列表（股票+指数+ETF等），过滤只保留
+    上市股票（type='1', status='1'）。code 已带前缀（sh./sz.）。
+
+    baostock 限制：日 K 及以上频率、每日 5 万次请求上限、禁止并发连接。
+    """
+    import baostock as bs
+
+    try:
+        lg = bs.login()
+        if lg.error_code != "0":
+            _logger.warning("symbol_search_baostock_login_failed", error=lg.error_msg)
+            return []
+        rs = bs.query_stock_basic()
+        if rs.error_code != "0":
+            _logger.warning("symbol_search_baostock_query_failed", error=rs.error_msg)
+            return []
+        data_list: list[list[str]] = []
+        while (rs.error_code == "0") & rs.next():
+            data_list.append(rs.get_row_data())
+    except Exception as exc:
+        _logger.warning("symbol_search_baostock_failed", error=str(exc))
         return []
-    return raw.to_dict(orient="records")  # type: ignore[no-any-return]
+    finally:
+        try:
+            bs.logout()
+        except Exception:
+            pass
+
+    # 字段：[code, name, list_date, delist_date, type, status]
+    # type='1'=股票, type='2'=指数; status='1'=上市, status='0'=退市
+    # code 已带前缀（sh.600519 / sz.000001），需去掉前缀再判断深沪
+    out: list[dict[str, str]] = []
+    for row in data_list:
+        if len(row) < 6:
+            continue
+        code, name, _, _, typ, status = row[:6]
+        # 只保留上市股票（过滤指数、ETF、退市股）
+        if typ != "1" or status != "1":
+            continue
+        # 去掉前缀（sh./sz.）得到纯代码
+        pure_code = code.split(".", 1)[-1] if "." in code else code
+        if not pure_code:
+            continue
+        out.append({"code": pure_code, "name": str(name)})
+    return out
 
 
 def _merge_round_robin(
@@ -95,7 +138,7 @@ class SymbolSearchConnector:
 
         results: list[dict[str, Any]] = []
         try:
-            if venue == "akshare":
+            if venue == "baostock":
                 results = await self._search_a_share(query, max_results)
             elif venue == "yfinance" or not has_cjk:
                 results = await self._search_yahoo(query, max_results)
@@ -128,7 +171,7 @@ class SymbolSearchConnector:
                         "symbol": f"{prefix}.{code}",
                         "name": name,
                         "exchange": "XSHG" if prefix == "sh" else "XSHE",
-                        "venue": "akshare",
+                        "venue": "baostock",  # 数据源为 baostock
                         "quote_type": "EQUITY",
                     }
                 )

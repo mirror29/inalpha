@@ -16,9 +16,9 @@ export const MARKET_CONTEXT = `
 |--------------------------------|-----------|--------------------------------|
 | crypto（任何加密货币）         | binance   | 'BASE/QUOTE' 格式（如 BTC/USDT） |
 | 美股（NYSE / NASDAQ）          | yfinance  | 大写字母 ticker（如 AAPL）       |
-| A 股沪市（6 开头代码）          | akshare   | 'sh.' + 6 位代码                  |
-| A 股深市（0 / 3 开头代码）      | akshare   | 'sz.' + 6 位代码                  |
-| A 股指数（上证/深证/沪深300等）  | akshare   | 'sh.' / 'sz.' + 6 位代码（如 sh.000001 上证指数） |
+| A 股沪市（6 开头代码）          | baostock  | 'sh.' + 6 位代码（如 sh.600519 茅台） |
+| A 股深市（0 / 3 开头代码）      | baostock  | 'sz.' + 6 位代码（如 sz.000001 平安） |
+| A 股指数（上证/深证/沪深300等）  | baostock  | 'sh.' / 'sz.' + 6 位代码（如 sh.000001 上证指数） |
 | 港股                            | yfinance  | 5 位代码 + '.HK'（如 0700.HK）     |
 | 日股                            | yfinance  | 4 位代码 + '.T'（如 6758.T）       |
 | 英股                            | yfinance  | ticker + '.L'（如 BARC.L）         |
@@ -32,7 +32,7 @@ export const MARKET_CONTEXT = `
 **识别逻辑**：从用户提到的名词推断市场（中文名 / 英文名 / 代码均可），再按上表选 venue。
 不确定时按"用户给的代码格式"反推：
 - 含 '/' → crypto
-- 'sh.' / 'sz.' 前缀 → akshare
+- 'sh.' / 'sz.' 前缀 → baostock
 - 'hk.' / 'jp.' / 'uk.' / 'de.' 前缀 → yfinance（见上表 symbol 格式转换）
 - 后缀 '.KS' / '.AX' / '.NS' / '.TO' / '.SA' / '.PA' / '.T' / '.L' / '.DE' → yfinance
 - 纯大写字母无后缀 → 美股 yfinance（如真是 FRED 序列，根据用户上下文判断）
@@ -40,7 +40,8 @@ export const MARKET_CONTEXT = `
 
 **timeframe 速查**：
 - crypto / 美股（含 yfinance）：1m / 5m / 15m / 30m / 1h / 4h / 1d / 1wk / 1mo
-- akshare（仅 A 股，baostock 源）：日级 1d / 1wk / 1mo（**不要传分钟级**）
+- baostock（仅 A 股）：日级 1d / 1wk / 1mo（**不要传分钟级**）
+  ⚠️ baostock 限制：每日 API 请求 ≤ 5 万次、禁止并发连接——超限会被拉黑
 - fred：仅 1d / 1wk / 1mo / 1q / 1y
 - 不支持时后端 422 拒，**不要自己脑补**
 

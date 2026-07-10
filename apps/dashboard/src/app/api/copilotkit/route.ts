@@ -8,6 +8,7 @@ import { getRemoteAgents } from "@ag-ui/mastra";
 import { MastraClient } from "@mastra/client-js";
 
 import { BACKENDS, getServiceToken, getSessionSubject } from "@/lib/backend";
+import { decryptActiveUserApiKey } from "@/lib/user-preferences";
 
 /**
  * 静音 @ag-ui/mastra 1.0.3 的良性日志噪音:它不认 mastra(v5 streamVNext)的
@@ -60,16 +61,32 @@ export const POST = async (req: Request): Promise<Response> => {
   // token 的 sub = 登录用户(或 dev 下 console:dev)。mastra identityMiddleware 据此
   // 注入 authSub,tool 层再据此打给 Python(resolveRequestToken),保证 agent 写操作落登录用户账户。
   const token = await getServiceToken();
-  const resourceId = await getSessionSubject();
+  const subject = await getSessionSubject();
+
+  // 解析用户激活的 LLM 配置（多租户）
+  const userLLMConfig = await decryptActiveUserApiKey(subject);
+
+  // 通过 custom header 传递用户 LLM 配置提示（Mastra 侧可提取）
+  const llmConfigHeader = userLLMConfig
+    ? JSON.stringify({
+        config_id: userLLMConfig.id,
+        provider: userLLMConfig.provider,
+        model: userLLMConfig.model,
+        has_key: true,
+      })
+    : "";
 
   const mastraClient = new MastraClient({
     baseUrl: BACKENDS.mastra,
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(llmConfigHeader && { "X-LLM-Config": llmConfigHeader }),
+    },
   });
 
   const agents = await getRemoteAgents({
     mastraClient,
-    resourceId,
+    resourceId: subject, // resourceId = subject（用户隔离）
   });
 
   // CopilotKit 1.59.5 起 `agents` 收紧为 NonEmptyRecord | Promise | factory;
