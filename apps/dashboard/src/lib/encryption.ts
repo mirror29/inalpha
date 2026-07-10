@@ -199,7 +199,7 @@ export async function decryptApiKey(encrypted: EncryptedData): Promise<string> {
  * @returns 掩码后的字符串
  */
 export function maskApiKey(key: string): string {
-  if (key.length <= 8) {
+  if (key.length < 8) {
     return "***";
   }
   return `${key.slice(0, 4)}***${key.slice(-4)}`;
