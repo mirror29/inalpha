@@ -203,7 +203,7 @@ export const dataBackfillBarsTool = createTool({
     - 用户问"这个时段还没数据" → 先 backfill
     - **想要"最新现价"但 data.get_bars 返回的是 stale 数据**（数小时前）→ backfill 最近 1 天
     - **venue 按 symbol 所属市场自动选**（详 orchestrator system prompt 市场→venue 路由表）：
-      crypto→binance、美股/全球指数/韩澳印加巴法等单股→yfinance、A股→akshare（baostock 源，日/周/月）、
+      crypto→binance、美股/全球指数/韩澳印加巴法等单股→yfinance、A股→akshare（baostock 源，日/周/月 + 分钟级 5m/15m/30m/1h）、
       港/日/英/德股→yfinance、美股专业 feed→alpaca、FRED 宏观→fred
 
     何时不用：
@@ -220,7 +220,8 @@ export const dataBackfillBarsTool = createTool({
 
     坑：
     - **不要"为了保险拉一年 1m"**——既慢又没必要。需要近期价用 1h timeframe + 1 周即可
-    - **akshare 日级 1d/1wk/1mo**（baostock 源，A 股）；**fred 仅日级及以上**（1d/1wk/1mo/1q/1y）；
+    - **baostock（akshare venue）**：日级 1d/1wk/1mo + 分钟级 5m/15m/30m/1h（不支持 1m）；
+      **fred 仅日级及以上**（1d/1wk/1mo/1q/1y）；
       venue/timeframe 不匹配后端返 422 并带 supported_timeframes，按响应改一次再调，不要瞎重试
     - 不要在 LLM 单 turn 里循环 backfill 多个标的，分多次 tool call
     - tool 超时上限 5 分钟；超过这个跨度的 backfill 拆成多次小窗口调用
