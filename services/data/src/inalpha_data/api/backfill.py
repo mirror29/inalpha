@@ -20,6 +20,7 @@ from ..connectors.fred import TIMEFRAME_SECONDS as FRED_TIMEFRAME_SECONDS
 from ..connectors.yfinance_conn import TIMEFRAME_SECONDS as YFINANCE_TIMEFRAME_SECONDS
 from ..schemas import BackfillRequest, BackfillResponse
 from ..storage.bars import insert_bars, latest_bar_ts
+from ..cache_manager import get_cache_manager
 
 router = APIRouter(tags=["backfill"])
 _logger = get_logger(__name__)
@@ -30,6 +31,15 @@ _BATCH_LIMIT = 1000
 # 跨度硬限：跨度 * timeframe 太大就拒绝
 # D-8b' review 高风险 #6：长跨度同步 backfill 会卡死请求线程
 _MAX_BARS_PER_REQUEST = 50_000
+
+# 分钟级查询限制（baostock 配额优化）
+# baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
+_MINUTE_LOOKBACK_LIMITS = {
+    "5m": 7,    # 7 天 = 336 条
+    "15m": 14,  # 14 天 = 672 条
+    "30m": 30,  # 30 天 = 720 条
+    "1h": 60,   # 60 天 = 720 条
+}
 
 
 # venue → 该 venue 支持的 timeframe → 秒数
@@ -85,6 +95,27 @@ async def backfill_bars(
                 "supported_timeframes": sorted((tf_table or {}).keys()),
             },
         )
+
+    # ─── 分钟级强制限制（baostock 配额优化）──────────────────────
+    # baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
+    if req.timeframe in _MINUTE_LOOKBACK_LIMITS:
+        max_lookback_days = _MINUTE_LOOKBACK_LIMITS[req.timeframe]
+        span_days = (req.to_ts - req.from_ts).total_seconds() / 86400
+
+        if span_days > max_lookback_days:
+            # 强制截断到允许的最大范围
+            capped_from_ts = req.to_ts - timedelta(days=max_lookback_days)
+            _logger.warning(
+                "backfill_minute_lookback_capped",
+                venue=req.venue,
+                symbol=req.symbol,
+                timeframe=req.timeframe,
+                original_from_ts=req.from_ts.isoformat(),
+                capped_from_ts=capped_from_ts.isoformat(),
+                max_lookback_days=max_lookback_days,
+                reason="baostock quota optimization",
+            )
+            req.from_ts = capped_from_ts
 
     span_seconds = (req.to_ts - req.from_ts).total_seconds()
     tf_seconds = tf_table[req.timeframe]
