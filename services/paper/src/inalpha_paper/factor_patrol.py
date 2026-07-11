@@ -290,5 +290,5 @@ class FactorPatrol:
             f"入场 rank_ic={_fmt_ic(base.get('rank_ic'))} → "
             f"当前 rank_ic={_fmt_ic(cur.get('rank_ic'))} / "
             f"rank_ic_recent={_fmt_ic(cur.get('rank_ic_recent'))}{pnl_part}。"
-            "建议复盘该策略是否仍该跑（系统只告警不动仓，ADR-0047）"
+            "建议复盘该策略是否仍该跑（系统只告警不动仓，不自动停策略）"
         )

@@ -69,7 +69,7 @@
         "avgPrice": "开仓均价",
         "mark": "最新价",
         "unrealized": "浮动盈亏",
-        "realized": "已实现盈亏",
+        "realized": "本轮已实现盈亏",
         "liqPrice": "强平价"
       },
       "leverageTitle": "{leverage}× 杠杆 · 占用保证金 {margin}",

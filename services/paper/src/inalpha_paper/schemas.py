@@ -714,7 +714,13 @@ class PositionRecord(BaseModel):
     symbol: str
     quantity: float
     avg_open_price: float
-    realized_pnl: float
+    realized_pnl: float = Field(
+        description="全历史累计已实现盈亏（毛口径，不含手续费）"
+    )
+    session_realized_pnl: float = Field(
+        default=0.0,
+        description="当前持仓相关的已实现盈亏（开仓时清零，平仓时累加）"
+    )
     generation: int
     currency: str | None = Field(
         default=None,
