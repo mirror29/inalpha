@@ -138,8 +138,8 @@ export function PositionsTable({
                       )}
                     </Td>
                     <Td right mono>
-                      <span className={pnlColor(p.realized_pnl)}>
-                        {fmtSigned(p.realized_pnl, ccy, locale)}
+                      <span className={pnlColor(p.session_realized_pnl)}>
+                        {fmtSigned(p.session_realized_pnl, ccy, locale)}
                       </span>
                     </Td>
                   </tr>

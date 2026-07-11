@@ -39,6 +39,7 @@ export interface PositionRecord {
   quantity: number;
   avg_open_price: number;
   realized_pnl: number;
+  session_realized_pnl: number;
   generation: number;
   currency: string | null;
   updated_at: string;

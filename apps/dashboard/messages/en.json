@@ -69,7 +69,7 @@
         "avgPrice": "Avg Open",
         "mark": "Mark",
         "unrealized": "Unrealized",
-        "realized": "Realized PnL",
+        "realized": "Session Realized PnL",
         "liqPrice": "Liq."
       },
       "leverageTitle": "{leverage}× leverage · margin {margin}",

@@ -32,6 +32,8 @@ class Position:
     quantity: float = 0.0
     avg_open_price: float = 0.0
     realized_pnl: float = 0.0
+    session_realized_pnl: float = 0.0
+    """当前持仓相关的已实现盈亏（开仓时清零，平仓时累加）。"""
     generation: int = 1
     """ADR-0013 CAS 字段：每次 mutation +1。"""
 
@@ -85,12 +87,13 @@ class Position:
         new_qty = prev_qty + delta
 
         if prev_qty == 0:
-            # 开仓
+            # 开仓：清零 session_realized_pnl
+            self.session_realized_pnl = 0.0
             self.avg_open_price = fill_price
             self.ts_opened = ts
             self.open_order_id = open_order_id
         elif (prev_qty > 0) == (delta > 0):
-            # 同方向加仓：加权平均；open_order_id 保留首次开仓的
+            # 同方向加仓：加权平均；open_order_id 保留首次开仓的；session_realized_pnl 保持不变
             total_cost = abs(prev_qty) * self.avg_open_price + abs(delta) * fill_price
             self.avg_open_price = total_cost / abs(new_qty) if new_qty != 0 else 0.0
         else:
@@ -98,10 +101,12 @@ class Position:
             closed_qty = min(abs(prev_qty), abs(delta))
             if prev_qty > 0:
                 # 原 LONG，卖出 → 收益 = (fill_price - avg) * closed_qty
-                self.realized_pnl += (fill_price - self.avg_open_price) * closed_qty
+                pnl = (fill_price - self.avg_open_price) * closed_qty
             else:
                 # 原 SHORT，买回 → 收益 = (avg - fill_price) * closed_qty
-                self.realized_pnl += (self.avg_open_price - fill_price) * closed_qty
+                pnl = (self.avg_open_price - fill_price) * closed_qty
+            self.realized_pnl += pnl
+            self.session_realized_pnl += pnl
 
             if abs(new_qty) < 1e-9:
                 # 完全平仓
@@ -109,7 +114,8 @@ class Position:
                 new_qty = 0.0
                 self.open_order_id = None
             elif (new_qty > 0) != (prev_qty > 0):
-                # 反向开仓：剩下的部分以 fill_price 当新成本
+                # 反向开仓：剩下的部分以 fill_price 当新成本；session_realized_pnl 清零
+                self.session_realized_pnl = 0.0
                 self.avg_open_price = fill_price
                 self.ts_opened = ts
                 self.open_order_id = open_order_id
