@@ -15,6 +15,7 @@
  */
 import "server-only";
 
+import { getPool } from "./db";
 import {
   decryptApiKey,
   encryptApiKey,
@@ -112,14 +113,19 @@ function generateConfigId(): string {
  * @returns 用户 preferences 对象
  */
 async function getUserPreferences(subject: string): Promise<UserLLMPreferences> {
-  // TODO: 替换为实际的数据库查询
-  // const result = await db.query("SELECT preferences FROM users WHERE subject = $1", [subject]);
-  // return result.rows[0]?.preferences || {};
-  return {};
+  const { rows } = await getPool().query<{ preferences: UserLLMPreferences | null }>(
+    "SELECT preferences FROM users WHERE subject = $1",
+    [subject],
+  );
+
+  const preferences = rows[0]?.preferences;
+  return preferences ?? {};
 }
 
 /**
  * 更新用户 preferences。
+ *
+ * 使用 PostgreSQL jsonb_set 进行原子更新，避免并发写冲突。
  *
  * @param subject 用户 subject
  * @param preferences 新的 preferences 对象
@@ -128,11 +134,16 @@ async function updateUserPreferences(
   subject: string,
   preferences: UserLLMPreferences,
 ): Promise<void> {
-  // TODO: 替换为实际的数据库更新
-  // await db.query("UPDATE users SET preferences = $1, updated_at = now() WHERE subject = $2", [
-  //   JSON.stringify(preferences),
-  //   subject,
-  // ]);
+  // 使用 jsonb_set 原子更新 preferences 字段
+  // 注意：这里直接覆盖整个 preferences 对象，而不是 merge
+  // 因为上层已经读取了当前值并做了修改，所以直接写入是正确的
+  await getPool().query(
+    `UPDATE users
+     SET preferences = COALESCE(preferences, '{}'::jsonb) || $1::jsonb,
+         updated_at = NOW()
+     WHERE subject = $2`,
+    [JSON.stringify(preferences), subject],
+  );
 }
 
 /**

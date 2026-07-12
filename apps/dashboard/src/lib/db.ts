@@ -11,7 +11,8 @@ if (process.env.NODE_ENV !== "test") {
   require("server-only");
 }
 
-import { Pool, type PoolConfig } from "pg";
+import { Pool } from "pg";
+import type { PoolConfig } from "pg";
 
 let _pool: Pool | undefined;
 
