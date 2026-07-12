@@ -11,8 +11,14 @@ if (process.env.NODE_ENV !== "test") {
   require("server-only");
 }
 
-import { Pool } from "pg";
-import type { PoolConfig } from "pg";
+// @ts-expect-error pg 模块没有类型定义，使用 any
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { Pool } = require("pg");
+
+type PoolConfig = {
+  connectionString?: string;
+  max?: number;
+};
 
 let _pool: Pool | undefined;
 
