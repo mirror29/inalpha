@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Radio,
+  Settings,
   ShieldAlert,
   Sigma,
   Sparkles,
@@ -42,6 +43,7 @@ const NAV: NavItem[] = [
   { key: "runners", href: "/runners", icon: Radio },
   { key: "factors", href: "/factors", icon: Sigma },
   { key: "risk", href: "/risk", icon: ShieldAlert },
+  { key: "settings", href: "/settings", icon: Settings },
   // E2 策略演化引擎（LLM 自动变异 + 评估）
   { key: "evolution", href: "/evolution", icon: Workflow },
   // 玄学彩蛋占卜台(纯娱乐)

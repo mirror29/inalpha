@@ -42,7 +42,7 @@ import "../../env.js"; // side-effect: dotenv 加载根 .env（必须在 buildLL
 import { Agent } from "@mastra/core/agent";
 import { TokenLimiterProcessor } from "@mastra/core/processors";
 
-import { buildLLM } from "../llm/provider.js";
+import { buildUserAwareModel } from "../llm/provider.js";
 import { sharedMemory } from "../memory.js";
 import {
   createPaperPendingPlanFetcher,
@@ -56,7 +56,7 @@ export const orchestrator = new Agent({
   name: "orchestrator",
   // D-13：prompt 分层注入 —— buildInstructions() 按稳定性排序组合全部模块
   instructions: buildInstructions,
-  model: buildLLM(),
+  model: buildUserAwareModel(),
   // D-8a'：不挂 subagent，全部能力 tool 化直接调
   // D-10（ADR-0009）：tools 用 dynamic 函数——静态内置 tool + 可插拔 MCP tool 合并。
   // MCP 加载是异步且 memoize 的；全挂时 loadWiredMcpTools 返空数组，不影响内置 tool。

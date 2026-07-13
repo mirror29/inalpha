@@ -72,13 +72,18 @@ export const POST = async (req: Request): Promise<Response> => {
     console.warn("[copilotkit] decryptActiveUserApiKey 失败，降级到系统 LLM:", err instanceof Error ? err.message : err);
   }
 
-  // 通过 custom header 传递用户 LLM 配置提示（Mastra 侧可提取）
+  // 通过 custom header 传递用户 LLM 配置（含解密后的 API key）。
+  // Mastra identity middleware 解析后写入 AsyncLocalStorage → agent 用 buildLLMForUser。
+  // 容器内网传输，不经过公网（CF Tunnel 仅暴露 dashboard:3001，mastra:4111 不外露）。
   const llmConfigHeader = userLLMConfig
     ? JSON.stringify({
-        config_id: userLLMConfig.id,
+        id: userLLMConfig.id,
         provider: userLLMConfig.provider,
         model: userLLMConfig.model,
-        has_key: true,
+        api_key: userLLMConfig.api_key,
+        custom_base_url: userLLMConfig.custom_base_url,
+        custom_provider_name: userLLMConfig.custom_provider_name,
+        label: userLLMConfig.label,
       })
     : "";
 

@@ -14,6 +14,8 @@
  * side-effect `import "../../env.js"`（mastra bundler 会丢纯副作用 import，
  * 见 env.ts 注释，2026-06-11 实测）。
  */
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -24,6 +26,15 @@ import type { LanguageModel } from "@mastra/core/llm";
 import { ensureEnvLoaded } from "../../env.js";
 
 ensureEnvLoaded();
+
+/**
+ * Per-request user LLM config store（AsyncLocalStorage）。
+ *
+ * identity middleware 解析 X-LLM-Config header 后写入此处，
+ * buildUserAwareModel() 在 doGenerate/doStream 时读取，按用户配置
+ * 动态构造 LanguageModel；无配置时降级到系统级 buildLLM()。
+ */
+export const userLLMStore = new AsyncLocalStorage<UserLLMConfig>();
 
 export type LLMProvider =
   | "deepseek"
@@ -244,4 +255,48 @@ export function buildLLMForUser(userConfig: UserLLMConfig | null): LanguageModel
     default:
       throw new Error(`Unsupported provider: ${userConfig.provider}`);
   }
+}
+
+/**
+ * 构建「用户感知」LanguageModel —— 按请求级 ALS 上下文选 LLM。
+ *
+ * Agent 实例只用这一个 model（构造时传入）；每次 mastra 调用 doGenerate/doStream
+ * 时，proxy 检查 identity middleware 写入 ALS 的用户配置，有则用 buildLLMForUser()，
+ * 无则降级到系统级 buildLLM()。缓存按 ALS store 粒度（= 每请求一次 build），
+ * 避免每次 property access 重建 model。
+ *
+ * @returns 代理 LanguageModel
+ */
+export function buildUserAwareModel(): LanguageModel {
+  const defaultModel = buildLLM();
+  // 以 ALS store 为 key 缓存 per-request model；无 config 时返回 null（用 default）。
+  const modelCache = new Map<UserLLMConfig | null | undefined, LanguageModel | null>();
+
+  function resolveModel(): LanguageModel {
+    const config = userLLMStore.getStore();
+    if (!config) return defaultModel;
+    const cached = modelCache.get(config);
+    if (cached !== undefined) return cached ?? defaultModel;
+    try {
+      const m = buildLLMForUser(config) as unknown as LanguageModel;
+      modelCache.set(config, m);
+      return m;
+    } catch (err) {
+      console.warn("[llm] buildLLMForUser 失败，降级系统 LLM:", (err as Error).message);
+      modelCache.set(config, null);
+      return defaultModel;
+    }
+  }
+
+  // Proxy：拦截 doGenerate / doStream，其他属性透传 defaultModel。
+  return new Proxy(defaultModel, {
+    get(_target, prop, receiver) {
+      if (prop === "doGenerate" || prop === "doStream") {
+        const m = resolveModel();
+        if (m === defaultModel) return Reflect.get(defaultModel, prop, receiver);
+        return Reflect.get(m, prop, receiver);
+      }
+      return Reflect.get(defaultModel, prop, receiver);
+    },
+  }) as unknown as LanguageModel;
 }

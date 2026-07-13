@@ -38,6 +38,7 @@ import {
 import { verifyToken } from "../auth.js";
 import { getSettings } from "../config.js";
 import { AUTH_SUB_KEY } from "../hooks/with-hooks.js";
+import { userLLMStore, type UserLLMConfig } from "./llm/provider.js";
 import { divinationApiRoutes } from "../divination/api.js";
 import { closePool as closeDivinationPool } from "../divination/repo.js";
 import { permissionsApiRoutes } from "../permissions/api.js";
@@ -94,6 +95,34 @@ let _warnedNoRequestContext = false;
 let _warnedAuthSignature = false;
 
 const identityMiddleware: MiddlewareHandler = async (c, next) => {
+  // 1. 多租户 LLM 配置：从 X-LLM-Config header 解析用户 API key，注入 ALS。
+  //    后续 agent model（buildUserAwareModel）从 ALS 读取 → 按用户 key 调用 LLM。
+  let userConfig: UserLLMConfig | undefined;
+  try {
+    const raw = c.req.header("X-LLM-Config");
+    if (raw && raw.trim()) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (
+        typeof parsed.provider === "string" &&
+        typeof parsed.api_key === "string" &&
+        parsed.api_key.trim() !== ""
+      ) {
+        userConfig = {
+          id: typeof parsed.id === "string" ? parsed.id : "req",
+          provider: parsed.provider as UserLLMConfig["provider"],
+          model: typeof parsed.model === "string" ? parsed.model : undefined,
+          api_key: parsed.api_key,
+          custom_base_url: typeof parsed.custom_base_url === "string" ? parsed.custom_base_url : undefined,
+          custom_provider_name: typeof parsed.custom_provider_name === "string" ? parsed.custom_provider_name : undefined,
+          label: typeof parsed.label === "string" ? parsed.label : undefined,
+        };
+      }
+    }
+  } catch {
+    // 解析失败静默降级到系统 LLM
+  }
+
+  // 2. JWT 身份注入
   try {
     const authz = c.req.header("Authorization");
     const token = authz?.startsWith("Bearer ") ? authz.slice(7).trim() : undefined;
@@ -130,7 +159,12 @@ const identityMiddleware: MiddlewareHandler = async (c, next) => {
       );
     }
   }
-  await next();
+  // 3. 整个请求在 userLLMStore 上下文中执行 → agent model 可读取用户 LLM 配置
+  if (userConfig) {
+    await userLLMStore.run(userConfig, next);
+  } else {
+    await next();
+  }
 };
 
 export const mastra = new Mastra({
