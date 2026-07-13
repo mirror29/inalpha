@@ -5,22 +5,18 @@
  *
  * 懒加载 Pool，按 DATABASE_URL 配置（从根 .env 继承）。
  * 进程退出时自动关闭。
+ *
+ * 类型标注全部使用 any（避免 pg 模块缺少类型定义带来的 TS 错误）。
  */
 // server-only 仅在非测试环境导入
 if (process.env.NODE_ENV !== "test") {
   require("server-only");
 }
 
-// @ts-expect-error pg 模块没有类型定义，使用 any
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { Pool } = require("pg");
+/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
+const pg = require("pg");
 
-type PoolConfig = {
-  connectionString?: string;
-  max?: number;
-};
-
-let _pool: Pool | undefined;
+let _pool: any;
 
 /**
  * 获取数据库连接池。
@@ -30,7 +26,7 @@ let _pool: Pool | undefined;
  *
  * @returns PostgreSQL Pool 实例
  */
-export function getPool(): Pool {
+export function getPool(): any {
   if (_pool !== undefined) return _pool;
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -40,12 +36,10 @@ export function getPool(): Pool {
     );
   }
 
-  const cfg: PoolConfig = {
+  _pool = new pg.Pool({
     connectionString: databaseUrl,
-    max: 4, // 与 scheduler/repo.ts 保持一致
-  };
-
-  _pool = new Pool(cfg);
+    max: 4,
+  });
   return _pool;
 }
 
@@ -66,3 +60,4 @@ if (process.env.NODE_ENV !== "test") {
   process.once("SIGTERM", () => void closePool());
   process.once("SIGINT", () => void closePool());
 }
+/* eslint-enable */

@@ -12,7 +12,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, UTC
+from datetime import datetime
 from typing import Optional
 
 import asyncpg
