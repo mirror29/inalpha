@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 import asyncpg
 
@@ -63,7 +62,7 @@ class CacheManager:
         venue: str,
         symbol: str,
         timeframe: str,
-    ) -> Optional[datetime]:
+    ) -> datetime | None:
         """获取最后缓存时间"""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -137,7 +136,7 @@ class CacheManager:
 
 
 # 全局缓存管理器实例（延迟初始化）
-_cache_manager: Optional[CacheManager] = None
+_cache_manager: CacheManager | None = None
 
 
 def get_cache_manager() -> CacheManager:
