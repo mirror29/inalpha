@@ -11,9 +11,10 @@ if (process.env.NODE_ENV !== "test") {
   require("server-only");
 }
 
-import { Pool, type PoolConfig } from "pg";
+/* eslint-disable @typescript-eslint/no-require-imports */
+const pg = require("pg");
 
-let _pool: Pool | undefined;
+let _pool: any;
 
 /**
  * 获取数据库连接池。
@@ -23,7 +24,7 @@ let _pool: Pool | undefined;
  *
  * @returns PostgreSQL Pool 实例
  */
-export function getPool(): Pool {
+export function getPool(): any {
   if (_pool !== undefined) return _pool;
 
   const databaseUrl = process.env.DATABASE_URL;
@@ -33,12 +34,10 @@ export function getPool(): Pool {
     );
   }
 
-  const cfg: PoolConfig = {
+  _pool = new pg.Pool({
     connectionString: databaseUrl,
-    max: 4, // 与 scheduler/repo.ts 保持一致
-  };
-
-  _pool = new Pool(cfg);
+    max: 4,
+  });
   return _pool;
 }
 
@@ -59,3 +58,4 @@ if (process.env.NODE_ENV !== "test") {
   process.once("SIGTERM", () => void closePool());
   process.once("SIGINT", () => void closePool());
 }
+/* eslint-enable */
