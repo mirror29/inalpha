@@ -198,7 +198,10 @@ export async function getUserLLMConfigs(subject: string): Promise<{
 }
 
 /**
- * 新增 LLM 配置。
+ * 新增 LLM 配置（原子操作）。
+ *
+ * 使用 PostgreSQL jsonb 操作直接追加到 configs 数组，避免 read-modify-write 竞态。
+ * 第一个配置自动设为 active。
  *
  * @param subject 用户 subject
  * @param input 配置输入
@@ -228,25 +231,35 @@ export async function addUserLLMConfig(
     updated_at: now,
   };
 
-  const preferences = await getUserPreferences(subject);
-  const configs = preferences.configs || [];
-
-  // 如果是第一个配置，自动激活
-  const isFirst = configs.length === 0;
-
-  const updatedPreferences: UserLLMPreferences = {
-    ...preferences,
-    configs: [...configs, newConfig],
-    active_config_id: isFirst ? configId : preferences.active_config_id,
-  };
-
-  await updateUserPreferences(subject, updatedPreferences);
+  // 原子操作：追加到 configs 数组 + 第一个配置自动激活
+  await getPool().query(
+    `UPDATE users
+     SET preferences = jsonb_set(
+       jsonb_set(
+         COALESCE(preferences, '{}'::jsonb),
+         '{llm,configs}',
+         COALESCE(preferences->'llm'->'configs', '[]'::jsonb) || $1::jsonb
+       ),
+       '{llm,active_config_id}',
+       CASE
+         WHEN jsonb_array_length(COALESCE(preferences->'llm'->'configs', '[]'::jsonb)) = 0
+         THEN $2::jsonb
+         ELSE to_jsonb(preferences->'llm'->>'active_config_id')
+       END
+     ),
+         updated_at = NOW()
+     WHERE subject = $3`,
+    [JSON.stringify([newConfig]), JSON.stringify(configId), subject],
+  );
 
   return configId;
 }
 
 /**
  * 更新 LLM 配置。
+ *
+ * 使用 read-modify-write 模式；并发风险很低（单用户不会并发编辑同一配置）。
+ * 如需完全原子化，可用 jsonb_set + jsonb_array_elements 在一条 SQL 内完成替换。
  *
  * @param subject 用户 subject
  * @param configId 配置 ID
@@ -296,7 +309,10 @@ export async function updateUserLLMConfig(
 }
 
 /**
- * 删除 LLM 配置。
+ * 删除 LLM 配置（原子操作）。
+ *
+ * 使用 PostgreSQL jsonb 操作直接删除数组元素，避免 read-modify-write 竞态。
+ * 同时清理 active_config_id（如果删除的是当前激活配置则自动切换到第一个）。
  *
  * @param subject 用户 subject
  * @param configId 配置 ID
@@ -305,29 +321,49 @@ export async function deleteUserLLMConfig(
   subject: string,
   configId: string,
 ): Promise<void> {
-  const preferences = await getUserPreferences(subject);
-  const configs = preferences.configs || [];
+  const result = await getPool().query(
+    `WITH current AS (
+       SELECT preferences FROM users WHERE subject = $1
+     )
+     UPDATE users
+     SET preferences = jsonb_set(
+       jsonb_set(
+         COALESCE(current.preferences, '{}'::jsonb),
+         '{llm,configs}',
+         (SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+          FROM jsonb_array_elements(
+            COALESCE(current.preferences->'llm'->'configs', '[]'::jsonb)
+          ) elem
+          WHERE elem->>'id' <> $2)
+       ),
+       '{llm,active_config_id}',
+       CASE
+         WHEN current.preferences->'llm'->>'active_config_id' = $2 THEN
+           (SELECT elem->>'id'
+            FROM jsonb_array_elements(
+              COALESCE(current.preferences->'llm'->'configs', '[]'::jsonb)
+            ) elem
+            WHERE elem->>'id' <> $2
+            LIMIT 1)::jsonb
+         ELSE to_jsonb(current.preferences->'llm'->>'active_config_id')
+       END
+     ),
+         updated_at = NOW()
+     FROM current
+     WHERE users.subject = $1
+       AND current.preferences->'llm'->'configs' @> $3::jsonb`,
+    [subject, configId, JSON.stringify([{ id: configId }])],
+  );
 
-  const filtered = configs.filter((c) => c.id !== configId);
-  if (filtered.length === configs.length) {
+  if (result.rowCount === 0) {
     throw new Error(`Config ${configId} not found`);
   }
-
-  // 如果删除的是激活配置，自动激活第一个（如果有）
-  let activeId = preferences.active_config_id;
-  if (activeId === configId) {
-    activeId = filtered.length > 0 ? filtered[0].id : undefined;
-  }
-
-  await updateUserPreferences(subject, {
-    ...preferences,
-    configs: filtered,
-    active_config_id: activeId,
-  });
 }
 
 /**
  * 切换激活配置。
+ *
+ * 使用原子 SQL（jsonb_set）直接更新 active_config_id，无 read-modify-write 竞态。
  *
  * @param subject 用户 subject
  * @param configId 配置 ID
@@ -336,17 +372,23 @@ export async function activateUserLLMConfig(
   subject: string,
   configId: string,
 ): Promise<void> {
-  const preferences = await getUserPreferences(subject);
-  const configs = preferences.configs || [];
+  // 原子操作：仅修改 preferences->'llm'->'active_config_id'
+  const result = await getPool().query(
+    `UPDATE users
+     SET preferences = jsonb_set(
+       COALESCE(preferences, '{}'::jsonb),
+       '{llm,active_config_id}',
+       $1::jsonb
+     ),
+         updated_at = NOW()
+     WHERE subject = $2
+       AND preferences->'llm'->'configs' @> $3::jsonb`,
+    [JSON.stringify(configId), subject, JSON.stringify([{ id: configId }])],
+  );
 
-  if (!configs.find((c) => c.id === configId)) {
+  if (result.rowCount === 0) {
     throw new Error(`Config ${configId} not found`);
   }
-
-  await updateUserPreferences(subject, {
-    ...preferences,
-    active_config_id: configId,
-  });
 }
 
 /**
