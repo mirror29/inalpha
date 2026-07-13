@@ -5,15 +5,13 @@
  *
  * 懒加载 Pool，按 DATABASE_URL 配置（从根 .env 继承）。
  * 进程退出时自动关闭。
- *
- * 类型标注全部使用 any（避免 pg 模块缺少类型定义带来的 TS 错误）。
  */
 // server-only 仅在非测试环境导入
 if (process.env.NODE_ENV !== "test") {
   require("server-only");
 }
 
-/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-require-imports */
 const pg = require("pg");
 
 let _pool: any;

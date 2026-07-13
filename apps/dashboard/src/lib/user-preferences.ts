@@ -113,19 +113,17 @@ function generateConfigId(): string {
  * @returns 用户 preferences 对象
  */
 async function getUserPreferences(subject: string): Promise<UserLLMPreferences> {
-  const { rows } = await getPool().query<{ preferences: UserLLMPreferences | null }>(
+  const result = await getPool().query(
     "SELECT preferences FROM users WHERE subject = $1",
     [subject],
   );
 
-  const preferences = rows[0]?.preferences;
+  const preferences = (result.rows[0] as { preferences: UserLLMPreferences | null } | undefined)?.preferences;
   return preferences ?? {};
 }
 
 /**
  * 更新用户 preferences。
- *
- * 使用 PostgreSQL jsonb_set 进行原子更新，避免并发写冲突。
  *
  * @param subject 用户 subject
  * @param preferences 新的 preferences 对象
@@ -134,9 +132,6 @@ async function updateUserPreferences(
   subject: string,
   preferences: UserLLMPreferences,
 ): Promise<void> {
-  // 使用 jsonb_set 原子更新 preferences 字段
-  // 注意：这里直接覆盖整个 preferences 对象，而不是 merge
-  // 因为上层已经读取了当前值并做了修改，所以直接写入是正确的
   await getPool().query(
     `UPDATE users
      SET preferences = COALESCE(preferences, '{}'::jsonb) || $1::jsonb,
