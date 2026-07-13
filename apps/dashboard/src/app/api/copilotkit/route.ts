@@ -63,8 +63,14 @@ export const POST = async (req: Request): Promise<Response> => {
   const token = await getServiceToken();
   const subject = await getSessionSubject();
 
-  // 解析用户激活的 LLM 配置（多租户）
-  const userLLMConfig = await decryptActiveUserApiKey(subject);
+  // 解析用户激活的 LLM 配置（多租户）。
+  // DB 不可用时降级到系统级 LLM（buildLLM），不阻断会话。
+  let userLLMConfig = null;
+  try {
+    userLLMConfig = await decryptActiveUserApiKey(subject);
+  } catch (err) {
+    console.warn("[copilotkit] decryptActiveUserApiKey 失败，降级到系统 LLM:", err instanceof Error ? err.message : err);
+  }
 
   // 通过 custom header 传递用户 LLM 配置提示（Mastra 侧可提取）
   const llmConfigHeader = userLLMConfig

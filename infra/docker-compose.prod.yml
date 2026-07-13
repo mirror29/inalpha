@@ -194,6 +194,12 @@ services:
       CONSOLE_EMAIL: ${CONSOLE_EMAIL:-console@inalpha.dev}
       # 多用户登录闸门。默认 true=线上强制登录;排障可在 .env.prod 置 false。
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      # Dashboard 直接读 users.preferences（多租户 LLM 配置），需直连 DB。
+      # BFF 层凭据隔离:仅注入 DB URL，其他敏感项（API key 等）不注入。
+      DATABASE_URL: ${DATABASE_URL:?required}
+      # 加密密钥 —— 解密 users 表 preferences 中存储的 LLM API key。
+      # 未配置时从 JWT_SECRET 派生（encryption.ts 降级）。
+      LLM_CONFIG_ENCRYPTION_KEY: ${LLM_CONFIG_ENCRYPTION_KEY:-}
       MASTRA_URL: http://mastra:4111
       PAPER_SERVICE_URL: http://paper:8002
       DATA_SERVICE_URL: http://data:8001
