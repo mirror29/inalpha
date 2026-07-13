@@ -98,26 +98,26 @@ async def backfill_bars(
     # ─── 分钟级强制限制（baostock 配额优化）──────────────────────
     # baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
     # 仅对 akshare venue 生效（binance/alpaca/yfinance 不受此限制）
+    effective_from_ts = req.from_ts
     if req.venue == "akshare" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
         max_lookback_days = _MINUTE_LOOKBACK_LIMITS[req.timeframe]
         span_days = (req.to_ts - req.from_ts).total_seconds() / 86400
 
         if span_days > max_lookback_days:
             # 强制截断到允许的最大范围
-            capped_from_ts = req.to_ts - timedelta(days=max_lookback_days)
+            effective_from_ts = req.to_ts - timedelta(days=max_lookback_days)
             _logger.warning(
                 "backfill_minute_lookback_capped",
                 venue=req.venue,
                 symbol=req.symbol,
                 timeframe=req.timeframe,
                 original_from_ts=req.from_ts.isoformat(),
-                capped_from_ts=capped_from_ts.isoformat(),
+                capped_from_ts=effective_from_ts.isoformat(),
                 max_lookback_days=max_lookback_days,
                 reason="baostock quota optimization",
             )
-            req.from_ts = capped_from_ts
 
-    span_seconds = (req.to_ts - req.from_ts).total_seconds()
+    span_seconds = (req.to_ts - effective_from_ts).total_seconds()
     tf_seconds = tf_table[req.timeframe]
     estimated_bars = int(span_seconds / tf_seconds)
     if estimated_bars > _MAX_BARS_PER_REQUEST:
@@ -143,7 +143,7 @@ async def backfill_bars(
     cached_latest = await latest_bar_ts(
         db, req.venue, req.symbol, req.timeframe, upto=req.to_ts
     )
-    if cached_latest is not None and cached_latest > req.from_ts:
+    if cached_latest is not None and cached_latest > effective_from_ts:
         cursor = cached_latest
         _logger.info(
             "backfill_incremental",
@@ -151,10 +151,10 @@ async def backfill_bars(
             symbol=req.symbol,
             timeframe=req.timeframe,
             cached_latest=cached_latest.isoformat(),
-            from_ts=req.from_ts.isoformat(),
+            from_ts=effective_from_ts.isoformat(),
         )
     else:
-        cursor = req.from_ts
+        cursor = effective_from_ts
     fetched_total = 0
     inserted_total = 0
 
@@ -231,6 +231,6 @@ async def backfill_bars(
         timeframe=req.timeframe,
         bars_fetched=fetched_total,
         bars_inserted=inserted_total,
-        from_ts=req.from_ts,
+        from_ts=effective_from_ts,
         to_ts=req.to_ts,
     )

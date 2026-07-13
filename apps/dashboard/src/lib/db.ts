@@ -6,13 +6,10 @@
  * 懒加载 Pool，按 DATABASE_URL 配置（从根 .env 继承）。
  * 进程退出时自动关闭。
  */
-// server-only 仅在非测试环境导入
-if (process.env.NODE_ENV !== "test") {
-  require("server-only");
-}
-
+import "server-only";
 import pg from "pg";
 
+// Node.js 单线程事件循环无需锁保护 lazy init
 let _pool: pg.Pool | undefined;
 
 /**
