@@ -97,7 +97,8 @@ async def backfill_bars(
 
     # ─── 分钟级强制限制（baostock 配额优化）──────────────────────
     # baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
-    if req.timeframe in _MINUTE_LOOKBACK_LIMITS:
+    # 仅对 akshare venue 生效（binance/alpaca/yfinance 不受此限制）
+    if req.venue == "akshare" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
         max_lookback_days = _MINUTE_LOOKBACK_LIMITS[req.timeframe]
         span_days = (req.to_ts - req.from_ts).total_seconds() / 86400
 

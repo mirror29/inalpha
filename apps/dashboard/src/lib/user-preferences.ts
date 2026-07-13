@@ -113,12 +113,12 @@ function generateConfigId(): string {
  * @returns 用户 preferences 对象
  */
 async function getUserPreferences(subject: string): Promise<UserLLMPreferences> {
-  const result = await getPool().query(
+  const result = await getPool().query<{ preferences: UserLLMPreferences | null }>(
     "SELECT preferences FROM users WHERE subject = $1",
     [subject],
   );
 
-  const preferences = (result.rows[0] as { preferences: UserLLMPreferences | null } | undefined)?.preferences;
+  const preferences = result.rows[0]?.preferences;
   return preferences ?? {};
 }
 
