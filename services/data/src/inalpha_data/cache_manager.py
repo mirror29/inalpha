@@ -9,14 +9,16 @@
 优化效果：
 - 多用户查询同一股票：缓存复用，0 次请求
 - 增量更新：只拉最新数据，节省 80-99% 配额
+
+注意：本模块为基础设施工厂，当前尚未被 backfill/bars API 集成。
+后续 PR 将在 backfill.py 中调用 get_cache_manager() 实现增量缓存。
 """
 from __future__ import annotations
 
+import threading
 from datetime import datetime
-from typing import Optional
 
 import asyncpg
-
 from inalpha_shared import get_logger
 
 _logger = get_logger(__name__)
@@ -63,7 +65,7 @@ class CacheManager:
         venue: str,
         symbol: str,
         timeframe: str,
-    ) -> Optional[datetime]:
+    ) -> datetime | None:
         """获取最后缓存时间"""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -91,8 +93,7 @@ class CacheManager:
             return 0
 
         async with self.pool.acquire() as conn:
-            # 批量插入
-            result = await conn.executemany(
+            await conn.executemany(
                 """
                 INSERT INTO bars (venue, symbol, timeframe, ts, open, high, low, close, volume)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -103,8 +104,8 @@ class CacheManager:
                     for b in bars
                 ],
             )
-
-            return result.split()[-1] if result else 0
+            # 返回尝试插入的总条数（ON CONFLICT DO NOTHING 可能少于此数）
+            return len(bars)
 
     async def get_cached_count(
         self,
@@ -136,15 +137,23 @@ class CacheManager:
             return row["count"] if row else 0
 
 
-# 全局缓存管理器实例（延迟初始化）
-_cache_manager: Optional[CacheManager] = None
+# 全局缓存管理器实例（延迟初始化，线程安全）
+_cache_manager: CacheManager | None = None
+_cache_manager_lock = threading.Lock()
 
 
 def get_cache_manager() -> CacheManager:
-    """获取缓存管理器实例"""
+    """获取缓存管理器实例（线程安全）。"""
     global _cache_manager
-    if _cache_manager is None:
+    if _cache_manager is not None:
+        return _cache_manager
+
+    with _cache_manager_lock:
+        # 双重检查：锁内再次检查，防止竞态
+        if _cache_manager is not None:
+            return _cache_manager
+
         from inalpha_shared.db import get_db_pool
 
         _cache_manager = CacheManager(get_db_pool())
-    return _cache_manager
+        return _cache_manager

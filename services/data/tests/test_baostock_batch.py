@@ -1,6 +1,7 @@
 """测试 baostock 是否支持批量查询（多股票逗号分隔）"""
-import baostock as bs
 from datetime import datetime, timedelta
+
+import baostock as bs
 
 # 登录
 lg = bs.login()
