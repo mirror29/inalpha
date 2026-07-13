@@ -15,7 +15,6 @@ from __future__ import annotations
 from datetime import datetime
 
 import asyncpg
-
 from inalpha_shared import get_logger
 
 _logger = get_logger(__name__)
