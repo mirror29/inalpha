@@ -109,12 +109,11 @@ function generateConfigId(): string {
 /**
  * 从数据库读取用户 preferences。
  *
- * 从 preferences->'llm' 读取，与 add/delete/activate 的 jsonb_set 写路径一致。
- *
  * @param subject 用户 subject
  * @returns 用户 preferences 对象
  */
 async function getUserPreferences(subject: string): Promise<UserLLMPreferences> {
+  // 从 preferences->'llm' 读取，与迁移 0033 索引 WHERE (preferences->>'llm') IS NOT NULL 对齐
   const result = await getPool().query(
     "SELECT preferences->'llm' AS llm FROM users WHERE subject = $1",
     [subject],
@@ -127,8 +126,6 @@ async function getUserPreferences(subject: string): Promise<UserLLMPreferences> 
 /**
  * 更新用户 preferences。
  *
- * 使用 jsonb_set 写到 preferences->'llm' 键下，与 add/delete/activate 的原子路径一致。
- *
  * @param subject 用户 subject
  * @param preferences 新的 preferences 对象
  */
@@ -136,6 +133,7 @@ async function updateUserPreferences(
   subject: string,
   preferences: UserLLMPreferences,
 ): Promise<void> {
+  // 使用 jsonb_set 写到 preferences->'llm' 键下，与迁移 0033 索引对齐
   await getPool().query(
     `UPDATE users
      SET preferences = jsonb_set(
