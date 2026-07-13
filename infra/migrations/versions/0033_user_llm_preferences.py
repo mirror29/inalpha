@@ -57,11 +57,11 @@ def upgrade() -> None:
         ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB DEFAULT '{}'
         """
     )
-    # 索引：快速查询已配置 LLM 的用户（preferences->>'llm' 非空）
+    # 部分索引：只覆盖已配置 LLM 的用户，加速"查有配置的用户"查询
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_users_has_llm_config
-        ON users ((preferences->>'llm') IS NOT NULL)
+        ON users (subject)
         WHERE (preferences->>'llm') IS NOT NULL
         """
     )
