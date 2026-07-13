@@ -20,7 +20,6 @@ from ..connectors.fred import TIMEFRAME_SECONDS as FRED_TIMEFRAME_SECONDS
 from ..connectors.yfinance_conn import TIMEFRAME_SECONDS as YFINANCE_TIMEFRAME_SECONDS
 from ..schemas import BackfillRequest, BackfillResponse
 from ..storage.bars import insert_bars, latest_bar_ts
-from ..cache_manager import get_cache_manager
 
 router = APIRouter(tags=["backfill"])
 _logger = get_logger(__name__)

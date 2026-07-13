@@ -15,6 +15,7 @@
  */
 import "server-only";
 
+import { getPool } from "./db";
 import {
   decryptApiKey,
   encryptApiKey,
@@ -112,10 +113,13 @@ function generateConfigId(): string {
  * @returns 用户 preferences 对象
  */
 async function getUserPreferences(subject: string): Promise<UserLLMPreferences> {
-  // TODO: 替换为实际的数据库查询
-  // const result = await db.query("SELECT preferences FROM users WHERE subject = $1", [subject]);
-  // return result.rows[0]?.preferences || {};
-  return {};
+  const result = await getPool().query(
+    "SELECT preferences FROM users WHERE subject = $1",
+    [subject],
+  );
+
+  const preferences = (result.rows[0] as { preferences: UserLLMPreferences | null } | undefined)?.preferences;
+  return preferences ?? {};
 }
 
 /**
@@ -128,11 +132,13 @@ async function updateUserPreferences(
   subject: string,
   preferences: UserLLMPreferences,
 ): Promise<void> {
-  // TODO: 替换为实际的数据库更新
-  // await db.query("UPDATE users SET preferences = $1, updated_at = now() WHERE subject = $2", [
-  //   JSON.stringify(preferences),
-  //   subject,
-  // ]);
+  await getPool().query(
+    `UPDATE users
+     SET preferences = COALESCE(preferences, '{}'::jsonb) || $1::jsonb,
+         updated_at = NOW()
+     WHERE subject = $2`,
+    [JSON.stringify(preferences), subject],
+  );
 }
 
 /**
