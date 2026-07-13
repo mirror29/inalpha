@@ -12,7 +12,14 @@
 - 在累计净盈亏看到"总收益"
 """
 
+from __future__ import annotations
+
 from alembic import op
+
+revision: str = "0034"
+down_revision: str | None = "0033"
+branch_labels: str | tuple[str, ...] | None = None
+depends_on: str | tuple[str, ...] | None = None
 
 
 def upgrade() -> None:
