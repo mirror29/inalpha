@@ -113,13 +113,14 @@ function generateConfigId(): string {
  * @returns 用户 preferences 对象
  */
 async function getUserPreferences(subject: string): Promise<UserLLMPreferences> {
-  const result = await getPool().query<{ preferences: UserLLMPreferences | null }>(
-    "SELECT preferences FROM users WHERE subject = $1",
+  // 从 preferences->'llm' 读取，与迁移 0033 索引 WHERE (preferences->>'llm') IS NOT NULL 对齐
+  const result = await getPool().query(
+    "SELECT preferences->'llm' AS llm FROM users WHERE subject = $1",
     [subject],
   );
 
-  const preferences = result.rows[0]?.preferences;
-  return preferences ?? {};
+  const llm = (result.rows[0] as { llm: UserLLMPreferences | null } | undefined)?.llm;
+  return llm ?? {};
 }
 
 /**
@@ -132,9 +133,14 @@ async function updateUserPreferences(
   subject: string,
   preferences: UserLLMPreferences,
 ): Promise<void> {
+  // 使用 jsonb_set 写到 preferences->'llm' 键下，与迁移 0033 索引对齐
   await getPool().query(
     `UPDATE users
-     SET preferences = COALESCE(preferences, '{}'::jsonb) || $1::jsonb,
+     SET preferences = jsonb_set(
+       COALESCE(preferences, '{}'::jsonb),
+       '{llm}',
+       $1::jsonb
+     ),
          updated_at = NOW()
      WHERE subject = $2`,
     [JSON.stringify(preferences), subject],
