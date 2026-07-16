@@ -7,10 +7,10 @@ import type { OverviewPayload } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { fmtMoney, fmtSigned, pnlColor } from "@/lib/format";
 
-/** 收益率(已带 +/− 号),2 位小数;不可计算(初始资金为 0)时返回 null。 */
-function fmtReturnPct(net: number, initial: number, locale: string): string | null {
-  if (!initial) return null;
-  const pct = (net / initial) * 100;
+/** 收益率(已带 +/− 号),2 位小数;不可计算(初始资金为 0)时返回 null。分母为实际总投入本金。 */
+function fmtReturnPct(net: number, totalCapital: number, locale: string): string | null {
+  if (!totalCapital) return null;
+  const pct = (net / totalCapital) * 100;
   const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
   return `${sign}${new Intl.NumberFormat(locale, {
     minimumFractionDigits: 2,
@@ -39,7 +39,9 @@ export function KpiBar({ data }: { data: OverviewPayload }) {
 
   // 总收益率 / 累计净盈亏(真实收益口径:扣除外生入金)。
   const netPnl = account.total_equity - account.initial_cash - account.net_external_flows;
-  const returnPct = fmtReturnPct(netPnl, account.initial_cash, locale);
+  // 总投入本金 = 初始资金 + 外生入金(分母用实际总投入,而非仅 initial_cash)。
+  const totalCapital = account.initial_cash + account.net_external_flows;
+  const returnPct = fmtReturnPct(netPnl, totalCapital, locale);
 
   return (
     <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @5xl:grid-cols-3">

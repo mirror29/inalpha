@@ -390,7 +390,15 @@ export function AccountView({ a }: { a: AccountShape }) {
             ? [
                 {
                   label: "pnl",
-                  value: <Pnl value={a.total_equity - a.initial_cash} />,
+                  value: (
+                    <Pnl
+                      value={
+                        a.total_equity -
+                        a.initial_cash -
+                        (a.net_external_flows ?? 0)
+                      }
+                    />
+                  ),
                 },
               ]
             : []),
