@@ -7,9 +7,9 @@ import type { OverviewPayload } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { fmtMoney, fmtSigned, pnlColor } from "@/lib/format";
 
-/** 收益率(已带 +/− 号),2 位小数;不可计算(初始资金为 0)时返回 null。分母为实际总投入本金。 */
+/** 收益率(已带 +/− 号),2 位小数;不可计算(总投入本金 ≤ 0)时返回 null。分母为实际总投入本金。 */
 function fmtReturnPct(net: number, totalCapital: number, locale: string): string | null {
-  if (!totalCapital) return null;
+  if (totalCapital <= 0) return null;
   const pct = (net / totalCapital) * 100;
   const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
   return `${sign}${new Intl.NumberFormat(locale, {
