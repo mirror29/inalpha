@@ -23,6 +23,11 @@ const envPath = resolve(resolveOrchestrationRoot(), ".env");
 if (existsSync(envPath)) {
   loadEnvFile(envPath);
 }
+// 同时加载仓库根目录的 .env（包含 AUTH_ENABLED 等共享配置）
+const rootEnvPath = resolve(resolveOrchestrationRoot(), "../../.env");
+if (existsSync(rootEnvPath)) {
+  loadEnvFile(rootEnvPath);
+}
 
 import { Mastra } from "@mastra/core/mastra";
 import { LibSQLStore } from "@mastra/libsql";
@@ -100,6 +105,7 @@ const identityMiddleware: MiddlewareHandler = async (c, next) => {
   let userConfig: UserLLMConfig | undefined;
   try {
     const raw = c.req.header("X-LLM-Config");
+    console.log("[identity-mw] X-LLM-Config header:", raw ? `${raw.slice(0, 50)}...` : "(empty)");
     if (raw && raw.trim()) {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       if (
@@ -116,6 +122,7 @@ const identityMiddleware: MiddlewareHandler = async (c, next) => {
           custom_provider_name: typeof parsed.custom_provider_name === "string" ? parsed.custom_provider_name : undefined,
           label: typeof parsed.label === "string" ? parsed.label : undefined,
         };
+        console.log("[identity-mw] Parsed userConfig:", { id: userConfig.id, provider: userConfig.provider, model: userConfig.model });
       }
     }
   } catch {

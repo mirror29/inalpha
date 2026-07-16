@@ -76,6 +76,30 @@ export function ChatThread({
   const [historyError, setHistoryError] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
+  /** 拦截会话启动鉴权错误，避免用户误以为 Agent 已正常调用。 */
+  useEffect(() => {
+    const orig = window.fetch;
+    if ((orig as { __inalphaLLMCheck?: boolean }).__inalphaLLMCheck) return;
+    const patched: typeof window.fetch = async (input, init) => {
+      let url = "";
+      try {
+        url = typeof input === "string" ? input
+          : input instanceof URL ? input.href
+          : (input as Request).url;
+      } catch { /* ignore */ }
+      const res = await orig(input, init);
+      if (url.includes("/api/copilotkit") && res.status === 428) {
+        window.dispatchEvent(new CustomEvent("inalpha:open-llm-settings"));
+      } else if (url.includes("/api/copilotkit") && res.status === 401) {
+        setChatError("当前 LLM API Key 无效或暂时不可用，请检查配置后重试");
+      }
+      return res;
+    };
+    (patched as { __inalphaLLMCheck?: boolean }).__inalphaLLMCheck = true;
+    window.fetch = patched;
+    return () => { if (window.fetch === patched) window.fetch = orig; };
+  }, []);
+
   const loadedThreadRef = useRef<string | null>(null);
   const setMessagesRef = useRef(setMessages);
   setMessagesRef.current = setMessages;

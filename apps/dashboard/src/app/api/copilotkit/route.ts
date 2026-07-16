@@ -6,9 +6,13 @@ import {
 } from "@copilotkit/runtime";
 import { getRemoteAgents } from "@ag-ui/mastra";
 import { MastraClient } from "@mastra/client-js";
+import { NextResponse } from "next/server";
 
 import { BACKENDS, getServiceToken, getSessionSubject } from "@/lib/backend";
-import { decryptActiveUserApiKey } from "@/lib/user-preferences";
+import {
+  decryptActiveUserApiKey,
+  validateUserLLMConfig,
+} from "@/lib/user-preferences";
 
 /**
  * 静音 @ag-ui/mastra 1.0.3 的良性日志噪音:它不认 mastra(v5 streamVNext)的
@@ -64,12 +68,29 @@ export const POST = async (req: Request): Promise<Response> => {
   const subject = await getSessionSubject();
 
   // 解析用户激活的 LLM 配置（多租户）。
-  // DB 不可用时降级到系统级 LLM（buildLLM），不阻断会话。
+  // 如果用户没有配置 API Key，返回特殊标记让前端弹窗。
   let userLLMConfig = null;
   try {
     userLLMConfig = await decryptActiveUserApiKey(subject);
   } catch (err) {
-    console.warn("[copilotkit] decryptActiveUserApiKey 失败，降级到系统 LLM:", err instanceof Error ? err.message : err);
+    console.error("[copilotkit] decryptActiveUserApiKey 失败:", err instanceof Error ? err.message : err);
+  }
+
+  // 如果用户没有配置 LLM，返回 428 让前端弹配置弹窗
+  if (!userLLMConfig) {
+    return NextResponse.json(
+      { error: "NO_LLM_CONFIG", message: "请先配置 LLM API Key" },
+      { status: 428 }
+    );
+  }
+
+  const validation = await validateUserLLMConfig(userLLMConfig);
+  if (!validation.valid) {
+    console.warn("[copilotkit] 激活 LLM 配置鉴权失败:", validation.reason);
+    return NextResponse.json(
+      { error: "INVALID_LLM_CONFIG", message: "当前 LLM API Key 无效或暂时不可用，请检查激活配置" },
+      { status: 401 },
+    );
   }
 
   // 通过 custom header 传递用户 LLM 配置（含解密后的 API key）。
@@ -87,6 +108,9 @@ export const POST = async (req: Request): Promise<Response> => {
       })
     : "";
 
+  console.log("[copilotkit] userLLMConfig:", userLLMConfig ? { id: userLLMConfig.id, provider: userLLMConfig.provider } : null);
+  console.log("[copilotkit] llmConfigHeader length:", llmConfigHeader.length);
+
   const mastraClient = new MastraClient({
     baseUrl: BACKENDS.mastra,
     headers: {
@@ -99,6 +123,24 @@ export const POST = async (req: Request): Promise<Response> => {
     mastraClient,
     resourceId: subject, // resourceId = subject（用户隔离）
   });
+
+  // @ag-ui/mastra 的远程 agent 会把 headers 塞进 modelSettings 传给 mastra
+  // 我们直接在 agent 实例上设置 headers 属性，
+  // 这样 remote agent 的 stream 方法调用时会把 headers 通过 modelSettings 传给 mastra
+  if (llmConfigHeader) {
+    for (const agent of Object.values(agents)) {
+      const agentWithHeaders = agent as unknown as { headers?: Record<string, string> };
+      if (agentWithHeaders) {
+        agentWithHeaders.headers = {
+          ...(agentWithHeaders.headers || {}),
+          "X-LLM-Config": llmConfigHeader,
+        };
+      }
+    }
+  }
+
+  // 打印 agent 的 headers 确认
+  console.log("[copilotkit] agent headers set:", Object.values(agents).length, "agents");
 
   // CopilotKit 1.59.5 起 `agents` 收紧为 NonEmptyRecord | Promise | factory;
   // getRemoteAgents 返回的是普通 Record(类型上可能为空,运行期非空),按 AgentsConfig 收口。
