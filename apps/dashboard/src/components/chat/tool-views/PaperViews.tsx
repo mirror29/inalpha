@@ -350,6 +350,7 @@ export interface AccountShape {
   initial_cash?: number;
   positions_value?: number;
   total_equity?: number;
+  net_external_flows?: number;
   cash_balances?: Record<string, number>;
   perp_margin_locked?: number;
   fx_warnings?: string[];
