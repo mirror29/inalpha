@@ -12,14 +12,14 @@
     "factors": "Factors",
     "risk": "Risk",
     "divination": "Omikuji",
-    "settings": "LLM Settings",
     "evolution": "Evolution",
     "soon": "soon",
     "menu": "Menu",
     "close": "Close",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "config": "Config"
   },
   "theme": {
     "label": "Theme",
