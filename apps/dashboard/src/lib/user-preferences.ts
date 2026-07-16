@@ -133,14 +133,10 @@ async function updateUserPreferences(
   subject: string,
   preferences: UserLLMPreferences,
 ): Promise<void> {
-  // 使用 jsonb_set 写到 preferences->'llm' 键下，与迁移 0033 索引对齐
+  // 直接覆盖整个 preferences 字段（单用户不会并发写）
   await getPool().query(
     `UPDATE users
-     SET preferences = jsonb_set(
-       COALESCE(preferences, '{}'::jsonb),
-       '{llm}',
-       $1::jsonb
-     ),
+     SET preferences = $1::jsonb,
          updated_at = NOW()
      WHERE subject = $2`,
     [JSON.stringify(preferences), subject],
@@ -238,20 +234,22 @@ export async function addUserLLMConfig(
   };
 
   // 原子操作：追加到 configs 数组 + 第一个配置自动激活
+  // 使用直接的 JSON 字符串赋值，避免 jsonb_set 的 path 参数问题
   await getPool().query(
     `UPDATE users
      SET preferences = jsonb_set(
-       jsonb_set(
-         COALESCE(preferences, '{}'::jsonb),
-         '{llm,configs}',
-         COALESCE(preferences->'llm'->'configs', '[]'::jsonb) || $1::jsonb
-       ),
-       '{llm,active_config_id}',
-       CASE
-         WHEN jsonb_array_length(COALESCE(preferences->'llm'->'configs', '[]'::jsonb)) = 0
-         THEN $2::jsonb
-         ELSE to_jsonb(preferences->'llm'->>'active_config_id')
-       END
+       COALESCE(preferences, '{}'::jsonb),
+       '{llm}',
+       jsonb_build_object(
+         'configs',
+         COALESCE(preferences->'llm'->'configs', '[]'::jsonb) || $1::jsonb,
+         'active_config_id',
+         CASE
+           WHEN jsonb_array_length(COALESCE(preferences->'llm'->'configs', '[]'::jsonb)) = 0
+           THEN $2::jsonb
+           ELSE to_jsonb(preferences->'llm'->>'active_config_id')
+         END
+       )
      ),
          updated_at = NOW()
      WHERE subject = $3`,
@@ -327,43 +325,38 @@ export async function deleteUserLLMConfig(
   subject: string,
   configId: string,
 ): Promise<void> {
-  const result = await getPool().query(
-    `WITH current AS (
-       SELECT preferences FROM users WHERE subject = $1
-     )
-     UPDATE users
-     SET preferences = jsonb_set(
-       jsonb_set(
-         COALESCE(current.preferences, '{}'::jsonb),
-         '{llm,configs}',
-         (SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
-          FROM jsonb_array_elements(
-            COALESCE(current.preferences->'llm'->'configs', '[]'::jsonb)
-          ) elem
-          WHERE elem->>'id' <> $2)
-       ),
-       '{llm,active_config_id}',
-       CASE
-         WHEN current.preferences->'llm'->>'active_config_id' = $2 THEN
-           (SELECT elem->>'id'
-            FROM jsonb_array_elements(
-              COALESCE(current.preferences->'llm'->'configs', '[]'::jsonb)
-            ) elem
-            WHERE elem->>'id' <> $2
-            LIMIT 1)::jsonb
-         ELSE to_jsonb(current.preferences->'llm'->>'active_config_id')
-       END
-     ),
-         updated_at = NOW()
-     FROM current
-     WHERE users.subject = $1
-       AND current.preferences->'llm'->'configs' @> $3::jsonb`,
-    [subject, configId, JSON.stringify([{ id: configId }])],
-  );
+  // 先获取当前配置
+  const preferences = await getUserPreferences(subject);
+  const configs = preferences.configs || [];
 
-  if (result.rowCount === 0) {
+  // 过滤掉要删除的配置
+  const newConfigs = configs.filter((c) => c.id !== configId);
+  if (newConfigs.length === configs.length) {
     throw new Error(`Config ${configId} not found`);
   }
+
+  // 处理 active_config_id：如果删除的是当前激活的，自动切换到第一个
+  let newActiveId = preferences.active_config_id;
+  if (preferences.active_config_id === configId) {
+    newActiveId = newConfigs.length > 0 ? newConfigs[0].id : undefined;
+  }
+
+  // 直接更新整个 preferences
+  await getPool().query(
+    `UPDATE users
+     SET preferences = $1::jsonb,
+         updated_at = NOW()
+     WHERE subject = $2`,
+    [
+      JSON.stringify({
+        llm: {
+          configs: newConfigs,
+          ...(newActiveId && { active_config_id: newActiveId }),
+        },
+      }),
+      subject,
+    ],
+  );
 }
 
 /**
@@ -429,4 +422,59 @@ export async function decryptActiveUserApiKey(
   const apiKey = await decryptApiKey(encrypted);
 
   return { ...active, api_key: apiKey };
+}
+
+/**
+ * 在发起 Agent 会话前验证激活配置的 API key。
+ *
+ * @param config 含解密后 API key 的用户配置
+ * @returns 校验结果与内部诊断原因
+ */
+export async function validateUserLLMConfig(
+  config: UserLLMConfig & { api_key: string },
+): Promise<{ valid: boolean; reason?: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    let response: Response;
+    if (config.provider === "gemini") {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(config.api_key)}`,
+        { method: "GET", signal: controller.signal },
+      );
+    } else {
+      const baseUrl = config.custom_base_url || PROVIDER_BASE_URLS[config.provider];
+      if (!baseUrl && config.provider !== "anthropic") {
+        return { valid: false, reason: "provider endpoint is missing" };
+      }
+
+      const url = config.provider === "anthropic"
+        ? "https://api.anthropic.com/v1/models"
+        : `${baseUrl!.replace(/\/$/, "")}/models`;
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+      if (config.provider === "anthropic") {
+        headers["x-api-key"] = config.api_key;
+        headers["anthropic-version"] = "2023-06-01";
+      } else {
+        headers.Authorization = `Bearer ${config.api_key}`;
+      }
+      response = await fetch(url, { method: "GET", headers, signal: controller.signal });
+    }
+
+    if (response.ok) return { valid: true };
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, reason: `provider rejected credentials (${response.status})` };
+    }
+    return { valid: false, reason: `provider credential check failed (${response.status})` };
+  } catch (error) {
+    return {
+      valid: false,
+      reason: error instanceof Error ? error.message : "provider credential check failed",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }

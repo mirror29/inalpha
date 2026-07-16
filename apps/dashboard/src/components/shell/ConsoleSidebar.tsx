@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import {
   Activity,
   FlaskConical,
+  Key,
   LayoutDashboard,
   Menu,
   PanelLeftClose,
@@ -26,13 +27,23 @@ import { cn } from "@/lib/cn";
 import { AccountControl } from "./AccountControl";
 import { LocaleSwitcher } from "./LocaleSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
+import { clearLLMConfigDismissed } from "@/components/llm/LLMConfigModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 
 interface NavItem {
   key: string;
-  href: string;
+  href?: string;
   icon: LucideIcon;
   /** false = 已落地;true = 占位(灰 + soon 角标)。 */
   soon?: boolean;
+  /** 自定义点击处理（不为空时替代 href 导航）。 */
+  onClick?: () => void;
 }
 
 // 顺序按「看板 → 研究 → 执行 → 风控 → 彩蛋 → 日志」的操作动线:
@@ -43,7 +54,6 @@ const NAV: NavItem[] = [
   { key: "runners", href: "/runners", icon: Radio },
   { key: "factors", href: "/factors", icon: Sigma },
   { key: "risk", href: "/risk", icon: ShieldAlert },
-  { key: "settings", href: "/settings", icon: Settings },
   // E2 策略演化引擎（LLM 自动变异 + 评估）
   { key: "evolution", href: "/evolution", icon: Workflow },
   // 玄学彩蛋占卜台(纯娱乐)
@@ -194,7 +204,8 @@ function SidebarBody({
   onMobileClose?: () => void;
   buildDate: string;
 }) {
-  // 折叠态气泡:label + 触发项的视口坐标。挂 body 的 portal + fixed 定位,
+  // 配置下拉菜单
+  const [configMenuOpen, setConfigMenuOpen] = useState(false);
   // 脱离 aside(z-10 + backdrop-blur)的层叠上下文 —— 否则在 aside 内无论写多大
   // z-index 都会被外部 z-20+ 的模块(活动日志条 / 对话栏等)压住。
   const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(
@@ -345,10 +356,34 @@ function SidebarBody({
             );
           }
 
+          // 有 onClick 或有 href 的导航项
+          if (item.onClick) {
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  item.onClick!();
+                  onNavigate?.();
+                }}
+                aria-label={collapsed ? tipLabel : undefined}
+                {...tipHandlers(tipLabel)}
+                className={cn(
+                  baseCls,
+                  "w-full text-left",
+                  !collapsed && "hover:translate-x-0.5",
+                  "text-fg-muted hover:bg-bg-elev/60 hover:text-fg",
+                )}
+              >
+                {inner}
+              </button>
+            );
+          }
+
           return (
             <Link
               key={item.key}
-              href={item.href}
+              href={item.href!}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
               aria-label={collapsed ? tipLabel : undefined}
@@ -388,11 +423,30 @@ function SidebarBody({
           document.body,
         )}
 
-      {/* Footer —— 控制区(主题 / 语言)+ 折叠开关 + build 标记。 */}
+      {/* Footer —— 控制区(主题 / 语言)+ 配置菜单 + 折叠开关 + build 标记。 */}
       {collapsed ? (
         <div className="flex flex-col items-center gap-3 border-t border-border-subtle px-2 py-3">
           <AccountControl collapsed />
           <ThemeToggle />
+          {/* 折叠态配置按钮 */}
+          <DropdownMenu open={configMenuOpen} onOpenChange={setConfigMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="size-8">
+                <Settings className="size-4" strokeWidth={1.75} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="center" className="mb-1">
+              <DropdownMenuItem
+                onClick={() => {
+                  clearLLMConfigDismissed();
+                  window.dispatchEvent(new CustomEvent("inalpha:open-llm-settings"));
+                }}
+              >
+                <Key className="size-4" strokeWidth={1.75} />
+                LLM 配置
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {onToggleCollapsed && (
             <button
               type="button"
@@ -412,6 +466,26 @@ function SidebarBody({
             <ThemeToggle />
             <LocaleSwitcher />
           </div>
+          {/* 配置按钮 */}
+          <DropdownMenu open={configMenuOpen} onOpenChange={setConfigMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="w-full">
+                <Settings className="size-4" strokeWidth={1.75} />
+                <span>{t("config")}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" className="mb-1 w-[--radix-dropdown-menu-trigger-width]">
+              <DropdownMenuItem
+                onClick={() => {
+                  clearLLMConfigDismissed();
+                  window.dispatchEvent(new CustomEvent("inalpha:open-llm-settings"));
+                }}
+              >
+                <Key className="size-4" strokeWidth={1.75} />
+                LLM 配置
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted/60">
             <span className="size-1.5 shrink-0 rounded-full bg-seal" />
             <span>Build · {buildDate}</span>
