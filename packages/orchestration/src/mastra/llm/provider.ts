@@ -28,6 +28,12 @@ import { ensureEnvLoaded } from "../../env.js";
 ensureEnvLoaded();
 
 /**
+ * 是否启用多用户登录（从 AUTH_ENABLED env 读取）。
+ * 启用后，用户必须配置自己的 API Key，不会 fallback 到系统级配置。
+ */
+export const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
+
+/**
  * Per-request user LLM config store（AsyncLocalStorage）。
  *
  * identity middleware 解析 X-LLM-Config header 后写入此处，
@@ -261,9 +267,11 @@ export function buildLLMForUser(userConfig: UserLLMConfig | null): LanguageModel
  * 构建「用户感知」LanguageModel —— 按请求级 ALS 上下文选 LLM。
  *
  * Agent 实例只用这一个 model（构造时传入）；每次 mastra 调用 doGenerate/doStream
- * 时，proxy 检查 identity middleware 写入 ALS 的用户配置，有则用 buildLLMForUser()，
- * 无则降级到系统级 buildLLM()。缓存按 ALS store 粒度（= 每请求一次 build），
+ * 时，proxy 检查 identity middleware 写入 ALS 的用户配置，有则用 buildLLMForUser()；
+ * 单租户模式无用户配置时才使用系统级 buildLLM()。缓存按 ALS store 粒度（= 每请求一次 build），
  * 避免每次 property access 重建 model。
+ *
+ * **AUTH_ENABLED=true 时**：不允许 fallback 到系统级配置，必须要求用户配置 API Key。
  *
  * @returns 代理 LanguageModel
  */
@@ -274,17 +282,25 @@ export function buildUserAwareModel(): LanguageModel {
 
   function resolveModel(): LanguageModel {
     const config = userLLMStore.getStore();
+    console.log("[llm] resolveModel called, config:", config ? { id: config.id, provider: config.provider } : null, "AUTH_ENABLED:", AUTH_ENABLED);
+
+    // AUTH_ENABLED=true 且无用户配置时，抛错阻断（不 fallback）
+    if (AUTH_ENABLED && !config) {
+      console.error("[llm] AUTH_ENABLED=true but no user config in ALS");
+      throw new Error("AUTH_ENABLED=true 但用户未配置 LLM API Key");
+    }
+
     if (!config) return defaultModel;
     const cached = modelCache.get(config);
     if (cached !== undefined) return cached ?? defaultModel;
     try {
+      console.log("[llm] Building model for user config:", config.provider, config.model);
       const m = buildLLMForUser(config) as unknown as LanguageModel;
       modelCache.set(config, m);
       return m;
     } catch (err) {
-      console.warn("[llm] buildLLMForUser 失败，降级系统 LLM:", (err as Error).message);
-      modelCache.set(config, null);
-      return defaultModel;
+      console.error("[llm] buildLLMForUser failed:", (err as Error).message);
+      throw new Error(`用户 LLM 配置无效: ${(err as Error).message}`);
     }
   }
 

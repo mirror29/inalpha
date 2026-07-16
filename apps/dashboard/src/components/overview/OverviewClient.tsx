@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import useSWR from "swr";
+import { useState, useEffect } from "react";
 
 import type { OverviewPayload } from "@/lib/types";
 import { jsonFetcher } from "@/lib/fetcher";
@@ -14,6 +15,7 @@ import { OrdersTable } from "./OrdersTable";
 import { PositionsTable } from "./PositionsTable";
 import { RunnersPanel } from "./RunnersPanel";
 import { StrategyPanel } from "./StrategyPanel";
+import { LLMConfigModal } from "@/components/llm/LLMConfigModal";
 
 /** 账户/持仓/订单变化较慢,8s 一档(见设计文档轮询节奏)。 */
 const REFRESH_MS = 8000;
@@ -27,6 +29,40 @@ export function OverviewClient() {
       refreshInterval: REFRESH_MS,
       keepPreviousData: true, // 刷新失败/进行中时保留上一帧,不闪烁
     });
+
+  // ── LLM 配置弹窗（首次进入检测）──
+  const [llmModalOpen, setLlmModalOpen] = useState(false);
+
+  useEffect(() => {
+    // 监听侧边栏「LLM 配置」点击事件
+    const onOpen = () => setLlmModalOpen(true);
+    window.addEventListener("inalpha:open-llm-settings", onOpen);
+    return () => window.removeEventListener("inalpha:open-llm-settings", onOpen);
+  }, []);
+
+  // 数据加载完成后，检测用户是否有 LLM 配置
+  useEffect(() => {
+    if (!data) return; // 还没加载完
+    const dismissed = localStorage.getItem("inalpha-llm-config-dismissed");
+    if (dismissed) return; // 用户已关闭过
+
+    // 异步检查用户是否有 LLM 配置
+    fetch("/api/user/settings")
+      .then((r) => r.json())
+      .then((res) => {
+        if (!res.configs || res.configs.length === 0) {
+          setLlmModalOpen(true);
+        }
+      })
+      .catch(() => {
+        // 静默失败，不弹窗
+      });
+  }, [data]);
+
+  const closeLlmModal = () => {
+    setLlmModalOpen(false);
+    localStorage.setItem("inalpha-llm-config-dismissed", "1");
+  };
 
   if (isLoading && !data) {
     return <OverviewSkeleton />;
@@ -97,6 +133,9 @@ export function OverviewClient() {
           <OrdersTable orders={data.orders} truncated={data.ordersTruncated} />
         </div>
       </div>
+
+      {/* LLM 配置弹窗 */}
+      <LLMConfigModal open={llmModalOpen} onClose={closeLlmModal} />
     </div>
   );
 }

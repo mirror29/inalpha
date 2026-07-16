@@ -39,8 +39,14 @@ export function ensureEnvLoaded(): void {
   // 不能用 process.cwd()（mastra server 子进程 cwd 是 src/mastra/public/），
   // 也不能用 import.meta.url（bundle 后指向 .mastra/output）—— 统一走 paths.ts。
   // override:false → 已有的 process.env 优先；本调用只填空缺
-  loadDotenv({ path: resolve(resolveOrchestrationRoot(), ".env"), override: false });
-  loadDotenv({ path: resolve(resolveRepoRoot(), ".env"), override: false });
+  const orchestrationEnv = resolve(resolveOrchestrationRoot(), ".env");
+  const rootEnv = resolve(resolveRepoRoot(), ".env");
+  console.log("[env] Loading orchestration .env:", orchestrationEnv);
+  console.log("[env] Loading root .env:", rootEnv);
+  console.log("[env] AUTH_ENABLED before:", process.env.AUTH_ENABLED);
+  loadDotenv({ path: orchestrationEnv, override: false });
+  loadDotenv({ path: rootEnv, override: false });
+  console.log("[env] AUTH_ENABLED after:", process.env.AUTH_ENABLED);
 }
 
 // side-effect import 的旧语义保留（vitest setup / 脚本等不经 bundler 的场景）
