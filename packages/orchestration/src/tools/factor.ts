@@ -400,7 +400,7 @@ export const factorEvaluateCandidateTool = createTool({
       expression: inputData.expression,
       name: inputData.name,
       venue: inputData.venue,
-      symbol: inputData.symbol,
+      symbol: inputData.symbol ?? "",
       timeframe: inputData.timeframe ?? "1h",
       asOf: inputData.asOf,
       lookbackBars: inputData.lookbackBars,

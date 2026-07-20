@@ -183,11 +183,11 @@ describe("factor_discovery workflow", () => {
     const out = (result as { result: { verdicts: { outcome: string }[]; summary: { proposed: number } } }).result;
     expect(out.summary.proposed).toBe(1);
     expect(out.verdicts[0].outcome).toBe("proposed");
-    // propose body 带审计锚点
+    // propose body 带审计锚点（client 发 camelCase）
     expect(proposeBodies).toHaveLength(1);
-    expect(proposeBodies[0].n_tested).toBe(1);
-    expect(proposeBodies[0].batch_id).toBeTruthy();
-    const tr = proposeBodies[0].test_results as Record<string, unknown>;
+    expect(proposeBodies[0].nTested).toBe(1);
+    expect(proposeBodies[0].batchId).toBeTruthy();
+    const tr = proposeBodies[0].testResults as Record<string, unknown>;
     expect(tr.rank_ic).toBe(0.12);
     expect(tr.adjusted_p).toBeDefined();
   });
@@ -221,7 +221,7 @@ describe("factor_discovery workflow", () => {
     expect(byExpr["Mean($close, 22)"]).toBe("rejected_decaying");
     expect(byExpr["Mean($close, 23)"]).toBe("rejected_adjusted_p");
     expect(proposeBodies).toHaveLength(1);
-    expect(proposeBodies[0].n_tested).toBe(4); // m = 整批，不是幸存者数
+    expect(proposeBodies[0].nTested).toBe(4); // m = 整批，不是幸存者数
   });
 
   it("fail-fast: negative lag in any candidate rejects the whole batch", async () => {
@@ -260,7 +260,7 @@ describe("factor_discovery workflow", () => {
     }).result;
     expect(out.summary.errored).toBe(1);
     expect(out.summary.proposed).toBe(1);
-    expect(proposeBodies[0].n_tested).toBe(2); // 失败的尝试也计入选择效应背景
+    expect(proposeBodies[0].nTested).toBe(2); // 失败的尝试也计入选择效应背景
   });
 
   it("propose=false dry-runs without writing candidates", async () => {

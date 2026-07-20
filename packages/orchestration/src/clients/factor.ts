@@ -230,7 +230,7 @@ export class FactorClient {
   }
 
   async listCandidates(params: Record<string, unknown> = {}): Promise<FactorCandidateRecord[]> {
-    return await this.http.get<FactorCandidateRecord[]>("/candidates", params);
+    return await this.http.get<FactorCandidateRecord[]>("/candidates", params as Record<string, string | number | boolean | undefined>);
   }
 
   async backtestScore(params: {

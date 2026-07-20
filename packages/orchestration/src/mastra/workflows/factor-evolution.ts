@@ -163,6 +163,13 @@ const evaluateStep = createStep({
     steps: z.array(EvolutionStepSchema),
     n_rounds: z.number().int(),
     converged: z.boolean(),
+    venue: z.string(),
+    symbol: z.string(),
+    timeframe: z.string(),
+    lookbackBars: z.number(),
+    horizonBars: z.number(),
+    maxRounds: z.number(),
+    convergenceThreshold: z.number(),
   }),
   execute: async ({ inputData }) => {
     return {
@@ -181,6 +188,13 @@ const evaluateStep = createStep({
       ],
       n_rounds: 0,
       converged: false,
+      venue: inputData.venue,
+      symbol: inputData.symbol,
+      timeframe: inputData.timeframe,
+      lookbackBars: inputData.lookbackBars,
+      horizonBars: inputData.horizonBars,
+      maxRounds: inputData.maxRounds,
+      convergenceThreshold: inputData.convergenceThreshold,
     };
   },
 });
@@ -328,7 +342,10 @@ function generateVariants(expression: string): { expression: string; mutation: s
   // 检测并调整窗口参数
   const windowMatch = expression.match(/(Mean|Std|Sum|Max|Min|EMA|WMA|Rank|Skew|Kurt|Med|Slope)\(([^,]+),\s*(\d+)\)/);
   if (windowMatch) {
-    const [full, op, arg, win] = windowMatch;
+    const full = windowMatch[0] as string;
+    const op = windowMatch[1] as string;
+    const arg = windowMatch[2] as string;
+    const win = windowMatch[3] as string;
     const w = parseInt(win, 10);
     if (w > 5) {
       // 缩小窗口

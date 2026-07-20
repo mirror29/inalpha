@@ -9,10 +9,10 @@ import pytest
 
 from inalpha_factor.effectiveness import walk_forward_ic
 from inalpha_factor.expression import (
+    _EXTRA_COLUMNS,
     ExpressionError,
     evaluate,
     parse_expression,
-    _EXTRA_COLUMNS,
 )
 
 from .conftest import make_ohlcv
@@ -47,8 +47,6 @@ class TestP2NewOperators:
     def test_idxmax(self) -> None:
         df = make_ohlcv(100)
         s = _eval("IdxMax($high, 10)", df)
-        # 手动验证：rolling(10).apply(lambda x: x.argmax())
-        close = df["close"].astype(float)
         assert s.index.equals(df.index)
         assert s.dropna().between(0, 9).all()
 
@@ -102,7 +100,7 @@ class TestP2NewOperators:
         ],
     )
     def test_p2_operators_arg_count(self, expr: str, hint: str) -> None:
-        with pytest.raises(ExpressionError, match="expects|argument"):
+        with pytest.raises(ExpressionError, match=r"expects|argument"):
             parse_expression(expr)
 
 
@@ -232,9 +230,8 @@ class TestP5MultiSymbolConcurrent:
     def engine(self) -> Any:
         from unittest.mock import AsyncMock
 
-        from inalpha_factor.engine import FactorEngine
-
         from inalpha_factor.config import get_factor_settings
+        from inalpha_factor.engine import FactorEngine
 
         settings = get_factor_settings()
         engine = FactorEngine(settings)
@@ -250,9 +247,8 @@ class TestP5MultiSymbolConcurrent:
         """部分标的 _fetch_df 抛异常。"""
         from unittest.mock import AsyncMock
 
-        from inalpha_factor.engine import FactorEngine
-
         from inalpha_factor.config import get_factor_settings
+        from inalpha_factor.engine import FactorEngine
 
         engine = FactorEngine(get_factor_settings())
         call_count = 0
@@ -272,9 +268,8 @@ class TestP5MultiSymbolConcurrent:
         """全部标的 _fetch_df 抛异常。"""
         from unittest.mock import AsyncMock
 
-        from inalpha_factor.engine import FactorEngine
-
         from inalpha_factor.config import get_factor_settings
+        from inalpha_factor.engine import FactorEngine
 
         engine = FactorEngine(get_factor_settings())
 
@@ -344,9 +339,8 @@ class TestP5MultiSymbolConcurrent:
         """所有标的 IC 相同时，consistency=1.0。"""
         from unittest.mock import AsyncMock
 
-        from inalpha_factor.engine import FactorEngine
-
         from inalpha_factor.config import get_factor_settings
+        from inalpha_factor.engine import FactorEngine
 
         engine = FactorEngine(get_factor_settings())
         # 所有标的用同一组数据 → IC 完全相同

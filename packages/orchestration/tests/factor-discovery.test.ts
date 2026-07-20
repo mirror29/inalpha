@@ -46,8 +46,11 @@ describe("factor.evaluate_candidate", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
-        capturedUrl = url;
-        capturedBody = (init?.body as string) ?? "";
+        // 只捕获 /custom/score 的请求体（P0 回测也会发请求，别覆盖掉 customScore 的记录）
+        if (url.includes("/custom/score")) {
+          capturedUrl = url;
+          capturedBody = (init?.body as string) ?? "";
+        }
         return new Response(
           JSON.stringify({
             venue: "binance",
@@ -85,8 +88,8 @@ describe("factor.evaluate_candidate", () => {
     expect(capturedUrl).toContain("/custom/score");
     const body = JSON.parse(capturedBody) as Record<string, unknown>;
     expect(body.expression).toContain("Ref($close, 5)");
-    expect(body.lookback_bars).toBe(720);
-    expect(body.horizon_bars).toBe(5);
+    expect(body.lookbackBars).toBe(720);
+    expect(body.horizonBars).toBe(5);
     expect((result as { ic_pvalue: number }).ic_pvalue).toBe(0.03);
   });
 });
@@ -125,8 +128,8 @@ describe("factor.propose / factor.list_candidates", () => {
     expect(capturedUrl).toContain("/candidates");
     const body = JSON.parse(capturedBody) as Record<string, unknown>;
     expect(body.hypothesis).toContain("放量");
-    expect(body.n_tested).toBe(7);
-    expect((body.test_results as Record<string, unknown>).rank_ic).toBe(0.06);
+    expect(body.nTested).toBe(7);
+    expect((body.testResults as Record<string, unknown>).rank_ic).toBe(0.06);
     expect((result as { created: boolean }).created).toBe(true);
   });
 
