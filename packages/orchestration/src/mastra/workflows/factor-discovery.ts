@@ -48,7 +48,9 @@ const CandidateInputSchema = z.object({
 const DiscoveryInputSchema = z.object({
   candidates: z.array(CandidateInputSchema).min(1).max(10),
   venue: z.string().min(1),
-  symbol: z.string().min(1).max(50),
+  symbol: z.string().min(1).max(50).optional(),
+  /** P5: 多标的并发评估，与 symbol 二选一（优先 symbols）。最多 20 个。 */
+  symbols: z.array(z.string().min(1).max(50)).max(20).optional(),
   timeframe: TimeframeSchema.default("1h"),
   lookbackBars: z.number().int().min(120).max(10000).default(720),
   horizonBars: z.number().int().min(1).max(60).default(5),
@@ -58,13 +60,17 @@ const DiscoveryInputSchema = z.object({
   maxLibraryCorr: z.number().min(0.5).max(1).default(0.8),
   /** false = 只评估打分不落候选池（dry run） */
   propose: z.boolean().default(true),
-});
+}).refine(
+  (d) => d.symbol !== undefined || (d.symbols !== undefined && d.symbols.length >= 2),
+  { message: "提供 symbol（单标的）或 symbols（≥2 个多标的）二选一" },
+);
 
 /** validate 透传 + 每条带回原始输入（foreach 的 item）。 */
 const ValidatedItemSchema = z.object({
   candidate: CandidateInputSchema,
   venue: z.string(),
-  symbol: z.string(),
+  symbol: z.string().optional(),
+  symbols: z.array(z.string()).optional(),
   timeframe: TimeframeSchema,
   lookbackBars: z.number(),
   horizonBars: z.number(),
@@ -128,6 +134,56 @@ const DiscoveryOutputSchema = z.object({
   }),
 });
 
+// ─── 族类分布工具（P1 多样性控制）─────────────────────────────────
+
+/**
+ * 从 factor catalog 的 kind 字段统计族类分布。
+ * 用于 P1 多样性控制：让 LLM 生成 hypothesis 时避开已拥挤的族类。
+ */
+interface FamilyDistribution {
+  counts: Record<string, number>;
+  total: number;
+  crowded: string[];
+  sparse: string[];
+}
+
+async function fetchFamilyDistribution(): Promise<FamilyDistribution> {
+  const settings = getSettings();
+  const { mintServiceToken, defaultServiceSubject } = await import("../../auth.js");
+  const token = await mintServiceToken({ sub: defaultServiceSubject() });
+  const client = new FactorClient({ baseUrl: settings.factorServiceUrl, token });
+  const catalog = await client.catalog();
+
+  const counts: Record<string, number> = {};
+  for (const f of catalog.factors) {
+    counts[f.kind] = (counts[f.kind] || 0) + 1;
+  }
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return {
+    counts,
+    total,
+    crowded: sorted.slice(0, 3).map(([k]) => k),
+    sparse: sorted.slice(-3).map(([k]) => k),
+  };
+}
+
+/**
+ * 从表达式推断族类，用于族类配额检查。
+ */
+function detectFamily(expression: string): string {
+  const e = expression.toLowerCase();
+  if (/\bdelta\b|\b(ref.*close.*lag|close.*ref)/i.test(e)) return "momentum";
+  if (/\bmean\b|sma|ma/i.test(e) && /\bdelta|diff|sub/i.test(e)) return "mean_reversion";
+  if (/\bstd\b|skew|kurt|atr/i.test(e)) return "volatility";
+  if (/\bvolume\b|corr.*volume|volume.*corr/i.test(e)) return "volume";
+  if (/\bema\b|wma\b|max\b|min\b|slope/i.test(e)) return "trend";
+  return "other";
+}
+
+/** 同族类候选最多通过 gate 的数量（P1 配额）。 */
+const FAMILY_QUOTA = 3;
+
 // ─── 纯函数：BH 校正（与服务端 effectiveness.bh_adjust 同算法）────────
 
 /**
@@ -170,6 +226,16 @@ const validateStep = createStep({
   execute: async ({ inputData }) => {
     const seen = new Set<string>();
     const out: z.infer<typeof ValidatedItemSchema>[] = [];
+
+    // P1: 获取族类分布，注入 LLM 上下文（通过抛出的错误信息传达）
+    let familyWarning = "";
+    try {
+      const dist = await fetchFamilyDistribution();
+      if (dist.crowded.length > 0) {
+        familyWarning = `当前因子库族类分布（total=${dist.total}）：${dist.crowded.map((k) => `${k}:${dist.counts[k]}`).join(", ")} 最拥挤。请优先探索 ${dist.sparse.map((k) => `${k}(${dist.counts[k]})`).join(", ")} 族，避免在拥挤族类重复生成。`;
+      }
+    } catch { /* 降级：族类分布不可用时不阻断 */ }
+
     for (const c of inputData.candidates) {
       if (NEGATIVE_LAG.test(c.expression)) {
         throw new Error(
@@ -189,6 +255,7 @@ const validateStep = createStep({
         candidate: c,
         venue: inputData.venue,
         symbol: inputData.symbol,
+        symbols: inputData.symbols,
         timeframe: inputData.timeframe,
         lookbackBars: inputData.lookbackBars,
         horizonBars: inputData.horizonBars,
@@ -214,7 +281,8 @@ const evaluateStep = createStep({
         expression: inputData.candidate.expression,
         name: inputData.candidate.name,
         venue: inputData.venue,
-        symbol: inputData.symbol,
+        symbol: inputData.symbol ?? "",
+        symbols: inputData.symbols,
         timeframe: inputData.timeframe,
         lookbackBars: inputData.lookbackBars,
         horizonBars: inputData.horizonBars,
@@ -303,6 +371,21 @@ const gateStep = createStep({
           ...base,
           outcome: "rejected_eval_failed",
           detail: it.error?.message ?? "evaluation unavailable",
+        });
+        continue;
+      }
+      // P1: 族类配额检查
+      const family = detectFamily(it.candidate.expression);
+      const familyCount = verdicts.filter(
+        (v) => v.outcome === "proposed" && detectFamily(v.expression) === family,
+      ).length + verdicts.filter(
+        (v) => v.outcome === "evaluated_only" && detectFamily(v.expression) === family,
+      ).length;
+      if (familyCount >= FAMILY_QUOTA) {
+        verdicts.push({
+          ...base,
+          outcome: "rejected_redundant",
+          detail: `族类"${family}"已通过 ${familyCount} 个候选（配额 ${FAMILY_QUOTA}），超限跳过。`,
         });
         continue;
       }

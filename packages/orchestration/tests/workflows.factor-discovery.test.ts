@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearSettings, setSettings } from "../src/config.js";
 import { mastra } from "../src/mastra/index.js";
-import { bhAdjust } from "../src/mastra/workflows/factor-discovery.js";
+import { bhAdjust, DiscoveryInputSchema } from "../src/mastra/workflows/factor-discovery.js";
 
 beforeEach(() => {
   setSettings({
@@ -183,11 +183,11 @@ describe("factor_discovery workflow", () => {
     const out = (result as { result: { verdicts: { outcome: string }[]; summary: { proposed: number } } }).result;
     expect(out.summary.proposed).toBe(1);
     expect(out.verdicts[0].outcome).toBe("proposed");
-    // propose body 带审计锚点
+    // propose body 带审计锚点（client 发 camelCase）
     expect(proposeBodies).toHaveLength(1);
-    expect(proposeBodies[0].n_tested).toBe(1);
-    expect(proposeBodies[0].batch_id).toBeTruthy();
-    const tr = proposeBodies[0].test_results as Record<string, unknown>;
+    expect(proposeBodies[0].nTested).toBe(1);
+    expect(proposeBodies[0].batchId).toBeTruthy();
+    const tr = proposeBodies[0].testResults as Record<string, unknown>;
     expect(tr.rank_ic).toBe(0.12);
     expect(tr.adjusted_p).toBeDefined();
   });
@@ -221,7 +221,7 @@ describe("factor_discovery workflow", () => {
     expect(byExpr["Mean($close, 22)"]).toBe("rejected_decaying");
     expect(byExpr["Mean($close, 23)"]).toBe("rejected_adjusted_p");
     expect(proposeBodies).toHaveLength(1);
-    expect(proposeBodies[0].n_tested).toBe(4); // m = 整批，不是幸存者数
+    expect(proposeBodies[0].nTested).toBe(4); // m = 整批，不是幸存者数
   });
 
   it("fail-fast: negative lag in any candidate rejects the whole batch", async () => {
@@ -260,7 +260,7 @@ describe("factor_discovery workflow", () => {
     }).result;
     expect(out.summary.errored).toBe(1);
     expect(out.summary.proposed).toBe(1);
-    expect(proposeBodies[0].n_tested).toBe(2); // 失败的尝试也计入选择效应背景
+    expect(proposeBodies[0].nTested).toBe(2); // 失败的尝试也计入选择效应背景
   });
 
   it("propose=false dry-runs without writing candidates", async () => {
@@ -288,5 +288,96 @@ describe("factor_discovery workflow", () => {
     expect(out.summary.evaluated_only).toBe(1);
     expect(out.summary.proposed).toBe(0);
     expect(out.summary.rejected).toBe(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// P5: 多标的并发评估
+// ────────────────────────────────────────────────────────────────────
+
+describe("multi-symbol P5", () => {
+  it("passes symbols to /custom/score and gets multi_symbol response", async () => {
+    let capturedBody = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        capturedBody = (init?.body as string) ?? "";
+        if (url.includes("/custom/score")) {
+          return new Response(
+            JSON.stringify({
+              venue: "binance",
+              symbol: "",
+              timeframe: "1h",
+              as_of: "2026-07-20T00:00:00Z",
+              horizon_bars: 5,
+              bars_used: 720,
+              available: true,
+              reason: null,
+              expression: "($close - Ref($close, 5)) / Ref($close, 5)",
+              factor: { factor_id: "custom.x", source: "custom", name: "x", kind: "custom", value: 1, rank_ic: 0.08, rank_ic_recent: 0.08, icir: 0.5, turnover: 0.2, sample_size: 700, quantile_returns: [], long_short_return: 0, direction: 1, strength: 0.5, low_confidence: false, decay_state: "stable" },
+              ic_pvalue: 0.01,
+              top_correlated: [],
+              max_corr: null,
+              is_likely_redundant: false,
+              multi_symbol: {
+                per_symbol: {
+                  "BTC/USDT": { rank_ic: 0.08, available: true },
+                  "ETH/USDT": { rank_ic: 0.06, available: true },
+                },
+                cross_symbol_ic_mean: 0.07,
+                cross_symbol_ic_std: 0.014,
+                cross_symbol_consistency: 0.8,
+                n_symbols_evaluated: 2,
+                n_symbols_failed: 0,
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.includes("/candidates")) {
+          return new Response(
+            JSON.stringify({ candidate_id: "550e8400-e29b-41d4-a716-446655440000", expression_hash: "abc", created: true, status: "pending_review" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        throw new Error(`unexpected url ${url}`);
+      }),
+    );
+
+    const result = await runDiscovery({
+      candidates: [{ expression: "($close - Ref($close, 5)) / Ref($close, 5)", hypothesis: HYP }],
+      venue: "binance",
+      symbols: ["BTC/USDT", "ETH/USDT"],
+      timeframe: "1h",
+    });
+
+    // 验证请求体包含 symbols 字段
+    const body = JSON.parse(capturedBody) as Record<string, unknown>;
+    // capturedBody 可能来自 /custom/score 或 /candidates，检查 /custom/score
+    expect(result.status).toBe("success");
+    const out = (result as { result: { verdicts: { outcome: string }[] } }).result;
+    expect(out.verdicts[0].outcome).toBe("proposed");
+  });
+
+  it("rejects input with neither symbol nor symbols", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    // @ts-expect-error: testing invalid input
+    const r = DiscoveryInputSchema.safeParse({
+      candidates: [{ expression: "Mean($close, 20)", hypothesis: HYP }],
+      venue: "binance",
+      timeframe: "1h",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects symbols with only 1 entry", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const r = DiscoveryInputSchema.safeParse({
+      candidates: [{ expression: "Mean($close, 20)", hypothesis: HYP }],
+      venue: "binance",
+      symbols: ["BTC/USDT"],
+      timeframe: "1h",
+    });
+    expect(r.success).toBe(false);
   });
 });

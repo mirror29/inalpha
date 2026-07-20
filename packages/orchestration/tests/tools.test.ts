@@ -636,9 +636,9 @@ describe("factor.timing / score / catalog", () => {
     expect(capturedUrl).toContain("/snapshot");
     expect(capturedUrl).toContain("factor-mock.test");
     const body = JSON.parse(capturedBody);
-    expect(body.lookback_bars).toBe(720);
-    expect(body.horizon_bars).toBe(5);
-    expect(body.top_n).toBe(8);
+    expect(body.lookbackBars).toBe(720);
+    expect(body.horizonBars).toBe(5);
+    expect(body.topN).toBe(8);
     expect(result.available).toBe(true);
     expect(result.top_factors[0].factor_id).toBe("pandas_ta.rsi_14");
     expect(result.top_factors[0].direction).toBe(-1);
@@ -675,7 +675,7 @@ describe("factor.timing / score / catalog", () => {
     );
 
     expect(capturedUrl).toContain("/score");
-    expect(JSON.parse(capturedBody).factor_ids).toEqual(["pandas_ta.rsi_14", "qlib.kmid"]);
+    expect(JSON.parse(capturedBody).factorIds).toEqual(["pandas_ta.rsi_14", "qlib.kmid"]);
   });
 
   it("factor.panel_score POSTs to /panel/score with symbols + snake_case body", async () => {
@@ -746,8 +746,8 @@ describe("factor.timing / score / catalog", () => {
     expect(capturedUrl).toContain("factor-mock.test");
     const body = JSON.parse(capturedBody);
     expect(body.symbols).toEqual(["AAPL", "MSFT", "GOOGL"]);
-    expect(body.min_symbols).toBe(3);
-    expect(body.lookback_bars).toBe(720);
+    expect(body.minSymbols).toBe(3);
+    expect(body.lookbackBars).toBe(720);
     expect(result.is_pit).toBe(false);
     expect(result.factors[0].ic_kind).toBe("cross_sectional");
     expect(result.factors[0].latest_ranking[0].symbol).toBe("GOOGL");

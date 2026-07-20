@@ -19,8 +19,10 @@
 - 资源上限：表达式 ≤ 2000 字符、AST 节点 ≤ 200、window ≤ 500——纯 pandas 列运算，
   bar 数另由 API 层限制（≤10000），无需进程隔离
 
-列引用用 ``$close / $open / $high / $low / $volume``（qlib 习惯）；解析前做 token
-替换（``$`` 不是合法 Python），白名单外的列名解析期拒绝。
+列引用用 ``$close / $open / $high / $low / $volume``（qlib 习惯）；
+P2 扩展字段：``$pe / $pb / $roe / $market_cap / $fed_rate / $cpi / $unemployment / $credit_spread``，
+这些字段数据由 engine 从 data-client 拉取，缺失时返回 NaN 不阻断。
+解析前做 token 替换（``$`` 不是合法 Python），白名单外的列名解析期拒绝。
 """
 from __future__ import annotations
 
@@ -36,8 +38,13 @@ MAX_EXPRESSION_LENGTH = 2000
 MAX_AST_NODES = 200
 MAX_WINDOW = 500
 
-#: 允许的 OHLCV 列（$ 前缀引用）
+#: 允许的数据列（$ 前缀引用）——基础 OHLCV + 扩展数据字段
 _COLUMNS = frozenset({"open", "high", "low", "close", "volume"})
+# P2: 扩展数据字段，engine 在有引用时自动拉取；缺失时降级为 NaN 不阻断
+_EXTRA_COLUMNS = frozenset({
+    "pe", "pb", "roe", "market_cap",            # fundamentals
+    "fed_rate", "cpi", "unemployment", "credit_spread",  # macro
+})
 
 _COL_PREFIX = "__col_"
 _DOLLAR_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
@@ -63,6 +70,17 @@ _OPERATORS: dict[str, tuple[int, int]] = {
     "Greater": (2, 2),   # Greater(a, b)：逐元素 max（qlib 语义）
     "Less": (2, 2),      # Less(a, b)：逐元素 min
     "If": (3, 3),        # If(cond, a, b)：逐元素三元
+    # P2 扩展算子（2026-07-17）
+    "Skew": (2, 2),      # Skew(s, w)：滚动偏度
+    "Kurt": (2, 2),      # Kurt(s, w)：滚动峰度
+    "Med": (2, 2),       # Med(s, w)：滚动中位数
+    "Slope": (2, 2),     # Slope(s, w)：线性回归斜率
+    "IdxMax": (2, 2),    # IdxMax(s, w)：最大值位置索引
+    "IdxMin": (2, 2),    # IdxMin(s, w)：最小值位置索引
+    "Cov": (3, 3),       # Cov(a, b, w)：滚动协方差
+    "And": (2, 2),       # And(a, b)：逻辑与（>0 为真）
+    "Or": (2, 2),        # Or(a, b)：逻辑或
+    "Not": (1, 1),       # Not(a)：逻辑非
 }
 
 #: 第二参必须正整数字面量的算子（lookahead 防线 1）
@@ -71,6 +89,8 @@ _POSITIVE_LAG_OPS = frozenset({"Ref", "Delta"})
 _WINDOW_ARG_INDEX: dict[str, int] = {
     "Mean": 1, "Std": 1, "Sum": 1, "Max": 1, "Min": 1,
     "EMA": 1, "WMA": 1, "Rank": 1, "Corr": 2, "Quantile": 1,
+    "Skew": 1, "Kurt": 1, "Med": 1, "Slope": 1,
+    "IdxMax": 1, "IdxMin": 1, "Cov": 2,
 }
 
 _ALLOWED_BINOPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
@@ -104,10 +124,10 @@ def parse_expression(raw: str) -> ParsedExpression:
 
     def _sub(m: re.Match[str]) -> str:
         col = m.group(1).lower()
-        if col not in _COLUMNS:
+        if col not in _COLUMNS and col not in _EXTRA_COLUMNS:
             raise ExpressionError(
                 f"unknown column ${m.group(1)}; allowed: "
-                + ", ".join(f"${c}" for c in sorted(_COLUMNS))
+                + ", ".join(f"${c}" for c in sorted(_COLUMNS | _EXTRA_COLUMNS))
             )
         columns.add(col)
         return f"{_COL_PREFIX}{col}"
@@ -302,10 +322,52 @@ def _eval_call(node: ast.Call, df: pd.DataFrame):
         )
     if name == "Corr":
         return _series(args[0]).rolling(int(args[2])).corr(_series(args[1]))
+    if name == "Cov":
+        return _series(args[0]).rolling(int(args[2])).cov(_series(args[1]))
     if name == "Rank":
         return _series(args[0]).rolling(int(args[1])).rank(pct=True)
     if name == "Quantile":
         return _series(args[0]).rolling(int(args[1])).quantile(float(args[2]))
+    # P2 扩展算子实现（2026-07-17）
+    if name == "Skew":
+        return _series(args[0]).rolling(int(args[1])).skew()
+    if name == "Kurt":
+        return _series(args[0]).rolling(int(args[1])).kurt()
+    if name == "Med":
+        return _series(args[0]).rolling(int(args[1])).median()
+    if name == "Slope":
+
+        def _slope(x: np.ndarray) -> float:
+            if len(x) < 2:
+                return float("nan")
+            try:
+                from scipy import stats
+                return float(stats.linregress(range(len(x)), x).slope)
+            except ImportError:
+                # scipy 不可用时用 numpy polyfit 兜底
+                n = len(x)
+                x_range = np.arange(n, dtype=float)
+                # polyfit 返回 [slope, intercept]
+                coeffs = np.polyfit(x_range, x, 1)
+                return float(coeffs[0])
+
+        return _series(args[0]).rolling(int(args[1])).apply(_slope, raw=True)
+    if name == "IdxMax":
+        return (
+            _series(args[0]).rolling(int(args[1]))
+            .apply(lambda x: float(x.argmax()), raw=True)
+        )
+    if name == "IdxMin":
+        return (
+            _series(args[0]).rolling(int(args[1]))
+            .apply(lambda x: float(x.argmin()), raw=True)
+        )
+    if name == "And":
+        return (_series(args[0]) > 0) & (_series(args[1]) > 0)
+    if name == "Or":
+        return (_series(args[0]) > 0) | (_series(args[1]) > 0)
+    if name == "Not":
+        return ~(_series(args[0]) > 0)
     if name == "Abs":
         return _series(args[0]).abs()
     if name == "Log":

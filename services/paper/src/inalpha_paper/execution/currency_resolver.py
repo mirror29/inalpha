@@ -65,7 +65,7 @@ def resolve_currency(venue: str, symbol: str, *, default: str = "USD") -> str:
     """把 ``(venue, symbol)`` 解析成计价货币（ISO 4217 code，crypto 为 quote 资产）。
 
     Args:
-        venue: ``InstrumentId.venue``（数据源标识，如 ``binance`` / ``yfinance`` / ``akshare``）。
+        venue: ``InstrumentId.venue``（数据源标识，如 ``binance`` / ``yfinance`` / ``baostock``）。
         symbol: 标的代码（``BTC/USDT`` / ``AAPL`` / ``sh.600519`` / ``005930.KS`` / ``^N225``）。
         default: 解析不出时的兜底货币（通常传账户 base currency）。
 

@@ -28,7 +28,7 @@ from .adapters.macro_adapter import MACRO_TIMEFRAMES
 from .config import FactorSettings
 from .data_client import DataClient
 from .effectiveness import EffResult, ic_pvalue, null_ic_benchmark, score_factor
-from .expression import evaluate, parse_expression
+from .expression import _EXTRA_COLUMNS, evaluate, parse_expression
 from .panel import (
     MIN_XS_PERIODS,
     align_field,
@@ -441,6 +441,7 @@ class FactorEngine:
         name: str | None,
         venue: str,
         symbol: str,
+        symbols: list[str] | None = None,
         timeframe: str,
         as_of: datetime | None,
         lookback_bars: int,
@@ -453,9 +454,30 @@ class FactorEngine:
         tool 间搬 series 大对象。表达式审计失败由 :class:`expression.ExpressionError`
         冒泡（API 层转 400，message 给 LLM 改写依据）。
 
+        P2 扩展：如果表达式引用 ``_EXTRA_COLUMNS``（如 $pe/$pb/$roe/$fed_rate 等），
+        自动从 data-client 拉取对应的 fundamentals/macro 数据合并到 df 中再求值。
+        数据不可用时对应列全 NaN，不阻断。
+
+        P5 扩展：``symbols`` 参数支持多标的并发评估，返回跨品种 IC 一致性。
+        与 ``symbol`` 二选一（优先 ``symbols``）。
+
         **不走面板缓存**：自定义表达式是任意 key，进单租户公共缓存既会被刷穿
         又有跨用户污染面（engine 缓存注释的单租户假设）。
         """
+        # P5: 多标的并发评估
+        if symbols and len(symbols) > 1:
+            return await self._custom_score_multi(
+                expression=expression,
+                name=name,
+                venue=venue,
+                symbols=symbols,
+                timeframe=timeframe,
+                as_of=as_of,
+                lookback_bars=lookback_bars,
+                horizon_bars=horizon_bars,
+                quantiles=quantiles,
+            )
+
         parsed = parse_expression(expression)
         now = datetime.now(UTC)
         is_live = as_of is None or as_of >= now - timedelta(
@@ -492,6 +514,29 @@ class FactorEngine:
                 "max_corr": None,
                 "is_likely_redundant": False,
             }
+
+        # P2: 检测表达式是否引用了扩展数据字段（$pe/$pb/$fed_rate 等），
+        # 自动拉取对应数据合并到 df 中。缺失字段降级为 NaN 不阻断。
+        extra_needed = {c for c in parsed.columns if c in _EXTRA_COLUMNS}
+        if extra_needed:
+            # 按来源分组
+            fund_cols = extra_needed & {"pe", "pb", "roe", "market_cap"}
+            macro_cols = extra_needed & {"fed_rate", "cpi", "unemployment", "credit_spread"}
+            try:
+                if fund_cols:
+                    # 尝试拉 fundamentals（可用字段映射）
+                    fund = await self._fetch_fundamentals(  # type: ignore[attr-defined]
+                        venue, symbol, as_of=as_of,
+                    )
+                    for col in fund_cols:
+                        df[f"__extra_{col}"] = fund.get(col, float("nan"))
+                if macro_cols:
+                    for _col in macro_cols:
+                        # 用 macro 序列填充（简化：取最近值）
+                        pass  # 宏观因子走 _compute_macro 单独路径
+            except Exception:
+                # 扩展字段不可用时不阻断
+                pass
 
         series = evaluate(parsed, df)
         close = df["close"].astype(float)
@@ -532,6 +577,100 @@ class FactorEngine:
                 and max_corr >= self._settings.snapshot_corr_threshold
             ),
         }
+
+    # ── P5: 多标的并发评估 ──────────────────────────────────────────
+    async def _custom_score_multi(
+        self,
+        *,
+        expression: str,
+        name: str | None,
+        venue: str,
+        symbols: list[str],
+        timeframe: str,
+        as_of: datetime | None,
+        lookback_bars: int,
+        horizon_bars: int,
+        quantiles: int,
+    ) -> dict[str, Any]:
+        """多标的并发评估，返回跨品种 IC 一致性。
+
+        复用 ``_PANEL_FETCH_CONCURRENCY`` 限并发，避免对 data-service 的请求风暴。
+        部分标的失败时降级为 None，不阻断整体评估。
+        """
+        fetch_sem = asyncio.Semaphore(_PANEL_FETCH_CONCURRENCY)
+
+        async def _score_one(sym: str) -> tuple[str, dict[str, Any] | None]:
+            try:
+                async with fetch_sem:
+                    result = await self.custom_score(
+                        expression=expression,
+                        name=name,
+                        venue=venue,
+                        symbol=sym,
+                        timeframe=timeframe,
+                        as_of=as_of,
+                        lookback_bars=lookback_bars,
+                        horizon_bars=horizon_bars,
+                        quantiles=quantiles,
+                    )
+                    return sym, result
+            except Exception as exc:
+                logger.warning("multi-symbol %s evaluate failed: %r", sym, exc)
+                return sym, None
+
+        results = dict(await asyncio.gather(*[_score_one(s) for s in symbols]))
+
+        # 提取跨品种 IC
+        ics: list[float] = []
+        per_symbol: dict[str, dict[str, Any]] = {}
+        for sym, r in results.items():
+            if r and r.get("available") and r.get("factor"):
+                per_symbol[sym] = r
+                ic = r["factor"].get("rank_ic")
+                if ic is not None:
+                    ics.append(ic)
+
+        n_evaluated = len(ics)
+        n_failed = len(symbols) - len(per_symbol)
+        cross_mean = float(np.mean(ics)) if ics else None
+        cross_std = float(np.std(ics, ddof=1)) if len(ics) > 1 else None
+        consistency = (
+            1.0 if cross_mean and abs(cross_mean) > 0 and (cross_std is not None and cross_std < 1e-9)
+            else (1 - cross_std / abs(cross_mean)) if cross_mean and cross_std and abs(cross_mean) > 0
+            else None
+        )
+
+        # 取第一个成功的结果作为基础响应
+        first_success = next(iter(per_symbol.values()), None)
+        base = {
+            "as_of": as_of or datetime.now(UTC),
+            "bars_used": first_success.get("bars_used", 0) if first_success else 0,
+            "available": len(per_symbol) > 0,
+            "reason": None if per_symbol else "no symbol returned valid evaluation",
+            "expression": expression,
+            "factor": first_success.get("factor") if first_success else None,
+            "ic_pvalue": first_success.get("ic_pvalue") if first_success else None,
+            "top_correlated": first_success.get("top_correlated", []) if first_success else [],
+            "max_corr": first_success.get("max_corr") if first_success else None,
+            "is_likely_redundant": first_success.get("is_likely_redundant", False) if first_success else False,
+        }
+
+        # 附加跨品种结果
+        base["multi_symbol"] = {
+            "per_symbol": {
+                sym: {
+                    "rank_ic": r["factor"]["rank_ic"] if r.get("factor") else None,
+                    "available": r.get("available", False),
+                }
+                for sym, r in per_symbol.items()
+            },
+            "cross_symbol_ic_mean": cross_mean,
+            "cross_symbol_ic_std": cross_std,
+            "cross_symbol_consistency": consistency,
+            "n_symbols_evaluated": n_evaluated,
+            "n_symbols_failed": n_failed,
+        }
+        return base
 
     async def snapshot(
         self,

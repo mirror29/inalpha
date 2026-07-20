@@ -26,7 +26,7 @@ export const SymbolSchema = z
   .max(50)
   .regex(
     /^[\^A-Za-z0-9._/\-:]+$/,
-    "symbol 不能为空 / 含空格；支持 crypto 'BTC/USDT' / 普通 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+    "symbol 不能为空 / 含空格；支持 crypto 'BTC/USDT' / 普通 'AAPL' / 指数 '^N225' / baostock 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
   );
 
 type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown };
