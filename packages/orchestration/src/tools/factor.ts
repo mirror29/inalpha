@@ -15,7 +15,6 @@ import {
   DiscoveryInputSchema,
   DiscoveryOutputSchema,
 } from "../mastra/workflows/factor-discovery.js";
-import { EvolutionInputSchema, EvolutionOutputSchema } from "../mastra/workflows/factor-evolution.js";
 
 // 只列 factor engine 真正支持的周期（_tf_seconds）。1mo/1q/1y 引擎不识别会按 1h 误算
 // 窗口，且月/季/年线 bar 太少算不出有意义的有效性，故不暴露给 agent。
@@ -381,7 +380,7 @@ export const factorEvaluateCandidateTool = createTool({
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
-    const result = await client.customScore({
+    return await client.customScore({
       expression: inputData.expression,
       name: inputData.name,
       venue: inputData.venue,
@@ -391,42 +390,6 @@ export const factorEvaluateCandidateTool = createTool({
       lookbackBars: inputData.lookbackBars,
       horizonBars: inputData.horizonBars,
     });
-
-    // P0: 因子评估后自动跑 WalkForward 回测闭环
-    const btResult = await client.backtestScore({
-      expression: inputData.expression,
-      name: inputData.name,
-      venue: inputData.venue,
-      symbol: inputData.symbol,
-      timeframe: inputData.timeframe ?? "1h",
-      asOf: inputData.asOf,
-      lookbackBars: inputData.lookbackBars,
-      horizonBars: inputData.horizonBars,
-    }).catch(() => null);
-
-    // P3: 判断演化潜力——IC 有潜力但未过门限时标注
-    const evolutionPotential: {
-      suggest: boolean;
-      reason: string | null;
-    } = { suggest: false, reason: null };
-    if (result.available && result.factor && result.ic_pvalue != null) {
-      const ic = Math.abs(result.factor.rank_ic);
-      const pval = result.ic_pvalue;
-      // 条件：IC 在 0.02-0.06 之间（有潜力但不够强），且 p < 0.2（不是纯噪声），
-      // 且不是 redundant（换了也白换）
-      if (ic >= 0.02 && ic < 0.06 && pval < 0.2 && !result.is_likely_redundant) {
-        evolutionPotential.suggest = true;
-        evolutionPotential.reason =
-          `Rank IC=${ic.toFixed(4)} 有潜力但未过强信号阈值（0.06）。` +
-          `尝试调整窗口参数、更换核心算子或添加辅助过滤后可能提升。`;
-      }
-    }
-
-    return {
-      ...result,
-      backtest: btResult?.backtest ?? null,
-      evolution_potential: evolutionPotential,
-    };
   },
 });
 
@@ -538,21 +501,30 @@ export const factorRunDiscoveryTool = createTool({
     （带 batch_id + n_tested 审计锚点，仍需人工 register）。
 
     何时用：
-    - 一次有 2-10 个因子假设要系统验证
+    - 一次有 2-10 个因子假设要系统验证——**不要**在 loop 里逐个调
+      factor.evaluate_candidate 然后手挑 p 最小的（那正是 BH 要防的作弊）
     - 用户说"帮我从这些想法里筛出能用的因子"
 
     何时不用：
-    - 只有 1 个表达式 → factor.evaluate_candidate
-    - 还没形成表达式 → 先对话把假设形式化
+    - 只有 1 个表达式 → factor.evaluate_candidate 单发（评估完自行决定是否 propose）
+    - 还没形成表达式（只有模糊想法）→ 先对话把假设形式化
 
     输入要点：
-    - 每个 candidate 必须自带 hypothesis（≥20 字经济学故事）
+    - 每个 candidate 必须自带 hypothesis（≥20 字经济学故事）——过不了 propose 门的
+      表达式连评估都别浪费
     - propose=false 可 dry-run（只打分不落候选池）
-    - maxAdjustedP 默认 0.1 / maxLibraryCorr 默认 0.8
+    - maxAdjustedP 默认 0.1 / maxLibraryCorr 默认 0.8，一般不用动
 
-    输出：
-    - verdicts 每条带 outcome + detail 原因
-    - proposed 的候选去向：dashboard /factors 候选区块等人工审核
+    输出读法：
+    - verdicts 每条带 outcome（proposed / rejected_adjusted_p / rejected_redundant /
+      rejected_decaying / rejected_low_confidence / rejected_eval_failed）+ detail 原因
+    - **rejected 不是失败**——pipeline 把不该进候选池的挡住了，向用户如实转述原因
+    - proposed 的候选去向：dashboard /factors 候选区块等人工审核；你没有转正工具
+
+    坑：
+    - 批里混一条明显 lookahead（负 lag）→ 整批 fail-fast 拒绝（修了重提）
+    - 同批重复表达式自动去重；跨批重复 propose 幂等返老行
+    - 单标的单周期验证，通过≠普适——重要候选换标的/周期再跑一批
   `.trim(),
   inputSchema: DiscoveryInputSchema,
   outputSchema: DiscoveryOutputSchema,
@@ -573,46 +545,6 @@ export const factorRunDiscoveryTool = createTool({
   },
 });
 
-/** P3 · 因子演化闭环：对单个表达式自动迭代改进。 */
-export const factorEvolveTool = createTool({
-  id: "factor.evolve",
-  description: `
-    对**有潜力但未过门限**的因子表达式自动迭代改进：生成 2-3 变体 → 评估 → 选最优
-    → 最多 N 轮。返回演化链（家谱）和最终最优表达式。
-
-    何时用：
-    - factor.evaluate_candidate 返回 evolution_potential.suggest=true
-    - 用户说"这个因子还能优化吗" "试试其他参数"
-
-    何时不用：
-    - 因子已经很强（|rank_ic| > 0.06）→ 直接 propose
-    - 因子已经 redundant → 换方向
-
-    输出：
-    - steps[] 演化链（每步表达式 + IC + 变异描述）
-    - best_expression 最优表达式 + final_rank_ic
-    - improvement_pct 对比原始 IC 的提升百分比
-    - n_rounds 总演化轮数
-  `.trim(),
-  inputSchema: EvolutionInputSchema,
-  outputSchema: EvolutionOutputSchema,
-  execute: async (inputData, ctx) => {
-    const mastra = ctx?.mastra;
-    if (!mastra) {
-      throw new Error("factor.evolve: mastra ctx missing (cannot reach workflow)");
-    }
-    const wf = mastra.getWorkflow("factor_evolution");
-    const run = await wf.createRun();
-    const result = await run.start({ inputData });
-    if (result.status !== "success") {
-      throw result.status === "failed"
-        ? result.error
-        : new Error(`factor_evolution workflow status: ${result.status}`);
-    }
-    return result.result as z.infer<typeof EvolutionOutputSchema>;
-  },
-});
-
 export const factorTools = [
   factorTimingTool,
   factorScoreTool,
@@ -622,5 +554,4 @@ export const factorTools = [
   factorProposeTool,
   factorListCandidatesTool,
   factorRunDiscoveryTool,
-  factorEvolveTool,
 ] as const;

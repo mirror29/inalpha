@@ -368,12 +368,7 @@ class CustomScoreRequest(BaseModel):
         default=None, max_length=120, description="人话名（缺省用表达式截断）"
     )
     venue: str = Field(default="binance")
-    symbol: str = Field(default="", examples=["BTC/USDT"])
-    symbols: list[str] | None = Field(
-        default=None,
-        max_length=20,
-        description="P5: 多标的并发评估，与 symbol 二选一（优先 symbols）。最多 20 个。",
-    )
+    symbol: str = Field(..., examples=["BTC/USDT"])
     timeframe: str = Field(default="1h")
     as_of: datetime | None = Field(
         default=None, description="评估截止时刻（只用 <= as_of 的 bar）；None = 现在"
@@ -420,69 +415,6 @@ class CustomScoreResponse(BaseModel):
     is_likely_redundant: bool = Field(
         default=False,
         description="max_corr ≥ 去相关阈值（默认 0.85）——大概率是已有因子换皮，别 propose",
-    )
-    # P4: WalkForward OOS 验证结果
-    walk_forward: WalkForwardResult | None = Field(
-        default=None,
-        description="WalkForward OOS IC 分布 + 退化率；P4 默认启用，降级时为 None",
-    )
-    # P5: 多标的并发评估结果
-    multi_symbol: dict[str, Any] | None = Field(
-        default=None,
-        description="P5 多标的并发评估：per_symbol / cross_symbol_ic_mean / "
-        "cross_symbol_ic_std / cross_symbol_consistency",
-    )
-
-
-class WalkForwardResult(BaseModel):
-    """WalkForward 分段 IC 验证结果（P4 · ADR-0055）。"""
-
-    oos_ic_mean: float | None = None
-    oos_ic_std: float | None = None
-    oos_ic_p50: float | None = None
-    oos_ic_p5: float | None = None
-    oos_ic_p95: float | None = None
-    insample_ic: float | None = None
-    degradation_rate: float | None = Field(
-        default=None,
-        description="(in-sample - OOS) / |in-sample|，> 0.4 时标注高退化",
-    )
-    n_splits: int = 5
-
-
-# P0: BacktestScore 依赖 CustomScoreRequest/Response，需在其后定义
-
-
-class BacktestScoreRequest(CustomScoreRequest):
-    """``POST /backtest/score`` —— 评估 + 自动回测闭环。"""
-
-    initial_cash: float = Field(default=10000.0, ge=100, le=1e9)
-    fee_rate: float = Field(default=0.001, ge=0.0, le=0.1)
-    cv_splitter: str = Field(default="walk_forward", description="walk_forward | cpcv")
-    cv_n_folds: int = Field(default=5, ge=2, le=20)
-    cv_embargo_pct: float = Field(default=0.05, ge=0.0, le=0.5)
-
-
-class BacktestScoreResult(BaseModel):
-    """WalkForward 回测结果。"""
-
-    oos_sharpe: float | None = None
-    oos_sharpe_p5: float | None = None
-    oos_sharpe_p95: float | None = None
-    oos_max_drawdown_pct: float | None = None
-    oos_win_rate: float | None = None
-    oos_return_pct: float | None = None
-    baseline_sharpe: float | None = None
-    dsr: float | None = None
-    n_paths: int = 0
-    splitter_used: str = "walk_forward"
-
-
-class BacktestScoreResponse(CustomScoreResponse):
-    """``POST /backtest/score`` 响应：因子评估 + 回测结果。"""
-
-    backtest: BacktestScoreResult | None = Field(
-        default=None, description="WalkForward 回测结果；available=false 时为 None"
     )
 
 
