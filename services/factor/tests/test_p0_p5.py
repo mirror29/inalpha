@@ -279,7 +279,7 @@ class TestP5MultiSymbolConcurrent:
         engine._fetch_df = AsyncMock(side_effect=_fake)  # type: ignore[method-assign]
         return engine
 
-    async def _run(self, engine: Any, symbols: list[str]) -> dict[str, Any]:
+    async def _run(self, engine: Any, symbols: list[str]) -> Any:
         return await engine.custom_score(
             expression="($close - Ref($close, 5)) / Ref($close, 5)",
             name="test_momentum",

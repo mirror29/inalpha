@@ -525,7 +525,7 @@ class FactorEngine:
             try:
                 if fund_cols:
                     # 尝试拉 fundamentals（可用字段映射）
-                    fund = await self._fetch_fundamentals(
+                    fund = await self._fetch_fundamentals(  # type: ignore[attr-defined]
                         venue, symbol, as_of=as_of,
                     )
                     for col in fund_cols:

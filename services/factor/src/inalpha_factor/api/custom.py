@@ -96,7 +96,7 @@ async def custom_score(req: CustomScoreRequest, engine: EngineDep) -> CustomScor
                         oos_ic_p95=wf["oos_ic_p95"],
                         insample_ic=wf["insample_ic"],
                         degradation_rate=wf["degradation_rate"],
-                        n_splits=wf["n_splits"],
+                        n_splits=int(ns) if isinstance((ns := wf.get("n_splits")), (int, float)) else 5,
                     )
         except Exception:
             # WalkForward 降级：不可用时不影响主结果
