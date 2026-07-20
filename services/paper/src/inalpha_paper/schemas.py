@@ -42,12 +42,12 @@ class BacktestRequest(BaseModel):
 
     venue: str = Field(
         default="binance",
-        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→akshare / 全球指数→yfinance / FRED→fred",
-        examples=["binance", "yfinance", "alpaca", "akshare", "fred"],
+        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→baostock / 全球指数→yfinance / FRED→fred",
+        examples=["binance", "yfinance", "alpaca", "baostock", "fred"],
     )
     symbol: str = Field(
         ...,
-        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / baostock 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
         examples=["BTC/USDT", "AAPL", "^N225", "sh.600519", "DFF"],
     )
     timeframe: str = Field(default="1h", examples=["1m", "5m", "1h", "1d"])
@@ -607,12 +607,12 @@ class SubmitOrderRequest(BaseModel):
 
     venue: str = Field(
         default="binance",
-        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→akshare / 全球指数→yfinance / FRED→fred",
-        examples=["binance", "yfinance", "alpaca", "akshare", "fred"],
+        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→baostock / 全球指数→yfinance / FRED→fred",
+        examples=["binance", "yfinance", "alpaca", "baostock", "fred"],
     )
     symbol: str = Field(
         ...,
-        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / baostock 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
         examples=["BTC/USDT", "AAPL", "^N225", "sh.600519", "DFF"],
     )
     side: Literal["BUY", "SELL"]
@@ -864,12 +864,12 @@ class CreatePlanRequest(BaseModel):
     intent: Literal["open_long", "open_short", "close", "rebalance"]
     venue: str = Field(
         default="binance",
-        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→akshare / 全球指数→yfinance / FRED→fred",
-        examples=["binance", "yfinance", "alpaca", "akshare", "fred"],
+        description="数据源；按市场分类：crypto→binance / 美股→yfinance|alpaca / A 股→baostock / 全球指数→yfinance / FRED→fred",
+        examples=["binance", "yfinance", "alpaca", "baostock", "fred"],
     )
     symbol: str = Field(
         ...,
-        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+        description="标的代码；支持 crypto 'BTC/USDT' / 美股 'AAPL' / 指数 '^N225' / baostock 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
         examples=["BTC/USDT", "AAPL", "^N225", "sh.600519", "DFF"],
     )
     side: Literal["BUY", "SELL"]
@@ -939,8 +939,8 @@ class StartStrategyRunRequest(BaseModel):
     venue: str = Field(
         ...,
         description="数据源（**必填**，不预设市场/品种，见 CLAUDE.md §3）；按市场分类："
-        "crypto→binance / 美股→yfinance|alpaca / A 股→akshare。**不要留空默认 binance**。",
-        examples=["binance", "yfinance", "akshare"],
+        "crypto→binance / 美股→yfinance|alpaca / A 股→baostock。**不要留空默认 binance**。",
+        examples=["binance", "yfinance", "baostock"],
     )
     symbol: str = Field(..., examples=["BTC/USDT", "AAPL", "sh.600519"])
     timeframe: str = Field(default="1h", examples=["1m", "5m", "1h", "1d"])

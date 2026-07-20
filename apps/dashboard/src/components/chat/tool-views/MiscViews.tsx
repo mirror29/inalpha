@@ -67,7 +67,7 @@ export function WebFetchView({ v }: { v: WebFetch }) {
 }
 
 // ── data.get_fundamentals:标准化财报基本面 ───────────────────────
-// 后端 FinancialsResponse 把 akshare/yfinance 都映射到统一 indicators(见
+// 后端 FinancialsResponse 把 baostock/yfinance 都映射到统一 indicators(见
 // services/data schemas)。这里按 估值/盈利/成长/财务 分组渲染,缺失字段跳过。
 
 interface Indicators {
@@ -111,7 +111,7 @@ function fmtCap(v: number): string {
   return fmtNum(v);
 }
 
-/** 比率值 → 百分数。后端统一以**分数**返回(akshare 已 ÷100 对齐 yfinance),恒 ×100。 */
+/** 比率值 → 百分数。后端统一以**分数**返回(baostock 已 ÷100 对齐 yfinance),恒 ×100。 */
 function asPct(v: number): number {
   return v * 100;
 }
@@ -176,10 +176,10 @@ export function FundamentalsView({ v }: { v: Financials }) {
     {
       label: "财务",
       items: [
-        // 同一 debt_to_equity 槽两个口径:akshare 填的是资产负债率(%,如 70.9),
+        // 同一 debt_to_equity 槽两个口径:baostock 填的是资产负债率(%,如 70.9),
         // yfinance 填的是负债/权益(D/E 比值)。按 venue 给准确标签与单位,别混。
         num(ind.debt_to_equity) &&
-          (v.venue === "akshare"
+          (v.venue === "baostock"
             ? { label: "资产负债率", value: `${ind.debt_to_equity.toFixed(1)}%` }
             : { label: "负债/权益", value: fmtNum(ind.debt_to_equity) }),
       ].filter(Boolean) as Cell[],

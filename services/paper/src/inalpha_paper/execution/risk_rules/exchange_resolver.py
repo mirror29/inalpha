@@ -1,8 +1,8 @@
 """``(venue, symbol)`` → ``exchange_calendars`` 日历 code 解析。
 
 D-9.1a 收尾（多市场 ``MarketHoursRule``）：``InstrumentId.venue`` 是**数据源**
-标识（``yfinance`` / ``akshare`` / ``binance``），**不是交易所**。同一 venue 跨多
-市场——``yfinance`` 同时服务美股 / 全球指数 / 韩澳印，``akshare`` 同时服务
+标识（``yfinance`` / ``baostock`` / ``binance``），**不是交易所**。同一 venue 跨多
+市场——``yfinance`` 同时服务美股 / 全球指数 / 韩澳印，``baostock`` 同时服务
 A股 / 港股 / 日英德。因此必须结合 ``symbol`` 的前缀（``sh.`` / ``sz.`` / ``hk.`` /
 ``jp.`` / ``uk.`` / ``de.``）或后缀（``.KS`` / ``.AX`` / ``.NS`` / ``.T`` / ``.L`` /
 ``.DE`` / ``.PA`` / ``.TO`` / ``.SA``）/ 指数前缀（``^``）才能定位真实交易所。
@@ -14,7 +14,7 @@ A股 / 港股 / 日英德。因此必须结合 ``symbol`` 的前缀（``sh.`` / 
 - **fred**：宏观时间序列，无交易时段概念 → 上层放行
 - **未识别 venue / 未列入的指数 / 未知后缀的美股以外标的**：fail-open
 
-映射约定来源：``orchestrator.ts`` 市场分类路由表 + ``connectors/akshare.py``
+映射约定来源：``orchestrator.ts`` 市场分类路由表 + ``connectors/baostock.py``
 symbol 前缀约定。
 
 注：``exchange_calendars`` 4.x **不提供** 深交所 ``XSHE`` 与印度 NSE ``XNSE``，
@@ -42,7 +42,7 @@ _CRYPTO_VENUES: frozenset[str] = frozenset(
 # 走 yfinance / alpaca 的美股 + 全球单股 + 指数数据源
 _US_DATA_VENUES: frozenset[str] = frozenset({"yfinance", "alpaca"})
 
-# akshare symbol 前缀 → calendar code（sz. 复用 XSHG）
+# baostock symbol 前缀 → calendar code（sz. 复用 XSHG）
 _AKSHARE_PREFIX_TO_CODE: dict[str, str] = {
     "sh": "XSHG",
     "sz": "XSHG",
@@ -94,7 +94,7 @@ def resolve_calendar_code(venue: str, symbol: str) -> str | None:
     """把 ``(venue, symbol)`` 解析成 ``exchange_calendars`` 日历 code。
 
     Args:
-        venue: ``InstrumentId.venue``（数据源标识，如 ``yfinance`` / ``akshare``）。
+        venue: ``InstrumentId.venue``（数据源标识，如 ``yfinance`` / ``baostock``）。
         symbol: ``InstrumentId.symbol``（带市场前缀 / 后缀，如 ``sh.600519`` /
             ``7203.T`` / ``^N225``）。
 
@@ -109,7 +109,7 @@ def resolve_calendar_code(venue: str, symbol: str) -> str | None:
     if v == "fred":
         return None  # 宏观，无交易时段
 
-    if v == "akshare":
+    if v == "baostock":
         prefix = s.split(".", 1)[0] if "." in s else ""
         return _AKSHARE_PREFIX_TO_CODE.get(prefix)
 

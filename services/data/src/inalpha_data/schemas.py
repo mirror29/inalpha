@@ -91,12 +91,12 @@ class NewsQuery(BaseModel):
 
     venue: str = Field(
         default="yfinance",
-        description="新闻数据源 venue。支持 yfinance（全球零 key）和 akshare（A股）。",
+        description="新闻数据源 venue。支持 yfinance（全球零 key）和 baostock（A股）。",
     )
     symbol: str = Field(
         ...,
         examples=["AAPL", "^GSPC", "005930.KS", "sh.600519"],
-        description="ticker 标识：yfinance 用 Yahoo ticker，akshare 用 sh./sz. 前缀。",
+        description="ticker 标识：yfinance 用 Yahoo ticker，baostock 用 sh./sz. 前缀。",
     )
     limit: int = Field(default=10, ge=1, le=30, description="最多返回多少条")
 
@@ -128,7 +128,7 @@ class TickerQuery(BaseModel):
         default=False,
         description=(
             "true 时绕过 DB 缓存，直接调外部市场实时 ticker。"
-            "支持 venue：binance / yfinance / alpaca；akshare / fred 不支持，"
+            "支持 venue：binance / yfinance / alpaca；baostock / fred 不支持，"
             "会返 422 FRESH_NOT_SUPPORTED_FOR_VENUE 并提示切 fresh=false。"
             "适合 scheduler 周期性拉真·最新价的场景。"
         ),
@@ -376,7 +376,7 @@ class WebFetchResponse(BaseModel):
 
 class SymbolSearchResult(BaseModel):
     symbol: str
-    """已按 venue 约定格式化：akshare → ``sh.600519``；yfinance → ``AAPL`` / ``0700.HK``。"""
+    """已按 venue 约定格式化：baostock → ``sh.600519``；yfinance → ``AAPL`` / ``0700.HK``。"""
     name: str = ""
     exchange: str = ""
     venue: str

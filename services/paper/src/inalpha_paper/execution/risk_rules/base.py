@@ -116,8 +116,8 @@ class MarketCalendar(Protocol):
     """交易日历查询接口。
 
     入参用 ``(venue, symbol)`` 一起定位真实交易所——``venue``（数据源标识，
-    如 "yfinance" / "akshare" / "binance"）单独不够：``yfinance`` 跨美股 / 全球
-    指数 / 韩澳印，``akshare`` 跨 A股 / 港股 / 日英德，需结合 ``symbol`` 前缀 /
+    如 "yfinance" / "baostock" / "binance"）单独不够：``yfinance`` 跨美股 / 全球
+    指数 / 韩澳印，``baostock`` 跨 A股 / 港股 / 日英德，需结合 ``symbol`` 前缀 /
     后缀解析（见 `exchange_resolver`）。
     """
 

@@ -46,7 +46,7 @@ _MINUTE_LOOKBACK_LIMITS = {
 _VENUE_TIMEFRAME_SECONDS: dict[str, dict[str, int]] = {
     "binance": BINANCE_TIMEFRAME_SECONDS,
     "alpaca": ALPACA_TIMEFRAME_SECONDS,
-    "akshare": {
+    "baostock": {
         "1d": 86400,
         "1wk": 604800,
         "1mo": 2_592_000,
@@ -77,15 +77,26 @@ async def backfill_bars(
         raise ValidationError("from_ts must be <= to_ts")
 
     # ─── venue 路由 ──────────────────────────────────────────────
+    # **向后兼容**：venue="akshare" 且 symbol 带 sh./sz. 前缀 → 自动路由到 baostock
+    _baostock_prefixes = ("sh.", "sz.")
+    effective_venue = req.venue
+    if req.venue == "akshare" and any(req.symbol.startswith(p) for p in _baostock_prefixes):
+        _logger.warning(
+            "venue_akshare_deprecated",
+            symbol=req.symbol,
+            reason="venue 'akshare' is deprecated for A-share; use 'baostock' instead",
+        )
+        effective_venue = "baostock"
+
     try:
-        connector: Connector = get_connector_for_venue(req.venue)
+        connector: Connector = get_connector_for_venue(effective_venue)
     except KeyError:
         raise ValidationError(
             f"unsupported venue {req.venue!r}",
             details={"supported": list_registered_venues()},
         ) from None
 
-    tf_table = _VENUE_TIMEFRAME_SECONDS.get(req.venue)
+    tf_table = _VENUE_TIMEFRAME_SECONDS.get(effective_venue)
     if tf_table is None or req.timeframe not in tf_table:
         raise ValidationError(
             f"venue {req.venue!r} does not support timeframe {req.timeframe!r}",
@@ -99,7 +110,7 @@ async def backfill_bars(
     # baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
     # 仅对 akshare venue 生效（binance/alpaca/yfinance 不受此限制）
     effective_from_ts = req.from_ts
-    if req.venue == "akshare" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
+    if req.venue == "baostock" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
         max_lookback_days = _MINUTE_LOOKBACK_LIMITS[req.timeframe]
         span_days = (req.to_ts - req.from_ts).total_seconds() / 86400
 
@@ -141,7 +152,7 @@ async def backfill_bars(
     # 但不早于请求的 from_ts；空缓存则从 from_ts 全量。
     # 注：仅按 max(ts) 续拉，中间空洞（非连续缓存，罕见）不会回补；需要时显式重拉窗口。
     cached_latest = await latest_bar_ts(
-        db, req.venue, req.symbol, req.timeframe, upto=req.to_ts
+        db, effective_venue, req.symbol, req.timeframe, upto=req.to_ts
     )
     if cached_latest is not None and cached_latest > effective_from_ts:
         cursor = cached_latest
@@ -199,7 +210,7 @@ async def backfill_bars(
         if not bars:
             break
 
-        n = await insert_bars(db, req.venue, req.symbol, req.timeframe, bars)
+        n = await insert_bars(db, effective_venue, req.symbol, req.timeframe, bars)
         fetched_total += len(bars)
         inserted_total += n
 

@@ -1,6 +1,6 @@
 """``GET /news`` —— 拉新闻头条（D-9，零 key，给 research analyst 喂真数据用）。
 
-当前支持 venue=yfinance（全球）和 venue=akshare（A股）。
+当前支持 venue=yfinance（全球）和 venue=baostock（A股）。
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ async def get_news(
 ) -> NewsResponse:
     """拉指定 ticker 的最新新闻。
 
-    venue 支持 yfinance / akshare（其它返 422）；不支持 ticker 返空 list 而非错。
+    venue 支持 yfinance / baostock（其它返 422）；不支持 ticker 返空 list 而非错。
     """
     if query.venue == "yfinance":
         try:
@@ -32,8 +32,8 @@ async def get_news(
             raw = await conn.fetch_news(query.symbol, limit=query.limit)
         except Exception:
             raw = []
-    elif query.venue == "akshare":
-        conn = get_connector_for_venue("akshare")
+    elif query.venue == "baostock":
+        conn = get_connector_for_venue("baostock")
         if not hasattr(conn, "fetch_news"):
             raise ValidationError(
                 f"news fetch not available for venue {query.venue!r}",
@@ -45,7 +45,7 @@ async def get_news(
         raise ValidationError(
             f"news venue {query.venue!r} not supported",
             code="NEWS_VENUE_NOT_SUPPORTED",
-            details={"venue": query.venue, "supported": ["yfinance", "akshare"]},
+            details={"venue": query.venue, "supported": ["yfinance", "baostock"]},
         )
 
     items = [NewsItem(**r) for r in raw]

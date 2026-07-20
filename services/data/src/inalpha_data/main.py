@@ -33,7 +33,7 @@ from .api import (
     web_search,
 )
 from .config import get_data_settings
-from .connectors import akshare as akshare_conn
+from .connectors import baostock as baostock_conn
 from .connectors import alpaca as alpaca_conn
 from .connectors import binance as binance_conn
 from .connectors import cn_market as cn_market_conn
@@ -64,7 +64,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         api_key=_settings.alpaca_api_key,
         api_secret=_settings.alpaca_api_secret,
     )
-    akshare_conn.init_connector()
+    baostock_conn.init_connector()
     yfinance_conn.init_connector()
     fred_conn.init_connector(api_key=_settings.fred_api_key)
     web_search_conn.init_connector()
@@ -87,7 +87,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await yfinance_conn.close_connector()
         await cn_market_conn.close_connector()
         await web_search_conn.close_connector()
-        await akshare_conn.close_connector()
+        await baostock_conn.close_connector()
         await alpaca_conn.close_connector()
         await binance_conn.close_connector()
         await close_pool()

@@ -21,7 +21,7 @@ const TimeframeSchema = z.enum([
 //   - crypto:      'BTC/USDT' (CCXT)
 //   - 美股 / FRED:  'AAPL' / 'DFF' (plain alphanumeric)
 //   - 指数:         '^N225' / '^FTSE' (Yahoo 指数前缀)
-//   - akshare:     'sh.600519' / 'sz.000001' (prefix.code，仅 A 股)
+//   - baostock:   .sh.600519. / 'sz.000001' (prefix.code，仅 A 股)
 //   - yfinance:    '005930.KS' / 'BHP.AX' / 'BARC.L' (code.suffix)
 // Python 后端再做精细校验；zod 只做"非空 + 字符集 + 长度"防呆。
 const SymbolSchema = z
@@ -30,7 +30,7 @@ const SymbolSchema = z
   .max(50)
   .regex(
     /^[\^A-Za-z0-9._/\-:]+$/,
-    "symbol 不能为空 / 含空格；支持 crypto 'BTC/USDT' / 普通 'AAPL' / 指数 '^N225' / akshare 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
+    "symbol 不能为空 / 含空格；支持 crypto 'BTC/USDT' / 普通 'AAPL' / 指数 '^N225' / baostock 'sh.600519' / yfinance '005930.KS' / FRED 'DFF'",
   );
 
 type ToolRequestContext = {
@@ -203,7 +203,7 @@ export const dataBackfillBarsTool = createTool({
     - 用户问"这个时段还没数据" → 先 backfill
     - **想要"最新现价"但 data.get_bars 返回的是 stale 数据**（数小时前）→ backfill 最近 1 天
     - **venue 按 symbol 所属市场自动选**（详 orchestrator system prompt 市场→venue 路由表）：
-      crypto→binance、美股/全球指数/韩澳印加巴法等单股→yfinance、A股→akshare（baostock 源，日/周/月 + 分钟级 5m/15m/30m/1h）、
+      crypto→binance、美股/全球指数/韩澳印加巴法等单股→yfinance、A股→baostock（baostock 源，日/周/月 + 分钟级 5m/15m/30m/1h）、
       港/日/英/德股→yfinance、美股专业 feed→alpaca、FRED 宏观→fred
 
     何时不用：
@@ -220,7 +220,7 @@ export const dataBackfillBarsTool = createTool({
 
     坑：
     - **不要"为了保险拉一年 1m"**——既慢又没必要。需要近期价用 1h timeframe + 1 周即可
-    - **baostock（akshare venue）**：日级 1d/1wk/1mo + 分钟级 5m/15m/30m/1h（不支持 1m）；
+    - **baostock（baostock venue）**：日级 1d/1wk/1mo + 分钟级 5m/15m/30m/1h（不支持 1m）；
       **fred 仅日级及以上**（1d/1wk/1mo/1q/1y）；
       venue/timeframe 不匹配后端返 422 并带 supported_timeframes，按响应改一次再调，不要瞎重试
     - 不要在 LLM 单 turn 里循环 backfill 多个标的，分多次 tool call
@@ -266,7 +266,7 @@ export const dataGetTickerTool = createTool({
     取 venue/symbol 的"最新价"（单值，不是 K 线）。
 
     - fresh=true（**默认**）：直接调外部市场实时报价，绕过 DB 缓存。
-      **支持 venue**：binance / yfinance / alpaca；akshare / fred 不支持（返
+      **支持 venue**：binance / yfinance / alpaca；baostock / fred 不支持（返
       FRESH_NOT_SUPPORTED_FOR_VENUE，hint 提示切 fresh=false）。
       网络抖动 ~200-800ms；不要高频循环调（rate-limit）。
     - fresh=false：从 DB 拿最新 1m → fallback 1h，任意 venue 都支持。
@@ -281,7 +281,7 @@ export const dataGetTickerTool = createTool({
     何时不用：
     - 要历史走势 / 做技术分析 → 用 data.get_bars
     - 要 N 根 K 线 → 用 data.get_bars
-    - A 股 / FRED 想要"实时"价 → akshare/fred 没这能力，改 fresh=false 走 DB
+    - A 股 / FRED 想要"实时"价 → baostock/fred 没这能力，改 fresh=false 走 DB
       cache（先 backfill_bars 灌一遍最新数据再调）；港股走 yfinance 有实时 ticker
 
     坑：
@@ -314,25 +314,25 @@ export const dataGetFundamentalsTool = createTool({
   id: "data.get_fundamentals",
   description: `
     拉标的的财报基本面数据（市盈率、ROE、营收增速等）。
-    支持 venue=akshare（A股）和 venue=yfinance（美股/港股/全球）。
+    支持 venue=baostock（A股）和 venue=yfinance（美股/港股/全球）。
 
     何时用：研究个股基本面 / 看估值是否合理 / deep_dive 前预拉数据
     何时不用：加密货币（无传统财报）/ 指数和宏观（走 FRED 或专用数据源）
 
     坑：
-    - akshare 返回字段因市场不同有差异；缺失字段为 null 不抛错
+    - baostock 返回字段因市场不同有差异；缺失字段为 null 不抛错
     - asOf（point-in-time，ADR-0053）：研究历史某时点时传入，只返回那时已披露的财报，
-      防未来函数（读到当时还没发布的报告期）；仅 akshare 生效，yfinance 不做 PIT、
+      防未来函数（读到当时还没发布的报告期）；仅 baostock 生效，yfinance 不做 PIT、
       响应 reason 会标注。研究"当下"不必传。
     - A股（sh/sz）的 market_cap/pe_ratio/pb_ratio 来自**实时** Baidu 源、无历史回溯：传
       **历史 asOf** 时这些估值字段留空（只有 ROE/毛利率等财报指标做 PIT），避免把当日估值
       混进历史财报；asOf=今天/不传 时估值正常返回。
   `.trim(),
   inputSchema: z.object({
-    venue: z.string().default("akshare"),
+    venue: z.string().default("baostock"),
     symbol: SymbolSchema,
     asOf: z
-      // offset:true 必须——akshare 响应回显 / Python isoformat 都用 +00:00，不带 offset
+      // offset:true 必须——baostock 响应回显 / Python isoformat 都用 +00:00，不带 offset
       // 的 .datetime() 只认 Z 结尾会拒 +00:00，导致 agent 把上轮 as_of 复制回来即失败
       // （与 factor.ts 同名字段一致，#102 CR）。
       .string()
@@ -344,7 +344,7 @@ export const dataGetFundamentalsTool = createTool({
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
     return await client.getFundamentals({
-      venue: inputData.venue ?? "akshare",
+      venue: inputData.venue ?? "baostock",
       symbol: inputData.symbol,
       asOf: inputData.asOf,
     });
@@ -358,7 +358,7 @@ export const dataGetFundamentalsTool = createTool({
 export const dataSearchSymbolTool = createTool({
   id: "data.search_symbol",
   description: `
-    按公司名 / 关键词 / 代码片段检索 ticker。A股走 akshare 全量代码表
+    按公司名 / 关键词 / 代码片段检索 ticker。A股走 baostock 全量代码表
     （返回 sh.600519 格式，直接可喂 get_bars / get_fundamentals），
     其他市场走 Yahoo 全球检索（返回 AAPL / 0700.HK 等 yahoo 格式，venue=yfinance）。
 
@@ -372,7 +372,7 @@ export const dataSearchSymbolTool = createTool({
     - 加密货币对（BTC/USDT 这类）→ 不是股票检索范围
 
     坑：
-    - **已能判断出市场时显式传 venue**（美股 / 港股 / 全球 → yfinance；A股 → akshare）。
+    - **已能判断出市场时显式传 venue**（美股 / 港股 / 全球 → yfinance；A股 → baostock）。
       query 的语言 ≠ 市场：中文名问美股公司极常见，别让 auto 的兜底逻辑替你判断
     - venue=auto：中文 query 会 A股表与 Yahoo 并行都查、轮替合并；纯英文只走 Yahoo
     - 北交所代码暂不支持（会被过滤）；返回空 ≠ 公司不存在，可换关键词再试
@@ -381,7 +381,7 @@ export const dataSearchSymbolTool = createTool({
   inputSchema: z.object({
     query: z.string().min(1).max(80).describe("公司名 / 代码片段，如公司中文名或英文名"),
     venue: z
-      .enum(["auto", "akshare", "yfinance"])
+      .enum(["auto", "baostock", "yfinance"])
       .default("auto")
       .describe("已判断出市场就显式传（语言≠市场）；auto 仅在市场未知时兜底"),
     maxResults: z.number().int().min(1).max(20).default(10),
