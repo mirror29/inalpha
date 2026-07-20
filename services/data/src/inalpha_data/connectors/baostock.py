@@ -1,30 +1,19 @@
-"""akshare connector —— A股走 baostock（证券宝）+ 港股走 akshare 东财源。
+"""baostock connector —— A 股全栈数据源（证券宝，免费零 key）。
 
-baostock（证券宝）做 A 股全栈数据源：
+2026-07 起，原 akshare venue 的 A 股能力全部迁移至此独立 venue。
 
-- **K 线**：日/周/月线，OHLCV 齐全（含真实成交量）
-- **财报**：利润表 + 负债表 + 成长指标 + 现金流比率 + 分红记录
+baostock（证券宝）功能覆盖：
+
+- **K 线**：日/周/月/分钟（5m/15m/30m/1h），OHLCV 齐全（含真实成交量）
+- **财报**：利润表 + 负债表 + 成长指标 + 现金流 + 运营能力 + 杜邦分析 + 分红记录
 - **交易日历**：A 股交易/非交易日查询
 - **指数成分**：沪深300 / 上证50 / 中证500 当前成分股
 - **全部免费零 key**，无需注册
 
-**2026-07 更新**：
+**symbol 格式约定**（venue="baostock"）：
 
-- A股（sh/sz）：东财 push2his 失效 → 全部能力切 baostock
-  - K 线：日/周/月 + volume
-  - 财报：利润/负债/成长/现金流/分红（baostock pubDate 做 PIT）
-  - 交易日历：query_trade_dates
-  - 指数成分：沪深300/上证50/中证500
-- 港股（hk）：东财 ``stock_hk_hist`` 保留作 fallback（push2his 同失效），
-  orchestrator 默认路由到 yfinance
-- 日股 / 英股 / 德股：``stock_jp_hist`` / ``stock_uk_hist`` / ``stock_de_hist``
-  在 akshare ≥1.18.63 中已删除；orchestrator 路由到 yfinance
-
-**symbol 格式约定**（venue=``"akshare"``）：
-
-- A股沪市：``"sh.600519"``  → baostock ``"sh.600519"``
-- A股深市：``"sz.000001"``  → baostock ``"sz.000001"``
-- 港股   ：``"hk.00700"``  → akshare ``stock_hk_hist``（东财源，当前不可用）
+- A 股沪市：``"sh.600519"``
+- A 股深市：``"sz.000001"``
 
 **timeframe 支持**：
 
@@ -46,14 +35,14 @@ from ._base import register_connector, unregister_connector
 
 _logger = get_logger(__name__)
 
-VENUE = "akshare"
+VENUE = "baostock"
 
 #: fundamentals 进程内缓存 TTL（秒）。A股一次 fundamentals 要打 1 次财报摘要 + 3 次
 #: Baidu 估值(串行 ~4-5s),research 多 analyst fan-out 会重复问同一标的;60s 缓存挡掉
 #: 重复打源站,兼顾防封与延迟。基本面日级更新,60s 内复用不损时效。
 _FIN_CACHE_TTL_S = 60.0
 
-# akshare 的 ``period`` 字符串映射（日级 + 分钟级）
+# baostock 的 ``period`` 字符串映射（日级 + 分钟级）
 # baostock frequency 参数：日级 "d"/"w"/"m"，分钟级 "5"/"15"/"30"/"60"
 _PERIOD_MAP: dict[str, str] = {
     "1d": "daily",
@@ -66,7 +55,7 @@ _PERIOD_MAP: dict[str, str] = {
     "1h": "60",
 }
 
-#: 串行锁——akshare 走公开页聚合（东财/同花顺/中证等），并发突发会触发反爬；
+#: 串行锁——baostock 走公开页聚合（东财/同花顺/中证等），并发突发会触发反爬；
 #: 进程级串行 + 最小间隔把突发摊成节流串行，避免 429/空返（yfinance 同类模式）。
 _FETCH_LOCK = asyncio.Lock()
 #: 最小拉取间隔（秒）。公开页比 Yahoo API 更脆弱，≥1s；A 股数据走东财/同花顺
@@ -121,7 +110,7 @@ def _bs_session_logout() -> None:
         _bs_logged_in = False
 
 #: 允许的市场前缀
-_ALLOWED_PREFIXES = frozenset({"sh", "sz", "hk", "jp", "uk", "de"})
+_ALLOWED_PREFIXES = frozenset({"sh", "sz"})
 
 
 def _parse_symbol(symbol: str) -> tuple[str, str]:
@@ -139,27 +128,27 @@ def _parse_symbol(symbol: str) -> tuple[str, str]:
             symbol = f"{suffix.lower()}.{code}"
     if "." not in symbol:
         raise ValueError(
-            f"akshare symbol must be '<prefix>.<code>'，prefix in (sh/sz/hk/jp/uk/de)，"
+            f"baostock symbol must be '<prefix>.<code>'，prefix in (sh/sz)，"
             f"got {symbol!r}"
         )
     prefix, code = symbol.split(".", 1)
     prefix = prefix.lower()
     if prefix not in _ALLOWED_PREFIXES:
         raise ValueError(
-            f"akshare unknown prefix {prefix!r}，allow: {sorted(_ALLOWED_PREFIXES)}"
+            f"baostock unknown prefix {prefix!r}，allow: {sorted(_ALLOWED_PREFIXES)}"
         )
     if not code:
-        raise ValueError(f"akshare code is empty: {symbol!r}")
+        raise ValueError(f"baostock code is empty: {symbol!r}")
     return prefix, code
 
 
-class AkshareConnector:
-    """akshare 包装 —— 同步库走 ``asyncio.to_thread``。"""
+class BaostockConnector:
+    """baostock 包装 —— 同步库走 ``asyncio.to_thread``。"""
 
     def __init__(self) -> None:
-        # akshare 无 client 对象,import 即用。fundamentals 进程内 TTL 缓存,**PIT-aware**:
+        # baostock 无 client 对象,import 即用。fundamentals 进程内 TTL 缓存,**PIT-aware**:
         # key = (symbol, as_of 截断到天 | None)。财报日级粒度,按天 key 安全——同一天的
-        # PIT 查询(含 as_of≈now 的实时研究,三 analyst 并行)命中同一格,不再各自打 akshare
+        # PIT 查询(含 as_of≈now 的实时研究,三 analyst 并行)命中同一格,不再各自打 baostock
         # (#102 CR:原"PIT 绕过缓存"会让 live deep-dive 对同 ticker 打 3× 网络)。只缓存成功。
         self._fin_cache: dict[tuple[str, str | None], tuple[float, dict[str, Any]]] = {}
 
@@ -197,31 +186,31 @@ class AkshareConnector:
         since: datetime,
         limit: int = 1000,
     ) -> list[tuple[datetime, float, float, float, float, float]]:
-        """从 akshare 拉 OHLCV。
+        """从 baostock 拉 OHLCV。
 
         Args:
-            symbol: ``"sh.600519"`` / ``"sz.000001"`` / ``"hk.00700"``
+            symbol: ``"sh.600519"`` / ``"sz.000001"``
             timeframe: 支持 ``"1d"`` / ``"1wk"`` / ``"1mo"`` 及分钟级 ``"5m"`` / ``"15m"`` / ``"30m"`` / ``"1h"``
-            since: UTC datetime；akshare 接 ``YYYYMMDD`` 字符串
-            limit: 不直接生效（akshare 不接 limit，整段拉回；上层切片）
+            since: UTC datetime；baostock 接 ``YYYYMMDD`` 字符串
+            limit: 不直接生效（baostock 不接 limit，整段拉回；上层切片）
 
         Returns:
             list of ``(ts, open, high, low, close, volume)``，UTC aware。
         """
         if timeframe not in _PERIOD_MAP:
             raise NotImplementedError(
-                f"akshare connector only supports {sorted(_PERIOD_MAP)}; "
+                f"baostock connector only supports {sorted(_PERIOD_MAP)}; "
                 f"got {timeframe!r}"
             )
 
         prefix, code = _parse_symbol(symbol)
         period = _PERIOD_MAP[timeframe]
         start_str = since.strftime("%Y%m%d")
-        # end 给 today 让 akshare 一口气拉全
+        # end 给 today 让 baostock 一口气拉全
         end_str = datetime.now(UTC).strftime("%Y%m%d")
 
         _logger.debug(
-            "akshare_fetch_bars",
+            "baostock_fetch_bars",
             symbol=symbol,
             timeframe=timeframe,
             since=since.isoformat(),
@@ -239,7 +228,7 @@ class AkshareConnector:
             )
         except Exception as exc:
             _logger.warning(
-                "akshare_fetch_bars_failed",
+                "baostock_fetch_bars_failed",
                 symbol=symbol,
                 timeframe=timeframe,
                 start_str=start_str,
@@ -248,7 +237,7 @@ class AkshareConnector:
             )
             return []
 
-        # akshare 返的是 DataFrame；列名中文 / 英文都见过，做防御性归一化
+        # baostock 返的是 DataFrame；列名中文 / 英文都见过，做防御性归一化
         out: list[tuple[datetime, float, float, float, float, float]] = []
         for r in rows:
             # 日级：用 date 字段；分钟级：用 time 字段（格式 YYYYMMDDHHMMSS）
@@ -267,14 +256,14 @@ class AkshareConnector:
         if not out and rows:
             # 上游返了行但全部被列名解析跳过 → 列名漂移告警
             _logger.warning(
-                "akshare_fetch_bars_all_rows_skipped",
+                "baostock_fetch_bars_all_rows_skipped",
                 symbol=symbol,
                 timeframe=timeframe,
                 row_count=len(rows),
                 sample_keys=list(rows[0].keys()) if rows else [],
             )
 
-        # 按 limit 截断尾部（akshare 不接 limit，整段返）
+        # 按 limit 截断尾部（baostock 不接 limit，整段返）
         if limit and len(out) > limit:
             out = out[-limit:]
         return out
@@ -288,9 +277,9 @@ class AkshareConnector:
         start_str: str,
         end_str: str,
     ) -> list[dict[str, Any]]:
-        """串行 + 最小间隔跑 akshare fetch，防并发突发触发反爬。
+        """串行 + 最小间隔跑 baostock fetch，防并发突发触发反爬。
 
-        进程级 ``_FETCH_LOCK`` 保证同一时刻只有一个 akshare 请求在飞；锁内再补足
+        进程级 ``_FETCH_LOCK`` 保证同一时刻只有一个 baostock 请求在飞；锁内再补足
         ``_MIN_FETCH_INTERVAL_S`` 的最小间隔。锁内每请求超时 ``_FETCH_TIMEOUT_S``，
         TCP 挂起时快速放锁让队列继续。
 
@@ -342,7 +331,7 @@ class AkshareConnector:
                 "venue": VENUE,
                 "symbol": symbol,
                 "available": False,
-                "reason": f"financials not supported for akshare prefix {prefix!r}",
+                "reason": f"financials not supported for baostock prefix {prefix!r}",
             }
 
         as_of_dt: datetime | None = None
@@ -369,7 +358,7 @@ class AkshareConnector:
             return cached
 
         _logger.debug(
-            "akshare_fetch_financials", symbol=symbol, prefix=prefix, code=code, as_of=as_of
+            "baostock_fetch_financials", symbol=symbol, prefix=prefix, code=code, as_of=as_of
         )
 
         try:
@@ -381,19 +370,19 @@ class AkshareConnector:
                 publish_lag_days=FINANCIALS_PUBLISH_LAG_DAYS,
             )
         except Exception as exc:
-            _logger.warning("akshare_financials_fetch_failed", symbol=symbol, error=str(exc))
+            _logger.warning("baostock_financials_fetch_failed", symbol=symbol, error=str(exc))
             return {
                 "venue": VENUE,
                 "symbol": symbol,
                 "available": False,
-                "reason": f"akshare fetch failed: {exc}",
+                "reason": f"baostock fetch failed: {exc}",
             }
 
         if raw is None or (isinstance(raw, (dict, list)) and len(raw) == 0):
             reason = (
                 f"no financials published as of {as_of}"
                 if as_of_dt is not None
-                else "akshare returned empty financial data"
+                else "baostock returned empty financial data"
             )
             return {
                 "venue": VENUE,
@@ -451,7 +440,7 @@ class AkshareConnector:
                     except (TypeError, ValueError):
                         pass
 
-            # 单位归一:akshare 摘要的 ROE / 利润率 / 增长率均为**百分数**(如 18.8 表示
+            # 单位归一:baostock 摘要的 ROE / 利润率 / 增长率均为**百分数**(如 18.8 表示
             # 18.8%);yfinance 同名字段是**分数**(0.188)。统一成分数对齐 yfinance,
             # 前端按分数 ×100 展示。
             # 注：baostock 路径在上方 _fetch_financials_baostock_sync 已返回分数，
@@ -481,7 +470,7 @@ class AkshareConnector:
                     if indicators.get(k) is None:
                         indicators[k] = v
             except Exception as exc:
-                _logger.warning("akshare_valuation_fetch_failed", symbol=symbol, error=str(exc))
+                _logger.warning("baostock_valuation_fetch_failed", symbol=symbol, error=str(exc))
 
         # as_of 回填：PIT 查询回显请求的 as_of（数据有效时点）；非 PIT 回填取数时刻
         as_of_echo = (
@@ -514,15 +503,15 @@ class AkshareConnector:
         """
         prefix, code = _parse_symbol(symbol)
         if prefix not in ("sh", "sz"):
-            _logger.debug("akshare_fetch_news_unsupported_prefix", symbol=symbol, prefix=prefix)
+            _logger.debug("baostock_fetch_news_unsupported_prefix", symbol=symbol, prefix=prefix)
             return []
 
-        _logger.debug("akshare_fetch_news", symbol=symbol, prefix=prefix, code=code, limit=limit)
+        _logger.debug("baostock_fetch_news", symbol=symbol, prefix=prefix, code=code, limit=limit)
 
         try:
             raw = await asyncio.to_thread(_fetch_news_sync, symbol=code)
         except Exception as exc:
-            _logger.warning("akshare_news_fetch_failed", symbol=symbol, error=str(exc))
+            _logger.warning("baostock_news_fetch_failed", symbol=symbol, error=str(exc))
             return []
 
         if not raw or not isinstance(raw, list):
@@ -574,7 +563,7 @@ class AkshareConnector:
         """
         import baostock as bs
 
-        _logger.debug("akshare_fetch_trade_calendar", start=start_date, end=end_date)
+        _logger.debug("baostock_fetch_trade_calendar", start=start_date, end=end_date)
         _ensure_bs_login()
         rs = bs.query_trade_dates(start_date=start_date, end_date=end_date)
         if rs is None or rs.error_code != "0":
@@ -597,15 +586,15 @@ class AkshareConnector:
             ``[{code, name, weight}]``——code 归一为 sh./sz./bj. 前缀的 Inalpha 符号格式;
             name/weight 可空。空 list = 拉取失败 / 不支持(优雅降级)。
 
-        坑:akshare 只回**当前**成分(中证 XLS 每日覆盖、无 as-of 历史);**PIT 历史靠本服务
+        坑:baostock 只回**当前**成分(中证 XLS 每日覆盖、无 as-of 历史);**PIT 历史靠本服务
         每日快照向前累积**(#106 / ADR-0053 阶段 C),本方法只提供"今天的成分"这一原料。
         """
-        _logger.debug("akshare_fetch_constituents", index_code=index_code)
+        _logger.debug("baostock_fetch_constituents", index_code=index_code)
         try:
             rows = await asyncio.to_thread(_fetch_constituents_sync, index_code=index_code)
         except Exception as exc:
             _logger.warning(
-                "akshare_constituents_fetch_failed", index_code=index_code, error=str(exc)
+                "baostock_constituents_fetch_failed", index_code=index_code, error=str(exc)
             )
             return []
         return rows
@@ -650,11 +639,11 @@ def _fetch_financials_sync(
         # 港股东财源当前不可用，打日志后静默返回空（orchestrator 路由到 yfinance）
         raw = ak.stock_hk_financial_abstract(symbol=code)
         if raw is None:
-            _logger.warning("akshare_hk_financials_none", prefix=prefix, code=code)
+            _logger.warning("baostock_hk_financials_none", prefix=prefix, code=code)
             return {}
-        # akshare 返回 DataFrame，非 dict
+        # baostock 返回 DataFrame，非 dict
         if hasattr(raw, "empty") and raw.empty:
-            _logger.warning("akshare_hk_financials_empty", prefix=prefix, code=code)
+            _logger.warning("baostock_hk_financials_empty", prefix=prefix, code=code)
             return {}
         return _flatten_financial_abstract(raw, as_of=as_of, publish_lag_days=publish_lag_days)
 
@@ -1005,7 +994,7 @@ def _fetch_valuation_sync(code: str) -> dict[str, float]:
 
 
 def _fetch_news_sync(symbol: str) -> list[dict[str, Any]]:
-    """同步调 akshare 新闻接口 —— ``stock_news_em``（东方财富 A股新闻）。
+    """同步调 akshare 新闻接口（仍用 akshare 包，A 股新闻东财源） —— ``stock_news_em``（东方财富 A股新闻）。
 
     返回 list of dict，字段含：标题 / 发布时间 / 来源 / 链接 / 内容 等。
     """
@@ -1030,9 +1019,9 @@ def _fetch_baostock_sync(
 ) -> list[dict[str, Any]]:
     """同步调 baostock（证券宝）—— 免费零 key，A 股日/周/月/分钟 K 线。
 
-    ``symbol`` 格式 ``"sh.600519"`` / ``"sz.000001"``（与 akshare 旧格式一致）。
+    ``symbol`` 格式 ``"sh.600519"`` / ``"sz.000001"``（与 akshare 旧格式一致，兼容）。
     ``frequency`` 为 ``"d"/"w"/"m"``（日级）或 ``"5"/"15"/"30"/"60"``（分钟级）。
-    ``start_date`` / ``end_date`` 为 ``YYYYMMDD``（akshare 上层格式），内部转
+    ``start_date`` / ``end_date`` 为 ``YYYYMMDD``（baostock 上层格式），内部转
     ``YYYY-MM-DD``（baostock 要求）。
     返回 list[dict] 含 date/open/high/low/close/volume/amount 字段，分钟级额外含 time。
     """
@@ -1165,7 +1154,7 @@ def _fetch_sync(
         df = ak.stock_hk_hist(adjust="", **common)
         if df is None or len(df) == 0:
             _logger.warning(
-                "akshare_fetch_empty",
+                "baostock_fetch_empty",
                 prefix=prefix,
                 code=code,
                 period=period,
@@ -1302,7 +1291,7 @@ def _to_float(v: Any) -> float | None:
 
 
 def _parse_date(v: Any) -> datetime:
-    """akshare 日期是 ``datetime.date`` / ``str`` / ``pd.Timestamp``，统一成 UTC aware。
+    """baostock 日期是 ``datetime.date`` / ``str`` / ``pd.Timestamp``，统一成 UTC aware。
 
     分钟级时间格式：``"YYYYMMDDHHMMSS"``（如 ``"20260709093500000"``）。
     """
@@ -1331,14 +1320,14 @@ def _parse_date(v: Any) -> datetime:
 
 # ---------- module-level singleton ----------
 
-_connector: AkshareConnector | None = None
+_connector: BaostockConnector | None = None
 
 
-def init_connector() -> AkshareConnector:
-    """启动时调一次。akshare 无 API key 需要。"""
+def init_connector() -> BaostockConnector:
+    """启动时调一次。baostock 无 API key 需要。"""
     global _connector
     if _connector is not None:
-        raise RuntimeError("Akshare connector already initialized")
+        raise RuntimeError("Baostock connector already initialized")
     _connector = AkshareConnector()
     register_connector(VENUE, _connector)
     return _connector
@@ -1354,7 +1343,7 @@ async def close_connector() -> None:
     _bs_session_logout()
 
 
-def get_connector() -> AkshareConnector:
+def get_connector() -> BaostockConnector:
     if _connector is None:
-        raise RuntimeError("Akshare connector not initialized; call init_connector() first")
+        raise RuntimeError("Baostock connector not initialized; call init_connector() first")
     return _connector
