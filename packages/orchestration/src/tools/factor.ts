@@ -370,7 +370,7 @@ export const factorEvaluateCandidateTool = createTool({
     venue: z.string().min(1).describe("数据源（按市场分类选，不预设默认市场）"),
     symbol: SymbolSchema.optional(),
     /** P5: 多标的并发评估，与 symbol 二选一（优先 symbols）。最多 20 个。 */
-    symbols: z.array(SymbolSchema).min(2).max(20).optional(),
+    symbols: z.array(SymbolSchema).max(20).optional(),
     timeframe: TimeframeSchema.default("1h"),
     asOf: z
       .string()

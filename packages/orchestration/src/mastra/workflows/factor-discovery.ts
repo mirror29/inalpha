@@ -50,7 +50,7 @@ const DiscoveryInputSchema = z.object({
   venue: z.string().min(1),
   symbol: z.string().min(1).max(50).optional(),
   /** P5: 多标的并发评估，与 symbol 二选一（优先 symbols）。最多 20 个。 */
-  symbols: z.array(z.string().min(1).max(50)).min(2).max(20).optional(),
+  symbols: z.array(z.string().min(1).max(50)).max(20).optional(),
   timeframe: TimeframeSchema.default("1h"),
   lookbackBars: z.number().int().min(120).max(10000).default(720),
   horizonBars: z.number().int().min(1).max(60).default(5),

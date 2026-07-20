@@ -635,7 +635,7 @@ class FactorEngine:
         cross_mean = float(np.mean(ics)) if ics else None
         cross_std = float(np.std(ics, ddof=1)) if len(ics) > 1 else None
         consistency = (
-            1.0 if cross_mean and abs(cross_mean) > 0 and cross_std == 0
+            1.0 if cross_mean and abs(cross_mean) > 0 and (cross_std is not None and cross_std < 1e-9)
             else (1 - cross_std / abs(cross_mean)) if cross_mean and cross_std and abs(cross_mean) > 0
             else None
         )
