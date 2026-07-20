@@ -597,8 +597,6 @@ class FactorEngine:
         复用 ``_PANEL_FETCH_CONCURRENCY`` 限并发，避免对 data-service 的请求风暴。
         部分标的失败时降级为 None，不阻断整体评估。
         """
-        from .panel import _PANEL_FETCH_CONCURRENCY
-
         fetch_sem = asyncio.Semaphore(_PANEL_FETCH_CONCURRENCY)
 
         async def _score_one(sym: str) -> tuple[str, dict[str, Any] | None]:
@@ -637,7 +635,8 @@ class FactorEngine:
         cross_mean = float(np.mean(ics)) if ics else None
         cross_std = float(np.std(ics, ddof=1)) if len(ics) > 1 else None
         consistency = (
-            (1 - cross_std / abs(cross_mean)) if cross_mean and cross_std and abs(cross_mean) > 0
+            1.0 if cross_mean and abs(cross_mean) > 0 and cross_std == 0
+            else (1 - cross_std / abs(cross_mean)) if cross_mean and cross_std and abs(cross_mean) > 0
             else None
         )
 

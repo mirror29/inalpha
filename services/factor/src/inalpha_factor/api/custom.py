@@ -118,4 +118,5 @@ async def custom_score(req: CustomScoreRequest, engine: EngineDep) -> CustomScor
         max_corr=result["max_corr"],
         is_likely_redundant=result["is_likely_redundant"],
         walk_forward=wf_result,
+        multi_symbol=result.get("multi_symbol"),
     )

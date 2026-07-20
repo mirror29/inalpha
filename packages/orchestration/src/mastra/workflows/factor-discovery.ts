@@ -48,7 +48,9 @@ const CandidateInputSchema = z.object({
 const DiscoveryInputSchema = z.object({
   candidates: z.array(CandidateInputSchema).min(1).max(10),
   venue: z.string().min(1),
-  symbol: z.string().min(1).max(50),
+  symbol: z.string().min(1).max(50).optional(),
+  /** P5: 多标的并发评估，与 symbol 二选一（优先 symbols）。最多 20 个。 */
+  symbols: z.array(z.string().min(1).max(50)).min(2).max(20).optional(),
   timeframe: TimeframeSchema.default("1h"),
   lookbackBars: z.number().int().min(120).max(10000).default(720),
   horizonBars: z.number().int().min(1).max(60).default(5),
@@ -58,13 +60,17 @@ const DiscoveryInputSchema = z.object({
   maxLibraryCorr: z.number().min(0.5).max(1).default(0.8),
   /** false = 只评估打分不落候选池（dry run） */
   propose: z.boolean().default(true),
-});
+}).refine(
+  (d) => d.symbol !== undefined || (d.symbols !== undefined && d.symbols.length >= 2),
+  { message: "提供 symbol（单标的）或 symbols（≥2 个多标的）二选一" },
+);
 
 /** validate 透传 + 每条带回原始输入（foreach 的 item）。 */
 const ValidatedItemSchema = z.object({
   candidate: CandidateInputSchema,
   venue: z.string(),
-  symbol: z.string(),
+  symbol: z.string().optional(),
+  symbols: z.array(z.string()).optional(),
   timeframe: TimeframeSchema,
   lookbackBars: z.number(),
   horizonBars: z.number(),
@@ -249,6 +255,7 @@ const validateStep = createStep({
         candidate: c,
         venue: inputData.venue,
         symbol: inputData.symbol,
+        symbols: inputData.symbols,
         timeframe: inputData.timeframe,
         lookbackBars: inputData.lookbackBars,
         horizonBars: inputData.horizonBars,
@@ -274,7 +281,8 @@ const evaluateStep = createStep({
         expression: inputData.candidate.expression,
         name: inputData.candidate.name,
         venue: inputData.venue,
-        symbol: inputData.symbol,
+        symbol: inputData.symbol ?? "",
+        symbols: inputData.symbols,
         timeframe: inputData.timeframe,
         lookbackBars: inputData.lookbackBars,
         horizonBars: inputData.horizonBars,

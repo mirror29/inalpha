@@ -85,6 +85,15 @@ export type CustomScoreResult = {
   top_correlated: { factor_id: string; corr: number }[];
   max_corr: number | null;
   is_likely_redundant: boolean;
+  /** P5: 多标的并发评估结果 */
+  multi_symbol?: {
+    per_symbol: Record<string, { rank_ic: number | null; available: boolean }>;
+    cross_symbol_ic_mean: number | null;
+    cross_symbol_ic_std: number | null;
+    cross_symbol_consistency: number | null;
+    n_symbols_evaluated: number;
+    n_symbols_failed: number;
+  } | null;
 };
 
 export type PanelRankEntry = {

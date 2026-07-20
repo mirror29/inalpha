@@ -368,7 +368,9 @@ export const factorEvaluateCandidateTool = createTool({
       .describe("受限 DSL 表达式（见 description 语法段）"),
     name: z.string().max(120).optional().describe("人话名（缺省用表达式截断）"),
     venue: z.string().min(1).describe("数据源（按市场分类选，不预设默认市场）"),
-    symbol: SymbolSchema,
+    symbol: SymbolSchema.optional(),
+    /** P5: 多标的并发评估，与 symbol 二选一（优先 symbols）。最多 20 个。 */
+    symbols: z.array(SymbolSchema).min(2).max(20).optional(),
     timeframe: TimeframeSchema.default("1h"),
     asOf: z
       .string()
@@ -385,7 +387,8 @@ export const factorEvaluateCandidateTool = createTool({
       expression: inputData.expression,
       name: inputData.name,
       venue: inputData.venue,
-      symbol: inputData.symbol,
+      symbol: inputData.symbol ?? "",
+      symbols: inputData.symbols,
       timeframe: inputData.timeframe ?? "1h",
       asOf: inputData.asOf,
       lookbackBars: inputData.lookbackBars,

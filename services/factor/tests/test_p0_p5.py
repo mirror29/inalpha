@@ -1,6 +1,8 @@
 """P0·P2·P4·P5 扩展测试：新算子 / WalkForward IC / 多标的 / 回测模拟。"""
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -215,6 +217,161 @@ class TestP5MultiSymbol:
             timeframe="1h",
         )
         assert req.symbols == ["BTC/USDT", "ETH/USDT"]
+
+
+# ── P5: 多标的并发评估（engine._custom_score_multi）───────────────────
+
+
+class TestP5MultiSymbolConcurrent:
+    """P5 多标的并发评估（engine._custom_score_multi 路径）。
+
+    直接调用 engine.custom_score 并传 symbols 参数，mock _fetch_df 绕开 data-service。
+    """
+
+    @pytest.fixture
+    def engine(self) -> Any:
+        from unittest.mock import AsyncMock
+
+        from inalpha_factor.engine import FactorEngine
+
+        from inalpha_factor.config import get_factor_settings
+
+        settings = get_factor_settings()
+        engine = FactorEngine(settings)
+        # mock _fetch_df 返回合成数据，不真连 data-service
+        async def _fake_fetch_df(*, venue: str, symbol: str, **kwargs: Any) -> pd.DataFrame:
+            return make_ohlcv(320, seed=hash(symbol) % 2**31)
+
+        engine._fetch_df = AsyncMock(side_effect=_fake_fetch_df)  # type: ignore[method-assign]
+        return engine
+
+    @pytest.fixture
+    def engine_partial_fail(self) -> Any:
+        """部分标的 _fetch_df 抛异常。"""
+        from unittest.mock import AsyncMock
+
+        from inalpha_factor.engine import FactorEngine
+
+        from inalpha_factor.config import get_factor_settings
+
+        engine = FactorEngine(get_factor_settings())
+        call_count = 0
+
+        async def _fake(*, venue: str, symbol: str, **kwargs: Any) -> pd.DataFrame:
+            nonlocal call_count
+            call_count += 1
+            if symbol == "FAIL/USDT":
+                raise RuntimeError("data-service unavailable")
+            return make_ohlcv(320, seed=hash(symbol) % 2**31)
+
+        engine._fetch_df = AsyncMock(side_effect=_fake)  # type: ignore[method-assign]
+        return engine
+
+    @pytest.fixture
+    def engine_all_fail(self) -> Any:
+        """全部标的 _fetch_df 抛异常。"""
+        from unittest.mock import AsyncMock
+
+        from inalpha_factor.engine import FactorEngine
+
+        from inalpha_factor.config import get_factor_settings
+
+        engine = FactorEngine(get_factor_settings())
+
+        async def _fake(**kwargs: Any) -> pd.DataFrame:
+            raise RuntimeError("service down")
+
+        engine._fetch_df = AsyncMock(side_effect=_fake)  # type: ignore[method-assign]
+        return engine
+
+    async def _run(self, engine: Any, symbols: list[str]) -> dict[str, Any]:
+        return await engine.custom_score(
+            expression="($close - Ref($close, 5)) / Ref($close, 5)",
+            name="test_momentum",
+            venue="binance",
+            symbol="",
+            symbols=symbols,
+            timeframe="1h",
+            as_of=None,
+            lookback_bars=720,
+            horizon_bars=5,
+            quantiles=5,
+        )
+
+    @pytest.mark.asyncio
+    async def test_multi_symbol_normal(self, engine: Any) -> None:
+        """3 个标的正常评估，返回跨品种 IC。"""
+        result = await self._run(engine, ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
+
+        assert result["available"] is True
+        assert "multi_symbol" in result
+        ms = result["multi_symbol"]
+        assert ms["n_symbols_evaluated"] == 3
+        assert ms["n_symbols_failed"] == 0
+        assert ms["cross_symbol_ic_mean"] is not None
+        # 每种标的的 per_symbol 都有 rank_ic
+        for sym in ["BTC/USDT", "ETH/USDT", "SOL/USDT"]:
+            assert sym in ms["per_symbol"]
+            assert ms["per_symbol"][sym]["rank_ic"] is not None
+
+    @pytest.mark.asyncio
+    async def test_multi_symbol_partial_failure(self, engine_partial_fail: Any) -> None:
+        """部分标的 data 不可用，降级不阻断整体评估。"""
+        result = await self._run(engine_partial_fail, ["BTC/USDT", "FAIL/USDT", "ETH/USDT"])
+
+        assert result["available"] is True
+        ms = result["multi_symbol"]
+        assert ms["n_symbols_failed"] == 1
+        assert ms["n_symbols_evaluated"] == 2
+        # 失败的标的不在 per_symbol 中
+        assert "FAIL/USDT" not in ms["per_symbol"]
+        assert "BTC/USDT" in ms["per_symbol"]
+        assert "ETH/USDT" in ms["per_symbol"]
+
+    @pytest.mark.asyncio
+    async def test_multi_symbol_all_failure(self, engine_all_fail: Any) -> None:
+        """全部标的失败 → available=false。"""
+        result = await self._run(engine_all_fail, ["BTC/USDT", "ETH/USDT"])
+
+        assert result["available"] is False
+        ms = result["multi_symbol"]
+        assert ms["n_symbols_evaluated"] == 0
+        assert ms["n_symbols_failed"] == 2
+        assert ms["cross_symbol_ic_mean"] is None
+
+    @pytest.mark.asyncio
+    async def test_multi_symbol_consistency_identical(self) -> None:
+        """所有标的 IC 相同时，consistency=1.0。"""
+        from unittest.mock import AsyncMock
+
+        from inalpha_factor.engine import FactorEngine
+
+        from inalpha_factor.config import get_factor_settings
+
+        engine = FactorEngine(get_factor_settings())
+        # 所有标的用同一组数据 → IC 完全相同
+        df = make_ohlcv(320)
+
+        async def _fake_same(**kwargs: Any) -> pd.DataFrame:
+            return df
+
+        engine._fetch_df = AsyncMock(side_effect=_fake_same)  # type: ignore[method-assign]
+
+        result = await self._run(engine, ["BTC/USDT", "ETH/USDT"])
+        ms = result["multi_symbol"]
+        assert ms["n_symbols_evaluated"] == 2
+        assert ms["cross_symbol_consistency"] is not None
+        # 一致性接近 1.0（允许浮点误差）
+        assert ms["cross_symbol_consistency"] > 0.99  # type: ignore[operator]
+
+    @pytest.mark.asyncio
+    async def test_multi_symbol_single(self, engine: Any) -> None:
+        """symbols 只传 1 个标的，退化为单标的评估路径（不进入 _custom_score_multi）。"""
+        result = await self._run(engine, ["BTC/USDT"])
+
+        # 单标的应当走正常路径，没有 multi_symbol 字段
+        assert result["available"] is True
+        assert "multi_symbol" not in result
 
 
 # ── P2: 红队扩展——新算子审计 ───────────────────────────────────────
