@@ -1,30 +1,19 @@
-"""akshare connector —— A股走 baostock（证券宝）+ 港股走 akshare 东财源。
+"""baostock connector —— A 股全栈数据源（证券宝，免费零 key）。
 
-baostock（证券宝）做 A 股全栈数据源：
+2026-07 起，原 akshare venue 的 A 股能力全部迁移至此独立 venue。
 
-- **K 线**：日/周/月线，OHLCV 齐全（含真实成交量）
-- **财报**：利润表 + 负债表 + 成长指标 + 现金流比率 + 分红记录
+baostock（证券宝）功能覆盖：
+
+- **K 线**：日/周/月/分钟（5m/15m/30m/1h），OHLCV 齐全（含真实成交量）
+- **财报**：利润表 + 负债表 + 成长指标 + 现金流 + 运营能力 + 杜邦分析 + 分红记录
 - **交易日历**：A 股交易/非交易日查询
 - **指数成分**：沪深300 / 上证50 / 中证500 当前成分股
 - **全部免费零 key**，无需注册
 
-**2026-07 更新**：
+**symbol 格式约定**（venue=``"baostock"``）：
 
-- A股（sh/sz）：东财 push2his 失效 → 全部能力切 baostock
-  - K 线：日/周/月 + volume
-  - 财报：利润/负债/成长/现金流/分红（baostock pubDate 做 PIT）
-  - 交易日历：query_trade_dates
-  - 指数成分：沪深300/上证50/中证500
-- 港股（hk）：东财 ``stock_hk_hist`` 保留作 fallback（push2his 同失效），
-  orchestrator 默认路由到 yfinance
-- 日股 / 英股 / 德股：``stock_jp_hist`` / ``stock_uk_hist`` / ``stock_de_hist``
-  在 akshare ≥1.18.63 中已删除；orchestrator 路由到 yfinance
-
-**symbol 格式约定**（venue=``"akshare"``）：
-
-- A股沪市：``"sh.600519"``  → baostock ``"sh.600519"``
-- A股深市：``"sz.000001"``  → baostock ``"sz.000001"``
-- 港股   ：``"hk.00700"``  → akshare ``stock_hk_hist``（东财源，当前不可用）
+- A 股沪市：``"sh.600519"``
+- A 股深市：``"sz.000001"``
 
 **timeframe 支持**：
 
@@ -32,6 +21,7 @@ baostock（证券宝）做 A 股全栈数据源：
 - ``"5m"`` / ``"15m"`` / ``"30m"`` / ``"1h"`` → baostock ``frequency="5"/"15"/"30"/"60"``
 - 不支持 1 分钟（baostock 限制）
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,7 +36,7 @@ from ._base import register_connector, unregister_connector
 
 _logger = get_logger(__name__)
 
-VENUE = "akshare"
+VENUE = "baostock"
 
 #: fundamentals 进程内缓存 TTL（秒）。A股一次 fundamentals 要打 1 次财报摘要 + 3 次
 #: Baidu 估值(串行 ~4-5s),research 多 analyst fan-out 会重复问同一标的;60s 缓存挡掉
@@ -101,9 +91,12 @@ def _ensure_bs_login() -> None:
             # 另一个线程刚登完，直接返回
             return
         import baostock as bs
+
         lg = bs.login()
         if lg.error_code != "0":
-            _logger.warning("baostock_login_failed", error_code=lg.error_code, error_msg=lg.error_msg)
+            _logger.warning(
+                "baostock_login_failed", error_code=lg.error_code, error_msg=lg.error_msg
+            )
         else:
             _bs_logged_in = True
 
@@ -117,11 +110,13 @@ def _bs_session_logout() -> None:
         if not _bs_logged_in:
             return
         import baostock as bs
+
         bs.logout()
         _bs_logged_in = False
 
+
 #: 允许的市场前缀
-_ALLOWED_PREFIXES = frozenset({"sh", "sz", "hk", "jp", "uk", "de"})
+_ALLOWED_PREFIXES = frozenset({"sh", "sz"})
 
 
 def _parse_symbol(symbol: str) -> tuple[str, str]:
@@ -139,22 +134,19 @@ def _parse_symbol(symbol: str) -> tuple[str, str]:
             symbol = f"{suffix.lower()}.{code}"
     if "." not in symbol:
         raise ValueError(
-            f"akshare symbol must be '<prefix>.<code>'，prefix in (sh/sz/hk/jp/uk/de)，"
-            f"got {symbol!r}"
+            f"baostock symbol must be '<prefix>.<code>'，prefix in (sh/sz)，got {symbol!r}"
         )
     prefix, code = symbol.split(".", 1)
     prefix = prefix.lower()
     if prefix not in _ALLOWED_PREFIXES:
-        raise ValueError(
-            f"akshare unknown prefix {prefix!r}，allow: {sorted(_ALLOWED_PREFIXES)}"
-        )
+        raise ValueError(f"baostock unknown prefix {prefix!r}，allow: {sorted(_ALLOWED_PREFIXES)}")
     if not code:
-        raise ValueError(f"akshare code is empty: {symbol!r}")
+        raise ValueError(f"baostock code is empty: {symbol!r}")
     return prefix, code
 
 
-class AkshareConnector:
-    """akshare 包装 —— 同步库走 ``asyncio.to_thread``。"""
+class BaostockConnector:
+    """baostock 包装 —— 同步库走 ``asyncio.to_thread``。"""
 
     def __init__(self) -> None:
         # akshare 无 client 对象,import 即用。fundamentals 进程内 TTL 缓存,**PIT-aware**:
@@ -167,9 +159,7 @@ class AkshareConnector:
     def _fin_cache_key(symbol: str, as_of: datetime | None) -> tuple[str, str | None]:
         return (symbol, as_of.date().isoformat() if as_of is not None else None)
 
-    def _fin_cache_get(
-        self, symbol: str, as_of: datetime | None = None
-    ) -> dict[str, Any] | None:
+    def _fin_cache_get(self, symbol: str, as_of: datetime | None = None) -> dict[str, Any] | None:
         key = self._fin_cache_key(symbol, as_of)
         hit = self._fin_cache.get(key)
         if hit is None:
@@ -200,7 +190,7 @@ class AkshareConnector:
         """从 akshare 拉 OHLCV。
 
         Args:
-            symbol: ``"sh.600519"`` / ``"sz.000001"`` / ``"hk.00700"``
+            symbol: ``"sh.600519"`` / ``"sz.000001"``
             timeframe: 支持 ``"1d"`` / ``"1wk"`` / ``"1mo"`` 及分钟级 ``"5m"`` / ``"15m"`` / ``"30m"`` / ``"1h"``
             since: UTC datetime；akshare 接 ``YYYYMMDD`` 字符串
             limit: 不直接生效（akshare 不接 limit，整段拉回；上层切片）
@@ -210,18 +200,17 @@ class AkshareConnector:
         """
         if timeframe not in _PERIOD_MAP:
             raise NotImplementedError(
-                f"akshare connector only supports {sorted(_PERIOD_MAP)}; "
-                f"got {timeframe!r}"
+                f"baostock connector only supports {sorted(_PERIOD_MAP)}; got {timeframe!r}"
             )
 
         prefix, code = _parse_symbol(symbol)
         period = _PERIOD_MAP[timeframe]
         start_str = since.strftime("%Y%m%d")
-        # end 给 today 让 akshare 一口气拉全
+        # end 给 today 让 baostock 一口气拉全
         end_str = datetime.now(UTC).strftime("%Y%m%d")
 
         _logger.debug(
-            "akshare_fetch_bars",
+            "baostock_fetch_bars",
             symbol=symbol,
             timeframe=timeframe,
             since=since.isoformat(),
@@ -239,7 +228,7 @@ class AkshareConnector:
             )
         except Exception as exc:
             _logger.warning(
-                "akshare_fetch_bars_failed",
+                "baostock_fetch_bars_failed",
                 symbol=symbol,
                 timeframe=timeframe,
                 start_str=start_str,
@@ -267,7 +256,7 @@ class AkshareConnector:
         if not out and rows:
             # 上游返了行但全部被列名解析跳过 → 列名漂移告警
             _logger.warning(
-                "akshare_fetch_bars_all_rows_skipped",
+                "baostock_fetch_bars_all_rows_skipped",
                 symbol=symbol,
                 timeframe=timeframe,
                 row_count=len(rows),
@@ -316,9 +305,7 @@ class AkshareConnector:
             finally:
                 _last_fetch_mono = time.monotonic()
 
-    async def fetch_financials(
-        self, symbol: str, as_of: str | None = None
-    ) -> dict[str, Any]:
+    async def fetch_financials(self, symbol: str, as_of: str | None = None) -> dict[str, Any]:
         """拉 A股 / 港股 财报基本面数据。
 
         A-share: baostock 利润表 + 负债表 + 成长指标 + 现金流 + 分红
@@ -342,7 +329,7 @@ class AkshareConnector:
                 "venue": VENUE,
                 "symbol": symbol,
                 "available": False,
-                "reason": f"financials not supported for akshare prefix {prefix!r}",
+                "reason": f"financials not supported for baostock prefix {prefix!r}",
             }
 
         as_of_dt: datetime | None = None
@@ -381,7 +368,7 @@ class AkshareConnector:
                 publish_lag_days=FINANCIALS_PUBLISH_LAG_DAYS,
             )
         except Exception as exc:
-            _logger.warning("akshare_financials_fetch_failed", symbol=symbol, error=str(exc))
+            _logger.warning("baostock_financials_fetch_failed", symbol=symbol, error=str(exc))
             return {
                 "venue": VENUE,
                 "symbol": symbol,
@@ -393,7 +380,7 @@ class AkshareConnector:
             reason = (
                 f"no financials published as of {as_of}"
                 if as_of_dt is not None
-                else "akshare returned empty financial data"
+                else "baostock returned empty financial data"
             )
             return {
                 "venue": VENUE,
@@ -471,8 +458,7 @@ class AkshareConnector:
             prefix in ("sh", "sz")
             and not _is_historical
             and not all(
-                indicators.get(k) is not None
-                for k in ("market_cap", "pe_ratio", "pb_ratio")
+                indicators.get(k) is not None for k in ("market_cap", "pe_ratio", "pb_ratio")
             )
         ):
             try:
@@ -481,7 +467,7 @@ class AkshareConnector:
                     if indicators.get(k) is None:
                         indicators[k] = v
             except Exception as exc:
-                _logger.warning("akshare_valuation_fetch_failed", symbol=symbol, error=str(exc))
+                _logger.warning("baostock_valuation_fetch_failed", symbol=symbol, error=str(exc))
 
         # as_of 回填：PIT 查询回显请求的 as_of（数据有效时点）；非 PIT 回填取数时刻
         as_of_echo = (
@@ -514,20 +500,19 @@ class AkshareConnector:
         """
         prefix, code = _parse_symbol(symbol)
         if prefix not in ("sh", "sz"):
-            _logger.debug("akshare_fetch_news_unsupported_prefix", symbol=symbol, prefix=prefix)
+            _logger.debug("baostock_fetch_news_unsupported_prefix", symbol=symbol, prefix=prefix)
             return []
 
-        _logger.debug("akshare_fetch_news", symbol=symbol, prefix=prefix, code=code, limit=limit)
+        _logger.debug("baostock_fetch_news", symbol=symbol, prefix=prefix, code=code, limit=limit)
 
         try:
             raw = await asyncio.to_thread(_fetch_news_sync, symbol=code)
         except Exception as exc:
-            _logger.warning("akshare_news_fetch_failed", symbol=symbol, error=str(exc))
+            _logger.warning("baostock_news_fetch_failed", symbol=symbol, error=str(exc))
             return []
 
         if not raw or not isinstance(raw, list):
             return []
-
 
         out: list[dict[str, Any]] = []
         for item in raw[:limit]:
@@ -543,25 +528,31 @@ class AkshareConnector:
                 try:
                     if isinstance(ts_raw, (int, float)):
                         from datetime import datetime as dt_dt_dt
+
                         published_at = dt_dt_dt.fromtimestamp(int(ts_raw), tz=UTC).isoformat()
                     else:
                         from datetime import datetime as dt_dt_dt
-                        published_at = dt_dt_dt.strptime(str(ts_raw)[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).isoformat()
+
+                        published_at = (
+                            dt_dt_dt.strptime(str(ts_raw)[:19], "%Y-%m-%d %H:%M:%S")
+                            .replace(tzinfo=UTC)
+                            .isoformat()
+                        )
                 except (ValueError, OSError):
                     published_at = None
 
-            out.append({
-                "title": title,
-                "publisher": item.get("source") or item.get("来源") or "",
-                "link": item.get("url") or item.get("链接") or "",
-                "published_at": published_at,
-                "summary": (item.get("content") or item.get("内容") or "")[:500],
-            })
+            out.append(
+                {
+                    "title": title,
+                    "publisher": item.get("source") or item.get("来源") or "",
+                    "link": item.get("url") or item.get("链接") or "",
+                    "published_at": published_at,
+                    "summary": (item.get("content") or item.get("内容") or "")[:500],
+                }
+            )
         return out
 
-    async def fetch_trade_calendar(
-        self, start_date: str, end_date: str
-    ) -> list[dict[str, Any]]:
+    async def fetch_trade_calendar(self, start_date: str, end_date: str) -> list[dict[str, Any]]:
         """查询 A 股交易日历（baostock ``query_trade_dates``）。
 
         Args:
@@ -605,7 +596,7 @@ class AkshareConnector:
             rows = await asyncio.to_thread(_fetch_constituents_sync, index_code=index_code)
         except Exception as exc:
             _logger.warning(
-                "akshare_constituents_fetch_failed", index_code=index_code, error=str(exc)
+                "baostock_constituents_fetch_failed", index_code=index_code, error=str(exc)
             )
             return []
         return rows
@@ -650,11 +641,11 @@ def _fetch_financials_sync(
         # 港股东财源当前不可用，打日志后静默返回空（orchestrator 路由到 yfinance）
         raw = ak.stock_hk_financial_abstract(symbol=code)
         if raw is None:
-            _logger.warning("akshare_hk_financials_none", prefix=prefix, code=code)
+            _logger.warning("baostock_hk_financials_none", prefix=prefix, code=code)
             return {}
         # akshare 返回 DataFrame，非 dict
         if hasattr(raw, "empty") and raw.empty:
-            _logger.warning("akshare_hk_financials_empty", prefix=prefix, code=code)
+            _logger.warning("baostock_hk_financials_empty", prefix=prefix, code=code)
             return {}
         return _flatten_financial_abstract(raw, as_of=as_of, publish_lag_days=publish_lag_days)
 
@@ -677,9 +668,7 @@ def _fetch_financials_baostock_sync(
     return _query_baostock_financials(symbol, as_of)
 
 
-def _query_baostock_financials(
-    symbol: str, as_of: datetime | None
-) -> dict[str, Any]:
+def _query_baostock_financials(symbol: str, as_of: datetime | None) -> dict[str, Any]:
     """查询 baostock 四大报表 + 分红，返回拍平的指标 dict。"""
     import math as _math
 
@@ -887,10 +876,10 @@ def _query_baostock_financials(
         indicators["equity_multiplier"] = _f(balance.get("assetToEquity"))  # 权益乘数
     if growth:
         indicators["profit_yoy"] = _f(growth.get("YOYPNI"))
-        indicators["revenue_yoy"] = _f(growth.get("YOYNI"))       # 归属净利润同比
-        indicators["equity_yoy"] = _f(growth.get("YOYEquity"))    # 净资产同比
-        indicators["asset_yoy"] = _f(growth.get("YOYAsset"))      # 总资产同比
-        indicators["eps_yoy"] = _f(growth.get("YOYEPSBasic"))     # EPS 同比
+        indicators["revenue_yoy"] = _f(growth.get("YOYNI"))  # 归属净利润同比
+        indicators["equity_yoy"] = _f(growth.get("YOYEquity"))  # 净资产同比
+        indicators["asset_yoy"] = _f(growth.get("YOYAsset"))  # 总资产同比
+        indicators["eps_yoy"] = _f(growth.get("YOYEPSBasic"))  # EPS 同比
     if cash_flow:
         indicators["ocf_to_revenue"] = _f(cash_flow.get("CFOToOR"))
         indicators["ocf_to_profit"] = _f(cash_flow.get("CFOToNP"))
@@ -1046,7 +1035,11 @@ def _fetch_baostock_sync(
 
     # 分钟级需要 time 字段
     is_intraday = frequency.isdigit()
-    fields = "date,time,open,high,low,close,volume,amount" if is_intraday else "date,open,high,low,close,volume,amount"
+    fields = (
+        "date,time,open,high,low,close,volume,amount"
+        if is_intraday
+        else "date,open,high,low,close,volume,amount"
+    )
 
     rs = bs.query_history_k_data_plus(
         symbol,
@@ -1078,27 +1071,31 @@ def _fetch_baostock_sync(
         # 日级:   [date, open, high, low, close, volume, amount]
         if is_intraday and len(row_data) >= 8:
             date_str, time_str, open_s, high_s, low_s, close_s, vol_s, amt_s = row_data[:8]
-            rows.append({
-                "date": date_str,
-                "time": time_str,
-                "open": open_s,
-                "high": high_s,
-                "low": low_s,
-                "close": close_s,
-                "volume": vol_s,
-                "amount": amt_s,
-            })
+            rows.append(
+                {
+                    "date": date_str,
+                    "time": time_str,
+                    "open": open_s,
+                    "high": high_s,
+                    "low": low_s,
+                    "close": close_s,
+                    "volume": vol_s,
+                    "amount": amt_s,
+                }
+            )
         else:
             date_str, open_s, high_s, low_s, close_s, vol_s, amt_s = row_data[:7]
-            rows.append({
-                "date": date_str,
-                "open": open_s,
-                "high": high_s,
-                "low": low_s,
-                "close": close_s,
-                "volume": vol_s,
-                "amount": amt_s,
-            })
+            rows.append(
+                {
+                    "date": date_str,
+                    "open": open_s,
+                    "high": high_s,
+                    "low": low_s,
+                    "close": close_s,
+                    "volume": vol_s,
+                    "amount": amt_s,
+                }
+            )
 
     return rows
 
@@ -1165,7 +1162,7 @@ def _fetch_sync(
         df = ak.stock_hk_hist(adjust="", **common)
         if df is None or len(df) == 0:
             _logger.warning(
-                "akshare_fetch_empty",
+                "baostock_fetch_empty",
                 prefix=prefix,
                 code=code,
                 period=period,
@@ -1240,11 +1237,13 @@ def _fetch_constituents_sync(*, index_code: str) -> list[dict[str, Any]]:
                     if rd and rd[0]:
                         row = dict(zip(rs.fields, rd, strict=True))
                         raw_code = str(row.get("code", "")).strip()
-                        out.append({
-                            "code": _cn_symbol(raw_code),
-                            "name": str(row.get("code_name", "")).strip() or None,
-                            "weight": None,  # baostock 无权重
-                        })
+                        out.append(
+                            {
+                                "code": _cn_symbol(raw_code),
+                                "name": str(row.get("code_name", "")).strip() or None,
+                                "weight": None,  # baostock 无权重
+                            }
+                        )
                 if out:
                     return out
         except Exception as exc:
@@ -1284,11 +1283,13 @@ def _fetch_constituents_sync(*, index_code: str) -> list[dict[str, Any]]:
         code_str = str(raw).strip().zfill(6)
         if not code_str.isdigit() or len(code_str) != 6:
             continue
-        out.append({
-            "code": _cn_symbol(code_str),
-            "name": str(row.get(name_col)).strip() if name_col else None,
-            "weight": _to_float(row.get(weight_col)) if weight_col else None,
-        })
+        out.append(
+            {
+                "code": _cn_symbol(code_str),
+                "name": str(row.get(name_col)).strip() if name_col else None,
+                "weight": _to_float(row.get(weight_col)) if weight_col else None,
+            }
+        )
     return out
 
 
@@ -1321,9 +1322,13 @@ def _parse_date(v: Any) -> datetime:
     if len(s) == 14 and s.isdigit():
         # 20260709093500000 → 2026-07-09 09:35:00
         return datetime(
-            int(s[:4]), int(s[4:6]), int(s[6:8]),
-            int(s[8:10]), int(s[10:12]), int(s[12:14]),
-            tzinfo=UTC
+            int(s[:4]),
+            int(s[4:6]),
+            int(s[6:8]),
+            int(s[8:10]),
+            int(s[10:12]),
+            int(s[12:14]),
+            tzinfo=UTC,
         )
     # 日级：YYYY-MM-DD 或 YYYYMMDD
     return datetime.fromisoformat(s).replace(tzinfo=UTC)
@@ -1331,15 +1336,15 @@ def _parse_date(v: Any) -> datetime:
 
 # ---------- module-level singleton ----------
 
-_connector: AkshareConnector | None = None
+_connector: BaostockConnector | None = None
 
 
-def init_connector() -> AkshareConnector:
-    """启动时调一次。akshare 无 API key 需要。"""
+def init_connector() -> BaostockConnector:
+    """启动时调一次。baostock 无 API key 需要。"""
     global _connector
     if _connector is not None:
-        raise RuntimeError("Akshare connector already initialized")
-    _connector = AkshareConnector()
+        raise RuntimeError("Baostock connector already initialized")
+    _connector = BaostockConnector()
     register_connector(VENUE, _connector)
     return _connector
 
@@ -1354,7 +1359,7 @@ async def close_connector() -> None:
     _bs_session_logout()
 
 
-def get_connector() -> AkshareConnector:
+def get_connector() -> BaostockConnector:
     if _connector is None:
-        raise RuntimeError("Akshare connector not initialized; call init_connector() first")
+        raise RuntimeError("Baostock connector not initialized; call init_connector() first")
     return _connector
