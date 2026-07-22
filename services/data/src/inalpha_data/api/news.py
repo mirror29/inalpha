@@ -14,6 +14,7 @@ from inalpha_shared.errors import ValidationError
 from ..connectors import yfinance_conn
 from ..connectors._base import get_connector_for_venue
 from ..schemas import NewsItem, NewsQuery, NewsResponse
+from ..venues import canonicalize_venue
 
 router = APIRouter(tags=["news"])
 
@@ -27,13 +28,14 @@ async def get_news(
 
     venue 支持 yfinance / baostock（其它返 422）；不支持 ticker 返空 list 而非错。
     """
-    if query.venue == "yfinance":
+    effective_venue = canonicalize_venue(query.venue, query.symbol)
+    if effective_venue == "yfinance":
         try:
             conn = yfinance_conn.get_connector()
             raw = await conn.fetch_news(query.symbol, limit=query.limit)
         except Exception:
             raw = []
-    elif query.venue == "baostock":
+    elif effective_venue == "baostock":
         conn = get_connector_for_venue("baostock")
         if not hasattr(conn, "fetch_news"):
             raise ValidationError(

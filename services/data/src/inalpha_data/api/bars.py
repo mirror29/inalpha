@@ -12,6 +12,7 @@ from inalpha_shared.errors import ValidationError
 
 from ..schemas import BarResponse, BarsQuery
 from ..storage.bars import query_bars
+from ..venues import canonicalize_venue, is_legacy_a_share_venue
 
 router = APIRouter(tags=["bars"])
 _logger = get_logger(__name__)
@@ -37,9 +38,8 @@ async def list_bars(
         )
 
     # 向后兼容：venue="akshare" + sh./sz. 前缀 → 自动用 baostock 查 DB
-    _baostock_prefixes = ("sh.", "sz.")
-    effective_venue = query.venue
-    if query.venue == "akshare" and any(query.symbol.startswith(p) for p in _baostock_prefixes):
+    effective_venue = canonicalize_venue(query.venue, query.symbol)
+    if is_legacy_a_share_venue(query.venue, query.symbol):
         _logger.warning(
             "venue_akshare_deprecated",
             symbol=query.symbol,

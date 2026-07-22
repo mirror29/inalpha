@@ -5,10 +5,10 @@ D-9 ``data.backfill_bars`` 工具层解锁后，TS schema 不再卡 venue ——
 
 - 5 venue 各自路由到正确 connector，写库行数正确
 - venue 不在注册表 → 422 + ``details.supported`` 含已注册列表
-- venue 支持但 timeframe 不支持（如 akshare 传 1m）→ 422 +
+- venue 支持但 timeframe 不支持（如 baostock 传 1m）→ 422 +
   ``details.supported_timeframes`` 列出该 venue 允许的 timeframe
 
-**不**走真实 yfinance / akshare / alpaca / fred 网络 —— 这些是 connector 层职责（已在
+**不**走真实 yfinance / baostock / alpaca / fred 网络 —— 这些是 connector 层职责（已在
 ``test_connectors.py`` 覆盖）；本文件只验 router/registry 装配是否正确。
 """
 from __future__ import annotations
@@ -56,14 +56,14 @@ class _FakeConnector:
 async def app_with_all_venues_mocked() -> AsyncIterator[Any]:
     """启 app + 把 5 venue 的 registry 全部替换成 _FakeConnector。
 
-    复用 conftest.app_with_overrides 的 lifespan 模式，但额外覆盖 alpaca / akshare /
+    复用 conftest.app_with_overrides 的 lifespan 模式，但额外覆盖 alpaca / baostock /
     yfinance / fred —— conftest 默认只 mock 了 binance + test-venue。
     """
     from inalpha_data.connectors import _base as _connectors_base
     from inalpha_data.main import app
 
     async with app.router.lifespan_context(app):
-        for venue in ("binance", "alpaca", "akshare", "yfinance", "fred"):
+        for venue in ("binance", "alpaca", "baostock", "yfinance", "fred"):
             _connectors_base._REGISTRY[venue] = _FakeConnector()
         yield app
 
@@ -83,7 +83,7 @@ def all_venues_client(app_with_all_venues_mocked: Any) -> TestClient:
     [
         ("binance", "BTC/USDT", "1h"),
         ("alpaca", "AAPL", "1h"),
-        ("akshare", "sh.600519", "1d"),
+        ("baostock", "sh.600519", "1d"),
         ("yfinance", "TSLA", "1d"),
         ("fred", "DFF", "1d"),
     ],
@@ -149,15 +149,14 @@ def test_backfill_unknown_venue_returns_supported_list(
     supported = body["details"]["supported"]
     assert isinstance(supported, list)
     # 5 venue 全在
-    for v in ("binance", "alpaca", "akshare", "yfinance", "fred"):
+    for v in ("binance", "alpaca", "baostock", "yfinance", "fred"):
         assert v in supported
 
 
 @pytest.mark.parametrize(
     "venue, bad_timeframe",
     [
-        ("akshare", "1m"),  # akshare 仅日级
-        ("akshare", "1h"),  # akshare 仅日级
+        ("baostock", "1m"),  # baostock 不支持 1 分钟
         ("fred", "1m"),  # fred 仅日级及以上
         ("fred", "1h"),
     ],
@@ -191,6 +190,25 @@ def test_backfill_rejects_timeframe_unsupported_by_venue(
     assert isinstance(supported_tfs, list)
     assert bad_timeframe not in supported_tfs
     assert "1d" in supported_tfs  # 两个 venue 至少都支持 1d
+
+
+def test_legacy_akshare_alias_applies_baostock_minute_cap(
+    all_venues_client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """旧 A 股 venue 别名必须与 baostock 走同一配额保护。"""
+    r = all_venues_client.post(
+        "/backfill/bars",
+        headers=auth_headers,
+        json={
+            "venue": "akshare",
+            "symbol": f"sh.600519-{uuid4().hex[:8]}",
+            "timeframe": "5m",
+            "from_ts": "2026-01-01T00:00:00Z",
+            "to_ts": "2026-04-01T00:00:00Z",
+        },
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["from_ts"] == "2026-03-25T00:00:00Z"
 
 
 # ─── 增量 backfill：已缓存则从 max(ts) 续拉，不从 from_ts 全量重拉 ──────────

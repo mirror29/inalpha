@@ -21,6 +21,7 @@ from ..connectors.fred import TIMEFRAME_SECONDS as FRED_TIMEFRAME_SECONDS
 from ..connectors.yfinance_conn import TIMEFRAME_SECONDS as YFINANCE_TIMEFRAME_SECONDS
 from ..schemas import BackfillRequest, BackfillResponse
 from ..storage.bars import insert_bars, latest_bar_ts
+from ..venues import canonicalize_venue, is_legacy_a_share_venue
 
 router = APIRouter(tags=["backfill"])
 _logger = get_logger(__name__)
@@ -79,9 +80,8 @@ async def backfill_bars(
 
     # ─── venue 路由 ──────────────────────────────────────────────
     # **向后兼容**：venue="akshare" 且 symbol 带 sh./sz. 前缀 → 自动路由到 baostock
-    _baostock_prefixes = ("sh.", "sz.")
-    effective_venue = req.venue
-    if req.venue == "akshare" and any(req.symbol.startswith(p) for p in _baostock_prefixes):
+    effective_venue = canonicalize_venue(req.venue, req.symbol)
+    if is_legacy_a_share_venue(req.venue, req.symbol):
         _logger.warning(
             "venue_akshare_deprecated",
             symbol=req.symbol,
@@ -111,7 +111,7 @@ async def backfill_bars(
     # baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
     # 仅对 baostock venue 生效（binance/alpaca/yfinance 不受此限制）
     effective_from_ts = req.from_ts
-    if req.venue == "baostock" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
+    if effective_venue == "baostock" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
         max_lookback_days = _MINUTE_LOOKBACK_LIMITS[req.timeframe]
         span_days = (req.to_ts - req.from_ts).total_seconds() / 86400
 

@@ -103,21 +103,25 @@ def render_web_results(results: list[dict]) -> str:
 def fundamentals_route(*, venue: str, market_type: str) -> str | None:
     """研究 venue → fundamentals 数据源 venue 的映射。
 
-    data 服务 ``/fundamentals`` 只支持 akshare / yfinance，直接透传研究 venue
+    data 服务 ``/fundamentals`` 只支持 baostock / yfinance，直接透传研究 venue
     （alpaca / binance / ...）会 422 → 永远 unavailable——美股走 alpaca 研究时
     本可从 yfinance 拿到财报却拿不到，这是 fundamental/valuation/persona 一直
     "无 live 数据"的根因之一。
 
     Returns:
-        ``"akshare"`` / ``"yfinance"``，或 ``None``（crypto 无财报，调用方应跳过
+        ``"baostock"`` / ``"yfinance"``，或 ``None``（crypto 无财报，调用方应跳过
         fundamentals 请求省一次 round-trip，转而依赖链上 / web 证据）。
     """
     if market_type == "crypto":
         return None
     v = venue.lower()
-    if v in ("akshare", "yfinance"):
+    if v in ("baostock", "yfinance"):
         return v
-    if market_type in ("cn_stock", "hk_stock"):
-        return "akshare"
+    if v == "akshare" and market_type == "cn_stock":
+        return "baostock"
+    if market_type == "cn_stock":
+        return "baostock"
+    if market_type == "hk_stock":
+        return "yfinance"
     # us_stock / global_stock / 指数：yfinance 全球兜底（查不到时上游返 available=False）
     return "yfinance"

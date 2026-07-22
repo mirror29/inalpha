@@ -108,8 +108,8 @@ def infer_asset_type(*, venue: str, symbol: str = "") -> AssetType:
 
     - ``binance`` + ``BTC/USDT`` → ``crypto``
     - ``alpaca`` + ``AAPL``      → ``us_stock``
-    - ``akshare`` + ``sh.600519`` → ``cn_stock``
-    - ``akshare`` + ``hk.00700``  → ``hk_stock``
+    - ``baostock`` + ``sh.600519`` → ``cn_stock``
+    - ``yfinance`` + ``0700.HK``   → ``hk_stock``
     - ``akshare`` + ``jp.6758``   → ``global_stock``（日股目前归全球桶）
     - ``yfinance`` + ``005930.KS`` → ``global_stock``
     - ``yfinance`` + ``AAPL``      → ``us_stock``（无后缀视为美股）
@@ -122,7 +122,7 @@ def infer_asset_type(*, venue: str, symbol: str = "") -> AssetType:
     if v == "alpaca":
         return "us_stock"
 
-    if v == "akshare":
+    if v in ("akshare", "baostock"):
         s = symbol.lower()
         if s.startswith(("sh.", "sz.")):
             return "cn_stock"

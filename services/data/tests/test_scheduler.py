@@ -124,7 +124,7 @@ async def test_record_snapshot_honors_passed_as_of_date(
         captured["as_of_date"] = as_of_date
         return len(constituents)
 
-    monkeypatch.setattr(sched, "get_akshare_connector", lambda: _FakeAk())
+    monkeypatch.setattr(sched, "get_baostock_connector", lambda: _FakeAk())
     monkeypatch.setattr(sched.store, "upsert_snapshot", fake_upsert)
 
     pinned = date(2026, 1, 31)

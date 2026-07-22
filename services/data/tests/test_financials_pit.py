@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from inalpha_data.connectors.akshare import (
+from inalpha_data.connectors.baostock import (
     FINANCIALS_PUBLISH_LAG_DAYS,
     _flatten_financial_abstract,
     _period_publishable,
@@ -96,7 +96,7 @@ async def test_yfinance_as_of_marks_pit_not_supported(monkeypatch) -> None:
 
 async def test_financials_cache_is_pit_aware(monkeypatch) -> None:
     """#102 CR：PIT 缓存按 (symbol, as_of 天) 分格——同一天复用、不同天各打一次。"""
-    from inalpha_data.connectors import akshare as ak
+    from inalpha_data.connectors import baostock as bs
 
     calls = {"n": 0}
 
@@ -104,15 +104,15 @@ async def test_financials_cache_is_pit_aware(monkeypatch) -> None:
         calls["n"] += 1
         return {"净资产收益率(ROE)": 18.0}
 
-    monkeypatch.setattr(ak, "_fetch_financials_sync", fake_sync)
-    conn = ak.AkshareConnector()  # hk → 跳过 sh/sz 的 Baidu 估值网络调用
+    monkeypatch.setattr(bs, "_fetch_financials_sync", fake_sync)
+    conn = bs.BaostockConnector()
 
-    a1 = await conn.fetch_financials("hk.00700", as_of="2020-06-30T00:00:00Z")
-    a2 = await conn.fetch_financials("hk.00700", as_of="2020-06-30T23:00:00Z")  # 同一天
+    a1 = await conn.fetch_financials("sh.600519", as_of="2020-06-30T00:00:00Z")
+    a2 = await conn.fetch_financials("sh.600519", as_of="2020-06-30T23:00:00Z")
     assert a1["available"] is True and a2["available"] is True
     assert calls["n"] == 1  # 同 (symbol, 天) → 第二次命中缓存,不再打 akshare
 
-    await conn.fetch_financials("hk.00700", as_of="2020-09-30T00:00:00Z")  # 另一天
+    await conn.fetch_financials("sh.600519", as_of="2020-09-30T00:00:00Z")
     assert calls["n"] == 2  # 不同天 → 另一格,再打一次
 
 
@@ -120,10 +120,10 @@ async def test_ashare_valuation_skipped_for_historical_as_of(monkeypatch) -> Non
     """#102 CR M2：历史 as_of 跳过 Baidu 实时估值（防时序混用）；今天/None 照取。"""
     from datetime import UTC, datetime
 
-    from inalpha_data.connectors import akshare as ak
+    from inalpha_data.connectors import baostock as bs
 
     monkeypatch.setattr(
-        ak, "_fetch_financials_sync", lambda **kw: {"净资产收益率(ROE)": 18.0}
+        bs, "_fetch_financials_sync", lambda **kw: {"净资产收益率(ROE)": 18.0}
     )
     val_calls = {"n": 0}
 
@@ -131,8 +131,8 @@ async def test_ashare_valuation_skipped_for_historical_as_of(monkeypatch) -> Non
         val_calls["n"] += 1
         return {"market_cap": 1.0e12, "pe_ratio": 30.0, "pb_ratio": 5.0}
 
-    monkeypatch.setattr(ak, "_fetch_valuation_sync", fake_val)
-    conn = ak.AkshareConnector()
+    monkeypatch.setattr(bs, "_fetch_valuation_sync", fake_val)
+    conn = bs.BaostockConnector()
 
     # 历史 as_of（去年）→ 跳过实时估值,估值字段留空
     hist = await conn.fetch_financials("sh.600519", as_of="2020-01-01T00:00:00Z")
@@ -149,7 +149,7 @@ async def test_ashare_valuation_skipped_for_historical_as_of(monkeypatch) -> Non
 
 async def test_cache_key_normalizes_tz_to_utc(monkeypatch) -> None:
     """#102 CR：as_of 归一到 UTC——+08:00 与其 UTC 等价串落同一缓存格（同 UTC 日）。"""
-    from inalpha_data.connectors import akshare as ak
+    from inalpha_data.connectors import baostock as bs
 
     calls = {"n": 0}
 
@@ -157,12 +157,12 @@ async def test_cache_key_normalizes_tz_to_utc(monkeypatch) -> None:
         calls["n"] += 1
         return {"净资产收益率(ROE)": 18.0}
 
-    monkeypatch.setattr(ak, "_fetch_financials_sync", fake_sync)
-    conn = ak.AkshareConnector()
+    monkeypatch.setattr(bs, "_fetch_financials_sync", fake_sync)
+    conn = bs.BaostockConnector()
 
     # 两者都 = UTC 2020-06-29；未归一时 +08:00 的本地日期是 06-30 会落到另一格
-    await conn.fetch_financials("hk.00700", as_of="2020-06-30T07:00:00+08:00")
-    await conn.fetch_financials("hk.00700", as_of="2020-06-29T23:00:00Z")
+    await conn.fetch_financials("sh.600519", as_of="2020-06-30T07:00:00+08:00")
+    await conn.fetch_financials("sh.600519", as_of="2020-06-29T23:00:00Z")
     assert calls["n"] == 1  # 同 UTC 日 → 同缓存格,只打一次
 
 
@@ -170,27 +170,27 @@ def test_fundamentals_endpoint_threads_as_of(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     """GET /fundamentals?as_of=... 把 as_of 透传到 connector。"""
-    from inalpha_data.connectors import akshare as ak
+    from inalpha_data.connectors import baostock as bs
 
     captured: dict[str, str | None] = {}
-    original = ak._connector.fetch_financials
+    original = bs._connector.fetch_financials
 
     async def mock_fin(symbol, as_of=None):
         captured["as_of"] = as_of
         return {
-            "venue": "akshare",
+            "venue": "baostock",
             "symbol": symbol,
             "available": False,
             "reason": f"no financials published as of {as_of}",
         }
 
-    ak._connector.fetch_financials = mock_fin
+    bs._connector.fetch_financials = mock_fin
     try:
         r = client.get(
             "/fundamentals",
             headers=auth_headers,
             params={
-                "venue": "akshare",
+                "venue": "baostock",
                 "symbol": "sh.600519",
                 "as_of": "2026-01-01T00:00:00Z",
             },
@@ -199,4 +199,4 @@ def test_fundamentals_endpoint_threads_as_of(
         assert captured["as_of"] == "2026-01-01T00:00:00Z"
         assert r.json()["available"] is False
     finally:
-        ak._connector.fetch_financials = original
+        bs._connector.fetch_financials = original

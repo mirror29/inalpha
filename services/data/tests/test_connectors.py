@@ -1,4 +1,4 @@
-"""multi-venue connector 路由 + akshare symbol 解析单测（不打网络）。"""
+"""multi-venue connector 路由 + baostock symbol 解析单测（不打网络）。"""
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +15,7 @@ from inalpha_data.connectors import (
     register_connector,
     unregister_connector,
 )
-from inalpha_data.connectors.akshare import _parse_symbol
+from inalpha_data.connectors.baostock import _parse_symbol
 
 # ────────────────────────────────────────────────────────────────────
 # Registry
@@ -83,7 +83,7 @@ def test_unregister_is_idempotent() -> None:
 
 
 # ────────────────────────────────────────────────────────────────────
-# akshare symbol 解析
+# baostock symbol 解析
 # ────────────────────────────────────────────────────────────────────
 
 
@@ -99,25 +99,16 @@ def test_parse_symbol_sz_a_share() -> None:
     assert code == "000001"
 
 
-def test_parse_symbol_hk_stock() -> None:
-    prefix, code = _parse_symbol("hk.00700")
-    assert prefix == "hk"
-    assert code == "00700"
+def test_parse_symbol_non_a_share_prefix_raises() -> None:
+    with pytest.raises(ValueError, match="unknown prefix 'hk'"):
+        _parse_symbol("hk.00700")
 
 
-@pytest.mark.parametrize(
-    "raw,want_prefix,want_code",
-    [
-        ("jp.6758", "jp", "6758"),
-        ("uk.BARC", "uk", "BARC"),
-        ("de.SAP", "de", "SAP"),
-    ],
-)
-def test_parse_symbol_global_prefixes(raw: str, want_prefix: str, want_code: str) -> None:
-    """G1: akshare 扩 jp/uk/de 三个新前缀，覆盖日股 / 英股 / 德股。"""
-    prefix, code = _parse_symbol(raw)
-    assert prefix == want_prefix
-    assert code == want_code
+@pytest.mark.parametrize("raw", ["jp.6758", "uk.BARC", "de.SAP"])
+def test_parse_symbol_global_prefixes_raise(raw: str) -> None:
+    """全球市场由 yfinance venue 承载，baostock 只接受沪深 A 股。"""
+    with pytest.raises(ValueError, match="unknown prefix"):
+        _parse_symbol(raw)
 
 
 def test_parse_symbol_case_insensitive_prefix() -> None:

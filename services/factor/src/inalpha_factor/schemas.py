@@ -254,7 +254,7 @@ class PanelScoreRequest(BaseModel):
         default=None,
         description="指数代码（如 000300），由 data /constituents 解析 as_of 那刻的 **PIT 成分**"
         "当 universe（is_pit=true，去存活者偏差）。取不到 PIT 快照 → 显式降级返空,**不**回退"
-        "当前成分。venue 应配 akshare（成分是 A股符号）。与 symbols 二选一,优先 index_code。",
+        "当前成分。venue 应配 baostock（成分是 A股符号）。与 symbols 二选一,优先 index_code。",
         examples=["000300"],
     )
     timeframe: str = Field(default="1d")

@@ -14,6 +14,7 @@ from inalpha_shared.errors import ValidationError
 from ..connectors import yfinance_conn
 from ..connectors._base import get_connector_for_venue
 from ..schemas import FinancialsResponse
+from ..venues import canonicalize_venue
 
 router = APIRouter(tags=["fundamentals"])
 
@@ -35,7 +36,8 @@ async def get_fundamentals(
 
     venue 支持 baostock / yfinance；其它 venue 返 422。
     """
-    if venue == "yfinance":
+    effective_venue = canonicalize_venue(venue, symbol)
+    if effective_venue == "yfinance":
         try:
             conn = yfinance_conn.get_connector()
             data = await conn.fetch_financials(symbol, as_of=as_of)
@@ -48,7 +50,7 @@ async def get_fundamentals(
             )
         return FinancialsResponse(**data)
 
-    if venue == "baostock":
+    if effective_venue == "baostock":
         conn = get_connector_for_venue("baostock")
         if not hasattr(conn, "fetch_financials"):
             raise ValidationError(
