@@ -7,8 +7,8 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 
-from inalpha_data.connectors import akshare as ak_conn
-from inalpha_data.connectors.akshare import _cn_symbol
+from inalpha_data.connectors import baostock as bs_conn
+from inalpha_data.connectors.baostock import _cn_symbol
 
 # ── connector：符号归一 + 列模糊匹配（无网络/无 DB）────────────────────
 
@@ -24,9 +24,11 @@ def test_cn_symbol_prefix() -> None:
 
 
 def test_fetch_constituents_sync_fuzzy_columns(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """akshare 中证列名（成分券代码/名称/权重）模糊抽取 + 归一为 Inalpha 符号。"""
+    """akshare fallback 列名模糊抽取 + 归一为 Inalpha 符号。"""
     import akshare
+    import baostock
 
+    monkeypatch.setattr(baostock, "query_hs300_stocks", lambda: None)
     df = pd.DataFrame(
         {
             "日期": ["2026-06-26", "2026-06-26"],
@@ -38,7 +40,7 @@ def test_fetch_constituents_sync_fuzzy_columns(monkeypatch) -> None:  # type: ig
     monkeypatch.setattr(
         akshare, "index_stock_cons_weight_csindex", lambda symbol: df, raising=False
     )
-    out = ak_conn._fetch_constituents_sync(index_code="000300")
+    out = bs_conn._fetch_constituents_sync(index_code="000300")
     by_code = {o["code"]: o for o in out}
     assert set(by_code) == {"sh.600519", "sz.000001"}
     assert by_code["sh.600519"]["name"] == "贵州茅台"
@@ -54,6 +56,9 @@ def test_fetch_constituents_sync_picks_constituent_not_index_columns(
     本身（300 行全 = 000300/沪深300）。_find 改 key 优先后精确「成分券代码」先命中。
     """
     import akshare
+    import baostock
+
+    monkeypatch.setattr(baostock, "query_hs300_stocks", lambda: None)
 
     df = pd.DataFrame(
         {
@@ -68,7 +73,7 @@ def test_fetch_constituents_sync_picks_constituent_not_index_columns(
     monkeypatch.setattr(
         akshare, "index_stock_cons_weight_csindex", lambda symbol: df, raising=False
     )
-    out = ak_conn._fetch_constituents_sync(index_code="000300")
+    out = bs_conn._fetch_constituents_sync(index_code="000300")
     by_code = {o["code"]: o for o in out}
     assert set(by_code) == {"sh.600519", "sz.000001"}  # 成分，非 sz.000300
     assert by_code["sh.600519"]["name"] == "贵州茅台"  # 成分名，非「沪深300」
@@ -78,6 +83,9 @@ def test_fetch_constituents_sync_picks_constituent_not_index_columns(
 def test_fetch_constituents_sync_empty(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """weight 接口空 → 回退 cons 接口；都空 → []（优雅降级）。"""
     import akshare
+    import baostock
+
+    monkeypatch.setattr(baostock, "query_hs300_stocks", lambda: None)
 
     empty = pd.DataFrame()
     monkeypatch.setattr(
@@ -86,7 +94,7 @@ def test_fetch_constituents_sync_empty(monkeypatch) -> None:  # type: ignore[no-
     monkeypatch.setattr(
         akshare, "index_stock_cons_csindex", lambda symbol: empty, raising=False
     )
-    assert ak_conn._fetch_constituents_sync(index_code="000300") == []
+    assert bs_conn._fetch_constituents_sync(index_code="000300") == []
 
 
 # ── 存储：time-travel + 幂等（真实 DB，5433 inalpha）──────────────────

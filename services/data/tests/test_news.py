@@ -1,4 +1,4 @@
-"""Tests for GET /news endpoint — extended to support akshare venue (D-10)."""
+"""Tests for GET /news endpoint — extended to support baostock venue."""
 from __future__ import annotations
 
 import pytest
@@ -47,13 +47,13 @@ def test_news_yfinance_venue(
         yf._connector.fetch_news = original
 
 
-def test_news_akshare_venue(
+def test_news_baostock_venue(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    """GET /news with venue=akshare returns A-share news (D-10 new)."""
-    from inalpha_data.connectors import akshare as ak
+    """GET /news with venue=baostock returns A-share news."""
+    from inalpha_data.connectors import baostock as bs
 
-    original = ak._connector.fetch_news
+    original = bs._connector.fetch_news
 
     async def mock_news(symbol, limit=20):
         return [
@@ -66,19 +66,19 @@ def test_news_akshare_venue(
             }
         ]
 
-    ak._connector.fetch_news = mock_news
+    bs._connector.fetch_news = mock_news
     try:
         r = client.get(
             "/news",
             headers=auth_headers,
-            params={"venue": "akshare", "symbol": "sh.600519"},
+            params={"venue": "baostock", "symbol": "sh.600519"},
         )
         assert r.status_code == 200
         body = r.json()
         assert len(body["items"]) == 1
         assert "茅台" in body["items"][0]["title"]
     finally:
-        ak._connector.fetch_news = original
+        bs._connector.fetch_news = original
 
 
 def test_news_unsupported_venue(

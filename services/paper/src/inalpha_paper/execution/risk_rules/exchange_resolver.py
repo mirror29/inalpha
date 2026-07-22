@@ -109,7 +109,7 @@ def resolve_calendar_code(venue: str, symbol: str) -> str | None:
     if v == "fred":
         return None  # 宏观，无交易时段
 
-    if v == "baostock":
+    if v in ("akshare", "baostock"):
         prefix = s.split(".", 1)[0] if "." in s else ""
         return _AKSHARE_PREFIX_TO_CODE.get(prefix)
 

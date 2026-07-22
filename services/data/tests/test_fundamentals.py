@@ -9,21 +9,21 @@ pytestmark = pytest.mark.anyio
 
 def test_fundamentals_requires_auth(client: TestClient) -> None:
     """GET /fundamentals without token returns 401."""
-    r = client.get("/fundamentals", params={"venue": "akshare", "symbol": "sh.600519"})
+    r = client.get("/fundamentals", params={"venue": "baostock", "symbol": "sh.600519"})
     assert r.status_code == 401
 
 
-def test_fundamentals_akshare_venue(
+def test_fundamentals_baostock_venue(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    """Mocked akshare connector returns financial data."""
-    from inalpha_data.connectors import akshare as ak
+    """Mocked baostock connector returns financial data."""
+    from inalpha_data.connectors import baostock as bs
 
-    original = ak._connector.fetch_financials
+    original = bs._connector.fetch_financials
 
     async def mock_fin(symbol, as_of=None):
         return {
-            "venue": "akshare",
+            "venue": "baostock",
             "symbol": symbol,
             "available": True,
             "as_of": "2026-05-29T00:00:00Z",
@@ -36,12 +36,12 @@ def test_fundamentals_akshare_venue(
             "raw": {"总市值": "2300000000000"},
         }
 
-    ak._connector.fetch_financials = mock_fin
+    bs._connector.fetch_financials = mock_fin
     try:
         r = client.get(
             "/fundamentals",
             headers=auth_headers,
-            params={"venue": "akshare", "symbol": "sh.600519"},
+            params={"venue": "baostock", "symbol": "sh.600519"},
         )
         assert r.status_code == 200
         body = r.json()
@@ -49,7 +49,31 @@ def test_fundamentals_akshare_venue(
         assert body["indicators"]["pe_ratio"] == 32.5
         assert body["indicators"]["roe"] == 0.283
     finally:
-        ak._connector.fetch_financials = original
+        bs._connector.fetch_financials = original
+
+
+def test_fundamentals_legacy_akshare_alias(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """旧 A 股 venue 在迁移窗口内仍路由到 baostock。"""
+    from inalpha_data.connectors import baostock as bs
+
+    original = bs._connector.fetch_financials
+
+    async def mock_fin(symbol, as_of=None):
+        return {"venue": "baostock", "symbol": symbol, "available": False, "reason": "no data"}
+
+    bs._connector.fetch_financials = mock_fin
+    try:
+        r = client.get(
+            "/fundamentals",
+            headers=auth_headers,
+            params={"venue": "akshare", "symbol": "sh.600519"},
+        )
+        assert r.status_code == 200
+        assert r.json()["venue"] == "baostock"
+    finally:
+        bs._connector.fetch_financials = original
 
 
 def test_fundamentals_yfinance_venue(
@@ -102,27 +126,27 @@ def test_fundamentals_unavailable_data(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     """Connector returns available=False → endpoint returns 200 with available=False."""
-    from inalpha_data.connectors import akshare as ak
+    from inalpha_data.connectors import baostock as bs
 
-    original = ak._connector.fetch_financials
+    original = bs._connector.fetch_financials
 
     async def mock_fin(symbol, as_of=None):
         return {
-            "venue": "akshare",
+            "venue": "baostock",
             "symbol": symbol,
             "available": False,
             "reason": "no data",
         }
 
-    ak._connector.fetch_financials = mock_fin
+    bs._connector.fetch_financials = mock_fin
     try:
         r = client.get(
             "/fundamentals",
             headers=auth_headers,
-            params={"venue": "akshare", "symbol": "jp.6758"},
+            params={"venue": "baostock", "symbol": "sh.600519"},
         )
         assert r.status_code == 200
         body = r.json()
         assert body["available"] is False
     finally:
-        ak._connector.fetch_financials = original
+        bs._connector.fetch_financials = original

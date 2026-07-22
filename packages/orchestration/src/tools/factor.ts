@@ -29,7 +29,7 @@ const SymbolSchema = z
   .max(50)
   .regex(
     /^[\^A-Za-z0-9._/\-:]+$/,
-    "symbol 不能为空 / 含空格；crypto 'BTC/USDT' / 股票 'AAPL' / 指数 '^N225' / akshare 'sh.600519'",
+    "symbol 不能为空 / 含空格；crypto 'BTC/USDT' / 股票 'AAPL' / 指数 '^N225' / baostock 'sh.600519'",
   );
 
 type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown };
@@ -199,7 +199,7 @@ export const factorPanelScoreTool = createTool({
       因子：value / momentum / volatility / 任意 catalog 因子）
     - 想知道某因子在这组标的上**横截面**有没有选股力（每期排序 vs 跨标的后市收益）
     - "成分股里按因子轮动"类策略的选标的步——传 indexCode（如 000300）让它取 **PIT 成分**
-      当 universe（去存活者偏差，venue 配 akshare），而非自己列 symbols
+      当 universe（去存活者偏差，venue 配 baostock），而非自己列 symbols
 
     何时不用：
     - 只有一个标的、判方向/时机 → factor.timing（横截面要 ≥2 个标的）
@@ -241,7 +241,7 @@ export const factorPanelScoreTool = createTool({
       .optional()
       .describe(
         "指数代码（如 000300），由 data 解析 asOf 那刻的 **PIT 成分**当 universe（is_pit=true，" +
-        "去存活者偏差，venue 配 akshare）。与 symbols 二选一,优先 indexCode。取不到 PIT 快照→空+降级",
+        "去存活者偏差，venue 配 baostock）。与 symbols 二选一,优先 indexCode。取不到 PIT 快照→空+降级",
       ),
     timeframe: TimeframeSchema.default("1d"),
     asOf: z

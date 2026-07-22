@@ -39,6 +39,7 @@ from ..connectors import (
 )
 from ..schemas import TickerQuery, TickerResponse
 from ..storage.bars import query_bars
+from ..venues import canonicalize_venue
 
 router = APIRouter(tags=["ticker"])
 
@@ -80,10 +81,11 @@ async def get_ticker(
       网络抖动失败时**不**自动 fallback 到 DB（让 caller 看到原因），由 caller 决定重试。
     """
     now = datetime.now(UTC)
+    effective_venue = canonicalize_venue(query.venue, query.symbol)
 
     if query.fresh:
         try:
-            connector = get_connector_for_venue(query.venue)
+            connector = get_connector_for_venue(effective_venue)
         except KeyError:
             raise ValidationError(
                 f"unsupported venue {query.venue!r}",
@@ -125,7 +127,7 @@ async def get_ticker(
     for timeframe, source_tag in (("1m", "db_1m"), ("1h", "db_1h")):
         rows = await query_bars(
             db,
-            venue=query.venue,
+            venue=effective_venue,
             symbol=query.symbol,
             timeframe=timeframe,
             from_ts=lookback_start,

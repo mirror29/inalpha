@@ -1,7 +1,8 @@
 """``POST /backfill/bars`` —— 从外部市场拉历史 K 线落库。
 
-D-9 起多 venue：按 ``req.venue`` 从注册表取 connector（binance / alpaca / akshare）。
+D-9 起多 venue：按 ``req.venue`` 从注册表取 connector（binance / alpaca / baostock）。
 """
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -20,6 +21,7 @@ from ..connectors.fred import TIMEFRAME_SECONDS as FRED_TIMEFRAME_SECONDS
 from ..connectors.yfinance_conn import TIMEFRAME_SECONDS as YFINANCE_TIMEFRAME_SECONDS
 from ..schemas import BackfillRequest, BackfillResponse
 from ..storage.bars import insert_bars, latest_bar_ts
+from ..venues import canonicalize_venue, is_legacy_a_share_venue
 
 router = APIRouter(tags=["backfill"])
 _logger = get_logger(__name__)
@@ -34,19 +36,19 @@ _MAX_BARS_PER_REQUEST = 50_000
 # 分钟级查询限制（baostock 配额优化）
 # baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
 _MINUTE_LOOKBACK_LIMITS = {
-    "5m": 7,    # 7 天 = 336 条
+    "5m": 7,  # 7 天 = 336 条
     "15m": 14,  # 14 天 = 672 条
     "30m": 30,  # 30 天 = 720 条
-    "1h": 60,   # 60 天 = 720 条
+    "1h": 60,  # 60 天 = 720 条
 }
 
 
 # venue → 该 venue 支持的 timeframe → 秒数
-# baostock（akshare venue）支持日级 + 分钟级（5/15/30/60 分钟）
+# baostock（baostock venue）支持日级 + 分钟级（5/15/30/60 分钟）
 _VENUE_TIMEFRAME_SECONDS: dict[str, dict[str, int]] = {
     "binance": BINANCE_TIMEFRAME_SECONDS,
     "alpaca": ALPACA_TIMEFRAME_SECONDS,
-    "akshare": {
+    "baostock": {
         "1d": 86400,
         "1wk": 604800,
         "1mo": 2_592_000,
@@ -69,7 +71,7 @@ async def backfill_bars(
 ) -> BackfillResponse:
     """从外部 venue 拉指定时段的 K 线，幂等写入 TimescaleDB。
 
-    支持 venue：``binance`` / ``alpaca`` / ``akshare``。
+    支持 venue：``binance`` / ``alpaca`` / ``baostock``。
 
     **硬限**：``(to_ts - from_ts) / timeframe`` 估算 bar 数 > 50k 直接拒。
     """
@@ -77,15 +79,25 @@ async def backfill_bars(
         raise ValidationError("from_ts must be <= to_ts")
 
     # ─── venue 路由 ──────────────────────────────────────────────
+    # **向后兼容**：venue="akshare" 且 symbol 带 sh./sz. 前缀 → 自动路由到 baostock
+    effective_venue = canonicalize_venue(req.venue, req.symbol)
+    if is_legacy_a_share_venue(req.venue, req.symbol):
+        _logger.warning(
+            "venue_akshare_deprecated",
+            symbol=req.symbol,
+            reason="venue 'akshare' is deprecated for A-share; use 'baostock' instead",
+        )
+        effective_venue = "baostock"
+
     try:
-        connector: Connector = get_connector_for_venue(req.venue)
+        connector: Connector = get_connector_for_venue(effective_venue)
     except KeyError:
         raise ValidationError(
             f"unsupported venue {req.venue!r}",
             details={"supported": list_registered_venues()},
         ) from None
 
-    tf_table = _VENUE_TIMEFRAME_SECONDS.get(req.venue)
+    tf_table = _VENUE_TIMEFRAME_SECONDS.get(effective_venue)
     if tf_table is None or req.timeframe not in tf_table:
         raise ValidationError(
             f"venue {req.venue!r} does not support timeframe {req.timeframe!r}",
@@ -97,9 +109,9 @@ async def backfill_bars(
 
     # ─── 分钟级强制限制（baostock 配额优化）──────────────────────
     # baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
-    # 仅对 akshare venue 生效（binance/alpaca/yfinance 不受此限制）
+    # 仅对 baostock venue 生效（binance/alpaca/yfinance 不受此限制）
     effective_from_ts = req.from_ts
-    if req.venue == "akshare" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
+    if effective_venue == "baostock" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
         max_lookback_days = _MINUTE_LOOKBACK_LIMITS[req.timeframe]
         span_days = (req.to_ts - req.from_ts).total_seconds() / 86400
 
@@ -141,7 +153,7 @@ async def backfill_bars(
     # 但不早于请求的 from_ts；空缓存则从 from_ts 全量。
     # 注：仅按 max(ts) 续拉，中间空洞（非连续缓存，罕见）不会回补；需要时显式重拉窗口。
     cached_latest = await latest_bar_ts(
-        db, req.venue, req.symbol, req.timeframe, upto=req.to_ts
+        db, effective_venue, req.symbol, req.timeframe, upto=req.to_ts
     )
     if cached_latest is not None and cached_latest > effective_from_ts:
         cursor = cached_latest
@@ -199,7 +211,7 @@ async def backfill_bars(
         if not bars:
             break
 
-        n = await insert_bars(db, req.venue, req.symbol, req.timeframe, bars)
+        n = await insert_bars(db, effective_venue, req.symbol, req.timeframe, bars)
         fetched_total += len(bars)
         inserted_total += n
 
