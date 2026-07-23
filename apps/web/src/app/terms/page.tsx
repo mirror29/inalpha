@@ -9,6 +9,14 @@
  * uses a fox-red left-border callout — matching the caution/risk visual
  * language from the main site.
  */
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Terms of Service | Inalpha",
+  description: "Terms, financial risk disclosure, and license information for Inalpha.",
+  alternates: { canonical: "/terms/" },
+};
+
 export default function TermsPage() {
   return (
     <div className="relative min-h-screen grain bg-bg text-fg">

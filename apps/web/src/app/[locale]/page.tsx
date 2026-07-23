@@ -1,4 +1,5 @@
-import { setRequestLocale } from "next-intl/server";
+import type { Metadata } from "next";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { AgentIntelligence } from "@/components/sections/AgentIntelligence";
 import { CoreWedge } from "@/components/sections/CoreWedge";
@@ -15,6 +16,25 @@ import { TickerStrip } from "@/components/primitives/TickerStrip";
 import { getGithubStats } from "@/lib/github";
 import { REPO_COORDS } from "@/lib/links";
 import { getUpdateTag } from "@/lib/release-meta";
+import {
+  buildHomeMetadata,
+  buildHomeStructuredData,
+  isSupportedLocale,
+} from "@/lib/seo";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  if (!isSupportedLocale(locale)) {
+    return {};
+  }
+
+  const t = await getTranslations({ locale, namespace: "meta" });
+  return buildHomeMetadata(locale, t("title"), t("description"));
+}
 
 export default async function HomePage({
   params,
@@ -22,17 +42,16 @@ export default async function HomePage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  setRequestLocale(locale);
+  if (!isSupportedLocale(locale)) {
+    return null;
+  }
 
-  // build 时抓真实数字随 HTML 出厂（静态导出：更新频率 = 部署频率）；
-  // 拉取失败返 null，CTAFooter 整组隐藏，不放假数字
+  setRequestLocale(locale);
   const githubStats = await getGithubStats({
     owner: REPO_COORDS.owner,
     repo: REPO_COORDS.name,
   });
-
   const updateTag = await getUpdateTag();
-
   const tickerItems = [
     "INALPHA",
     "OPEN-SOURCE QUANT AGENT FRAMEWORK",
@@ -51,26 +70,30 @@ export default async function HomePage({
     "12 MARKETS",
     "INARI OMIKUJI",
   ];
+  const structuredData = buildHomeStructuredData(locale);
 
   return (
-    <div className="relative min-h-screen grain bg-bg text-fg">
-      <TickerStrip items={tickerItems} />
-
-      <Hero />
-
-      <main className="mx-auto max-w-[96rem] space-y-28 px-6 py-24 md:space-y-40 md:px-14 md:py-28">
-        <CoreWedge />
-        <AgentIntelligence />
-        <ResearchFloor />
-        <StrategyEvolution />
-        <OverfittingGuard />
-        <UnifiedKernel />
-        <TrustBoundary />
-        <GlobalCoverage />
-        <FAQ />
-      </main>
-
-      <CTAFooter stats={githubStats} updateTag={updateTag} />
-    </div>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <div className="relative min-h-screen grain bg-bg text-fg">
+        <TickerStrip items={tickerItems} />
+        <Hero />
+        <main className="mx-auto max-w-[96rem] space-y-28 px-6 py-24 md:space-y-40 md:px-14 md:py-28">
+          <CoreWedge />
+          <AgentIntelligence />
+          <ResearchFloor />
+          <StrategyEvolution />
+          <OverfittingGuard />
+          <UnifiedKernel />
+          <TrustBoundary />
+          <GlobalCoverage />
+          <FAQ />
+        </main>
+        <CTAFooter stats={githubStats} updateTag={updateTag} />
+      </div>
+    </>
   );
 }
