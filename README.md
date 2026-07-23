@@ -186,7 +186,7 @@ Inalpha splits *scheduling* from *compute*. The agent runtime fans out the grid 
 A deep dive doesn't hand you one "correct answer." Beyond the usual technical, fundamental, and sentiment analysts, you can convene a panel of master personas — Buffett (value / moats), Lynch (GARP growth), Wood (disruptive innovation), Burry (contrarian / bubbles), Druckenmiller (macro trends), Marks (cycles / risk): each argues in their own style, naturally forming opposing views that feed a synthesized judgment.
 
 - **Opt-in, cost-controlled.** A plain deep dive costs the same as before; you only pay for the masters you actually convene.
-- **Views grounded in data.** Each persona reads technicals / fundamentals / web intel with `as_of` pinned to *now* — no passing a stale forecast off as the present. Fundamentals are read point-in-time, filtered by report period and release lag so a backtest never sees a number before it was public (akshare today; yfinance v1 not yet PIT, flagged in place).
+- **Views grounded in data.** Each persona reads technicals / fundamentals / web intel with `as_of` pinned to *now* — no passing a stale forecast off as the present. Fundamentals are read point-in-time, filtered by report period and release lag so a backtest never sees a number before it was public (Baostock today; yfinance v1 not yet PIT, flagged in place).
 - **Structured bull / bear / risk debate — now live.** Beyond the parallel analysts, opposing-stance bull and bear researchers argue across rounds while a risk researcher stress-tests both — triggered only when the analysts genuinely disagree, with a soft early-stop when arguments stop changing and the full decision chain (why it debated, why it stopped, how it was synthesized) persisted for replay.
 
 ### 6. Skills — absorb outside research playbooks
@@ -234,7 +234,7 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 | ✅ Shipped | Bull / bear researcher debate | D-9 | opposing-stance researchers under `services/research` |
 | ✅ Shipped | Scheduler / cron agent mode | D-9 | `scheduler_jobs` + advisory lock + `/api/scheduler/*` management plane |
 | ✅ Shipped | RiskGuard per-account isolation | D-9.1a | `RiskGuardFactory` removes cross-account state bleed |
-| ✅ Shipped | Multi-market data sources — web search + financial fundamentals | D-10 | zero-key DDGS web search · akshare (A-shares/HK) + yfinance (global) fundamentals · analyst integration + fallback · per-market lookbackDays |
+| ✅ Shipped | Multi-market data sources — web search + financial fundamentals | D-10 | zero-key DDGS web search · `baostock` is the logical A-share venue: Tencent HTTPS bars/ticker + Baostock fundamentals/calendar/constituents; yfinance covers global markets including HK · analyst integration + fallback · per-market lookbackDays |
 | ✅ Shipped | Risk engine — all 5 rules live in HTTP path | D-9 closed | `closed_trades` writes from HTTP order flow; `RoutingCalendar` for US equity + crypto; all trade-based rules trigger on real data |
 | ✅ Shipped | `askUserChoice` — `ask` permission path | D-11 (issue #2) | pending-permission flow resolves the `ask` state (no longer a workaround) |
 | ✅ Shipped | `permissions.yaml` configuration | D-11 (issue #4) | `config/permissions.default.yaml` + `yaml_loader.ts` replace the hard-coded `defaults.ts` |
@@ -249,7 +249,7 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 | ✅ Shipped | Factor discovery — L1 | D-12 | restricted qlib-style DSL (zero eval/exec) · `factor_candidates` pool · multiple-testing correction + null-IC benchmark · discovery workflow → propose; register is dashboard-only |
 | ✅ Shipped | Cross-sectional factor scoring | D-12 | `factor.panel_score` · `POST /panel/score` · cross-sectional Rank IC (rank the pool each period vs forward cross-sectional return) · native Alpha101 a1/a3 · orthogonal to single-name timing |
 | ✅ Shipped | Time-series cross-validation — anti-overfitting | D-12 | WalkForward / PurgedKFold / Combinatorial Purged CV + Deflated Sharpe · `POST /backtest/cv` · test fold always includes the latest bar · auto-fallback to walk-forward when samples are short |
-| ✅ Shipped | Point-in-time fundamentals | D-12 | akshare financials filtered by report-period + release lag · `GET /fundamentals?as_of=` · prevents look-ahead (yfinance v1 not yet PIT, explicitly flagged) |
+| ✅ Shipped | Point-in-time fundamentals | D-12 | Baostock financials filtered by actual publication date · `GET /fundamentals?as_of=` · prevents look-ahead (yfinance v1 not yet PIT, explicitly flagged) |
 | 🗓️ Planned | Strategy evolution — E2 | E2 | multi-generation loop + MAP-Elites + Island Model + `unified-diff` mutations (E1 single-generation closed loop already shipped in D-9) |
 | 🗓️ Planned | Factor discovery — L2 / L3 | L2 / L3 | multi-agent factor crew (L2) + weekly automated scans (L3), on top of the L1 DSL pipeline already shipped |
 | 🗓️ Planned | Automated decay handling | TBD | reflection-driven backtest + auto-trim of decaying factors — today the decay patrol only alerts, never moves the book |
