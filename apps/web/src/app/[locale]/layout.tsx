@@ -1,22 +1,24 @@
-import { NextIntlClientProvider, hasLocale } from "next-intl";
+import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
-import { routing } from "@/i18n/routing";
+import { DocumentShell } from "../_shared/DocumentShell";
 
-export async function generateStaticParams() {
-  return routing.locales.map((locale) => ({ locale }));
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return [{ locale: "zh" }];
 }
 
 export default async function LocaleLayout({
   children,
   params,
-}: {
+}: Readonly<{
   children: React.ReactNode;
   params: Promise<{ locale: string }>;
-}) {
+}>) {
   const { locale } = await params;
-  if (!hasLocale(routing.locales, locale)) {
+  if (locale !== "zh") {
     notFound();
   }
 
@@ -24,6 +26,10 @@ export default async function LocaleLayout({
   const messages = await getMessages();
 
   return (
-    <NextIntlClientProvider messages={messages}>{children}</NextIntlClientProvider>
+    <DocumentShell lang="zh">
+      <NextIntlClientProvider locale={locale} messages={messages}>
+        {children}
+      </NextIntlClientProvider>
+    </DocumentShell>
   );
 }
