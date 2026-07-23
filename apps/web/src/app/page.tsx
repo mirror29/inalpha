@@ -5,6 +5,15 @@
  * <noscript> meta-refresh fallback. In production behind Cloudflare
  * Pages, `public/_redirects` short-circuits before this page is served.
  */
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
+
 export default function RootPage() {
   return (
     <>

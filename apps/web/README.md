@@ -12,11 +12,13 @@ pnpm i
 pnpm dev      # http://localhost:3000
 ```
 
-## 构建 / 类型检查
+## 构建 / 类型检查 / 测试
 
 ```bash
 pnpm typecheck
+pnpm test
 pnpm build
+pnpm test:export
 ```
 
 ## 结构
@@ -34,7 +36,7 @@ dark quant 终端调，色板见 `src/app/globals.css` 的 `@theme`：
 
 ## 部署
 
-Cloudflare Pages → GitHub repo `mirror29/inalpha` → root directory `apps/web` → build `pnpm build` → output `.next`。绑域名 `inalpha.dev`。
+Cloudflare Pages → GitHub repo `mirror29/inalpha` → root directory `apps/web` → build `pnpm build` → output `out`。绑域名 `inalpha.dev`。
 
 ### 环境变量
 

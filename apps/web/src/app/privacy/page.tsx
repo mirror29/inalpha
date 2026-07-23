@@ -5,6 +5,14 @@
  * hairline rules, mono labels, grain texture. Inline en/zh content.
  * Same pattern as the 404 not-found page — works everywhere, no locale routing.
  */
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Privacy Policy | Inalpha",
+  description: "How the Inalpha website handles privacy, storage, and third parties.",
+  alternates: { canonical: "/privacy/" },
+};
+
 export default function PrivacyPage() {
   return (
     <div className="relative min-h-screen grain bg-bg text-fg">

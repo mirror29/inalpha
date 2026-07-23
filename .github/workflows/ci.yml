@@ -47,7 +47,7 @@ jobs:
         run: pnpm test
 
   web-typecheck:
-    name: web · typecheck + build
+    name: web · typecheck + test + build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 11
+          version: 11.1.2
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -66,8 +66,12 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Type check
         run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
       - name: Static export build
         run: pnpm build
+      - name: Static export checks
+        run: pnpm test:export
 
   dashboard-typecheck:
     name: dashboard · typecheck + build

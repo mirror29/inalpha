@@ -1,21 +1,34 @@
-# Inalpha — allow all crawlers including AI search engines
-# https://inalpha.dev/robots.txt
+# Inalpha crawler policy
+# Allowing a crawler does not imply that it has crawled, indexed, or cited this site.
 
 User-agent: *
 Allow: /
-Sitemap: https://inalpha.dev/sitemap.xml
 
-# AI search engine crawlers — Inalpha content is their type
-User-agent: GPTBot
+# Search crawlers used for answer-engine search results.
+User-agent: OAI-SearchBot
 Allow: /
 
-User-agent: Claude-Web
+User-agent: Claude-SearchBot
 Allow: /
 
 User-agent: PerplexityBot
 Allow: /
 
-User-agent: anthropic-ai
+# User-requested fetchers may access public pages.
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+# Training and dataset crawlers are also allowed under the wildcard rule.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
 Allow: /
 
 User-agent: Google-Extended
@@ -23,3 +36,5 @@ Allow: /
 
 User-agent: CCBot
 Allow: /
+
+Sitemap: https://inalpha.dev/sitemap.xml

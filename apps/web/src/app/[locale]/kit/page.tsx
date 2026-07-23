@@ -1,13 +1,17 @@
+import type { Metadata } from "next";
 import { setRequestLocale } from "next-intl/server";
 
 import { KitClient } from "./_client";
 
-/**
- * Component kit / visual acceptance page for DESIGN.md §7 primitives.
- * Server-side wrapper that pins the locale before handing off to the
- * client demo (which owns the lucide icon imports — those can't cross
- * the server→client serialization boundary).
- */
+export const metadata: Metadata = {
+  title: "Inalpha Component Kit",
+  description: "Internal visual acceptance page for Inalpha design primitives.",
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
+
 export default async function KitPage({
   params,
 }: {

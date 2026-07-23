@@ -1,0 +1,29 @@
+# Inalpha
+
+> Open-source framework for agent-driven quantitative research and simulated trading workflows.
+
+## Website
+- https://inalpha.dev/ — English homepage
+- https://inalpha.dev/zh/ — 中文首页
+- https://inalpha.dev/privacy/ — Privacy policy
+- https://inalpha.dev/terms/ — Terms, risk disclosure, and license information
+
+## Project sources
+- https://github.com/mirror29/inalpha — Source code and issues
+- https://github.com/mirror29/inalpha/blob/main/README.md — English README
+- https://github.com/mirror29/inalpha/blob/main/README.zh-CN.md — 中文 README
+- https://github.com/mirror29/inalpha/tree/main/docs — Public documentation index
+- https://github.com/mirror29/inalpha/blob/main/docs/00-context.md — Project context
+- https://github.com/mirror29/inalpha/blob/main/docs/01-architecture-overview.md — Architecture overview
+- https://github.com/mirror29/inalpha/blob/main/docs/03-kernel-design.md — Service and kernel design
+- https://github.com/mirror29/inalpha/blob/main/docs/04-current-state.md — Current project state
+- https://github.com/mirror29/inalpha/blob/main/LICENSE — AGPL-3.0 license
+
+## Scope
+- Inalpha supports research, backtesting, and simulated-account workflows.
+- It does not provide live brokerage execution or financial advice.
+- Review the repository and public documentation for current capabilities and limitations.
+
+## Notes
+- This file is a navigation aid for language models and other tools.
+- It does not grant crawl access, guarantee indexing, or affect rankings.
