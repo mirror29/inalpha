@@ -1,4 +1,5 @@
 """multi-venue connector 路由 + baostock symbol 解析单测（不打网络）。"""
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,7 @@ from inalpha_data.connectors import (
     register_connector,
     unregister_connector,
 )
-from inalpha_data.connectors.baostock import _parse_symbol
+from inalpha_data.connectors.baostock import _fetch_sync, _parse_date, _parse_symbol
 
 # ────────────────────────────────────────────────────────────────────
 # Registry
@@ -127,8 +128,223 @@ def test_parse_symbol_unknown_prefix_raises() -> None:
 
 
 def test_parse_symbol_empty_code_raises() -> None:
-    with pytest.raises(ValueError, match="code is empty"):
+    with pytest.raises(ValueError, match="exactly 6 digits"):
         _parse_symbol("sh.")
+
+
+@pytest.mark.parametrize("raw", ["sh.600.519", "sh.60051", "600.519.SH"])
+def test_parse_symbol_rejects_noncanonical_a_share_code(raw: str) -> None:
+    """A 股代码必须严格为 6 位数字，不能让点号被腾讯 compact symbol 吞掉。"""
+    with pytest.raises(ValueError, match=r"exactly 6 digits|prefix"):
+        _parse_symbol(raw)
+
+
+def test_baostock_intraday_timestamp_converts_shanghai_time_to_utc() -> None:
+    """腾讯分钟 K 线时间是北京时间，12/14 位格式都必须转换为 UTC。"""
+    expected = datetime(2026, 7, 22, 1, 35, tzinfo=UTC)
+    assert _parse_date("202607220935") == expected
+    assert _parse_date("20260722093500") == expected
+
+
+def test_baostock_connector_uses_intraday_time_field(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """分钟 K 线不能误用仅含日期的 date 字段把整天压成同一主键。"""
+    from inalpha_data.connectors.baostock import BaostockConnector
+
+    async def _fake_fetch(_self: object, **_kwargs: object) -> list[dict[str, str]]:
+        return [
+            {
+                "date": "20260722",
+                "time": "20260722093500",
+                "open": "10.00",
+                "high": "10.10",
+                "low": "9.90",
+                "close": "10.05",
+                "volume": "100",
+            }
+        ]
+
+    monkeypatch.setattr(BaostockConnector, "_throttled_fetch_sync", _fake_fetch)
+    rows = asyncio.run(
+        BaostockConnector().fetch_bars(
+            "sh.600519",
+            "5m",
+            datetime(2026, 7, 22, tzinfo=UTC),
+            limit=5,
+        )
+    )
+
+    assert rows[0][0] == datetime(2026, 7, 22, 1, 35, tzinfo=UTC)
+
+
+def test_baostock_fetch_ticker_parses_tencent_quote(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A 股 fresh ticker 返回腾讯报价的真实时间与价格。"""
+    from inalpha_data.connectors.baostock import BaostockConnector
+
+    fields = [""] * 31
+    fields[1] = "上证指数"
+    fields[3] = "3867.03"
+    fields[30] = "20260722150000"
+
+    class _Response:
+        content = f'v_sh000001="{"~".join(fields)}";'.encode("gbk")
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def _fake_get(url: str, **kwargs: object) -> _Response:
+        assert url == "https://qt.gtimg.cn/q=sh000001"
+        assert kwargs["trust_env"] is False
+        return _Response()
+
+    monkeypatch.setattr("httpx.get", _fake_get)
+    ts, price = asyncio.run(BaostockConnector().fetch_ticker("sh.000001"))
+    assert ts == datetime(2026, 7, 22, 7, 0, tzinfo=UTC)
+    assert price == 3867.03
+
+
+def test_baostock_fetch_ticker_rejects_missing_quote_fields(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """腾讯实时行情缺字段时必须上抛，不得伪造价格或时间。"""
+    from inalpha_data.connectors.baostock import BaostockConnector
+
+    class _Response:
+        content = b'v_sh000001="1~index";'
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr("httpx.get", lambda *_args, **_kwargs: _Response())
+    with pytest.raises(RuntimeError, match="A-share ticker unavailable"):
+        asyncio.run(BaostockConnector().fetch_ticker("sh.000001"))
+
+
+@pytest.mark.parametrize(
+    ("timeframe", "expected_url", "expected_period", "expected_end"),
+    [
+        ("1wk", "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get", "week", "2026-07-23"),
+        ("1mo", "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get", "month", "2026-07-23"),
+        ("5m", "https://ifzq.gtimg.cn/appstock/app/kline/mkline", "m5", None),
+        ("15m", "https://ifzq.gtimg.cn/appstock/app/kline/mkline", "m15", None),
+        ("30m", "https://ifzq.gtimg.cn/appstock/app/kline/mkline", "m30", None),
+        ("1h", "https://ifzq.gtimg.cn/appstock/app/kline/mkline", "m60", None),
+    ],
+)
+def test_baostock_bars_map_all_tencent_periods(
+    monkeypatch,
+    timeframe: str,
+    expected_url: str,
+    expected_period: str,
+    expected_end: str | None,
+) -> None:  # type: ignore[no-untyped-def]
+    """周/月/分钟周期必须映射到腾讯对应参数。"""
+    from inalpha_data.connectors.baostock import BaostockConnector
+
+    captured: dict[str, object] = {}
+    intraday = timeframe not in {"1wk", "1mo"}
+    raw_time = "202607220935" if intraday else "2026-07-22"
+    row = [raw_time, "10.00", "10.05", "10.10", "9.90", "100"]
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"code": 0, "data": {"sh600519": {expected_period: [row]}}}
+
+    def _fake_get(url: str, **kwargs: object) -> _Response:
+        captured["url"] = url
+        captured["params"] = kwargs["params"]
+        return _Response()
+
+    monkeypatch.setattr("httpx.get", _fake_get)
+    bars = asyncio.run(
+        BaostockConnector().fetch_bars(
+            "sh.600519", timeframe, datetime(2026, 7, 1, tzinfo=UTC), limit=5
+        )
+    )
+    assert captured["url"] == expected_url
+    assert expected_period in str(captured["params"])
+    if expected_end is not None:
+        assert "2026-07-01" in str(captured["params"])
+        assert expected_end in str(captured["params"])
+        assert str(captured["params"]).endswith(",5,'}")
+    assert len(bars) == 1
+    assert bars[0][-1] == 10_000.0
+
+
+def test_baostock_bars_reject_invalid_tencent_payload(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """腾讯 K 线错误响应必须转换为显式上游异常。"""
+    from inalpha_data.connectors.baostock import BaostockConnector
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"code": 1, "data": {}}
+
+    monkeypatch.setattr("httpx.get", lambda *_args, **_kwargs: _Response())
+    with pytest.raises(RuntimeError, match="A-share bars unavailable"):
+        asyncio.run(
+            BaostockConnector().fetch_bars(
+                "sh.600519", "1d", datetime(2026, 7, 1, tzinfo=UTC), limit=5
+            )
+        )
+
+
+def test_baostock_bars_use_https_feed_when_binary_service_is_unreachable(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A 股 K 线不能依赖生产环境不可达的 Baostock TCP 10030 服务。"""
+    from inalpha_data.connectors import baostock
+
+    captured: dict[str, object] = {}
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "code": 0,
+                "data": {
+                    "sh000001": {
+                        "day": [
+                            ["2026-07-21", "3835.68", "3864.37", "3864.60", "3834.72", "119330136"],
+                            ["2026-07-22", "3839.67", "3861.65", "3884.44", "3839.67", "589368135"],
+                        ]
+                    }
+                },
+            }
+
+    def _fake_get(url: str, **kwargs: object) -> _Response:
+        captured["url"] = url
+        captured.update(kwargs)
+        return _Response()
+
+    def _binary_feed_must_not_run(**_kwargs: object) -> list[dict[str, object]]:
+        raise AssertionError("Baostock TCP feed must not be used for bars")
+
+    monkeypatch.setattr("httpx.get", _fake_get)
+    monkeypatch.setattr(baostock, "_fetch_baostock_sync", _binary_feed_must_not_run)
+
+    rows = _fetch_sync(
+        prefix="sh",
+        code="000001",
+        period="daily",
+        start_str="20260715",
+        end_str="20260722",
+        limit=1000,
+    )
+
+    assert captured["url"] == "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+    assert captured["trust_env"] is False
+    assert captured["params"] == {"param": "sh000001,day,2026-07-15,2026-07-22,1000,"}
+    assert rows[-1] == {
+        "date": "2026-07-22",
+        "open": "3839.67",
+        "close": "3861.65",
+        "high": "3884.44",
+        "low": "3839.67",
+        "volume": 58936813500.0,
+    }
 
 
 # ────────────────────────────────────────────────────────────────────

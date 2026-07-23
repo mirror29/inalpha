@@ -1,13 +1,11 @@
-"""baostock connector —— A 股全栈数据源（证券宝，免费零 key）。
+"""baostock venue connector —— A 股腾讯行情 + 证券宝基本面（免费零 key）。
 
-2026-07 起，原 akshare venue 的 A 股能力全部迁移至此独立 venue。
+2026-07 起，原 akshare venue 的 A 股能力迁移至此独立 venue。
 
-baostock（证券宝）功能覆盖：
+功能覆盖：
 
-- **K 线**：日/周/月/分钟（5m/15m/30m/1h），OHLCV 齐全（含真实成交量）
-- **财报**：利润表 + 负债表 + 成长指标 + 现金流 + 运营能力 + 杜邦分析 + 分红记录
-- **交易日历**：A 股交易/非交易日查询
-- **指数成分**：沪深300 / 上证50 / 中证500 当前成分股
+- **K 线 / 最新价**：腾讯财经 HTTPS，日/周/月/分钟（5m/15m/30m/1h）
+- **财报 / 交易日历 / 核心指数成分**：baostock（证券宝）
 - **全部免费零 key**，无需注册
 
 **symbol 格式约定**（venue=``"baostock"``）：
@@ -17,9 +15,9 @@ baostock（证券宝）功能覆盖：
 
 **timeframe 支持**：
 
-- ``"1d"`` / ``"1wk"`` / ``"1mo"`` → baostock ``frequency="d"/"w"/"m"``
-- ``"5m"`` / ``"15m"`` / ``"30m"`` / ``"1h"`` → baostock ``frequency="5"/"15"/"30"/"60"``
-- 不支持 1 分钟（baostock 限制）
+- ``"1d"`` / ``"1wk"`` / ``"1mo"`` → 腾讯 ``day/week/month``
+- ``"5m"`` / ``"15m"`` / ``"30m"`` / ``"1h"`` → 腾讯 ``m5/m15/m30/m60``
+- 不支持 1 分钟
 """
 
 from __future__ import annotations
@@ -29,6 +27,7 @@ import threading as _threading
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from inalpha_shared import get_logger
 
@@ -38,31 +37,39 @@ _logger = get_logger(__name__)
 
 VENUE = "baostock"
 
+#: 腾讯财经 HTTPS K 线。A 股行情使用此源，避免 Baostock 专用 TCP 端口在海外生产机被阻断。
+_TENCENT_KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+_TENCENT_MINUTE_KLINE_URL = "https://ifzq.gtimg.cn/appstock/app/kline/mkline"
+_TENCENT_QUOTE_URL = "https://qt.gtimg.cn/q="
+_TENCENT_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Referer": "https://gu.qq.com/",
+}
+_TZ_SHANGHAI = ZoneInfo("Asia/Shanghai")
+
 #: fundamentals 进程内缓存 TTL（秒）。A股一次 fundamentals 要打 1 次财报摘要 + 3 次
 #: Baidu 估值(串行 ~4-5s),research 多 analyst fan-out 会重复问同一标的;60s 缓存挡掉
 #: 重复打源站,兼顾防封与延迟。基本面日级更新,60s 内复用不损时效。
 _FIN_CACHE_TTL_S = 60.0
 
-# akshare 的 ``period`` 字符串映射（日级 + 分钟级）
-# baostock frequency 参数：日级 "d"/"w"/"m"，分钟级 "5"/"15"/"30"/"60"
+# connector 的统一 period 映射；行情实现再转换为腾讯 day/week/month 或分钟名称。
 _PERIOD_MAP: dict[str, str] = {
     "1d": "daily",
     "1wk": "weekly",
     "1mo": "monthly",
-    # 分钟级（baostock 支持 5/15/30/60 分钟）
+    # 分钟级（腾讯支持 5/15/30/60 分钟）
     "5m": "5",
     "15m": "15",
     "30m": "30",
     "1h": "60",
 }
 
-#: 串行锁——akshare 走公开页聚合（东财/同花顺/中证等），并发突发会触发反爬；
-#: 进程级串行 + 最小间隔把突发摊成节流串行，避免 429/空返（yfinance 同类模式）。
+#: 串行锁——腾讯 / AkShare 公开接口并发突发会触发反爬；进程级串行 + 最小间隔
+#: 把突发摊成节流串行，避免 429/空返（yfinance 同类模式）。
 _FETCH_LOCK = asyncio.Lock()
-#: 最小拉取间隔（秒）。公开页比 Yahoo API 更脆弱，≥1s；A 股数据走东财/同花顺
-#: 直连配方，memory ``a_stock_data_recipes`` 已记录"防封串行≥1s"。
+#: 最小拉取间隔（秒）。公开页比 Yahoo API 更脆弱，≥1s；A 股按直连配方限速。
 _MIN_FETCH_INTERVAL_S = 1.0
-#: 锁内单次拉取超时上限——TCP 挂起时快速放锁，不把整个 panel 拖死。
+#: 锁内单次拉取超时上限——网络挂起时快速放锁，不把整个 panel 拖死。
 _FETCH_TIMEOUT_S = 30.0
 _last_fetch_mono: float = 0.0
 
@@ -130,7 +137,7 @@ def _parse_symbol(symbol: str) -> tuple[str, str]:
     # connector 内部做格式适配。只匹配纯数字代码 + 已知市场后缀。
     if "." in symbol and symbol.rsplit(".", 1)[1].lower() in {"sh", "sz"}:
         code, suffix = symbol.rsplit(".", 1)
-        if code.replace(".", "", 1).isdigit():
+        if code.isdigit() and len(code) == 6:
             symbol = f"{suffix.lower()}.{code}"
     if "." not in symbol:
         raise ValueError(
@@ -140,8 +147,8 @@ def _parse_symbol(symbol: str) -> tuple[str, str]:
     prefix = prefix.lower()
     if prefix not in _ALLOWED_PREFIXES:
         raise ValueError(f"baostock unknown prefix {prefix!r}，allow: {sorted(_ALLOWED_PREFIXES)}")
-    if not code:
-        raise ValueError(f"baostock code is empty: {symbol!r}")
+    if not code.isdigit() or len(code) != 6:
+        raise ValueError(f"baostock code must be exactly 6 digits: {symbol!r}")
     return prefix, code
 
 
@@ -187,13 +194,13 @@ class BaostockConnector:
         since: datetime,
         limit: int = 1000,
     ) -> list[tuple[datetime, float, float, float, float, float]]:
-        """从 akshare 拉 OHLCV。
+        """从腾讯财经 HTTPS 拉 OHLCV。
 
         Args:
             symbol: ``"sh.600519"`` / ``"sz.000001"``
             timeframe: 支持 ``"1d"`` / ``"1wk"`` / ``"1mo"`` 及分钟级 ``"5m"`` / ``"15m"`` / ``"30m"`` / ``"1h"``
-            since: UTC datetime；akshare 接 ``YYYYMMDD`` 字符串
-            limit: 不直接生效（akshare 不接 limit，整段拉回；上层切片）
+            since: UTC datetime；转换为腾讯接口的起始日期
+            limit: 单次最多请求的 K 线数量，上层仍会再次截断尾部
 
         Returns:
             list of ``(ts, open, high, low, close, volume)``，UTC aware。
@@ -206,8 +213,7 @@ class BaostockConnector:
         prefix, code = _parse_symbol(symbol)
         period = _PERIOD_MAP[timeframe]
         start_str = since.strftime("%Y%m%d")
-        # end 给 today 让 baostock 一口气拉全
-        end_str = datetime.now(UTC).strftime("%Y%m%d")
+        end_str = _tencent_window_end(since, period, limit).strftime("%Y%m%d")
 
         _logger.debug(
             "baostock_fetch_bars",
@@ -225,6 +231,7 @@ class BaostockConnector:
                 period=period,
                 start_str=start_str,
                 end_str=end_str,
+                limit=limit,
             )
         except Exception as exc:
             _logger.warning(
@@ -235,13 +242,17 @@ class BaostockConnector:
                 end_str=end_str,
                 error=str(exc),
             )
-            return []
+            raise RuntimeError(f"A-share bars unavailable for {symbol}: {exc}") from exc
 
-        # akshare 返的是 DataFrame；列名中文 / 英文都见过，做防御性归一化
+        # 腾讯响应已归一为 dict；同时兼容历史中文字段，避免 fallback 数据形态漂移。
         out: list[tuple[datetime, float, float, float, float, float]] = []
         for r in rows:
-            # 日级：用 date 字段；分钟级：用 time 字段（格式 YYYYMMDDHHMMSS）
-            ts_raw = r.get("日期") or r.get("date") or r.get("Date") or r.get("time")
+            # 日级：用 date 字段；分钟级：优先用 time 字段（格式 YYYYMMDDHHMMSS）
+            ts_raw = (
+                r.get("time")
+                if timeframe in {"5m", "15m", "30m", "1h"}
+                else r.get("日期") or r.get("date") or r.get("Date")
+            )
             o = _to_float(r.get("开盘") or r.get("open"))
             h = _to_float(r.get("最高") or r.get("high"))
             low = _to_float(r.get("最低") or r.get("low"))
@@ -254,19 +265,35 @@ class BaostockConnector:
             out.append((ts, o or 0.0, h or 0.0, low or 0.0, c, v or 0.0))
 
         if not out and rows:
-            # 上游返了行但全部被列名解析跳过 → 列名漂移告警
+            # 上游返了行但全部被列名解析跳过，属于响应契约漂移而不是正常空结果。
+            sample_keys = list(rows[0].keys()) if rows else []
             _logger.warning(
                 "baostock_fetch_bars_all_rows_skipped",
                 symbol=symbol,
                 timeframe=timeframe,
                 row_count=len(rows),
-                sample_keys=list(rows[0].keys()) if rows else [],
+                sample_keys=sample_keys,
+            )
+            raise RuntimeError(
+                f"A-share bars payload invalid for {symbol}: "
+                f"all {len(rows)} rows were skipped (keys={sample_keys})"
             )
 
-        # 按 limit 截断尾部（akshare 不接 limit，整段返）
+        # 防御性截断尾部；上游可能忽略或扩大 limit。
         if limit and len(out) > limit:
             out = out[-limit:]
         return out
+
+    async def fetch_ticker(self, symbol: str) -> tuple[datetime, float]:
+        """从腾讯财经实时行情接口返回最新报价时间和价格。"""
+        prefix, code = _parse_symbol(symbol)
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_fetch_tencent_ticker_sync, symbol=f"{prefix}.{code}"),
+                timeout=_FETCH_TIMEOUT_S,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"A-share ticker unavailable for {symbol}: {exc}") from exc
 
     @staticmethod
     async def _throttled_fetch_sync(
@@ -276,10 +303,11 @@ class BaostockConnector:
         period: str,
         start_str: str,
         end_str: str,
+        limit: int,
     ) -> list[dict[str, Any]]:
-        """串行 + 最小间隔跑 akshare fetch，防并发突发触发反爬。
+        """串行 + 最小间隔跑 A 股公开行情请求，防并发突发触发反爬。
 
-        进程级 ``_FETCH_LOCK`` 保证同一时刻只有一个 akshare 请求在飞；锁内再补足
+        进程级 ``_FETCH_LOCK`` 保证同一时刻只有一个请求在飞；锁内再补足
         ``_MIN_FETCH_INTERVAL_S`` 的最小间隔。锁内每请求超时 ``_FETCH_TIMEOUT_S``，
         TCP 挂起时快速放锁让队列继续。
 
@@ -299,6 +327,7 @@ class BaostockConnector:
                         period=period,
                         start_str=start_str,
                         end_str=end_str,
+                        limit=limit,
                     ),
                     timeout=_FETCH_TIMEOUT_S,
                 )
@@ -1010,6 +1039,114 @@ def _fetch_news_sync(symbol: str) -> list[dict[str, Any]]:
     return []
 
 
+def _fetch_tencent_ticker_sync(*, symbol: str) -> tuple[datetime, float]:
+    """从腾讯财经 GBK 行情接口拉一个 A 股标的的实时价格。"""
+    import httpx
+
+    compact_symbol = symbol.replace(".", "")
+    response = httpx.get(
+        f"{_TENCENT_QUOTE_URL}{compact_symbol}",
+        headers=_TENCENT_HEADERS,
+        timeout=_FETCH_TIMEOUT_S,
+        trust_env=False,
+    )
+    response.raise_for_status()
+    text = response.content.decode("gbk")
+    if '="' not in text:
+        raise RuntimeError(f"tencent quote response invalid: {text[:120]}")
+    fields = text.split('="', 1)[1].split('"', 1)[0].split("~")
+    if len(fields) <= 30 or not fields[3] or not fields[30]:
+        raise RuntimeError(f"tencent quote fields missing for {symbol}")
+    quote_time = datetime.strptime(fields[30], "%Y%m%d%H%M%S").replace(tzinfo=_TZ_SHANGHAI)
+    return quote_time.astimezone(UTC), float(fields[3])
+
+
+def _tencent_window_end(since: datetime, period: str, limit: int) -> datetime:
+    """按腾讯单次条数上限计算历史请求窗口终点，供 backfill 分页推进。"""
+    days_per_bar = {
+        "daily": 2,
+        "weekly": 8,
+        "monthly": 32,
+    }.get(period)
+    if days_per_bar is None:
+        return datetime.now(UTC)
+    return min(
+        datetime.now(UTC),
+        since + timedelta(days=max(limit, 1) * days_per_bar),
+    )
+
+
+def _fetch_tencent_bars_sync(
+    *,
+    symbol: str,
+    period: str,
+    start_date: str,
+    end_date: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """从腾讯财经 HTTPS 接口拉 A 股 K 线。"""
+    import httpx
+
+    compact_symbol = symbol.replace(".", "")
+    if period in {"daily", "weekly", "monthly"}:
+        period_name = {"daily": "day", "weekly": "week", "monthly": "month"}[period]
+        start_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+        end_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+        params = {"param": (f"{compact_symbol},{period_name},{start_fmt},{end_fmt},{limit},")}
+        response = httpx.get(
+            _TENCENT_KLINE_URL,
+            params=params,
+            headers=_TENCENT_HEADERS,
+            timeout=_FETCH_TIMEOUT_S,
+            trust_env=False,
+        )
+        response.raise_for_status()
+        data = response.json()
+        payload = (data.get("data") or {}).get(compact_symbol) or {}
+        raw_rows = payload.get(period_name) or []
+        if data.get("code") != 0 or not isinstance(raw_rows, list):
+            raise RuntimeError(f"tencent kline response invalid: {str(data)[:200]}")
+        if not raw_rows:
+            raise RuntimeError(f"tencent kline returned no rows for {symbol}")
+        return [_tencent_bar_row(row, intraday=False) for row in raw_rows if len(row) >= 6]
+
+    minute_name = f"m{period}"
+    response = httpx.get(
+        _TENCENT_MINUTE_KLINE_URL,
+        params={"param": f"{compact_symbol},{minute_name},,{limit}"},
+        headers=_TENCENT_HEADERS,
+        timeout=_FETCH_TIMEOUT_S,
+        trust_env=False,
+    )
+    response.raise_for_status()
+    data = response.json()
+    payload = (data.get("data") or {}).get(compact_symbol) or {}
+    raw_rows = payload.get(minute_name) or []
+    if data.get("code") != 0 or not isinstance(raw_rows, list):
+        raise RuntimeError(f"tencent minute kline response invalid: {str(data)[:200]}")
+    if not raw_rows:
+        raise RuntimeError(f"tencent minute kline returned no rows for {symbol}")
+    return [_tencent_bar_row(row, intraday=True) for row in raw_rows if len(row) >= 6]
+
+
+def _tencent_bar_row(row: list[Any], *, intraday: bool) -> dict[str, Any]:
+    """把腾讯 K 线数组转换为 connector 通用字段。"""
+    time_value, open_s, close_s, high_s, low_s, volume_s = row[:6]
+    volume = _to_float(volume_s)
+    out: dict[str, Any] = {
+        "date": str(time_value)[:8] if intraday else str(time_value),
+        "open": open_s,
+        "close": close_s,
+        "high": high_s,
+        "low": low_s,
+        # 腾讯 K 线以“手”返回成交量；bars 的统一单位是“股”。
+        "volume": volume * 100 if volume is not None else None,
+    }
+    if intraday:
+        out["time"] = str(time_value)
+    return out
+
+
 def _fetch_baostock_sync(
     *,
     symbol: str,
@@ -1107,6 +1244,7 @@ def _fetch_sync(
     period: str,
     start_str: str,
     end_str: str,
+    limit: int,
 ) -> list[dict[str, Any]]:
     """同步调数据源 —— 按市场前缀路由。
 
@@ -1130,31 +1268,14 @@ def _fetch_sync(
     )
 
     if prefix in ("sh", "sz"):
-        # A股走 baostock（证券宝）。东财 push2his 2026-07 起失效，腾讯源仅日线且无 volume；
-        # baostock 免费零 key、日/周/月/分钟全支持、有真实成交量。
-        # symbol 格式 "sh.600519" / "sz.000001"（与 _parse_symbol 产物一致，零转换）。
-        # period 已由上层 fetch_bars 经 _PERIOD_MAP 转为 "daily"/"weekly"/"monthly"/"5"/"15"/"30"/"60"
-        _baostock_freq = {
-            "daily": "d",
-            "weekly": "w",
-            "monthly": "m",
-            # 分钟级直接透传
-            "5": "5",
-            "15": "15",
-            "30": "30",
-            "60": "60",
-        }
-        baostock_freq = _baostock_freq.get(period)
-        if baostock_freq is None:
-            raise NotImplementedError(
-                f"baostock does not support period {period!r}; "
-                f"supported: {sorted(_baostock_freq.keys())}"
-            )
-        return _fetch_baostock_sync(
+        # 行情走腾讯 HTTPS。生产机无法访问 Baostock 专用 TCP 10030，但腾讯接口可直连，
+        # 同时覆盖指数、个股和日/周/月/分钟 K 线。Baostock 继续承载财报、日历与成分股。
+        return _fetch_tencent_bars_sync(
             symbol=f"{prefix}.{code}",
-            frequency=baostock_freq,
+            period=period,
             start_date=start_str,
             end_date=end_str,
+            limit=limit,
         )
     elif prefix == "hk":
         # 港股走东财 stock_hk_hist（push2his API，当前不可用；orchestrator 已将
@@ -1318,18 +1439,19 @@ def _parse_date(v: Any) -> datetime:
         return datetime(v.year, v.month, v.day, tzinfo=UTC)
     # 字符串解析
     s = str(v)
-    # 分钟级：YYYYMMDDHHMMSS（14 位数字）
-    if len(s) == 14 and s.isdigit():
-        # 20260709093500000 → 2026-07-09 09:35:00
-        return datetime(
+    # 分钟级：腾讯可能返回 YYYYMMDDHHMM 或 YYYYMMDDHHMMSS。时间是北京时间，转 UTC 后落库。
+    if len(s) in {12, 14} and s.isdigit():
+        second = int(s[12:14]) if len(s) == 14 else 0
+        local_dt = datetime(
             int(s[:4]),
             int(s[4:6]),
             int(s[6:8]),
             int(s[8:10]),
             int(s[10:12]),
-            int(s[12:14]),
-            tzinfo=UTC,
+            second,
+            tzinfo=_TZ_SHANGHAI,
         )
+        return local_dt.astimezone(UTC)
     # 日级：YYYY-MM-DD 或 YYYYMMDD
     return datetime.fromisoformat(s).replace(tzinfo=UTC)
 

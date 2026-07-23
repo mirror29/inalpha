@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends
 from inalpha_shared import get_logger
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
-from inalpha_shared.errors import ValidationError
+from inalpha_shared.errors import InalphaError, ValidationError
 
 from ..connectors import Connector, get_connector_for_venue, list_registered_venues
 from ..connectors.alpaca import TIMEFRAME_SECONDS as ALPACA_TIMEFRAME_SECONDS
@@ -21,7 +21,7 @@ from ..connectors.fred import TIMEFRAME_SECONDS as FRED_TIMEFRAME_SECONDS
 from ..connectors.yfinance_conn import TIMEFRAME_SECONDS as YFINANCE_TIMEFRAME_SECONDS
 from ..schemas import BackfillRequest, BackfillResponse
 from ..storage.bars import insert_bars, latest_bar_ts
-from ..venues import canonicalize_venue, is_legacy_a_share_venue
+from ..venues import canonicalize_market_identity, is_legacy_a_share_venue
 
 router = APIRouter(tags=["backfill"])
 _logger = get_logger(__name__)
@@ -33,14 +33,21 @@ _BATCH_LIMIT = 1000
 # D-8b' review 高风险 #6：长跨度同步 backfill 会卡死请求线程
 _MAX_BARS_PER_REQUEST = 50_000
 
-# 分钟级查询限制（baostock 配额优化）
-# baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
+# 分钟级查询限制（腾讯行情请求量与同步延迟保护）
+# 腾讯分钟 K 单请求有返回条数上限；长跨度既无法完整返回，也会占用串行抓取通道。
 _MINUTE_LOOKBACK_LIMITS = {
     "5m": 7,  # 7 天 = 336 条
     "15m": 14,  # 14 天 = 672 条
     "30m": 30,  # 30 天 = 720 条
     "1h": 60,  # 60 天 = 720 条
 }
+
+
+class BarsUpstreamUnavailableError(InalphaError):
+    """外部 K 线源不可用，避免把网络故障伪装成成功的空结果。"""
+
+    code = "BARS_UPSTREAM_UNAVAILABLE"
+    status_code = 502
 
 
 # venue → 该 venue 支持的 timeframe → 秒数
@@ -80,14 +87,13 @@ async def backfill_bars(
 
     # ─── venue 路由 ──────────────────────────────────────────────
     # **向后兼容**：venue="akshare" 且 symbol 带 sh./sz. 前缀 → 自动路由到 baostock
-    effective_venue = canonicalize_venue(req.venue, req.symbol)
+    effective_venue, effective_symbol = canonicalize_market_identity(req.venue, req.symbol)
     if is_legacy_a_share_venue(req.venue, req.symbol):
         _logger.warning(
             "venue_akshare_deprecated",
             symbol=req.symbol,
             reason="venue 'akshare' is deprecated for A-share; use 'baostock' instead",
         )
-        effective_venue = "baostock"
 
     try:
         connector: Connector = get_connector_for_venue(effective_venue)
@@ -107,8 +113,8 @@ async def backfill_bars(
             },
         )
 
-    # ─── 分钟级强制限制（baostock 配额优化）──────────────────────
-    # baostock 分钟 K 每条调用一次 API，长跨度会快速消耗 5 万日配额
+    # ─── 分钟级强制限制（腾讯行情请求量与同步延迟保护）─────────────────
+    # canonical baostock venue 的分钟线由腾讯 HTTPS 提供，限制长跨度无效拉取。
     # 仅对 baostock venue 生效（binance/alpaca/yfinance 不受此限制）
     effective_from_ts = req.from_ts
     if effective_venue == "baostock" and req.timeframe in _MINUTE_LOOKBACK_LIMITS:
@@ -121,12 +127,12 @@ async def backfill_bars(
             _logger.warning(
                 "backfill_minute_lookback_capped",
                 venue=req.venue,
-                symbol=req.symbol,
+                symbol=effective_symbol,
                 timeframe=req.timeframe,
                 original_from_ts=req.from_ts.isoformat(),
                 capped_from_ts=effective_from_ts.isoformat(),
                 max_lookback_days=max_lookback_days,
-                reason="baostock quota optimization",
+                reason="minute kline request bound",
             )
 
     span_seconds = (req.to_ts - effective_from_ts).total_seconds()
@@ -153,7 +159,7 @@ async def backfill_bars(
     # 但不早于请求的 from_ts；空缓存则从 from_ts 全量。
     # 注：仅按 max(ts) 续拉，中间空洞（非连续缓存，罕见）不会回补；需要时显式重拉窗口。
     cached_latest = await latest_bar_ts(
-        db, effective_venue, req.symbol, req.timeframe, upto=req.to_ts
+        db, effective_venue, effective_symbol, req.timeframe, upto=req.to_ts
     )
     if cached_latest is not None and cached_latest > effective_from_ts:
         cursor = cached_latest
@@ -173,7 +179,7 @@ async def backfill_bars(
     while cursor < req.to_ts:
         try:
             bars = await connector.fetch_bars(
-                symbol=req.symbol,
+                symbol=effective_symbol,
                 timeframe=req.timeframe,
                 since=cursor,
                 limit=_BATCH_LIMIT,
@@ -182,18 +188,26 @@ async def backfill_bars(
             _logger.warning(
                 "backfill_connector_failed",
                 venue=req.venue,
-                symbol=req.symbol,
+                symbol=effective_symbol,
                 error=str(exc),
                 cursor=cursor.isoformat(),
             )
-            break
+            raise BarsUpstreamUnavailableError(
+                f"bars source unavailable for {effective_symbol}@{effective_venue}",
+                details={
+                    "venue": req.venue,
+                    "symbol": req.symbol,
+                    "timeframe": req.timeframe,
+                    "reason": str(exc),
+                },
+            ) from exc
         if not bars:
             if fetched_total == 0:
                 # 首批就空——上游根本没返数据，比增量结束严重
                 _logger.warning(
                     "backfill_no_more_bars_first_batch_empty",
                     venue=req.venue,
-                    symbol=req.symbol,
+                    symbol=effective_symbol,
                     timeframe=req.timeframe,
                     cursor=cursor.isoformat(),
                 )
@@ -201,7 +215,7 @@ async def backfill_bars(
                 _logger.info(
                     "backfill_no_more_bars",
                     venue=req.venue,
-                    symbol=req.symbol,
+                    symbol=effective_symbol,
                     cursor=cursor.isoformat(),
                 )
             break
@@ -211,7 +225,7 @@ async def backfill_bars(
         if not bars:
             break
 
-        n = await insert_bars(db, effective_venue, req.symbol, req.timeframe, bars)
+        n = await insert_bars(db, effective_venue, effective_symbol, req.timeframe, bars)
         fetched_total += len(bars)
         inserted_total += n
 

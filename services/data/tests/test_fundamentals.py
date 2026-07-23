@@ -1,4 +1,5 @@
 """Tests for GET /fundamentals endpoint."""
+
 from __future__ import annotations
 
 import pytest
@@ -13,9 +14,7 @@ def test_fundamentals_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
-def test_fundamentals_baostock_venue(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_fundamentals_baostock_venue(client: TestClient, auth_headers: dict[str, str]) -> None:
     """Mocked baostock connector returns financial data."""
     from inalpha_data.connectors import baostock as bs
 
@@ -55,12 +54,14 @@ def test_fundamentals_baostock_venue(
 def test_fundamentals_legacy_akshare_alias(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    """旧 A 股 venue 在迁移窗口内仍路由到 baostock。"""
+    """旧 venue 和 Yahoo 后缀 symbol 在迁移窗口内统一路由到 baostock。"""
     from inalpha_data.connectors import baostock as bs
 
     original = bs._connector.fetch_financials
+    seen: list[str] = []
 
     async def mock_fin(symbol, as_of=None):
+        seen.append(symbol)
         return {"venue": "baostock", "symbol": symbol, "available": False, "reason": "no data"}
 
     bs._connector.fetch_financials = mock_fin
@@ -68,17 +69,16 @@ def test_fundamentals_legacy_akshare_alias(
         r = client.get(
             "/fundamentals",
             headers=auth_headers,
-            params={"venue": "akshare", "symbol": "sh.600519"},
+            params={"venue": "akshare", "symbol": "600519.SH"},
         )
         assert r.status_code == 200
         assert r.json()["venue"] == "baostock"
+        assert seen == ["sh.600519"]
     finally:
         bs._connector.fetch_financials = original
 
 
-def test_fundamentals_yfinance_venue(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_fundamentals_yfinance_venue(client: TestClient, auth_headers: dict[str, str]) -> None:
     """GET /fundamentals with venue=yfinance works."""
     from inalpha_data.connectors import yfinance_conn as yf
 
@@ -109,9 +109,7 @@ def test_fundamentals_yfinance_venue(
         yf._connector.fetch_financials = original
 
 
-def test_fundamentals_unsupported_venue(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_fundamentals_unsupported_venue(client: TestClient, auth_headers: dict[str, str]) -> None:
     """Venue=binance should return 422."""
     r = client.get(
         "/fundamentals",
@@ -122,9 +120,7 @@ def test_fundamentals_unsupported_venue(
     assert "FUNDAMENTALS" in r.json()["code"]
 
 
-def test_fundamentals_unavailable_data(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_fundamentals_unavailable_data(client: TestClient, auth_headers: dict[str, str]) -> None:
     """Connector returns available=False → endpoint returns 200 with available=False."""
     from inalpha_data.connectors import baostock as bs
 

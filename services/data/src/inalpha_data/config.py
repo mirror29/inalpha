@@ -2,6 +2,7 @@
 
 继承 ``inalpha_shared.Settings``，加 Binance 凭证字段（公开接口可以为空）。
 """
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -38,16 +39,12 @@ class DataSettings(BaseSettings):
     web_search_timeout_s: int = Field(default=8, alias="WEB_SEARCH_TIMEOUT_S")
     """ddgs 单引擎 HTTP 超时（秒）。原默认 15s，叠多引擎可到 30s+，收紧到 8s 砍长尾。"""
 
-    web_search_overall_timeout_s: int = Field(
-        default=20, alias="WEB_SEARCH_OVERALL_TIMEOUT_S"
-    )
+    web_search_overall_timeout_s: int = Field(default=20, alias="WEB_SEARCH_OVERALL_TIMEOUT_S")
     """单次搜索整体超时（秒），避免 backend="auto" 顺序试 8 个引擎把调用方拖死。
     12s 对 bing 中文查询偏紧（本地网络实测常恰好掐死）；auto 失败会换引擎再兜一次，
     最坏耗时 = 2 × 本值。"""
 
-    web_search_max_concurrency: int = Field(
-        default=4, alias="WEB_SEARCH_MAX_CONCURRENCY"
-    )
+    web_search_max_concurrency: int = Field(default=4, alias="WEB_SEARCH_MAX_CONCURRENCY")
     """同时在飞的搜索数上限。analyst 常 ~10 个并行查询，限并发避免线程池 + GIL 把 async 事件循环饿死。"""
 
     web_search_cache_ttl_s: int = Field(default=600, alias="WEB_SEARCH_CACHE_TTL_S")
@@ -78,11 +75,9 @@ class DataSettings(BaseSettings):
     """进程内缓存 TTL（秒）。快讯/板块榜分钟级更新，60s 挡住 analyst fan-out
     同一轮重复打源站；响应带 fetched_at，fresh 语义不破。"""
 
-    constituent_snapshot_indices: str = Field(
-        default="", alias="CONSTITUENT_SNAPSHOT_INDICES"
-    )
+    constituent_snapshot_indices: str = Field(default="", alias="CONSTITUENT_SNAPSHOT_INDICES")
     """每日成分快照追踪的指数代码，逗号分隔（如 ``000300,000905``）。空=禁用调度
-    （ADR-0053 阶段 C 向前累积:akshare 只回当前成分，唯一 PIT 路径是从启用日起每日落库）。
+    （ADR-0053 阶段 C 向前累积:免费源只回当前成分，唯一 PIT 路径是从启用日起每日落库）。
     手动 ``POST /constituents/snapshot`` 不受本项影响。"""
 
     constituent_snapshot_interval_h: float = Field(

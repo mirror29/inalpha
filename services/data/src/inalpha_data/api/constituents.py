@@ -7,6 +7,7 @@
 
 横截面选股/轮动回测的存活者偏差前提:每期取 as_of 那刻的真实成分,而非"今天还在的票"回看。
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -37,14 +38,12 @@ async def snapshot_constituents(
 ) -> SnapshotConstituentsResponse:
     """拉 ``index_code`` 当前成分（akshare）落库，``as_of_date=今天``。
 
-    每日（或按需）调用一次即向前累积一份 PIT 快照。akshare 只回当前成分，故本接口是
+    每日（或按需）调用一次即向前累积一份 PIT 快照。免费源只回当前成分，故本接口是
     PIT 史的**唯一来源**;源站失败 → 502，不静默写空（§3.1）。与每日调度器共用
     :func:`record_snapshot`，手动触发与自动累积行为一致。
     """
     snap_date, n = await record_snapshot(db, index_code=req.index_code)
-    return SnapshotConstituentsResponse(
-        index_code=req.index_code, as_of_date=snap_date, count=n
-    )
+    return SnapshotConstituentsResponse(index_code=req.index_code, as_of_date=snap_date, count=n)
 
 
 @router.get("/constituents", response_model=ConstituentsResponse)
@@ -72,9 +71,7 @@ async def get_constituents_pit(
     else:
         as_of_date = datetime.now(UTC).date()
 
-    snap_date, members = await store.get_constituents(
-        db, index_code=index_code, as_of=as_of_date
-    )
+    snap_date, members = await store.get_constituents(db, index_code=index_code, as_of=as_of_date)
     return ConstituentsResponse(
         index_code=index_code,
         as_of=as_of_date.isoformat(),

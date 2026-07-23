@@ -1,4 +1,5 @@
 """symbol_search connector + GET /symbols/search 端点测试（不打外网）。"""
+
 from __future__ import annotations
 
 import pytest
@@ -39,7 +40,7 @@ async def test_cjk_query_hits_a_share_table(monkeypatch: pytest.MonkeyPatch) -> 
             "symbol": "sh.600519",
             "name": "贵州茅台",
             "exchange": "XSHG",
-            "venue": "akshare",
+            "venue": "baostock",
             "quote_type": "EQUITY",
         }
     ]
@@ -65,7 +66,7 @@ async def test_cjk_auto_queries_both_sources_round_robin(
     # Yahoo 以完整 max_results 被查（不是 A股填剩的余额）
     assert yahoo_calls == [("平安", 4)]
     # 轮替合并：a1, y1, a2(无), y2 → A股命中 1 条时 Yahoo 两条都进结果
-    assert [r["venue"] for r in out] == ["akshare", "yfinance", "yfinance"]
+    assert [r["venue"] for r in out] == ["baostock", "yfinance", "yfinance"]
     assert out[0]["symbol"] == "sz.000001"
     assert {r["symbol"] for r in out if r["venue"] == "yfinance"} == {"AAPL", "0700.HK"}
 
@@ -93,11 +94,11 @@ async def test_cjk_with_explicit_yfinance_venue_skips_a_share(
 async def test_code_prefix_match_and_bj_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ss, "_load_a_share_table_sync", lambda: _FAKE_A_SHARE)
     conn = SymbolSearchConnector()
-    out = await conn.search("430047", venue="akshare")
+    out = await conn.search("430047", venue="baostock")
     assert out == []  # bj 代码被跳过而不是返回错误格式
-    out2 = await conn.search("0005", venue="akshare")
+    out2 = await conn.search("0005", venue="baostock")
     assert [r["symbol"] for r in out2] == []  # 前缀不匹配（000001 不以 0005 开头）
-    out3 = await conn.search("00000", venue="akshare")
+    out3 = await conn.search("00000", venue="baostock")
     assert [r["symbol"] for r in out3] == ["sz.000001"]
 
 
@@ -125,18 +126,18 @@ async def test_a_share_table_cached(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(ss, "_load_a_share_table_sync", fake_load)
     conn = SymbolSearchConnector()
-    await conn.search("茅台", venue="akshare")
-    await conn.search("平安", venue="akshare")
+    await conn.search("茅台", venue="baostock")
+    await conn.search("平安", venue="baostock")
     assert len(loads) == 1  # 第二次走缓存
 
 
 async def test_table_load_failure_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom():
-        raise RuntimeError("akshare down")
+        raise RuntimeError("baostock down")
 
     monkeypatch.setattr(ss, "_load_a_share_table_sync", boom)
     conn = SymbolSearchConnector()
-    out = await conn.search("茅台", venue="akshare")
+    out = await conn.search("茅台", venue="baostock")
     assert out == []  # fail-open
 
 
@@ -145,9 +146,7 @@ def test_symbols_search_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
-def test_symbols_search_endpoint_shape(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_symbols_search_endpoint_shape(client: TestClient, auth_headers: dict[str, str]) -> None:
     original = ss._connector.search
 
     async def mock_search(query: str, venue: str = "auto", max_results: int = 10):
@@ -156,16 +155,14 @@ def test_symbols_search_endpoint_shape(
                 "symbol": "sh.600519",
                 "name": "贵州茅台",
                 "exchange": "XSHG",
-                "venue": "akshare",
+                "venue": "baostock",
                 "quote_type": "EQUITY",
             }
         ]
 
     ss._connector.search = mock_search
     try:
-        r = client.get(
-            "/symbols/search", headers=auth_headers, params={"query": "茅台"}
-        )
+        r = client.get("/symbols/search", headers=auth_headers, params={"query": "茅台"})
         assert r.status_code == 200
         body = r.json()
         assert body["results"][0]["symbol"] == "sh.600519"

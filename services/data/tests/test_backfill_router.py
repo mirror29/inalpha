@@ -11,6 +11,7 @@ D-9 ``data.backfill_bars`` 工具层解锁后，TS schema 不再卡 venue ——
 **不**走真实 yfinance / baostock / alpaca / fred 网络 —— 这些是 connector 层职责（已在
 ``test_connectors.py`` 覆盖）；本文件只验 router/registry 装配是否正确。
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -42,7 +43,11 @@ class _FakeConnector:
         if start.tzinfo is None:
             start = start.replace(tzinfo=UTC)
         # 时间步长按 timeframe 粗略给一个，避免下次循环 cursor 越界产生死循环
-        step = timedelta(days=1) if "d" in timeframe or "w" in timeframe or "mo" in timeframe else timedelta(hours=1)
+        step = (
+            timedelta(days=1)
+            if "d" in timeframe or "w" in timeframe or "mo" in timeframe
+            else timedelta(hours=1)
+        )
         return [
             (start + step * i, 100.0 + i, 101.0 + i, 99.0 + i, 100.5 + i, 1000.0 + i)
             for i in range(3)
@@ -75,6 +80,50 @@ def all_venues_client(app_with_all_venues_mocked: Any) -> TestClient:
     return TestClient(app_with_all_venues_mocked)
 
 
+class _FailingConnector:
+    """模拟外部行情源网络故障。"""
+
+    async def fetch_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        since: datetime,
+        limit: int = 1000,
+    ) -> list[tuple[datetime, float, float, float, float, float]]:
+        raise RuntimeError("upstream timeout")
+
+
+@pytest.fixture
+async def app_with_failing_baostock() -> AsyncIterator[Any]:
+    from inalpha_data.connectors import _base as _connectors_base
+    from inalpha_data.main import app
+
+    async with app.router.lifespan_context(app):
+        _connectors_base._REGISTRY["baostock"] = _FailingConnector()
+        yield app
+    app.dependency_overrides.clear()
+
+
+def test_backfill_upstream_failure_returns_502(
+    app_with_failing_baostock: Any, auth_headers: dict[str, str]
+) -> None:
+    """上游网络失败必须显式 502，不能 200 + bars_fetched=0。"""
+    response = TestClient(app_with_failing_baostock).post(
+        "/backfill/bars",
+        headers=auth_headers,
+        json={
+            "venue": "baostock",
+            "symbol": "sh.600518",
+            "timeframe": "1d",
+            "from_ts": "2026-04-01T00:00:00Z",
+            "to_ts": "2026-04-04T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["code"] == "BARS_UPSTREAM_UNAVAILABLE"
+
+
 # ─── 5 venue 路由 round-trip ──────────────────────────────────────────
 
 
@@ -100,7 +149,11 @@ def test_backfill_routes_each_venue_to_its_connector(
     回归用户报"TSLA 报错只支持 Binance"的 root cause —— TS schema 解锁后，TSLA + yfinance
     + 1d 必须能通到底层 connector。
     """
-    unique_symbol = f"{symbol}-{uuid4().hex[:8]}"
+    unique_symbol = (
+        f"sh.{uuid4().int % 1_000_000:06d}"
+        if venue == "baostock"
+        else f"{symbol}-{uuid4().hex[:8]}"
+    )
     # 1d / 1h 跨度都用 3 天 → 不会触发 50k bars 上限
     from_ts = "2026-04-01T00:00:00Z"
     to_ts = "2026-04-04T00:00:00Z"
@@ -192,16 +245,17 @@ def test_backfill_rejects_timeframe_unsupported_by_venue(
     assert "1d" in supported_tfs  # 两个 venue 至少都支持 1d
 
 
-def test_legacy_akshare_alias_applies_baostock_minute_cap(
+def test_legacy_akshare_alias_normalizes_symbol_and_applies_minute_cap(
     all_venues_client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    """旧 A 股 venue 别名必须与 baostock 走同一配额保护。"""
+    """旧 venue + Yahoo 后缀 symbol 必须统一写入 canonical Baostock identity。"""
+    symbol = "600518.SH"
     r = all_venues_client.post(
         "/backfill/bars",
         headers=auth_headers,
         json={
             "venue": "akshare",
-            "symbol": f"sh.600519-{uuid4().hex[:8]}",
+            "symbol": symbol,
             "timeframe": "5m",
             "from_ts": "2026-01-01T00:00:00Z",
             "to_ts": "2026-04-01T00:00:00Z",
@@ -209,6 +263,22 @@ def test_legacy_akshare_alias_applies_baostock_minute_cap(
     )
     assert r.status_code == 200, r.json()
     assert r.json()["from_ts"] == "2026-03-25T00:00:00Z"
+
+    from inalpha_shared.db import get_conn
+
+    from inalpha_data.storage.bars import count_bars
+
+    async def _count() -> tuple[int, int]:
+        async with get_conn() as conn:
+            canonical = await count_bars(conn, "baostock", "sh.600518", "5m")
+            legacy = await count_bars(conn, "akshare", symbol, "5m")
+            return canonical, legacy
+
+    import asyncio
+
+    canonical_count, legacy_count = asyncio.run(_count())
+    assert canonical_count > 0
+    assert legacy_count == 0
 
 
 # ─── 增量 backfill：已缓存则从 max(ts) 续拉，不从 from_ts 全量重拉 ──────────
