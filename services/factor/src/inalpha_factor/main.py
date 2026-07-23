@@ -23,7 +23,6 @@ from inalpha_shared.db import close_pool, init_pool
 
 from . import __version__, custom_registry
 from .api import (
-    backtest_score,
     candidates,
     catalog,
     compute,
@@ -96,5 +95,4 @@ app.include_router(score.router)
 app.include_router(snapshot.router)
 app.include_router(panel.router)
 app.include_router(custom.router)
-app.include_router(backtest_score.router)
 app.include_router(candidates.router)

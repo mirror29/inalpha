@@ -161,35 +161,6 @@ export type ProposeFactorResult = {
   status: string;
 };
 
-export type BacktestScoreResult = {
-  venue: string;
-  symbol: string;
-  timeframe: string;
-  as_of: string;
-  horizon_bars: number;
-  bars_used: number;
-  available: boolean;
-  reason: string | null;
-  expression: string;
-  factor: FactorEffectiveness | null;
-  ic_pvalue: number | null;
-  top_correlated: { factor_id: string; corr: number }[];
-  max_corr: number | null;
-  is_likely_redundant: boolean;
-  backtest: {
-    oos_sharpe: number | null;
-    oos_sharpe_p5: number | null;
-    oos_sharpe_p95: number | null;
-    oos_max_drawdown_pct: number | null;
-    oos_win_rate: number | null;
-    oos_return_pct: number | null;
-    baseline_sharpe: number | null;
-    dsr: number | null;
-    n_paths: number;
-    splitter_used: string;
-  } | null;
-};
-
 export class FactorClient {
   private readonly http: HttpClient;
 
@@ -231,35 +202,5 @@ export class FactorClient {
 
   async listCandidates(params: Record<string, unknown> = {}): Promise<FactorCandidateRecord[]> {
     return await this.http.get<FactorCandidateRecord[]>("/candidates", params as Record<string, string | number | boolean | undefined>);
-  }
-
-  async backtestScore(params: {
-    expression: string;
-    name?: string;
-    venue: string;
-    symbol: string;
-    timeframe: string;
-    asOf?: string;
-    lookbackBars?: number;
-    horizonBars?: number;
-    initialCash?: number;
-    feeRate?: number;
-    cvSplitter?: string;
-    cvNFolds?: number;
-  }): Promise<BacktestScoreResult> {
-    return await this.http.post<BacktestScoreResult>("/backtest/score", {
-      expression: params.expression,
-      name: params.name,
-      venue: params.venue,
-      symbol: params.symbol,
-      timeframe: params.timeframe,
-      as_of: params.asOf,
-      lookback_bars: params.lookbackBars,
-      horizon_bars: params.horizonBars,
-      initial_cash: params.initialCash,
-      fee_rate: params.feeRate,
-      cv_splitter: params.cvSplitter,
-      cv_n_folds: params.cvNFolds,
-    });
   }
 }

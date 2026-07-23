@@ -46,7 +46,7 @@ describe("factor.evaluate_candidate", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
-        // 只捕获 /custom/score 的请求体（P0 回测也会发请求，别覆盖掉 customScore 的记录）
+        // 只捕获 /custom/score 的请求体。
         if (url.includes("/custom/score")) {
           capturedUrl = url;
           capturedBody = (init?.body as string) ?? "";
@@ -91,6 +91,42 @@ describe("factor.evaluate_candidate", () => {
     expect(body.lookbackBars).toBe(720);
     expect(body.horizonBars).toBe(5);
     expect((result as { ic_pvalue: number }).ic_pvalue).toBe(0.03);
+  });
+  it("does not call the retired P0 backtest endpoint or return its result", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return new Response(
+          JSON.stringify({
+            venue: "binance",
+            symbol: "BTC/USDT",
+            timeframe: "1h",
+            as_of: "2026-06-11T00:00:00Z",
+            horizon_bars: 5,
+            bars_used: 720,
+            available: true,
+            reason: null,
+            expression: "Mean($close, 20)",
+            factor: null,
+            ic_pvalue: null,
+            top_correlated: [],
+            max_corr: null,
+            is_likely_redundant: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+
+    const result = await factorEvaluateCandidateTool.execute!(
+      { expression: "Mean($close, 20)", venue: "binance", symbol: "BTC/USDT" } as never,
+      ctx(),
+    );
+
+    expect(urls).toEqual(["http://factor-mock.test/custom/score"]);
+    expect(result).not.toHaveProperty("backtest");
   });
 });
 

@@ -22,6 +22,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run check-consistency.sh
         run: bash scripts/check-consistency.sh
+      - name: Validate self-host Compose
+        run: |
+          cp infra/.env.selfhost.example infra/.env.selfhost
+          for key in POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET LLM_CONFIG_ENCRYPTION_KEY; do
+            sed -i "s/^${key}=.*/${key}=ci-test-secret/" infra/.env.selfhost
+          done
+          ENV_FILE=.env.selfhost docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.selfhost.yml --env-file infra/.env.selfhost config --quiet
+          rm infra/.env.selfhost
 
   orchestration-typecheck:
     name: orchestration · typecheck + test

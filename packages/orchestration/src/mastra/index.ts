@@ -16,6 +16,7 @@ import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 
 import { resolveMastraDbDir, resolveOrchestrationRoot } from "./paths.js";
+import { identityMiddleware } from "./identity.js";
 
 // dev 启动时显式加载 package 根 .env。注意不能按 cwd 解析：mastra dev 的 server
 // 子进程 cwd 是 src/mastra/public/（此前靠 CLI 父进程 env 继承碰巧生效）。
@@ -31,7 +32,6 @@ if (existsSync(rootEnvPath)) {
 
 import { Mastra } from "@mastra/core/mastra";
 import { LibSQLStore } from "@mastra/libsql";
-import type { MiddlewareHandler } from "hono";
 import { PinoLogger } from "@mastra/loggers";
 import {
   ConsoleExporter,
@@ -40,10 +40,7 @@ import {
   SamplingStrategyType,
 } from "@mastra/observability";
 
-import { verifyToken } from "../auth.js";
 import { getSettings } from "../config.js";
-import { AUTH_SUB_KEY } from "../hooks/with-hooks.js";
-import { userLLMStore, type UserLLMConfig } from "./llm/provider.js";
 import { divinationApiRoutes } from "../divination/api.js";
 import { closePool as closeDivinationPool } from "../divination/repo.js";
 import { permissionsApiRoutes } from "../permissions/api.js";
@@ -95,85 +92,6 @@ const observability = new Observability({
  * - 多租户：dashboard 给每用户发各自 JWT → 自动按用户隔离，无需再改 askCache。
  * - 无 / 非法 / 过期 token：不注入，沿用既有 fallback，绝不阻断请求（审批门有后端硬校验兜底）。
  */
-/** 进程内仅 warn 一次 requestContext 缺失 / Bearer 签名失败（避免每请求刷屏），见 identityMiddleware。 */
-let _warnedNoRequestContext = false;
-let _warnedAuthSignature = false;
-
-const identityMiddleware: MiddlewareHandler = async (c, next) => {
-  // 1. 多租户 LLM 配置：从 X-LLM-Config header 解析用户 API key，注入 ALS。
-  //    后续 agent model（buildUserAwareModel）从 ALS 读取 → 按用户 key 调用 LLM。
-  let userConfig: UserLLMConfig | undefined;
-  try {
-    const raw = c.req.header("X-LLM-Config");
-    console.log("[identity-mw] X-LLM-Config header:", raw ? `${raw.slice(0, 50)}...` : "(empty)");
-    if (raw && raw.trim()) {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      if (
-        typeof parsed.provider === "string" &&
-        typeof parsed.api_key === "string" &&
-        parsed.api_key.trim() !== ""
-      ) {
-        userConfig = {
-          id: typeof parsed.id === "string" ? parsed.id : "req",
-          provider: parsed.provider as UserLLMConfig["provider"],
-          model: typeof parsed.model === "string" ? parsed.model : undefined,
-          api_key: parsed.api_key,
-          custom_base_url: typeof parsed.custom_base_url === "string" ? parsed.custom_base_url : undefined,
-          custom_provider_name: typeof parsed.custom_provider_name === "string" ? parsed.custom_provider_name : undefined,
-          label: typeof parsed.label === "string" ? parsed.label : undefined,
-        };
-        console.log("[identity-mw] Parsed userConfig:", { id: userConfig.id, provider: userConfig.provider, model: userConfig.model });
-      }
-    }
-  } catch {
-    // 解析失败静默降级到系统 LLM
-  }
-
-  // 2. JWT 身份注入
-  try {
-    const authz = c.req.header("Authorization");
-    const token = authz?.startsWith("Bearer ") ? authz.slice(7).trim() : undefined;
-    if (token) {
-      const payload = await verifyToken(token);
-      const sub = typeof payload.sub === "string" && payload.sub ? payload.sub : undefined;
-      if (sub) {
-        const rc = c.get("requestContext") as { set?: (k: string, v: unknown) => void } | undefined;
-        if (typeof rc?.set === "function") {
-          rc.set(AUTH_SUB_KEY, sub);
-        } else if (!_warnedNoRequestContext) {
-          // 防御性可观测：rc 缺失则已验证的 sub 被丢、askCache 静默落回 __global__、#91 隔离
-          // 悄然复现。Mastra 升级若改了中间件初始化顺序最可能触发——进程内 warn 一次即够定位。
-          _warnedNoRequestContext = true;
-          console.warn(
-            "[identity-mw] requestContext 不可用（无 .set）——authSub 未注入，askCache 落回 " +
-              "__global__；Mastra 升级后请复查中间件与 requestContext 初始化顺序（#91 隔离失效）。",
-          );
-        }
-      }
-    }
-  } catch (err) {
-    // 过期 / 格式错 token 是正常用户行为（高频）→ 静默沿用 fallback，不阻断、不刷屏。
-    // **只对签名验证失败**（ERR_JWS_SIGNATURE_VERIFICATION_FAILED）进程内 warn 一次：受信
-    // dashboard→mastra 链路下签名失败基本=JWT_SECRET 配错，若系统性配错则每请求都触发、
-    // 第一笔即告警，#91 隔离静默失效可见。把告警配额留给"配错"信号、不被高频过期 token
-    // 提前耗掉（CR #96 round3：旧 _warnedAuthFailure 会被过期 token 先消耗）。
-    const code = (err as { code?: unknown } | null)?.code;
-    if (code === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED" && !_warnedAuthSignature) {
-      _warnedAuthSignature = true;
-      console.warn(
-        "[identity-mw] Bearer 签名验证失败（多半 JWT_SECRET 配错）——authSub 未注入、" +
-          "askCache 落回 __global__、多租户 #91 隔离静默失效，请排查 JWT_SECRET。",
-      );
-    }
-  }
-  // 3. 整个请求在 userLLMStore 上下文中执行 → agent model 可读取用户 LLM 配置
-  if (userConfig) {
-    await userLLMStore.run(userConfig, next);
-  } else {
-    await next();
-  }
-};
-
 export const mastra = new Mastra({
   storage: observabilityStore,
   // D-8a'：只剩 orchestrator 一个 agent；trader/risk subagent 已废弃

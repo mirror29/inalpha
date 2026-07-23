@@ -17,6 +17,7 @@ import {
   dataTools,
 } from "./data.js";
 import {
+  paperAssessWindowConsistencyTool,
   paperCheckSensitivityTool,
   paperComposeStrategyTool,
   paperCvBacktestTool,
@@ -128,6 +129,7 @@ export {
   factorTimingTool,
   getTradePlanTool,
   paperAuthorStrategyTool,
+  paperAssessWindowConsistencyTool,
   paperCheckSensitivityTool,
   paperComposeStrategyTool,
   paperCvBacktestTool,
@@ -255,6 +257,7 @@ export const orchestratorToolList = [
   paperListStrategiesTool,
   // ADR-0051：策略原型库——写策略前按因子 kind 取骨架当起点
   paperListArchetypesTool,
+  paperAssessWindowConsistencyTool,
   paperRunBacktestTool,
   // D-12 · 参数邻域敏感性（promote 前必跑，cliff = 过拟合信号）
   paperCheckSensitivityTool,

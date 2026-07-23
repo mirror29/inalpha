@@ -5,7 +5,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 import { resolveRequestToken } from "../auth.js";
-import { PaperClient } from "../clients/paper.js";
+import { PaperClient, type ValidationBlock } from "../clients/paper.js";
 import { getSettings } from "../config.js";
 
 // D-9 multi-market：与 tools/data.ts 保持一致——5 种 venue 全覆盖。
@@ -137,6 +137,111 @@ export const paperListArchetypesTool = createTool({
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getClient(tc);
     return await client.listArchetypes(input.factorKinds);
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────
+// paper.assess_window_consistency
+// ────────────────────────────────────────────────────────────────────
+
+type WindowConsistencyStatus =
+  | "insufficient_data"
+  | "invalid_baseline"
+  | "decaying"
+  | "stable";
+
+function isFiniteNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function assessWindowConsistency(validation: ValidationBlock | null | undefined): WindowConsistencyStatus {
+  if (
+    !validation ||
+    validation.flags.includes("insufficient_sample") ||
+    validation.flags.includes("sharpe_undefined") ||
+    !isFiniteNumber(validation.train.sharpe) ||
+    !isFiniteNumber(validation.holdout.sharpe)
+  ) {
+    return "insufficient_data";
+  }
+  if (validation.flags.includes("train_sharpe_nonpositive") || validation.train.sharpe <= 0) {
+    return "invalid_baseline";
+  }
+  if (!isFiniteNumber(validation.decay_ratio)) {
+    return "insufficient_data";
+  }
+  if (validation.decay_ratio < 0.5 || validation.holdout.sharpe < 0) {
+    return "decaying";
+  }
+  return "stable";
+}
+
+export const paperAssessWindowConsistencyTool = createTool({
+  id: "paper.assess_window_consistency",
+  description: `
+    对固定的 180 天回测窗口做一致性检查，输出数据是否不足、基线是否有效、是否衰减或稳定。
+
+    何时用：
+    - 首次验证固定黄金路径的回测证据
+    - 需要明确说明 train/holdout 窗口内一致性，而非声称盲 OOS
+
+    何时不用：
+    - 想自定义任意回测区间或参数探索 → paper.run_backtest
+    - 需要 purged CV、CPCV 或 DSR → paper.cv_backtest
+
+    坑：
+    - 这是 70/30 的 window_consistency，不是盲 OOS
+    - cv 固定 disabled；CI 跨 0仅是 evidence，不改变状态
+    - run_id 缺失代表结果没有持久化，直接失败，不能作为可追溯证据
+  `.trim(),
+  inputSchema: z.object({
+    strategyId: z.string().default("sma_cross").describe("已注册策略；黄金路径默认 sma_cross"),
+    params: z.record(z.string(), z.unknown()).default({}).describe("策略参数"),
+    asOf: z.string().datetime({ offset: true }).optional().describe("窗口结束；缺省为当前时刻"),
+  }),
+  execute: async (inputData, ctx) => {
+    const tc = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getBacktestClient(tc);
+    const toTs = inputData.asOf ?? new Date().toISOString();
+    const fromTs = new Date(new Date(toTs).getTime() - 180 * 24 * 3600 * 1000).toISOString();
+    const report = await client.runBacktest({
+      strategyId: inputData.strategyId,
+      params: inputData.params,
+      venue: "binance",
+      symbol: "BTC/USDT",
+      timeframe: "1h",
+      fromTs,
+      toTs,
+      initialCash: 10_000,
+      feeRate: 0.001,
+      tradingMode: "spot",
+    });
+    if (!report.run_id) {
+      throw new Error("paper.assess_window_consistency: backtest run was not persisted");
+    }
+    const validation = report.validation ?? null;
+    return {
+      status: assessWindowConsistency(validation),
+      evidence: {
+        trainSharpe: validation?.train.sharpe ?? null,
+        holdoutSharpe: validation?.holdout.sharpe ?? null,
+        decayRatio: validation?.decay_ratio ?? null,
+        holdoutSharpeCiIncludesZero: validation?.holdout_sharpe_ci_includes_zero ?? null,
+        flags: validation?.flags ?? [],
+      },
+      rawValidation: validation,
+      backtestRunId: report.run_id,
+      venue: report.venue,
+      symbol: report.symbol,
+      timeframe: report.timeframe,
+      periodStart: report.period_start,
+      periodEnd: report.period_end,
+      dataAsOf: report.period_end,
+      feeRate: 0.001,
+      totalFees: report.total_fees,
+      validationKind: "window_consistency" as const,
+      cv: "disabled" as const,
+    };
   },
 });
 
@@ -1046,6 +1151,7 @@ export const paperListStrategyRunDecisionsTool = createTool({
 
 export const paperTools = [
   paperListStrategiesTool,
+  paperAssessWindowConsistencyTool,
   paperRunBacktestTool,
   paperCheckSensitivityTool,
   paperCvBacktestTool,

@@ -14,6 +14,7 @@ import {
   factorPanelScoreTool,
   factorScoreTool,
   factorTimingTool,
+  paperAssessWindowConsistencyTool,
   paperListStrategiesTool,
   paperListStrategyRunDecisionsTool,
   paperListStrategyRunsTool,
@@ -252,6 +253,90 @@ describe("paper.list_strategies", () => {
     const result = await paperListStrategiesTool.execute!({} as never, ctx());
 
     expect((result as { strategies: string[] }).strategies).toContain("sma_cross");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// paper.assess_window_consistency
+// ────────────────────────────────────────────────────────────────────
+
+function backtestReport(validation: unknown, runId = "550e8400-e29b-41d4-a716-446655440000") {
+  return {
+    run_id: runId,
+    venue: "binance",
+    symbol: "BTC/USDT",
+    timeframe: "1h",
+    period_start: "2026-01-01T00:00:00Z",
+    period_end: "2026-06-30T00:00:00Z",
+    total_fees: 12.5,
+    validation,
+  };
+}
+
+describe("paper.assess_window_consistency", () => {
+  it.each([
+    ["insufficient_data", null],
+    ["insufficient_data", { train: { sharpe: null }, holdout: { sharpe: 1 }, decay_ratio: null, holdout_sharpe_ci_includes_zero: null, flags: ["sharpe_undefined"] }],
+    ["insufficient_data", { train: { sharpe: 2 }, holdout: { sharpe: 1 }, decay_ratio: null, holdout_sharpe_ci_includes_zero: null, flags: [] }],
+    ["invalid_baseline", { train: { sharpe: 0 }, holdout: { sharpe: 1 }, decay_ratio: null, holdout_sharpe_ci_includes_zero: false, flags: ["train_sharpe_nonpositive"] }],
+    ["decaying", { train: { sharpe: 2 }, holdout: { sharpe: 0.9 }, decay_ratio: 0.45, holdout_sharpe_ci_includes_zero: false, flags: [] }],
+    ["stable", { train: { sharpe: 2 }, holdout: { sharpe: 1.2 }, decay_ratio: 0.6, holdout_sharpe_ci_includes_zero: true, flags: [] }],
+  ])("maps validation to %s", async (status, validation) => {
+    mockFetch(async () =>
+      new Response(JSON.stringify(backtestReport(validation)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await paperAssessWindowConsistencyTool.execute!(
+      { asOf: "2026-06-30T00:00:00Z" } as never,
+      ctx(),
+    );
+
+    expect((result as { status: string }).status).toBe(status);
+    expect((result as { validationKind: string }).validationKind).toBe("window_consistency");
+    expect((result as { cv: string }).cv).toBe("disabled");
+  });
+
+  it("uses the fixed 180-day Binance spot contract", async () => {
+    let body = "";
+    mockFetch(async (_url, init) => {
+      body = String(init?.body);
+      return new Response(JSON.stringify(backtestReport(null)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    await paperAssessWindowConsistencyTool.execute!(
+      { asOf: "2026-06-30T00:00:00Z" } as never,
+      ctx(),
+    );
+
+    expect(JSON.parse(body)).toMatchObject({
+      strategy_id: "sma_cross",
+      venue: "binance",
+      symbol: "BTC/USDT",
+      timeframe: "1h",
+      trading_mode: "spot",
+      fee_rate: 0.001,
+      from_ts: "2026-01-01T00:00:00.000Z",
+      to_ts: "2026-06-30T00:00:00Z",
+    });
+  });
+
+  it("fails when paper did not persist the run", async () => {
+    mockFetch(async () =>
+      new Response(JSON.stringify(backtestReport(null, null as never)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(
+      paperAssessWindowConsistencyTool.execute!({} as never, ctx()),
+    ).rejects.toThrow("backtest run was not persisted");
   });
 });
 

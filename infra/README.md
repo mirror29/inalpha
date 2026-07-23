@@ -2,7 +2,19 @@
 
 容器与数据库的基础设施。
 
-## 起服务
+## Docker 自托管全栈
+
+完整自托管入口在仓库根目录运行，不使用本目录的开发数据库 Compose：
+
+```bash
+bash scripts/selfhost.sh init
+bash scripts/selfhost.sh up
+bash scripts/selfhost.sh create-user --email you@example.com
+```
+
+它启动 PostgreSQL、Redis、迁移、四个 Python service、Mastra 与 Dashboard。Dashboard 仅绑定宿主机 `127.0.0.1:3001`；若要远程访问，应由部署者的 Caddy、Nginx 或 Tunnel 提供 HTTPS，并且只能代理 Dashboard。详细的用户级 LLM API key 配置与安全边界见根目录 README。
+
+## 开发数据库与缓存
 
 ```bash
 cd infra

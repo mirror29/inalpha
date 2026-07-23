@@ -53,6 +53,7 @@ Cargo.lock
 .env.local
 .env.*.local
 .env.prod
+infra/.env.selfhost
 *.pem
 *.key
 

@@ -22,7 +22,8 @@ cd "$ROOT"
 
 COMPOSE_FILE="infra/docker-compose.prod.yml"
 ENV_FILE="infra/.env.prod"
-DC=(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE")
+export ENV_FILE=.env.prod
+DC=(docker compose --profile tunnel -f "$COMPOSE_FILE" --env-file "$ENV_FILE")
 
 do_git_pull=1
 mode="image" # image | build
@@ -40,6 +41,11 @@ done
   echo "缺 $ENV_FILE —— 从 infra/.env.prod.example 复制并填值" >&2
   exit 1
 }
+
+if ! grep -qE '^CLOUDFLARE_TUNNEL_TOKEN=.+$' "$ENV_FILE"; then
+  echo "缺 CLOUDFLARE_TUNNEL_TOKEN ——生产 tunnel profile 无法启动" >&2
+  exit 1
+fi
 
 if [ "$do_git_pull" -eq 1 ]; then
   echo "==> git pull --ff-only"

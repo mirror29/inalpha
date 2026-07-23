@@ -273,6 +273,41 @@ Inalpha 把*调度*和*算力*分开：agent runtime 负责扇出网格、聚合
 
 ## Quick Start
 
+### Docker 自托管（推荐）
+
+这是个人电脑或个人服务器的完整 Docker 启动路径：本地构建 PostgreSQL/TimescaleDB、Redis、迁移、data、paper、research、factor、Mastra 和操作者控制台。
+
+前置条件：Docker Engine（含 Compose v2）、Git 与 OpenSSL。克隆仓库后，初始化仅保留在本机的环境文件，再启动全栈：
+
+```bash
+git clone https://github.com/mirror29/inalpha.git
+cd inalpha
+bash scripts/selfhost.sh init
+bash scripts/selfhost.sh up
+```
+
+控制台只绑定在宿主机 <http://127.0.0.1:3001>。等待 `bash scripts/selfhost.sh status` 显示应用服务 healthy，再创建第一个登录账号；命令会隐藏密码输入，不会把密码写进 shell history：
+
+```bash
+bash scripts/selfhost.sh create-user --email you@example.com
+```
+
+在 <http://127.0.0.1:3001> 登录，打开 **LLM Settings**，填写你的 provider、model 与个人 API key。每位已认证用户各自提供 key，控制台用 `LLM_CONFIG_ENCRYPTION_KEY` 加密后写入数据库。不要把 provider API key 填进 `infra/.env.selfhost`：认证生产模式刻意不支持共享系统 key fallback。
+
+常用操作：
+
+```bash
+bash scripts/selfhost.sh logs [service]
+bash scripts/selfhost.sh status
+bash scripts/selfhost.sh down
+```
+
+#### 公网访问
+
+self-host Compose 故意只暴露 `127.0.0.1:3001`。需要远程访问时，用你自己的 Caddy、Nginx 或 Cloudflare Tunnel 为 Dashboard 做 TLS 终结，并且只代理该地址。不要公开 PostgreSQL、Redis、Mastra 或任何 Python service 端口；登录页和 API key 配置页不能通过裸 HTTP 暴露。
+
+### 本地开发
+
 ### 1 · 安装依赖
 
 ```bash
