@@ -395,19 +395,6 @@ export const factorEvaluateCandidateTool = createTool({
       horizonBars: inputData.horizonBars,
     });
 
-    // P0: 因子评估后自动跑 WalkForward 回测闭环
-    const btResult = await client.backtestScore({
-      expression: inputData.expression,
-      name: inputData.name,
-      venue: inputData.venue,
-      symbol: inputData.symbol ?? "",
-      timeframe: inputData.timeframe ?? "1h",
-      asOf: inputData.asOf,
-      lookbackBars: inputData.lookbackBars,
-      horizonBars: inputData.horizonBars,
-    }).catch(() => null);
-
-    // P3: 判断演化潜力——IC 有潜力但未过门限时标注
     const evolutionPotential: {
       suggest: boolean;
       reason: string | null;
@@ -415,8 +402,6 @@ export const factorEvaluateCandidateTool = createTool({
     if (result.available && result.factor && result.ic_pvalue != null) {
       const ic = Math.abs(result.factor.rank_ic);
       const pval = result.ic_pvalue;
-      // 条件：IC 在 0.02-0.06 之间（有潜力但不够强），且 p < 0.2（不是纯噪声），
-      // 且不是 redundant（换了也白换）
       if (ic >= 0.02 && ic < 0.06 && pval < 0.2 && !result.is_likely_redundant) {
         evolutionPotential.suggest = true;
         evolutionPotential.reason =
@@ -427,7 +412,6 @@ export const factorEvaluateCandidateTool = createTool({
 
     return {
       ...result,
-      backtest: btResult?.backtest ?? null,
       evolution_potential: evolutionPotential,
     };
   },

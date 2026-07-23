@@ -41,6 +41,11 @@ def test_health(client: TestClient) -> None:
     assert body["adapters"]["qlib_alpha158"] is True
 
 
+def test_retired_backtest_score_route_is_unreachable(client: TestClient) -> None:
+    response = client.post("/backtest/score", json={})
+    assert response.status_code == 404
+
+
 def test_catalog(client: TestClient) -> None:
     r = client.get("/catalog")
     assert r.status_code == 200
