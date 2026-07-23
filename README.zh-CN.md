@@ -184,7 +184,7 @@ Inalpha 把*调度*和*算力*分开：agent runtime 负责扇出网格、聚合
 一次深度研究不只给你一个"标准答案"。除了技术面、基本面、情绪面的常规 analyst，你还能叫上一支"大师团"——巴菲特（价值 / 护城河）、林奇（GARP 成长）、伍德（颠覆创新）、伯里（逆向 / 泡沫）、德鲁肯米勒（宏观趋势）、马克斯（周期 / 风险）：各按自己的风格给观点，天然形成对立视角，再汇进综合判断。
 
 - **按需启用，成本可控。** 不点名时普通研究成本不变；点了哪几位大师，才多跑那几次。
-- **观点要落到数据。** 大师视角接技术面 / 基本面 / web 情报，`as_of` 是真现在，不许拿过时预测当现在。财报按 point-in-time 读取，依报告期 + 发布滞后过滤，回测看不到尚未公开的数字（akshare 已生效；yfinance v1 尚未 PIT，已就地标注）。
+- **观点要落到数据。** 大师视角接技术面 / 基本面 / web 情报，`as_of` 是真现在，不许拿过时预测当现在。财报按 point-in-time 读取，依实际披露日期过滤，回测看不到尚未公开的数字（Baostock 已生效；yfinance v1 尚未 PIT，已就地标注）。
 - **bull / bear / risk 结构化辩论——已上线。** 在并行 analyst 之外，立场对抗的多头与空头研究员多轮交锋，风险官同时压测双方——只在 analyst 真出现分歧时才触发，论点不再变化时软早停，完整决策链路（为什么辩、为什么停、如何综合）全程落盘可复盘。
 
 ### 6. Skills · 吸收外部投研方法论
@@ -232,7 +232,7 @@ Inalpha 把*调度*和*算力*分开：agent runtime 负责扇出网格、聚合
 | ✅ 已上线 | Bull / Bear 研究员辩论 | D-9 | `services/research` 立场对抗研究员 |
 | ✅ 已上线 | Scheduler / cron agent 模式 | D-9 | `scheduler_jobs` + advisory lock + `/api/scheduler/*` 管理面 |
 | ✅ 已上线 | RiskGuard 账户级隔离 | D-9.1a | `RiskGuardFactory` 去除跨账户状态串联 |
-| ✅ 已上线 | 多市场数据源 — web 搜索 + 财报基本面 | D-10 | DDGS 零 key web search · akshare（A股/港股）+ yfinance（全球）基本面 · analyst 接入 + 兜底 · lookbackDays 按市场分化 |
+| ✅ 已上线 | 多市场数据源 — web 搜索 + 财报基本面 | D-10 | DDGS 零 key web search · `baostock` 是 A 股逻辑 venue：腾讯 HTTPS 行情/最新价 + Baostock 基本面/日历/成分；yfinance 覆盖全球（含港股）· analyst 接入 + 兜底 · lookbackDays 按市场分化 |
 | ✅ 已上线 | 风控引擎 — 5 条规则全在 HTTP 路径激活 | D-9 收口 | `closed_trades` 由 HTTP 订单流写入；`RoutingCalendar` 覆盖美股 + crypto；trade-based 规则全在真实数据上触发 |
 | ✅ 已上线 | `askUserChoice` — `ask` 权限路径 | D-11（issue #2） | pending-permission 流程把 `ask` 状态从 workaround 救回（已收口） |
 | ✅ 已上线 | `permissions.yaml` 配置化 | D-11（issue #4） | `config/permissions.default.yaml` + `yaml_loader.ts` 替代 `defaults.ts` 硬编码 |
@@ -247,7 +247,7 @@ Inalpha 把*调度*和*算力*分开：agent runtime 负责扇出网格、聚合
 | ✅ 已上线 | 因子发现 — L1 | D-12 | 受限 qlib 风格 DSL（零 eval/exec）· `factor_candidates` 候选池 · 多重检验校正 + null IC 基准 · discovery workflow → propose；register 仅 dashboard 人工 |
 | ✅ 已上线 | 横截面因子打分 | D-12 | `factor.panel_score` · `POST /panel/score` · 横截面 Rank IC（每期对全池按因子排序 vs 跨标的前瞻收益）· Alpha101 a1/a3 原生 · 与单标的择时口径正交 |
 | ✅ 已上线 | 时序交叉验证 — 防过拟合 | D-12 | WalkForward / PurgedKFold / Combinatorial Purged CV + Deflated Sharpe · `POST /backtest/cv` · test 段始终含最新 bar · 样本不足自动回落 walk-forward |
-| ✅ 已上线 | 财报 point-in-time | D-12 | akshare 财报按报告期 + 发布滞后过滤 · `GET /fundamentals?as_of=` · 防前视（yfinance v1 尚未 PIT，已显式标注） |
+| ✅ 已上线 | 财报 point-in-time | D-12 | Baostock 财报按实际披露日期过滤 · `GET /fundamentals?as_of=` · 防前视（yfinance v1 尚未 PIT，已显式标注） |
 | 🗓️ 已规划 | 策略进化 — E2 | E2 | 多代演化 + MAP-Elites + Island Model + `unified-diff` 变异（E1 单代闭环已在 D-9 上线） |
 | 🗓️ 已规划 | 因子发现 — L2 / L3 | L2 / L3 | 多 agent 因子小组（L2）+ 每周自动扫描（L3），建立在已上线的 L1 DSL pipeline 之上 |
 | 🗓️ 已规划 | 因子衰减自动处置 | 待定 | 反思驱动回测 + 衰减因子自动剔除——当前衰减巡检只告警、绝不替你动仓 |

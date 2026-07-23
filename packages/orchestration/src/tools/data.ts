@@ -266,7 +266,7 @@ export const dataGetTickerTool = createTool({
     取 venue/symbol 的"最新价"（单值，不是 K 线）。
 
     - fresh=true（**默认**）：直接调外部市场实时报价，绕过 DB 缓存。
-      **支持 venue**：binance / yfinance / alpaca；baostock / fred 不支持（返
+      **支持 venue**：binance / yfinance / alpaca / baostock；fred 不支持（返
       FRESH_NOT_SUPPORTED_FOR_VENUE，hint 提示切 fresh=false）。
       网络抖动 ~200-800ms；不要高频循环调（rate-limit）。
     - fresh=false：从 DB 拿最新 1m → fallback 1h，任意 venue 都支持。
@@ -281,8 +281,8 @@ export const dataGetTickerTool = createTool({
     何时不用：
     - 要历史走势 / 做技术分析 → 用 data.get_bars
     - 要 N 根 K 线 → 用 data.get_bars
-    - A 股 / FRED 想要"实时"价 → baostock/fred 没这能力，改 fresh=false 走 DB
-      cache（先 backfill_bars 灌一遍最新数据再调）；港股走 yfinance 有实时 ticker
+    - A 股现价可用 baostock + fresh=true；FRED 没有盘中报价能力，改用 data.get_bars
+      或显式 fresh=false 读 DB cache。港股走 yfinance
 
     坑：
     - 默认 fresh=true！想要 DB cache 必须显式传 fresh:false
