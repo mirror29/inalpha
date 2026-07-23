@@ -20,7 +20,7 @@ async def test_get_fundamentals_threads_as_of() -> None:
     )
     async with DataClient("http://data-mock.test", "t") as data:
         await data.get_fundamentals(
-            venue="akshare",
+            venue="baostock",
             symbol="sh.600519",
             as_of=datetime(2020, 1, 1, tzinfo=UTC),
         )
@@ -34,5 +34,5 @@ async def test_get_fundamentals_omits_as_of_when_none() -> None:
         return_value=Response(200, json={"available": True})
     )
     async with DataClient("http://data-mock.test", "t") as data:
-        await data.get_fundamentals(venue="akshare", symbol="sh.600519")
+        await data.get_fundamentals(venue="baostock", symbol="sh.600519")
     assert "as_of" not in route.calls.last.request.url.params
