@@ -2,4 +2,8 @@ node_modules
 .mastra
 dist
 .turbo
+.env*
+*.pem
+*.key
+.git
 *.log

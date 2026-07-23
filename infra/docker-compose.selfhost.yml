@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: timescale/timescaledb:2.27.2-pg17
+  data:
+    build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: data}}
+  paper:
+    build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: paper}}
+  research:
+    build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: research}}
+  factor:
+    build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: factor}}
+  migrate:
+    build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: paper}}
+  mastra:
+    build: {context: ../packages/orchestration, dockerfile: ../../infra/docker/Dockerfile.mastra}
+  dashboard:
+    build: {context: ../apps/dashboard, dockerfile: ../../infra/docker/Dockerfile.dashboard}
+    ports: ["127.0.0.1:${DASHBOARD_PORT:-3001}:3001"]

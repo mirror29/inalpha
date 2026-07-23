@@ -275,6 +275,41 @@ Where each capability stands today. Live module inventory and the end-to-end dec
 
 ## Quick Start
 
+### Docker self-hosting (recommended)
+
+This is the supported Docker path for a personal server or local machine. It builds the complete stack locally: PostgreSQL/TimescaleDB, Redis, migrations, data, paper, research, factor, Mastra, and the Operator Console.
+
+Prerequisites: Docker Engine with Docker Compose v2, Git, and OpenSSL. Clone the repository, then initialize the local-only environment file and start the stack:
+
+```bash
+git clone https://github.com/mirror29/inalpha.git
+cd inalpha
+bash scripts/selfhost.sh init
+bash scripts/selfhost.sh up
+```
+
+The console is available only on the host at <http://127.0.0.1:3001>. Wait until `bash scripts/selfhost.sh status` shows the application services healthy, then create the first login account. The prompt reads the password without echoing it or placing it in shell history:
+
+```bash
+bash scripts/selfhost.sh create-user --email you@example.com
+```
+
+Sign in at <http://127.0.0.1:3001>, open **LLM Settings**, and add your provider, model, and personal API key. Every authenticated user supplies their own key; it is encrypted in the database with `LLM_CONFIG_ENCRYPTION_KEY`. Do not add provider API keys to `infra/.env.selfhost`: authenticated production mode deliberately has no shared system-key fallback.
+
+Useful operations:
+
+```bash
+bash scripts/selfhost.sh logs [service]
+bash scripts/selfhost.sh status
+bash scripts/selfhost.sh down
+```
+
+#### Public deployment
+
+The self-host Compose file intentionally exposes only `127.0.0.1:3001`. For remote access, place your own TLS-terminating Caddy, Nginx, or Cloudflare Tunnel in front of the Dashboard and proxy only that address. Never publish PostgreSQL, Redis, Mastra, or the Python service ports, and do not expose the login or API-key settings page over bare HTTP.
+
+### Local development
+
 ### 1 · Install dependencies
 
 ```bash

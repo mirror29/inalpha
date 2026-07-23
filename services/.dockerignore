@@ -1,0 +1,12 @@
+# Python service build contexts
+.env*
+*.pem
+*.key
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.py[cod]
+coverage/
+htmlcov/
+.git/

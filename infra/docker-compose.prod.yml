@@ -25,7 +25,7 @@ x-svc-common: &svc-common
       condition: service_healthy
     migrate:
       condition: service_completed_successfully
-  env_file: [../infra/.env.prod]
+  env_file: ["../infra/${ENV_FILE:-.env.prod}"]
 
 services:
   postgres:
@@ -75,7 +75,7 @@ services:
       args: { SERVICE: paper }   # 复用 paper 镜像（含 DB 依赖）；alembic 由 _shared/paper 提供
     container_name: inalpha-migrate
     restart: "no"
-    env_file: [../infra/.env.prod]
+    env_file: ["../infra/${ENV_FILE:-.env.prod}"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -153,7 +153,7 @@ services:
       dockerfile: ../../infra/docker/Dockerfile.mastra
     container_name: inalpha-mastra
     restart: unless-stopped
-    env_file: [../infra/.env.prod]
+    env_file: ["../infra/${ENV_FILE:-.env.prod}"]
     environment:
       NODE_ENV: production
       # 服务间走容器名互访
@@ -221,12 +221,13 @@ services:
 
   # 公网入口：Cloudflare Tunnel（无需在 VPS 开入站端口，TLS/防护走 CF）
   cloudflared:
+    profiles: ["tunnel"]
     image: cloudflare/cloudflared:2026.6.0
     container_name: inalpha-cloudflared
     restart: unless-stopped
     command: tunnel run
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?required}
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     # service_healthy:mastra 初始化完成前不开始对外转发(默认 service_started
     # 会让 Tunnel 在 mastra 还没就绪时把流量打到 502)
     depends_on:
