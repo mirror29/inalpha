@@ -10,7 +10,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Privacy Policy | Inalpha",
   description: "How the Inalpha website handles privacy, storage, and third parties.",
-  alternates: { canonical: "/privacy/" },
+  alternates: { canonical: "https://inalpha.dev/privacy/" },
 };
 
 export default function PrivacyPage() {

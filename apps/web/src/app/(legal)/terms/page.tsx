@@ -14,7 +14,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Terms of Service | Inalpha",
   description: "Terms, financial risk disclosure, and license information for Inalpha.",
-  alternates: { canonical: "/terms/" },
+  alternates: { canonical: "https://inalpha.dev/terms/" },
 };
 
 export default function TermsPage() {

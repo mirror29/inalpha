@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -19,16 +19,17 @@ function count(value, pattern) {
   return [...value.matchAll(pattern)].length;
 }
 
-test("exports complete homepage metadata and schema", async () => {
+test("exports localized homepage metadata, schema, and html language", async () => {
   const [english, chinese] = await Promise.all([
-    readOutput("en/index.html"),
+    readOutput("index.html"),
     readOutput("zh/index.html"),
   ]);
 
-  for (const [html, canonical] of [
-    [english, "https://inalpha.dev/"],
-    [chinese, "https://inalpha.dev/zh/"],
+  for (const [html, canonical, lang] of [
+    [english, "https://inalpha.dev/", "en"],
+    [chinese, "https://inalpha.dev/zh/", "zh"],
   ]) {
+    assert.match(html, new RegExp(`<html lang="${lang}"`));
     assert.match(html, new RegExp(`<link rel="canonical" href="${canonical}"/>`));
     assert.match(html, /hrefLang="en" href="https:\/\/inalpha\.dev\/"/);
     assert.match(html, /hrefLang="zh" href="https:\/\/inalpha\.dev\/zh\/"/);
@@ -39,22 +40,15 @@ test("exports complete homepage metadata and schema", async () => {
   }
 });
 
-test("keeps homepage schema off root, kit, and legal pages", async () => {
+test("keeps homepage schema off legal pages", async () => {
   const pages = await Promise.all([
-    readOutput("index.html"),
-    readOutput("en/kit/index.html"),
-    readOutput("zh/kit/index.html"),
     readOutput("privacy/index.html"),
     readOutput("terms/index.html"),
   ]);
 
   for (const page of pages) {
     assert.doesNotMatch(page, homepageSchema);
-  }
-  assert.match(pages[0], /<meta name="robots" content="noindex, nofollow"\/>/);
-  for (const kit of pages.slice(1, 3)) {
-    assert.match(kit, /<meta name="robots" content="noindex, nofollow"\/>/);
-    assert.doesNotMatch(kit, /<link rel="canonical"/);
+    assert.match(page, /<html lang="en"/);
   }
 });
 
@@ -95,8 +89,13 @@ test("exports complete legal metadata and discovery artifacts", async () => {
   assert.doesNotMatch(llms, /llms-full|\d+ stars/i);
 });
 
-test("keeps the current Cloudflare root rewrite for PR1", async () => {
+test("migrates old english URLs to the canonical root paths", async () => {
   const redirects = await readOutput("_redirects");
 
-  assert.match(redirects, /^\/\s+\/en\/\s+200$/m);
+  assert.match(redirects, /^\/en\/\s+\/\s+302$/m);
+  assert.doesNotMatch(redirects, /^\/en\/\*/m);
+  assert.doesNotMatch(redirects, /^\/\s+\/en\/\s+200$/m);
+  await assert.rejects(stat(new URL("en/index.html", output)));
+  await assert.rejects(stat(new URL("kit/index.html", output)));
+  await assert.rejects(stat(new URL("zh/kit/index.html", output)));
 });
