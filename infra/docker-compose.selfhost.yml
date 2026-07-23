@@ -1,18 +1,29 @@
+name: inalpha-selfhost
+
 services:
   postgres:
+    container_name: inalpha-selfhost-postgres
     image: timescale/timescaledb:2.27.2-pg17
+  redis:
+    container_name: inalpha-selfhost-redis
+  migrate:
+    container_name: inalpha-selfhost-migrate
   data:
+    container_name: inalpha-selfhost-data
     build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: data}}
   paper:
+    container_name: inalpha-selfhost-paper
     build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: paper}}
   research:
+    container_name: inalpha-selfhost-research
     build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: research}}
   factor:
+    container_name: inalpha-selfhost-factor
     build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: factor}}
-  migrate:
-    build: {context: ../services, dockerfile: ../infra/docker/Dockerfile.python, args: {SERVICE: paper}}
   mastra:
+    container_name: inalpha-selfhost-mastra
     build: {context: ../packages/orchestration, dockerfile: ../../infra/docker/Dockerfile.mastra}
   dashboard:
+    container_name: inalpha-selfhost-dashboard
     build: {context: ../apps/dashboard, dockerfile: ../../infra/docker/Dockerfile.dashboard}
     ports: ["127.0.0.1:${DASHBOARD_PORT:-3001}:3001"]

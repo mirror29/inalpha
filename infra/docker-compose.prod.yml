@@ -1,12 +1,13 @@
 name: inalpha-prod
 
-# Inalpha 生产部署（单机 / Hetzner VPS）—— 见 docs/miro/decisions/0042
+# Inalpha 生产部署（单机 / Hetzner VPS）
 #
-# 起：  docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build
-# 迁移：migrate 服务一次性跑 alembic upgrade head（profile=migrate 或随 up 自动先跑）
+# 起：  docker compose --profile tunnel -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build
+# 迁移：migrate 服务一次性跑 alembic upgrade head（随 up 自动先跑）
 # 停：  docker compose -f infra/docker-compose.prod.yml down
 #
-# 拓扑：postgres + redis + migrate(一次性) + data/paper/research/factor + mastra + cloudflared
+# 拓扑：postgres + redis + migrate(一次性) + data/paper/research/factor + mastra + dashboard；
+#      --profile tunnel 时另启 cloudflared。
 # 仅 cloudflared 对公网；其余服务走容器内网，按服务名互访。
 #
 # 镜像策略(见 0058):各服务同时声明 image: + build:。
