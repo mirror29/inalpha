@@ -591,8 +591,10 @@ def test_infer_asset_type_classifies_all_venues() -> None:
     assert infer_asset_type(venue="yfinance", symbol="AAPL") == "us_stock"
     assert infer_asset_type(venue="yfinance", symbol="SPY") == "us_stock"
     # A 股
+    assert infer_asset_type(venue="baostock", symbol="sh.600519") == "cn_stock"
+    assert infer_asset_type(venue="baostock", symbol="sz.000001") == "cn_stock"
+    # 兼容迁移前持久化的旧 venue
     assert infer_asset_type(venue="akshare", symbol="sh.600519") == "cn_stock"
-    assert infer_asset_type(venue="akshare", symbol="sz.000001") == "cn_stock"
     # 港股
     assert infer_asset_type(venue="akshare", symbol="hk.00700") == "hk_stock"
     # 日 / 英 / 德（akshare 归 global_stock）

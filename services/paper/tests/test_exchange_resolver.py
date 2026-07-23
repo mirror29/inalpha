@@ -9,9 +9,11 @@ from inalpha_paper.execution.risk_rules.exchange_resolver import resolve_calenda
 @pytest.mark.parametrize(
     ("venue", "symbol", "expected"),
     [
-        # akshare 前缀（sz 复用 XSHG）
+        # A股 canonical venue（sz 复用 XSHG）
+        ("baostock", "sh.600519", "XSHG"),
+        ("baostock", "sz.000001", "XSHG"),
+        # 迁移前持久化的 akshare 记录继续兼容
         ("akshare", "sh.600519", "XSHG"),
-        ("akshare", "sz.000001", "XSHG"),
         ("akshare", "hk.00700", "XHKG"),
         ("akshare", "jp.6758", "XTKS"),
         ("akshare", "uk.VOD", "XLON"),
