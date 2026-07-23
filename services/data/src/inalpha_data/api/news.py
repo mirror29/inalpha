@@ -14,7 +14,7 @@ from inalpha_shared.errors import ValidationError
 from ..connectors import yfinance_conn
 from ..connectors._base import get_connector_for_venue
 from ..schemas import NewsItem, NewsQuery, NewsResponse
-from ..venues import canonicalize_venue
+from ..venues import canonicalize_market_identity
 
 router = APIRouter(tags=["news"])
 
@@ -28,11 +28,11 @@ async def get_news(
 
     venue 支持 yfinance / baostock（其它返 422）；不支持 ticker 返空 list 而非错。
     """
-    effective_venue = canonicalize_venue(query.venue, query.symbol)
+    effective_venue, effective_symbol = canonicalize_market_identity(query.venue, query.symbol)
     if effective_venue == "yfinance":
         try:
             conn = yfinance_conn.get_connector()
-            raw = await conn.fetch_news(query.symbol, limit=query.limit)
+            raw = await conn.fetch_news(effective_symbol, limit=query.limit)
         except Exception:
             raw = []
     elif effective_venue == "baostock":
@@ -43,7 +43,7 @@ async def get_news(
                 code="NEWS_FETCH_NOT_SUPPORTED",
                 details={"venue": query.venue},
             )
-        raw = await conn.fetch_news(query.symbol, limit=query.limit)  # type: ignore[union-attr]
+        raw = await conn.fetch_news(effective_symbol, limit=query.limit)  # type: ignore[union-attr]
     else:
         raise ValidationError(
             f"news venue {query.venue!r} not supported",

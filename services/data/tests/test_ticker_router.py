@@ -2,12 +2,13 @@
 
 D-9 ``ticker.py`` 从硬编码 binance 改成按 ``TickerCapable`` Protocol 鸭子分发。本测试覆盖：
 
-- ``fetch_ticker`` 已实现的 venue（binance / yfinance / alpaca）走通 fresh=true 路径
-- 已注册但未实现 ``fetch_ticker`` 的 venue（akshare / fred）→ 422
+- ``fetch_ticker`` 已实现的 venue（binance / yfinance / alpaca / baostock）走通 fresh=true 路径
+- 已注册但未实现 ``fetch_ticker`` 的 venue（fred）→ 422
   FRESH_NOT_SUPPORTED_FOR_VENUE + hint 提示切 fresh=false
 - venue 未注册 → 422 + supported 列表（与 /backfill/bars 错误形态一致）
 - fresh=false 路径仍然支持任意 venue（走 DB cache，由 conftest 的 binance mock 覆盖原路径）
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -22,7 +23,10 @@ pytestmark = pytest.mark.integration
 
 
 class _TickerCapableFake:
-    """fake connector，实现 ``TickerCapable`` —— fetch_ticker 返固定 (now, 123.45)。"""
+    """fake connector，实现 ``TickerCapable`` 并记录 canonical symbol。"""
+
+    def __init__(self) -> None:
+        self.seen_symbols: list[str] = []
 
     async def fetch_bars(
         self,
@@ -34,6 +38,7 @@ class _TickerCapableFake:
         return []
 
     async def fetch_ticker(self, symbol: str) -> tuple[datetime, float]:
+        self.seen_symbols.append(symbol)
         return datetime.now(UTC), 123.45
 
     async def close(self) -> None:
@@ -43,7 +48,7 @@ class _TickerCapableFake:
 class _NoTickerFake:
     """fake connector，**只**实现 fetch_bars，不实现 fetch_ticker。
 
-    模拟 akshare / fred 这类不支持实时 ticker 的 venue。
+    模拟 fred 这类不支持实时 ticker 的 venue。
     """
 
     async def fetch_bars(
@@ -61,15 +66,14 @@ class _NoTickerFake:
 
 @pytest.fixture
 async def app_with_ticker_capabilities() -> AsyncIterator[Any]:
-    """覆盖 registry：binance/yfinance/alpaca 用 _TickerCapableFake；akshare/fred 用 _NoTickerFake。"""
+    """覆盖 registry：binance/yfinance/alpaca/baostock 可取 ticker；fred 不可。"""
     from inalpha_data.connectors import _base as _connectors_base
     from inalpha_data.main import app
 
     async with app.router.lifespan_context(app):
-        for v in ("binance", "yfinance", "alpaca"):
+        for v in ("binance", "yfinance", "alpaca", "baostock"):
             _connectors_base._REGISTRY[v] = _TickerCapableFake()
-        for v in ("akshare", "fred"):
-            _connectors_base._REGISTRY[v] = _NoTickerFake()
+        _connectors_base._REGISTRY["fred"] = _NoTickerFake()
         yield app
 
     app.dependency_overrides.clear()
@@ -89,6 +93,8 @@ def ticker_client(app_with_ticker_capabilities: Any) -> TestClient:
         ("binance", "BTC/USDT"),
         ("yfinance", "TSLA"),
         ("alpaca", "AAPL"),
+        ("baostock", "sh.600519"),
+        ("akshare", "600519.SH"),
     ],
 )
 def test_ticker_fresh_true_routes_via_capability(
@@ -97,10 +103,7 @@ def test_ticker_fresh_true_routes_via_capability(
     venue: str,
     symbol: str,
 ) -> None:
-    """3 个 TickerCapable venue × 各自 symbol → fresh=true 路径返 200 + 假价 + source 含 venue 名。
-
-    回归用户报"特斯拉现价拿不到"：yfinance 走 TickerCapable 分支，不再被硬编码挡。
-    """
+    """TickerCapable venue 和旧 A 股 alias 均返回外部报价。"""
     r = ticker_client.get(
         "/ticker",
         headers=auth_headers,
@@ -112,6 +115,12 @@ def test_ticker_fresh_true_routes_via_capability(
     assert body["symbol"] == symbol
     assert body["price"] == 123.45
     assert body["source"] == f"{venue}_ticker"
+    if venue == "akshare":
+        from inalpha_data.connectors import _base as _connectors_base
+
+        connector = _connectors_base._REGISTRY["baostock"]
+        assert isinstance(connector, _TickerCapableFake)
+        assert connector.seen_symbols[-1] == "sh.600519"
     # fake 返 now() → stale_seconds 应接近 0
     assert body["stale_seconds"] < 5
     assert body["is_stale"] is False
@@ -147,14 +156,38 @@ def test_ticker_fresh_true_marks_stale_when_quote_time_old(
     assert body["stale_seconds"] > 3 * 3600
 
 
+class _FailingTickerFake(_TickerCapableFake):
+    """模拟外部实时报价源故障。"""
+
+    async def fetch_ticker(self, symbol: str) -> tuple[datetime, float]:
+        raise RuntimeError("upstream timeout")
+
+
+def test_ticker_upstream_failure_returns_502(
+    app_with_ticker_capabilities: Any, auth_headers: dict[str, str]
+) -> None:
+    """外部实时报价失败应返回标准 TICKER_UNAVAILABLE。"""
+    from inalpha_data.connectors import _base as _connectors_base
+
+    _connectors_base._REGISTRY["baostock"] = _FailingTickerFake()
+    response = TestClient(app_with_ticker_capabilities).get(
+        "/ticker",
+        headers=auth_headers,
+        params={"venue": "baostock", "symbol": "sh.000001", "fresh": "true"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["code"] == "TICKER_UNAVAILABLE"
+
+
 # ─── 已注册但无 fetch_ticker 的 venue ───────────────────────────────
 
 
-@pytest.mark.parametrize("venue", ["akshare", "fred"])
+@pytest.mark.parametrize("venue", ["fred"])
 def test_ticker_fresh_true_returns_friendly_error_for_non_ticker_venue(
     ticker_client: TestClient, auth_headers: dict[str, str], venue: str
 ) -> None:
-    """akshare / fred connector 没 fetch_ticker → 422 FRESH_NOT_SUPPORTED_FOR_VENUE + hint。"""
+    """fred connector 没 fetch_ticker → 422 FRESH_NOT_SUPPORTED_FOR_VENUE + hint。"""
     r = ticker_client.get(
         "/ticker",
         headers=auth_headers,
@@ -184,11 +217,43 @@ def test_ticker_fresh_true_unknown_venue_lists_supported(
     assert body["code"] == "VALIDATION_ERROR"
     assert "bitfinex" in body["message"]
     supported = body["details"]["supported"]
-    for v in ("binance", "yfinance", "alpaca", "akshare", "fred"):
+    for v in ("binance", "yfinance", "alpaca", "baostock", "fred"):
         assert v in supported
 
 
 # ─── fresh=false 仍走 DB cache，不动 connector ────────────────────
+
+
+def test_ticker_legacy_alias_reads_canonical_db_symbol(
+    ticker_client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """旧 venue + Yahoo 后缀应从 canonical Baostock namespace 读取。"""
+    import asyncio
+
+    from inalpha_shared.db import get_conn
+
+    from inalpha_data.storage.bars import insert_bars
+
+    now = datetime.now(UTC).replace(microsecond=0, second=0)
+
+    async def _insert() -> None:
+        async with get_conn() as conn:
+            await insert_bars(
+                conn,
+                "baostock",
+                "sh.600518",
+                "1h",
+                [(now - timedelta(minutes=1), 10.0, 11.0, 9.0, 10.5, 100.0)],
+            )
+
+    asyncio.run(_insert())
+    r = ticker_client.get(
+        "/ticker",
+        headers=auth_headers,
+        params={"venue": "akshare", "symbol": "600518.SH", "fresh": "false"},
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["price"] == 10.5
 
 
 def test_ticker_fresh_false_still_returns_404_when_no_db_data(

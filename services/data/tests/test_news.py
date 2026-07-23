@@ -1,4 +1,5 @@
 """Tests for GET /news endpoint — extended to support baostock venue."""
+
 from __future__ import annotations
 
 import pytest
@@ -13,9 +14,7 @@ def test_news_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
-def test_news_yfinance_venue(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_news_yfinance_venue(client: TestClient, auth_headers: dict[str, str]) -> None:
     """GET /news with venue=yfinance returns results."""
     from inalpha_data.connectors import yfinance_conn as yf
 
@@ -47,9 +46,7 @@ def test_news_yfinance_venue(
         yf._connector.fetch_news = original
 
 
-def test_news_baostock_venue(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_news_baostock_venue(client: TestClient, auth_headers: dict[str, str]) -> None:
     """GET /news with venue=baostock returns A-share news."""
     from inalpha_data.connectors import baostock as bs
 
@@ -81,9 +78,33 @@ def test_news_baostock_venue(
         bs._connector.fetch_news = original
 
 
-def test_news_unsupported_venue(
+def test_news_legacy_akshare_alias_normalizes_symbol(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
+    """旧 venue 和大小写前缀应统一传给 Baostock connector。"""
+    from inalpha_data.connectors import baostock as bs
+
+    original = bs._connector.fetch_news
+    seen: list[str] = []
+
+    async def mock_news(symbol, limit=20):
+        seen.append(symbol)
+        return []
+
+    bs._connector.fetch_news = mock_news
+    try:
+        r = client.get(
+            "/news",
+            headers=auth_headers,
+            params={"venue": "akshare", "symbol": "SH.600519"},
+        )
+        assert r.status_code == 200
+        assert seen == ["sh.600519"]
+    finally:
+        bs._connector.fetch_news = original
+
+
+def test_news_unsupported_venue(client: TestClient, auth_headers: dict[str, str]) -> None:
     """Venue=binance should return 422."""
     r = client.get(
         "/news",

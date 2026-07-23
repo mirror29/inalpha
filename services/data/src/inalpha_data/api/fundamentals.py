@@ -14,7 +14,7 @@ from inalpha_shared.errors import ValidationError
 from ..connectors import yfinance_conn
 from ..connectors._base import get_connector_for_venue
 from ..schemas import FinancialsResponse
-from ..venues import canonicalize_venue
+from ..venues import canonicalize_market_identity
 
 router = APIRouter(tags=["fundamentals"])
 
@@ -36,11 +36,11 @@ async def get_fundamentals(
 
     venue 支持 baostock / yfinance；其它 venue 返 422。
     """
-    effective_venue = canonicalize_venue(venue, symbol)
+    effective_venue, effective_symbol = canonicalize_market_identity(venue, symbol)
     if effective_venue == "yfinance":
         try:
             conn = yfinance_conn.get_connector()
-            data = await conn.fetch_financials(symbol, as_of=as_of)
+            data = await conn.fetch_financials(effective_symbol, as_of=as_of)
         except Exception as exc:
             return FinancialsResponse(
                 venue=venue,
@@ -58,7 +58,7 @@ async def get_fundamentals(
                 code="FUNDAMENTALS_NOT_SUPPORTED",
                 details={"venue": venue},
             )
-        data = await conn.fetch_financials(symbol, as_of=as_of)  # type: ignore[union-attr]
+        data = await conn.fetch_financials(effective_symbol, as_of=as_of)  # type: ignore[union-attr]
         return FinancialsResponse(**data)
 
     raise ValidationError(
