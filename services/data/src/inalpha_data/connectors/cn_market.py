@@ -61,6 +61,10 @@ NORTHBOUND_NOTE = (
 )
 
 
+_TRANSIENT_RETRY_DELAY_S = 0.5
+_TRANSIENT_RETRY_TIMEOUT_S = 10.0
+
+
 class CnMarketError(RuntimeError):
     """市场级数据源失败（网络 / 反爬 / 改版）。API 层转 502，不静默。"""
 
@@ -303,12 +307,47 @@ class CnMarketConnector:
             wait = self._min_interval - elapsed
             if wait > 0:
                 await asyncio.sleep(wait + random.uniform(0.1, 0.5))
-            try:
-                resp = await self._client.get(url, params=params, headers=headers)
-            except httpx.HTTPError as exc:
-                raise CnMarketError(f"{host_key} request failed: {exc}") from exc
-            finally:
-                self._host_last[host_key] = time.monotonic()
+            # 首轮 10s + 重试完整 timeout，保证整体仍低于 orchestration 30s 调用预算。
+            # `_host_last` 记录每次尝试结束；重试循环不会再次走上方限速计算，显式
+            # sleep 使用两者较大值，既快速恢复，也不突破源站最小请求间隔。
+            resp: httpx.Response | None = None
+            for attempt in range(2):
+                try:
+                    resp = await self._client.get(
+                        url,
+                        params=params,
+                        headers=headers,
+                        timeout=(
+                            min(self._timeout, _TRANSIENT_RETRY_TIMEOUT_S)
+                            if attempt == 0
+                            else self._timeout
+                        ),
+                    )
+                    break
+                except httpx.TransportError as exc:
+                    if attempt == 0:
+                        _logger.warning(
+                            "cn_market_transient_retry",
+                            host=host_key,
+                            error_type=type(exc).__name__,
+                            error=str(exc),
+                        )
+                        await asyncio.sleep(
+                            max(_TRANSIENT_RETRY_DELAY_S, self._min_interval)
+                        )
+                        continue
+                    raise CnMarketError(
+                        f"{host_key} request failed after retry: "
+                        f"{type(exc).__name__}: {exc}"
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    raise CnMarketError(
+                        f"{host_key} request failed: {type(exc).__name__}: {exc}"
+                    ) from exc
+                finally:
+                    self._host_last[host_key] = time.monotonic()
+        if resp is None:  # pragma: no cover - 循环必返回或抛错，供类型收窄
+            raise CnMarketError(f"{host_key} request failed without response")
         if resp.status_code in (403, 429):
             raise CnMarketError(f"{host_key} rate-limited/blocked: HTTP {resp.status_code}")
         if resp.status_code >= 400:

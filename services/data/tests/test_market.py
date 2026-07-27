@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -287,6 +288,42 @@ async def test_connector_caches_success() -> None:
     await conn.close()
 
 
+async def test_get_json_retries_one_transient_connect_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TLS 建连瞬时超时应重试一次，避免东财边缘节点抖动直接变成 502。"""
+    conn = CnMarketConnector()
+    conn._min_interval = 1.0
+    conn._timeout = 15.0
+
+    class FakeResp:
+        status_code = 200
+
+        @staticmethod
+        def json() -> dict[str, Any]:
+            return {"data": {"fastNewsList": []}}
+
+    attempts = 0
+
+    seen_timeouts: list[float] = []
+
+    async def fake_get(url: str, params=None, headers=None, **kwargs: Any) -> FakeResp:
+        nonlocal attempts
+        attempts += 1
+        seen_timeouts.append(kwargs["timeout"])
+        if attempts == 1:
+            raise httpx.ConnectTimeout("TLS handshake timed out")
+        return FakeResp()
+
+    monkeypatch.setattr(conn._client, "get", fake_get)
+    result = await conn._get_json("h", "https://example.com", params=None, headers=None)
+
+    assert result == {"data": {"fastNewsList": []}}
+    assert attempts == 2
+    assert seen_timeouts == [10.0, 15.0]
+    await conn.close()
+
+
 async def test_get_json_serializes_per_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """同 host 两次请求间隔 ≥ min_interval（防封铁律）。"""
     conn = CnMarketConnector()
@@ -307,7 +344,7 @@ async def test_get_json_serializes_per_host(monkeypatch: pytest.MonkeyPatch) -> 
         sleeps.append(d)
         await real_sleep(0)
 
-    async def fake_get(url: str, params=None, headers=None) -> FakeResp:
+    async def fake_get(url: str, params=None, headers=None, **kwargs: Any) -> FakeResp:
         return FakeResp()
 
     monkeypatch.setattr(conn._client, "get", fake_get)
