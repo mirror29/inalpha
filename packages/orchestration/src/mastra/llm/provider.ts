@@ -277,20 +277,23 @@ export function buildLLMForUser(userConfig: UserLLMConfig | null): LanguageModel
  */
 export function buildUserAwareModel(): LanguageModel {
   const defaultModel = AUTH_ENABLED ? null : buildLLM();
-  const proxyTarget = (defaultModel ?? {
-    specificationVersion: "v1",
-    provider: "inalpha-user",
-    modelId: "user-configured",
-    defaultObjectGenerationMode: undefined,
-  }) as LanguageModel;
   // 以 ALS store 为 key 缓存 per-request model；无 config 时返回 null（用 default）。
   const modelCache = new Map<UserLLMConfig | null | undefined, LanguageModel | null>();
 
+  /**
+   * 解析当前请求应使用的真实 LanguageModel。
+   *
+   * - 有用户 config（identity middleware 从 X-LLM-Config 解析、写入 ALS）→ buildLLMForUser
+   * - AUTH_ENABLED=false 且无 config → 系统级 buildLLM
+   * - AUTH_ENABLED=true 且无 config → 抛清晰错误（dashboard 侧已 428 拦截，这里是兜底）
+   */
   function resolveModel(): LanguageModel {
     const config = userLLMStore.getStore();
     console.log("[llm] resolveModel called, config:", config ? { id: config.id, provider: config.provider } : null, "AUTH_ENABLED:", AUTH_ENABLED);
 
-    // AUTH_ENABLED=true 且无用户配置时，抛错阻断（不 fallback）
+    // AUTH_ENABLED=true 且无用户配置时，抛错阻断（不 fallback）。
+    // 必须在 doStream/doGenerate 真正被 mastra 调用时才抛 —— 不能在属性 getter
+    // 阶段抛，否则 mastra 的 getModel() 读元数据（provider/modelId/spec）就崩了。
     if (AUTH_ENABLED && !config) {
       console.error("[llm] AUTH_ENABLED=true but no user config in ALS");
       throw new Error("AUTH_ENABLED=true 但用户未配置 LLM API Key");
@@ -310,15 +313,41 @@ export function buildUserAwareModel(): LanguageModel {
     }
   }
 
-  // Proxy：拦截 doGenerate / doStream，其他属性透传 defaultModel。
+  // 代理 LanguageModel：**所有属性**（含元数据 specificationVersion / provider / modelId，
+  // 以及 doGenerate / doStream）都动态转发到 resolveModel() 解析出的真实模型。
+  //
+  // 为什么不能像旧实现那样只拦截 doStream/doGenerate、其余透传写死的占位对象：
+  // mastra 1.36 的 stream() 先调 getModel() 读模型元数据做 spec 兼容性判定
+  // （isSupportedLanguageModel，只认 v2/v3）。旧占位写死 specificationVersion:"v1"，
+  // 于是 getModel() 阶段就抛 "AI SDK v4 model not compatible with stream()"，
+  // 真实模型（deepseek/openai 等，spec v2/v3）永远到不了 doStream 执行。
+  //
+  // 本实现里 mastra getModel() 拿到的就是 resolveModel() 的真实模型，
+  // 其 specificationVersion 是 provider 自带的（v2/v3），stream() 判定通过。
+  //
+  // 解析结果按「当前请求的 config 身份」缓存：同一 config 只 build 一次模型实例。
+  // config 变化（另一请求 / 另一用户）时从 ALS 重新 resolve，实例引用即缓存 key。
+  const resolvedByConfig = new Map<UserLLMConfig | null | undefined, LanguageModel>();
+  function resolveCached(): LanguageModel {
+    const config = userLLMStore.getStore();
+    const existing = resolvedByConfig.get(config);
+    if (existing) return existing;
+    const m = resolveModel();
+    resolvedByConfig.set(config, m);
+    return m;
+  }
+
+  const proxyTarget: LanguageModel = {} as LanguageModel;
   return new Proxy(proxyTarget, {
     get(_target, prop, receiver) {
-      if (prop === "doGenerate" || prop === "doStream") {
-        const m = resolveModel();
-        if (m === defaultModel) return Reflect.get(defaultModel, prop, receiver);
-        return Reflect.get(m, prop, receiver);
-      }
-      return Reflect.get(proxyTarget, prop, receiver);
+      return Reflect.get(resolveCached(), prop, receiver);
+    },
+    // mastra 1.36 的 resolveModelConfig 用 `"specificationVersion" in modelConfig`
+    // 判定模型是否 AI SDK v5/v6。`in` 运算符走 `has` trap——如果不转发到真实模型，
+    // 会对空 target 判定 → false → 抛 "Invalid model configuration provided"
+    // （表现 "Failed to resolve model configuration"）。
+    has(_target, prop) {
+      return Reflect.has(resolveCached(), prop);
     },
   }) as unknown as LanguageModel;
 }

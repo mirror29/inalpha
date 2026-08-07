@@ -95,4 +95,23 @@ describe("buildUserAwareModel", () => {
       api_key: "user-key",
     }, () => model.doGenerate)).not.toThrow();
   });
+
+  // 回归：mastra 1.36 resolveModelConfig 用 `"specificationVersion" in modelConfig`
+  // 判定模型是 AI SDK v5/v6。proxy 必须让 `in` 命中真实模型，否则抛
+  // "Invalid model configuration provided"（即线上 "Failed to resolve model configuration"）。
+  it("forwards property membership (in) checks to the real model", async () => {
+    vi.stubEnv("AUTH_ENABLED", "true");
+    vi.resetModules();
+    const { buildUserAwareModel, userLLMStore } = await import("../src/mastra/llm/provider.js");
+    const model = buildUserAwareModel();
+    const userConfig = { id: "config-1", provider: "anthropic", api_key: "user-key" };
+
+    const spec = await userLLMStore.run(userConfig, () => {
+      expect("specificationVersion" in model).toBe(true);
+      return model.specificationVersion;
+    });
+
+    // 必须是 mastra 1.36 认可的 v2(AI SDK v5)/v3(AI SDK v6)，否则 stream() 仍报不兼容
+    expect(["v2", "v3"]).toContain(spec);
+  });
 });
