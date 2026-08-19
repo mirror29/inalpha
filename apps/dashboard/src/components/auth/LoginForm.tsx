@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { pickLoginLocale } from "./login-locale";
+import { normalizeLoginReturnPath, pickLoginLocale } from "./login-locale";
 
 /**
  * 登录表单。登录页在 `[locale]` 外壳之外(不套控制台侧栏 / 对话栏 / intl provider),
@@ -58,8 +58,7 @@ export function LoginForm() {
         body: JSON.stringify({ email, password }),
       });
       if (res.ok) {
-        // 只接受站内相对路径,防开放重定向。
-        const dest = from && from.startsWith("/") && !from.startsWith("//") ? from : "/";
+        const dest = normalizeLoginReturnPath(from) ?? "/";
         router.replace(dest);
         router.refresh();
         return;

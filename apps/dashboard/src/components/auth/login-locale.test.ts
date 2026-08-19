@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { LoginForm } from "./LoginForm";
-import { pickLoginLocale } from "./login-locale";
+import { normalizeLoginReturnPath, pickLoginLocale } from "./login-locale";
 
 const navigation = vi.hoisted(() => ({ from: "/zh" }));
 
@@ -11,6 +11,22 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => ({ get: (key: string) => (key === "from" ? navigation.from : null) }),
 }));
+
+describe("normalizeLoginReturnPath", () => {
+  it("keeps safe query and fragment while normalizing path segments", () => {
+    expect(normalizeLoginReturnPath("/zh/runners?tab=active#latest")).toBe(
+      "/zh/runners?tab=active#latest",
+    );
+    expect(normalizeLoginReturnPath("/zh/../en?tab=active")).toBe("/en?tab=active");
+  });
+
+  it.each([null, "//evil.example", "/\\evil.example", "https://evil.example", "zh/runners"])(
+    "rejects unsafe return path %s",
+    (from) => {
+      expect(normalizeLoginReturnPath(from)).toBeNull();
+    },
+  );
+});
 
 describe("pickLoginLocale", () => {
   it.each([
