@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { pickLoginLocale } from "./login-locale";
+
 /**
  * 登录表单。登录页在 `[locale]` 外壳之外(不套控制台侧栏 / 对话栏 / intl provider),
- * 故文案在此按 `navigator.language` 做最小中英切换,不依赖 next-intl。
+ * 故优先按返回路径保留用户选择的语言,直接访问登录页时再回退到浏览器语言。
  */
 
 const STRINGS = {
@@ -33,17 +35,12 @@ const STRINGS = {
   },
 };
 
-function pickLang(): "en" | "zh" {
-  if (typeof navigator !== "undefined" && navigator.language?.toLowerCase().startsWith("zh")) {
-    return "zh";
-  }
-  return "en";
-}
-
 export function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const t = STRINGS[pickLang()];
+  const from = params.get("from");
+  const browserLanguage = typeof navigator === "undefined" ? undefined : navigator.language;
+  const t = STRINGS[pickLoginLocale(from, browserLanguage)];
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -61,7 +58,6 @@ export function LoginForm() {
         body: JSON.stringify({ email, password }),
       });
       if (res.ok) {
-        const from = params.get("from");
         // 只接受站内相对路径,防开放重定向。
         const dest = from && from.startsWith("/") && !from.startsWith("//") ? from : "/";
         router.replace(dest);
