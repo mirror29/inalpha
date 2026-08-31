@@ -25,8 +25,8 @@ When you report, please include as much of the following as you can / 报告时�
 3. **Minimal reproduction steps** / **最小复现步骤**
 4. **Your assessment of the potential impact** / **你对潜在影响的评估**
 
-Reports in either English or 中文 are equally welcome.
-中英文报告同样欢迎。
+English is preferred for consistency with the project's collaboration language, but reports in any language are welcome when needed for accessibility.
+为保持项目协作语言一致，安全报告优先使用英文；如有沟通需要，任何语言都欢迎。
 
 ## Response commitments / 响应承诺
 

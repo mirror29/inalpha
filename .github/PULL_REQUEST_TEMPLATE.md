@@ -1,9 +1,11 @@
 <!--
 Thanks for contributing! Please review the items below before submitting.
 This project is licensed under GNU AGPL-3.0; your contribution ships under the same license.
+Please write the PR title, description, review comments, and commit messages in English by default.
 
 感谢贡献！提交 PR 前请确认以下事项。
 本项目 LICENSE 是 GNU AGPL-3.0，你的贡献也将以同样许可发布。
+PR 标题、正文、review comment 与 commit message 默认请使用英文。
 -->
 
 ## What this PR does / 这个 PR 做了什么
@@ -20,7 +22,8 @@ Briefly describe the change (1–3 sentences). For bug fixes, link the related i
 
 ## Self-review checklist / 自检清单
 
-- [ ] **Commit message follows `<type>(<scope>): <desc>` in Chinese** (see `CLAUDE.md §3`). This project commits in Chinese even when contributors usually commit in English — please keep the convention.
+- [ ] **Commit messages follow `<type>(<scope>): <desc>` in English** (see `CLAUDE.md §3`), with one logical change per commit.
+- [ ] The PR title and description are in English unless localized content or participant accessibility requires another language.
 - [ ] Ran `bash scripts/check-consistency.sh` locally; all checks pass.
 - [ ] If you touched tool descriptions, they follow the three-part style: *function + when to use + when not to use + gotchas*.
 - [ ] If you changed code related to hard constraints (permissions / hooks / LLM order paths), it's called out in the PR description.

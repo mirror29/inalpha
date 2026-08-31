@@ -128,11 +128,13 @@ CI workflow 改 job 名时必须同步更新 protection 的 `contexts`，否则 
 
 ## 8. Commit / PR conventions / Commit 规范
 
-- **Commit message**: Chinese, `<type>(<scope>): <desc>`; one logical change per commit — don't mix unrelated modules in one commit.
-  **Commit message**：中文 + `<type>(<scope>): <desc>`；一次 commit 只做一件事，不要把不相关模块揉进同一个 commit。
+- **Collaboration language**: use English by default for commit messages, branch names, PR / issue / Discussion titles and bodies, code reviews, and release notes. Other languages are welcome when needed for localized content, source quotations, or participant accessibility.
+  **协作语言**：commit message、branch name、PR / issue / Discussion 的标题与正文、code review、release note 默认使用英文；本地化内容、原文引用或参与者需要时可使用其他语言。
+- **Commit message**: English, `<type>(<scope>): <desc>`; one logical change per commit — don't mix unrelated modules in one commit.
+  **Commit message**：英文 + `<type>(<scope>): <desc>`；一次 commit 只做一件事，不要把不相关模块揉进同一个 commit。
 - **type**: `feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `style` / `perf` / `ci`
 - **scope**: `data` / `paper` / `research` / `factor` / `evolver` / `orchestration` / `dashboard` / `web` / `docs` / `infra`, or a concrete module name / 或具体模块名
-- A Phase tag is welcome / 可标 Phase D-N（例：`feat(paper): 跨币种 cash 账本 (D-11)`）
+- A Phase tag is welcome / 可标 Phase D-N（例：`feat(paper): add cross-currency cash ledger (D-11)`）
 - Check untracked files before committing — a missing `git add` for a newly imported file breaks CI.
   commit 前 `git status` 检查 untracked——新 import 的实现文件漏 add 会让 CI 挂。
 - **PR template**: every self-review item in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) must be checked.

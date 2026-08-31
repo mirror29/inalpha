@@ -5,6 +5,8 @@ title: "[bug] "
 labels: bug
 ---
 
+> Please write the issue title and description in English by default. Other languages are welcome when needed for localized content or participant accessibility.
+>
 > Inalpha is in **alpha** (Phase D-11 landed). **Please confirm the problem is "implemented incorrectly," not "not yet implemented."**
 > See `CLAUDE.md §3` and `docs/04-current-state.md` for the roadmap.
 >

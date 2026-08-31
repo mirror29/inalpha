@@ -35,7 +35,9 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**：agent 
   - `docs/miro/`（gitignored 个人空间）
   - `services/_shared/`（基础设施稳定层，改前先谨慎评估）
 - **tool description 必须三段式**："功能 + 何时用 + 何时不用 + 坑"
-- **commit message**：中文 + `<type>(<scope>): <desc>`，可标 Phase D-N
+- **GitHub 协作语言**：commit message、branch name、PR / issue / Discussion 的标题与正文、
+  code review、release note 默认使用英文；仅在本地化内容、原文引用或参与者明确需要时使用其他语言
+- **commit message**：英文 + `<type>(<scope>): <desc>`，可标 Phase D-N
 
 ## 4. 起步（clone 之后）
 
