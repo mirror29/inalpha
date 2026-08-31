@@ -5,6 +5,8 @@ title: "[feature] "
 labels: enhancement
 ---
 
+> Please write the issue title and description in English by default. Other languages are welcome when needed for localized content or participant accessibility.
+>
 > Before proposing, please confirm: Inalpha is **not** a plug-and-play strategy platform, **nor** a LangChain / AutoGen wrapper.
 > Boundaries live in `docs/00-context.md`. We only accept features at the intersection of **AI agent orchestration × quant research**.
 >

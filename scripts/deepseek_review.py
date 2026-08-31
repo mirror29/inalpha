@@ -82,8 +82,8 @@ SYSTEM_PROMPT = """\
 - **不重复 lint**：ruff / tsc / mypy 已能抓的不要再提
 - **误报闸**：设计 / 架构类意见必须能说出"在什么输入 / 时序下会真的出问题"的具体失败场景，
   说不出就降级或不提——宁可漏报一条主观的，不要用噪音淹没真问题
-- 用中文写 review，每条 finding 用 `[critical|major|medium] file:line — 一句描述 — 依据(CLAUDE.md §X 或 通用原则:<维度>)` 格式
-- 没问题 -> 一段中文 LGTM，不硬挑刺
+- Write the review in English. Format each finding as `[critical|major|medium] file:line — concise description — evidence (CLAUDE.md §X or general principle: <dimension>)`
+- If there are no findings, return a concise English LGTM; do not invent issues
 - 只维护一条 sticky 评论，不要逐行贴 inline 评论"""
 
 _SEV_ORDER = {"critical": 0, "major": 1, "medium": 2}
@@ -94,7 +94,7 @@ def _fail(msg: str) -> None:
     """写失败说明后正常退出（非阻塞）。"""
     print(f"deepseek_review: {msg}", file=sys.stderr)
     with open(OUT_PATH, "w") as f:
-        f.write(f"## 🤖 DeepSeek V4 Pro PR Review\n\n⚠️ review 未完成：{msg}\n")
+        f.write(f"## 🤖 DeepSeek V4 Pro PR Review\n\n⚠️ Review could not be completed: {msg}\n")
     sys.exit(0)
 
 
@@ -161,18 +161,19 @@ def _call_deepseek(api_key: str, title: str, diff: str, rules: str) -> str:
                 {
                     "role": "user",
                     "content": (
-                        "上一轮没有返回可发布的 review 正文。当前没有任何工具，"
-                        "禁止输出工具调用协议。请直接输出最终中文 review。"
+                        "The previous response did not contain a publishable review. "
+                        "No tools are available. Do not emit a tool-call protocol; "
+                        "return the final review in English now."
                     ),
                 }
             )
-    raise ValueError("DeepSeek 未返回可发布的 review 正文")
+    raise ValueError("DeepSeek did not return a publishable review")
 
 
 def main() -> None:
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
-        _fail("DEEPSEEK_API_KEY 未配置（repo Settings → Secrets → Actions）")
+        _fail("DEEPSEEK_API_KEY is not configured (repository Settings → Secrets → Actions)")
 
     try:
         with open(DIFF_PATH) as f:
@@ -182,18 +183,18 @@ def main() -> None:
         with open(RULES_PATH) as f:
             rules = f.read()
     except OSError as e:
-        _fail(f"读输入失败：{e}")
+        _fail(f"Failed to read review input: {e}")
 
     if not diff.strip():
-        _fail("diff 为空")
+        _fail("The PR diff is empty")
 
     try:
         content = _call_deepseek(api_key, title, diff, rules)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")[:300]
-        _fail(f"DeepSeek API HTTP {e.code}：{body}")
+        _fail(f"DeepSeek API returned HTTP {e.code}: {body}")
     except Exception as e:
-        _fail(f"DeepSeek API 调用失败：{e}")
+        _fail(f"DeepSeek API request failed: {e}")
 
     body = "## 🤖 DeepSeek V4 Pro PR Review\n\n" + content
     with open(OUT_PATH, "w") as f:

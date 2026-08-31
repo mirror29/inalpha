@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import http.client
 import importlib.util
+import io
 import json
 import os
 import tempfile
@@ -79,6 +80,7 @@ class DeepSeekReviewTest(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer secret-value")
         self.assertEqual(payload["model"], "deepseek-v4-pro")
         self.assertEqual(payload["max_tokens"], 32768)
+        self.assertIn("Write the review in English", payload["messages"][0]["content"])
         self.assertIn("## 项目规则（CLAUDE.md）\nproject rules", payload["messages"][1]["content"])
         self.assertEqual(captured["timeout"], module.TIMEOUT_S)
 
@@ -100,6 +102,12 @@ class DeepSeekReviewTest(unittest.TestCase):
 
         self.assertEqual(result, "完整 review")
         self.assertEqual(urlopen.call_count, 2)
+        retry_request = urlopen.call_args_list[1].args[0]
+        retry_payload = json.loads(retry_request.data)
+        self.assertIn(
+            "return the final review in English now",
+            retry_payload["messages"][-1]["content"],
+        )
 
     def test_empty_content_retries_then_returns_review(self) -> None:
         module = _load_module()
@@ -155,7 +163,7 @@ class DeepSeekReviewTest(unittest.TestCase):
             "urlopen",
             side_effect=[_FakeResponse(""), _FakeResponse("   ")],
         ):
-            with self.assertRaisesRegex(ValueError, "未返回可发布"):
+            with self.assertRaisesRegex(ValueError, "did not return a publishable review"):
                 module._call_deepseek(
                     "secret-value", "PR title", "diff body", "project rules"
                 )
@@ -170,8 +178,99 @@ class DeepSeekReviewTest(unittest.TestCase):
             body = Path(module.OUT_PATH).read_text()
 
         self.assertIn("DeepSeek V4 Pro PR Review", body)
-        self.assertIn("DEEPSEEK_API_KEY 未配置", body)
+        self.assertIn("DEEPSEEK_API_KEY is not configured", body)
         self.assertNotIn("GLM-5.2", body)
+
+    def test_empty_diff_writes_english_failure(self) -> None:
+        module = _load_module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            module.DIFF_PATH = str(root / "diff.txt")
+            module.TITLE_PATH = str(root / "title.txt")
+            module.RULES_PATH = str(root / "rules.md")
+            module.OUT_PATH = str(root / "review.md")
+            Path(module.DIFF_PATH).write_text("")
+            Path(module.TITLE_PATH).write_text("PR title")
+            Path(module.RULES_PATH).write_text("project rules")
+
+            with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "secret-value"}, clear=True):
+                with self.assertRaisesRegex(SystemExit, "0"):
+                    module.main()
+
+            body = Path(module.OUT_PATH).read_text()
+
+        self.assertIn("Review could not be completed: The PR diff is empty", body)
+
+    def test_input_read_error_writes_english_failure(self) -> None:
+        module = _load_module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            module.DIFF_PATH = str(root / "missing-diff.txt")
+            module.OUT_PATH = str(root / "review.md")
+
+            with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "secret-value"}, clear=True):
+                with self.assertRaisesRegex(SystemExit, "0"):
+                    module.main()
+
+            body = Path(module.OUT_PATH).read_text()
+
+        self.assertIn("Review could not be completed: Failed to read review input", body)
+
+    def test_api_error_writes_english_failure(self) -> None:
+        module = _load_module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            module.DIFF_PATH = str(root / "diff.txt")
+            module.TITLE_PATH = str(root / "title.txt")
+            module.RULES_PATH = str(root / "rules.md")
+            module.OUT_PATH = str(root / "review.md")
+            Path(module.DIFF_PATH).write_text("diff body")
+            Path(module.TITLE_PATH).write_text("PR title")
+            Path(module.RULES_PATH).write_text("project rules")
+
+            with (
+                patch.dict(os.environ, {"DEEPSEEK_API_KEY": "secret-value"}, clear=True),
+                patch.object(module, "_call_deepseek", side_effect=RuntimeError("boom")),
+            ):
+                with self.assertRaisesRegex(SystemExit, "0"):
+                    module.main()
+
+            body = Path(module.OUT_PATH).read_text()
+
+        self.assertIn("Review could not be completed: DeepSeek API request failed: boom", body)
+
+    def test_http_error_writes_english_failure(self) -> None:
+        module = _load_module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            module.DIFF_PATH = str(root / "diff.txt")
+            module.TITLE_PATH = str(root / "title.txt")
+            module.RULES_PATH = str(root / "rules.md")
+            module.OUT_PATH = str(root / "review.md")
+            Path(module.DIFF_PATH).write_text("diff body")
+            Path(module.TITLE_PATH).write_text("PR title")
+            Path(module.RULES_PATH).write_text("project rules")
+            error = module.urllib.error.HTTPError(
+                "https://api.deepseek.com/v1/chat/completions",
+                429,
+                "Too Many Requests",
+                {},
+                io.BytesIO(b"rate limited"),
+            )
+
+            with (
+                patch.dict(os.environ, {"DEEPSEEK_API_KEY": "secret-value"}, clear=True),
+                patch.object(module, "_call_deepseek", side_effect=error),
+            ):
+                with self.assertRaisesRegex(SystemExit, "0"):
+                    module.main()
+
+            body = Path(module.OUT_PATH).read_text()
+
+        self.assertIn(
+            "Review could not be completed: DeepSeek API returned HTTP 429: rate limited",
+            body,
+        )
 
 
 if __name__ == "__main__":
