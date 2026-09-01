@@ -106,7 +106,7 @@ pnpm scheduler:trigger daily_btc_deep_dive     # 手动触发一次
 
 ## 6. 当前 Phase 状态
 
-Phase **D-12 + E1 生产闭环**已落地：单 orchestrator + plan/exec 三件套
+Phase **D-12 + E2 事件演化闭环**已落地：单 orchestrator + plan/exec 三件套
 （create_plan / approve_plan / execute_plan）+ hooks + permissions deny +
 approval_token 状态机（D-8/D-9）→ LLM 自创策略沙盒 + 风控引擎 + 多市场数据
 （D-9/D-10）→ 跨币种 cash + **live runner**（promoted 候选按行情自动跑，机器审批
@@ -114,9 +114,10 @@ approval_token 状态机（D-8/D-9）→ LLM 自创策略沙盒 + 风控引擎 +
 （candidate 归属校验 / per-account run 上限 / 错误可重试分类）；D-11.2 收口运维；
 D-12 完成 factor 血缘、衰减巡检与因子发现。research-hub 三方辩论已收口。
 E1 已拆出 `services/evolver:8005`：真实 frozen bars、单代 unified-diff 变异、异步
-owner-scoped 状态、显式逐次审批与可复现实验元数据；演化链路不会自动 promote、启动策略或下单。
-当前收口项是冻结 LLM/定价快照、owner key 即时获取与 token/cost 审计；下一里程碑为
-E2 best-parent 多代选择与 early stopping（issue #7），MAP-Elites / Island Model 后置。
+owner-scoped 状态、显式逐次审批与可复现实验元数据。E2 在 feature flag 后增加双时态事件
+snapshot、HypothesisSpec 确定性编译、五代 8×3 共演化、单冠军 Forward、一次性 holdout 与
+`runner_eligible=false` 的人工实验性采用；不会自动 promote、启动策略或下单。
+下一步是在小流量运行中校准事件覆盖与信用分配；MAP-Elites / Island Model 继续后置。
 详见 [`docs/04-current-state.md`](docs/04-current-state.md) / `CLAUDE.md` §3 /
 仓库根 `README.md`。
 

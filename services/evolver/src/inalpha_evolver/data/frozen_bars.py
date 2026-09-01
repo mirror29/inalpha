@@ -55,7 +55,7 @@ class FrozenBarsLoader:
             context=context,
             as_of=cutoff,
         )
-        first, latest = _bar_time(bars[0].ts_event), _bar_time(bars[-1].ts_event)
+        first, latest = _bar_time(bars[0].bar_open_at), _bar_time(bars[-1].bar_open_at)
         manifest = DatasetManifest(
             venue=venue,
             symbol=symbol,

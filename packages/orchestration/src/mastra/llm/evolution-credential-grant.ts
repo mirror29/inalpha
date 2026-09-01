@@ -18,6 +18,7 @@ export async function mintEvolutionCredentialGrant(args: {
   operationId: string;
   requestDigest: string;
   snapshot: EvolutionLLMSnapshot;
+  purpose?: "e1_run" | "event_campaign";
 }): Promise<string> {
   const encoded = process.env.EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64?.trim();
   if (!encoded) {
@@ -39,6 +40,7 @@ export async function mintEvolutionCredentialGrant(args: {
     config_id: args.snapshot.config_id,
     provider: args.snapshot.provider,
     operation_id: args.operationId,
+    grant_purpose: args.purpose ?? "e1_run",
     request_digest: args.requestDigest,
     llm_config_digest: args.snapshot.config_digest,
   })

@@ -9,11 +9,11 @@
 - **不是**开箱即用策略平台 / LangChain / AutoGen 包装
 - **三层**：Next.js + CopilotKit → Mastra（TS）→ Python services。详 `docs/01-architecture-overview.md`
 
-## 2. 文档入口 & 当前 Phase（D-12 + E1）
+## 2. 文档入口 & 当前 Phase（D-12 + E2）
 
 - `README.md` / `README.zh-CN.md` 首页；`AGENTS.md` 多工具入口；`docs/00-context.md` 背景 / `01-architecture-overview.md` 架构 / `03-kernel-design.md` services / `04-current-state.md` 进度
 - 内部 ADR 在 `docs/miro/`（gitignored，公开文档勿引用）
-- D-8~D-12 已完成 Plan/Exec、策略创作、风控、多市场模拟盘与因子闭环；research-hub 已收口；E1 独立 Evolver 已落地真实 frozen bars、显式审批、owner 隔离与可复现实验元数据。当前收口冻结 LLM/定价快照与费用审计；下一 E2 best-parent 多代演化 #7
+- D-8~D-12、research-hub 与 E1 已收口；E2 在 feature flag 后落地双时态事件 snapshot、确定性 DSL、五代 8×3 共演化、Forward/Holdout 和非 Runner 实验性采用。E1 原语义不变
 
 ## 3. 协作硬约束
 
@@ -64,8 +64,8 @@ bash scripts/dev.sh                        # data:8001…evolver:8005 + mastra:4
 
 D-9/D-9.1a 收口 + D-10 多市场数据（web/基本面）+ D-11 多市场模拟盘
 （跨币种 cash + live runner #1）+ D-12 因子库闭环（血缘 + 衰减巡检 +
-monthly 宏观 + 因子发现 L1 + 三方研究辩论）和 E1 独立 Evolver 已落地。
-当前：冻结 LLM/定价快照、owner key 即时获取、token/cost 审计；下一：E2 best-parent 多代演化 #7
+monthly 宏观 + 因子发现 L1 + 三方研究辩论）、E1 与 feature-flag E2 事件共演化已落地。
+当前：小流量校准事件覆盖、FDR、费用与 Forward 证据；MAP-Elites / Island Model 后置
 
 ---
 

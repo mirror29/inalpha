@@ -13,6 +13,7 @@
     "risk": "Risk",
     "divination": "Omikuji",
     "evolution": "Evolution",
+    "dataHealth": "Event Data Health",
     "soon": "soon",
     "menu": "Menu",
     "close": "Close",
@@ -65,6 +66,12 @@
   "overview": {
     "title": "Portfolio Overview",
     "subtitle": "A live snapshot of your account, positions, orders, and strategy pool.",
+    "evolution": {
+      "active": "Active Campaigns",
+      "waiting": "Waiting for Events",
+      "adoption": "Awaiting Adoption",
+      "sources": "Event Source Faults"
+    },
     "kpi": {
       "totalEquity": "Total Equity",
       "totalReturn": "Total Return",
@@ -271,6 +278,7 @@
       "order": "Orders",
       "backtest": "Backtests",
       "runner": "Runners",
+      "evolution": "Evolution",
       "conversation": "Chats"
     },
     "empty": "No activity yet.",
@@ -305,6 +313,13 @@
     "resize": "Drag to resize height"
   },
   "lab": {
+    "experimental": {
+      "title": "Experimental Evolution Strategies",
+      "empty": "No adopted event-evolution winner yet.",
+      "badge": "Limited evidence · Experimental",
+      "grade": "Evidence grade: {grade}",
+      "lineage": "View evolution lineage"
+    },
     "title": "Strategy Lab",
     "subtitle": "LLM-authored strategy candidates, ranked by multi-objective fitness — with their latest backtest metrics.",
     "candidates": "Candidates",
@@ -565,7 +580,7 @@
   },
   "evolution": {
     "title": "Evolution",
-    "subtitle": "LLM-driven strategy mutation and evaluation — each run spawns candidates through code mutation, AST audit, sandboxing, and backtest evaluation.",
+    "subtitle": "Event facts and paper feedback drive two-level evolution: agents diversify hypotheses, deterministic DSL arms validate them, and one champion enters durable Forward.",
     "runs": "Total runs",
     "running": "Running",
     "llmCost": "LLM cost",
@@ -632,10 +647,58 @@
     },
     "loadMore": "Load more",
     "loadingMore": "Loading…"
+    ,"campaign": {
+      "title": "Event Campaigns",
+      "empty": "No event campaign yet; E1 single-generation runs keep their existing semantics.",
+      "id": "Campaign",
+      "status": "Status",
+      "stage": "Generation",
+      "budget": "Candidates/gen",
+      "events": "Forward events",
+      "holdout": "Sealed holdout",
+      "updated": "Updated",
+      "sealed": "Unconsumed",
+      "consumed": "Consumed",
+      "back": "Back to evolution",
+      "detailTitle": "Event Evolution",
+      "detailSubtitle": "The audit trail for frozen facts, hypothesis lineage, selection, ablations, Forward, and one-shot holdout.",
+      "track": "Generation Track",
+      "frozenData": "Frozen Facts & Execution",
+      "snapshot": "Event snapshot",
+      "facts": "Facts",
+      "eventHash": "Event hash",
+      "executionModel": "Execution model",
+      "forwardHoldout": "Forward & Holdout",
+      "forwardEvents": "Independent events",
+      "deadline": "Deadline",
+      "winner": "Locked champion",
+      "hypotheses": "Hypotheses, Evidence & Lineage",
+      "selected": "Selected parent",
+      "ablations": "Implementation Ablations & Event Effects",
+      "failure": "Failure",
+      "adopt": "Adopt into Strategy Lab",
+      "adopting": "Adopting…",
+      "adopted": "Adopted as an experimental strategy",
+      "adoptHint": "Adoption does not promote, start Runner, or trade; runner_eligible is enforced false."
+    }
   },
   "backtests": {
     "back": "Agent Activity",
     "notFound": "Backtest run not found.",
     "viewCandidate": "View strategy"
+  }
+  ,"dataHealth": {
+    "title": "Event Data Health",
+    "subtitle": "Coverage, first acceptance, revisions, and snapshot integrity for the event source of truth.",
+    "rawEvents": "Raw events",
+    "facts": "Normalized facts",
+    "retractions": "Revisions / retractions",
+    "lastAccepted": "Last accepted",
+    "sources": "Source coverage",
+    "source": "Source",
+    "count": "Events",
+    "latest": "Last fetch",
+    "versions": "Max version",
+    "empty": "No event source has been archived yet."
   }
 }

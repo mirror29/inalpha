@@ -1,10 +1,11 @@
-# 04 · 当前状态：D-12 + E1 策略演化生产闭环
+# 04 · 当前状态：D-12 + E2 事件驱动自动演化
 
-> 状态：**D-12 因子库闭环 + E1 独立 Evolver 已落地（更新至 2026-08-27）**——因子血缘 + 衰减巡检 + monthly
+> 状态：**D-12 因子库闭环 + E2 事件驱动 Evolver 已落地（更新至 2026-08-28）**——因子血缘 + 衰减巡检 + monthly
 > 宏观 + 因子发现 L1，在 D-11（多市场模拟盘）/ D-10（web 搜索 + 财报基本面 +
 > 多市场数据）/ D-9（Plan/Exec 闭环 + LLM 自创策略 + 风控引擎）/ D-9.1a 基础上落地。
-> research-hub（issue #6）已于 2026-06-12 收口；E1 生产代码由 PR #159 合入 main，
-> 当前分支继续冻结 LLM/定价审批快照与费用审计。下一里程碑：E2 best-parent 多代演化（issue #7）。
+> research-hub（issue #6）已于 2026-06-12 收口；E1 生产代码由 PR #159 合入 main；
+> E2 在 `EVENT_EVOLUTION_ENABLED` 后提供事件账本、确定性 DSL、五代共演化和实验性采用，
+> 原 E1 run API 与逐次审批语义保持不变。
 >
 > 本文回答的问题：**clone 仓库后，"现在到底做到哪里、决策链路长什么样"。**
 > 详细架构与设计取舍见 [`docs/03-kernel-design.md`](./03-kernel-design.md)；
@@ -81,8 +82,8 @@ sequenceDiagram
 | paper 内核 | `services/paper/src/inalpha_paper/kernel/` · `execution/` | `clock.py` · `msgbus.py` · `risk_engine.py` · `execution_engine.py` · `order_executor.py` · `gateway.py` |
 | data 多市场服务 | `services/data/` | CCXT / akshare / yfinance / FRED / web → Postgres + TimescaleDB |
 | research + factor | `services/research/` · `services/factor/` | 三方研究辩论；因子血缘、IC、衰减与发现工作流 |
-| E1 Evolver | `services/evolver/` | frozen bars + unified diff + owner-scoped 异步 run/slot + PostgreSQL 候选审计 |
-| 认证控制台 | `apps/dashboard/` | 登录/session、注册 waitlist、admin 审核、逐用户 LLM 配置、演化/回测/runner/因子/风控看板 |
+| E1/E2 Evolver | `services/evolver/` | E1 frozen bars + unified diff；E2 事件 DSL + 五代 campaign + Forward/Holdout 门禁 |
+| 认证控制台 | `apps/dashboard/` | 登录/session、注册 waitlist、admin 审核、agent 对话、逐用户 LLM 配置、演化/回测/runner/因子/风控看板 |
 
 ### 注册与试用准入（2026-08-28）
 
@@ -235,6 +236,22 @@ seed / buy-and-hold / 全候选同数据哈希评估、owner 隔离、数据库�
   按冻结单价计算的 `llm_cost_usd`；`DASHBOARD_SERVICE_URL` 与
   `EVOLVER_LLM_TIMEOUT_S`、凭据签名公私钥已进入环境模板和生产 Compose；Dashboard 暂时
   不可用或返回 5xx 时 run 回到队列重试，不会在依赖启动窗口直接进入失败终态。
+
+### E2 事件驱动自动演化（feature flag）
+
+- Data 新增 append-only 双时态事件账本、事实版本与 cutoff snapshot；CoinMarketCal
+  Professional 可导入历史首次添加时间，精选 crypto 新闻仅从首次抓取开始 forward 归档。
+- Paper 明确 `bar_open_at` / `bar_known_at`，在同一决策点按稳定顺序先发布规范事件、再发布
+  已关闭 bar；事件订单最早下一根开盘成交，并使用上一根成交量容量、此前 ATR 与严重度的
+  `event-fill-v1` adverse slippage。空事件输入保持 E1 路径不变。
+- Evolver 新增 `HypothesisSpec` DSL、direct/confirmed/hybrid 消融、匹配无事件窗口、block
+  bootstrap + BH-FDR、2 elite + 4 mutation + 1 crossover + 1 restart 的五代状态机。每代固定
+  两个 owner-scoped proposer 调用；只接收 DSL，凭据仍通过短时 owner grant 即时解析。
+- Champion 锁定后进入独立 Forward 状态，30 天/3 个独立事件/90 天上限；Forward 通过才可
+  一次性消费 holdout。赢家只能以 `runner_eligible=false` 的实验性 adoption 进入策略实验室，
+  不会自动 promote、启动 Runner 或下单。
+- Dashboard 已增加 Campaign 工作台、代际/血缘/消融/Forward/Holdout 视图、首页摘要、实验性
+  策略标签、过滤后的 Agent Activity 和事件数据健康页。通过 `EVENT_EVOLUTION_ENABLED` 分阶段开放。
 
 ---
 
@@ -547,8 +564,8 @@ spot 仍严格 long-only（裸空 / 超卖翻空被守门拒），做空 / 杠�
 
 > 重心：模拟盘（paper）先于实盘（live）。
 
-- **E2 多代演化**（issue #7）：在已完成的 E1 单代生产闭环上增加 best-parent 多代选择与
-  early stopping；MAP-Elites / Island Model 后置到真实运行数据证明需要时再做
+- **E2 运行观测**：在 feature flag 小流量 campaign 上校准事件覆盖、费用、FDR 与 Forward
+  样本积累；MAP-Elites / Island Model 继续后置到真实运行数据证明需要时再做
 - **delegation hop**（issue #5 · ADR-0012 补丁）：sub-strategy 派生计划的转授权链
 
 > 已收口：paper live runner（#1，D-11）、PnL 净口径 / 运行时长 TTL / build 退避（#45 /

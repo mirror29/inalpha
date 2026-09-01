@@ -45,6 +45,7 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "scheduler.trigger_job",
     "evolver.get_evolution",
     "evolver.get_candidate",
+    "evolver.get_event_campaign",
 
     // Swarm 批量回测（ADR-0025）：只读，无下单路径
     "swarm.*",
@@ -92,7 +93,9 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     // reset 是破坏性操作（删全部持仓行），后端另有 running-run 409 硬守门。
     "paper.deposit_cash",
     "paper.reset_account",
+    // E2 只在 campaign 启动时审批一次；内部五代演化继续自动执行。
     "evolver.run_evolution",
+    "evolver.run_event_campaign",
     "evolver.abort_evolution",
   ],
 

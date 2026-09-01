@@ -37,6 +37,7 @@ def _token(
         "operation_id": "approval-operation-1",
         "config_id": "config-1",
         "provider": "deepseek",
+        "grant_purpose": "e1_run",
         "llm_config_digest": _DIGEST,
         "request_digest": _REQUEST_DIGEST,
         "iat": now,
@@ -59,6 +60,7 @@ def _verify(token: str) -> None:
         provider="deepseek",
         llm_config_digest=_DIGEST,
         request_digest=_REQUEST_DIGEST,
+        grant_purpose="e1_run",
         settings=SimpleNamespace(  # type: ignore[arg-type]
             evolution_credential_public_key_b64=_PUBLIC_KEY_B64
         ),
@@ -105,6 +107,7 @@ def test_approval_rejects_another_owner() -> None:
         {"operation_id": "another-operation"},
         {"config_id": "config-2"},
         {"provider": "openai"},
+        {"grant_purpose": "event_campaign"},
         {"llm_config_digest": "b" * 64},
         {"request_digest": "c" * 64},
         {"iat": None},

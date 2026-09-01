@@ -23,6 +23,8 @@ _BASE_URLS = {
 class CredentialTemporarilyUnavailable(RuntimeError):
     """Dashboard 暂时不可达；run 应回到队列而不是进入失败终态。"""
 
+    code = "EVOLUTION_CREDENTIAL_UNAVAILABLE"
+
 
 async def build_owner_mutator(
     run: dict[str, Any],
@@ -41,7 +43,10 @@ async def build_owner_mutator(
         f"{quote(config_id, safe='')}"
     )
     try:
-        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+        async with httpx.AsyncClient(
+            timeout=settings.evolver_credential_timeout_s,
+            trust_env=False,
+        ) as client:
             response = await client.get(url, headers={"Authorization": f"Bearer {token}"})
     except httpx.HTTPError as exc:
         raise CredentialTemporarilyUnavailable(

@@ -51,8 +51,9 @@
 | D-11.1 / .2 | live runner 信任边界加固 + 运维收口（PnL 净口径 / TTL / build 退避） | ✅ |
 | D-12 | 因子血缘 + 衰减巡检 + monthly 宏观 + 因子发现 L1；research-hub 三方辩论收口 | ✅ |
 | E1 生产闭环 | 独立 Evolver：真实 frozen bars、单代 unified-diff 变异、显式审批、owner 隔离、异步持久化与可复现实验元数据 | ✅ |
-| E1 收口 | 冻结 LLM/定价快照、owner key 即时获取、token/cost 审计 | 🚧 当前分支 |
-| 下一 | E2 best-parent 多代选择 + early stopping（#7）；MAP-Elites / Island Model 后置 | 🔲 |
+| E1 收口 | 冻结 LLM/定价快照、owner key 即时获取、token/cost 审计 | ✅ |
+| E2 事件共演化 | 双时态事件 snapshot、HypothesisSpec、五代 8×3 搜索、Forward/一次性 holdout、实验性采用 | ✅ feature flag |
+| 下一 | 小流量校准事件覆盖与信用分配；MAP-Elites / Island Model 后置 | 🔲 |
 
 ## 不做的事（边界）
 

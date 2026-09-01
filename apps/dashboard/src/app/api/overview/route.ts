@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { backendFetch, BackendError } from "@/lib/backend";
 import type {
   AccountSnapshot,
+  EventDataCoverage,
+  EvolutionCampaign,
   OrderRecord,
   OverviewPayload,
   PositionRecord,
@@ -40,7 +42,7 @@ export async function GET() {
   // positions / orders / runs —— 任一失败降级为空,不整页挂。
   // orders 多取 1 条探测「是否还有更早的」(命中上限 → 截断提示,不静默)。
   const ORDERS_SHOWN = 20;
-  const [positionsRes, ordersRes, runsRes, candidatesRes] =
+  const [positionsRes, ordersRes, runsRes, candidatesRes, campaignsRes, coverageRes] =
     await Promise.allSettled([
       backendFetch<PositionRecord[]>("paper", "/positions"),
       backendFetch<OrderRecord[]>("paper", "/orders", {
@@ -54,6 +56,11 @@ export async function GET() {
       backendFetch<StrategyCandidateSummary[]>("paper", "/strategy_candidates", {
         query: { limit: 200 },
       }),
+      backendFetch<{ items: EvolutionCampaign[] }>("evolver", "/api/v1/campaigns", {
+        query: { limit: 50 },
+        timeoutMs: 3_000,
+      }),
+      backendFetch<EventDataCoverage>("data", "/events/coverage", { timeoutMs: 3_000 }),
     ]);
 
   const positions = settledOr(positionsRes, []);
@@ -70,6 +77,15 @@ export async function GET() {
     candidate: candidatesAll.filter((c) => c.status === "candidate").length,
   };
   const candidates = candidatesAll.slice(0, CANDIDATES_SHOWN);
+  const campaigns = settledOr(campaignsRes, { items: [] }).items;
+  const coverage = settledOr<EventDataCoverage | null>(coverageRes, null);
+  const activeCampaignStates = new Set(["draft", "replaying", "candidate_locked", "waiting_forward", "holdout_ready"]);
+  const evolutionSummary = {
+    activeCampaigns: campaigns.filter((campaign) => activeCampaignStates.has(campaign.status)).length,
+    waitingEvents: campaigns.filter((campaign) => campaign.status === "waiting_forward").length,
+    readyForAdoption: campaigns.filter((campaign) => campaign.status === "graduated").length,
+    eventSourceFailures: coverage === null || coverage.sources.length === 0 ? 1 : 0,
+  };
 
   // 每个持仓 best-effort 补最新价(fresh=false:只读 DB 缓存,不触发慢 backfill)。
   const marked: PositionWithMark[] = await Promise.all(
@@ -102,6 +118,7 @@ export async function GET() {
     candidates,
     candidateCounts,
     ordersTruncated,
+    evolutionSummary,
     asOf: new Date().toISOString(),
   };
 

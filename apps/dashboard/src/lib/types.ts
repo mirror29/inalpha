@@ -173,6 +173,12 @@ export interface OverviewPayload {
   candidateCounts: { all: number; promoted: number; candidate: number };
   /** orders 命中上限被截断(还有更早的订单未显示) —— UI 给「仅显示最近 N」提示,不静默。 */
   ordersTruncated: boolean;
+  evolutionSummary: {
+    activeCampaigns: number;
+    waitingEvents: number;
+    readyForAdoption: number;
+    eventSourceFailures: number;
+  };
   /** server 侧采集这一帧的时刻(ISO);UI 显示 "数据时间"。 */
   asOf: string;
 }
@@ -253,7 +259,22 @@ export interface LabPayload {
   counts: { all: number; promoted: number; candidate: number; rejected: number };
   /** candidates 命中上限被截断(还有更多候选未显示) —— UI 给截断提示,不静默。 */
   truncated: boolean;
+  experimentalAdoptions: ExperimentalStrategyAdoption[];
   asOf: string;
+}
+
+export interface ExperimentalStrategyAdoption {
+  adoption_id: string;
+  artifact_id: string;
+  campaign_id: string | null;
+  evidence_grade: "standard" | "limited";
+  status: "experimental" | "accepted" | "rejected";
+  runner_eligible: false;
+  evidence: Record<string, unknown>;
+  adopted_at: string;
+  source_hash: string;
+  compiler_version: string | null;
+  campaign_status: string | null;
 }
 
 /** 该候选最近一次回测的概要(回测时间 / 区间)。 */
@@ -473,6 +494,7 @@ export type ActivityKind =
   | "order"
   | "backtest"
   | "runner"
+  | "evolution"
   | "conversation";
 
 export type ActivityTone = "bull" | "fox" | "gold" | "cyan" | "muted";
@@ -621,4 +643,114 @@ export interface EvolutionRunDetailPayload {
 export interface EvolutionCandidateDetailPayload {
   candidate: EvolutionCandidateSummary;
   asOf: string;
+}
+
+// ── E2 事件驱动 Campaign ──
+
+export type EvolutionCampaignStatus =
+  | "draft"
+  | "replaying"
+  | "candidate_locked"
+  | "waiting_forward"
+  | "holdout_ready"
+  | "graduated"
+  | "rejected"
+  | "insufficient_evidence"
+  | "failed"
+  | "aborted";
+
+export interface EvolutionGenerationProjection {
+  generation: number;
+  hypothesis_count: number;
+  selected_count: number;
+  best_credit: number | null;
+  best_novelty: number | null;
+}
+
+export interface EvolutionHypothesis {
+  hypothesis_id: string;
+  campaign_id: string;
+  generation: number;
+  slot: number;
+  lineage_kind: string;
+  lane: string;
+  parent_ids: string[];
+  spec: Record<string, unknown>;
+  spec_hash: string;
+  upper_credit: number | null;
+  novelty_score: number | null;
+  pareto_rank: number | null;
+  selected: boolean;
+  created_at: string;
+}
+
+export interface EvolutionImplementation {
+  implementation_id: string;
+  campaign_id: string;
+  hypothesis_id: string;
+  generation: number;
+  profile: string;
+  source_hash: string;
+  outcome: string;
+  fitness: number | null;
+  validation_metrics: Record<string, unknown> | null;
+  event_metrics: Record<string, unknown> | null;
+  evidence_quality: number | null;
+  novelty_score: number | null;
+  fdr_pass: boolean | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvolutionCampaign {
+  campaign_id: string;
+  status: EvolutionCampaignStatus;
+  active_generation: number;
+  hypothesis_budget: number;
+  implementations_per_hypothesis: number;
+  max_generations: number;
+  event_snapshot_id: string;
+  frozen_config: Record<string, unknown>;
+  locked_candidate_id: string | null;
+  holdout_consumed_at: string | null;
+  forward_started_at: string | null;
+  forward_deadline_at: string | null;
+  forward_event_count: number;
+  forward_metrics: Record<string, unknown> | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  state_version: number;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+  generations: EvolutionGenerationProjection[];
+  hypotheses: EvolutionHypothesis[];
+  implementations: EvolutionImplementation[];
+}
+
+export interface EvolutionCampaignPayload {
+  campaigns: EvolutionCampaign[];
+  asOf: string;
+}
+
+export interface EvolutionCampaignDetailPayload {
+  campaign: EvolutionCampaign;
+  asOf: string;
+}
+
+export interface EventDataCoverage {
+  as_of: string;
+  sources: Array<{
+    source: string;
+    raw_event_count: number;
+    retractions: number;
+    latest_accepted_at: string | null;
+    max_version: number;
+  }>;
+  raw_event_count: number;
+  fact_count: number;
+  retraction_count: number;
+  latest_accepted_at: string | null;
 }

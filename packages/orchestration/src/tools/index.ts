@@ -103,7 +103,9 @@ import {
 import {
   evolverAbortEvolutionTool,
   evolverGetCandidateTool,
+  evolverGetEventCampaignTool,
   evolverGetEvolutionTool,
+  evolverRunEventCampaignTool,
   evolverRunEvolutionTool,
   evolverTools,
 } from "./evolver.js";
@@ -126,7 +128,9 @@ export {
   executeTradePlanTool,
   evolverAbortEvolutionTool,
   evolverGetCandidateTool,
+  evolverGetEventCampaignTool,
   evolverGetEvolutionTool,
+  evolverRunEventCampaignTool,
   evolverRunEvolutionTool,
   factorCatalogTool,
   factorEvaluateCandidateTool,
@@ -341,6 +345,8 @@ export const orchestratorToolList = [
   divinationCastHexagramTool,
   divinationDrawTarotTool,
   // E1 演化引擎（显式单代变异 + 真实冻结数据评估）
+  evolverRunEventCampaignTool,
+  evolverGetEventCampaignTool,
   evolverRunEvolutionTool,
   evolverGetEvolutionTool,
   evolverGetCandidateTool,

@@ -15,8 +15,10 @@ from .strategy_preparation import audit_strategy_source
 
 if TYPE_CHECKING:
     from .engine.report import BacktestReport
+    from .execution.exchange import EventExecutionPolicy
     from .kernel.identifiers import InstrumentId
     from .model.data import Bar
+    from .model.market_events import MarketEvent
 
 EngineRunner = Callable[..., Awaitable["BacktestReport"]]
 
@@ -42,6 +44,8 @@ async def evaluate_strategy_source(
     trading_mode: str = "spot",
     leverage: int = 1,
     funding_rate: float = 0.0,
+    events: list[MarketEvent] | None = None,
+    event_execution_policy: EventExecutionPolicy | None = None,
 ) -> SourceEvaluation:
     """审计临时源码并在调用方提供的隔离执行器中评估。"""
     _validate_bars(bars)
@@ -60,6 +64,8 @@ async def evaluate_strategy_source(
         leverage=leverage,
         funding_rate=funding_rate,
         annualization_periods=int(periods),
+        events=events,
+        event_execution_policy=event_execution_policy,
     )
     validation, fitness = await asyncio.to_thread(
         _compute_metrics,

@@ -43,6 +43,8 @@ allow:
   # 演化状态与候选详情只读
   - "evolver.get_evolution"
   - "evolver.get_candidate"
+  # 事件 campaign 查询只读；启动 campaign 会产生 LLM 费用，必须先显式审批
+  - "evolver.get_event_campaign"
 
   # Swarm 批量回测（ADR-0025）：只读，无下单路径
   - "swarm.*"
@@ -90,8 +92,9 @@ ask:
   - "paper.deposit_cash"
   - "paper.reset_account"
 
-  # LLM 变异会产生费用；取消会改变运行状态，均需明确确认
+  # LLM 演化会产生费用；E2 一次审批覆盖整个五代 campaign，不逐代重复审批
   - "evolver.run_evolution"
+  - "evolver.run_event_campaign"
   - "evolver.abort_evolution"
 
 deny:

@@ -78,9 +78,7 @@ class DataSettings(BaseSettings):
     news_timeout_s: float = Field(default=15.0, alias="NEWS_TIMEOUT_S")
     """SEC、HKEX 与 RSS provider 的单请求超时。"""
 
-    sec_user_agent: str = Field(
-        default="Inalpha/0.2 contact@inalpha.dev", alias="SEC_USER_AGENT"
-    )
+    sec_user_agent: str = Field(default="Inalpha/0.2 contact@inalpha.dev", alias="SEC_USER_AGENT")
     """SEC 要求可识别应用和联系方式；生产可覆盖为维护者邮箱。"""
 
     sec_min_interval_s: float = Field(default=0.11, alias="SEC_MIN_INTERVAL_S")
@@ -96,6 +94,30 @@ class DataSettings(BaseSettings):
     )
     """成分快照调度的检查间隔（小时）。幂等:每轮只补"今天还没快照"的指数，
     <24h 不会重复打源站（省 akshare + 防封），>1 轮/天纯为重启后尽快补当天。"""
+
+    coinmarketcal_api_key: str = Field(default="", alias="COINMARKETCAL_API_KEY")
+    """CoinMarketCal Professional v2 API key。为空时历史事件导入端点显式返回不可用。"""
+
+    coinmarketcal_base_url: str = Field(
+        default="https://api.coinmarketcal.com", alias="COINMARKETCAL_BASE_URL"
+    )
+    """CoinMarketCal 官方 API 根地址；保留覆盖能力用于测试 stub。"""
+
+    event_provider_timeout_s: float = Field(default=20.0, alias="EVENT_PROVIDER_TIMEOUT_S")
+    """结构化事件 provider 单请求超时。"""
+
+    event_historical_latency_s: int = Field(
+        default=300, ge=0, le=86_400, alias="EVENT_HISTORICAL_LATENCY_S"
+    )
+    """历史结构化来源首次添加时间的保守可用延迟，冻结进 policy version。"""
+
+    event_archive_enabled: bool = Field(default=False, alias="EVENT_ARCHIVE_ENABLED")
+    """是否启动精选 crypto RSS 的 forward 归档；默认关，避免未迁移 DB 时后台报错。"""
+
+    event_archive_interval_s: int = Field(
+        default=900, ge=60, le=86_400, alias="EVENT_ARCHIVE_INTERVAL_S"
+    )
+    """精选新闻 forward 归档轮询间隔。"""
 
 
 @lru_cache(maxsize=1)

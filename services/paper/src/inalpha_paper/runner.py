@@ -9,6 +9,7 @@ Swarm S1（ADR-0025）起：CPU 重活（engine + strategy + ``engine.run(bars)`
 ``run_engine_in_subprocess`` 顶层函数，async ``run_backtest`` 通过 ``ProcessPoolExecutor``
 ``loop.run_in_executor`` 提交。HTTP I/O / DB 写仍在 main 协程里。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,9 +40,12 @@ from .evaluation_metrics import (
     validation_from_report as _validation_from_report,
 )
 from .evaluation_worker import run_engine_worker as run_engine_in_subprocess
+from .event_conversion import market_event_from_fact
+from .execution.exchange import EventExecutionPolicy
 from .kernel.identifiers import InstrumentId
 from .market_evaluation import build_market_evaluation_context
 from .model.data import Bar
+from .model.market_events import MarketEvent
 from .schemas import (
     BacktestRequest,
     BacktestResponse,
@@ -102,10 +106,7 @@ async def run_backtest(
     )
 
     instrument_id = InstrumentId(symbol=req.symbol, venue=req.venue)
-    bars = [
-        _bar_from_dict(b, instrument_id, market_context.canonical_timeframe)
-        for b in raw_bars
-    ]
+    bars = [_bar_from_dict(b, instrument_id, market_context.canonical_timeframe) for b in raw_bars]
     if not bars:
         raise ValidationError(
             f"data-service returned 0 bars for {req.symbol}@{req.venue} "
@@ -121,6 +122,13 @@ async def run_backtest(
                 "to_ts": req.to_ts.isoformat(),
             },
         )
+
+    market_events: list[MarketEvent] = []
+    event_policy: EventExecutionPolicy | None = None
+    if req.event_snapshot_id is not None:
+        event_snapshot = await data_client.get_event_snapshot(str(req.event_snapshot_id))
+        market_events = [market_event_from_fact(item) for item in event_snapshot["facts"]]
+        event_policy = EventExecutionPolicy()
 
     # D-9 · candidate 路径：从 strategy_candidates 表读源码 + 二次审计（defense in depth）
     candidate_code: str | None = None
@@ -140,9 +148,7 @@ async def run_backtest(
 
     # 用作落库 / 响应的 strategy_code（"candidate:<uuid>" 与内置 ID 同字段区分）
     effective_strategy_code = (
-        req.strategy_id
-        if req.strategy_id is not None
-        else f"candidate:{req.candidate_id}"
+        req.strategy_id if req.strategy_id is not None else f"candidate:{req.candidate_id}"
     )
 
     # 2-3. 实例化 engine + strategy + 跑回测（CPU 重活，丢 ProcessPool）
@@ -169,6 +175,8 @@ async def run_backtest(
                     trading_mode=req.trading_mode,
                     leverage=req.leverage,
                     funding_rate=req.funding_rate,
+                    events=market_events,
+                    event_execution_policy=event_policy,
                 ),
                 evaluate_buy_and_hold(
                     bars=bars,
@@ -196,6 +204,8 @@ async def run_backtest(
                 leverage=req.leverage,
                 funding_rate=req.funding_rate,
                 annualization_periods=market_context.annualization_periods,
+                events=market_events,
+                event_execution_policy=event_policy,
             )
             baseline_report = None
     except (AttributeError, TypeError, ValueError, KeyError, IndexError, ZeroDivisionError) as exc:
@@ -252,9 +262,7 @@ async def run_backtest(
     # 5a'. D-12：holdout 时间切分验证（单次运行按曲线切段，不二次跑引擎）。
     # baseline 不切段——alpha 对照仍看全窗。
     validation: ValidationBlock | None = (
-        source_evaluation.snapshot.validation
-        if source_evaluation is not None
-        else None
+        source_evaluation.snapshot.validation if source_evaluation is not None else None
     )
     if source_evaluation is None and req.validation_split > 0:
         validation = _validation_from_report(
@@ -267,9 +275,7 @@ async def run_backtest(
         baseline_fitness = (
             baseline_evaluation.snapshot.fitness
             if baseline_evaluation is not None
-            else _fitness_from_report(
-                baseline_report, bars_per_year=bars_per_year
-            )
+            else _fitness_from_report(baseline_report, bars_per_year=bars_per_year)
         )
         baseline_snapshot = BaselineSnapshot(
             strategy_id=BASELINE_BUY_AND_HOLD,
@@ -282,9 +288,7 @@ async def run_backtest(
         )
 
     # 6. 可选落库 + 计算 params_hash（即使不落库也算给响应用）
-    params_hash = backtest_runs_store.compute_params_hash(
-        effective_strategy_code, req.params
-    )
+    params_hash = backtest_runs_store.compute_params_hash(effective_strategy_code, req.params)
     run_id: UUID | None = None
     if conn is not None:
         # run 行 + 逐笔成交同一事务写入(只写主候选/内置策略的 fills,**不写 baseline**):
@@ -350,6 +354,8 @@ async def run_backtest(
         params_hash=params_hash,
         strategy_id=effective_strategy_code,
         candidate_id=req.candidate_id,
+        event_snapshot_id=req.event_snapshot_id,
+        execution_model_version=req.execution_model_version,
         fitness=fitness_value,
         baseline=baseline_snapshot,
         venue=req.venue,
@@ -415,6 +421,8 @@ async def _persist_run(
         "from_ts": req.from_ts.isoformat(),
         "to_ts": req.to_ts.isoformat(),
         "initial_cash": req.initial_cash,
+        "event_snapshot_id": str(req.event_snapshot_id) if req.event_snapshot_id else None,
+        "execution_model_version": req.execution_model_version,
         "fee_rate": req.fee_rate,
         "params": req.params,
         "candidate_id": str(req.candidate_id) if req.candidate_id else None,
@@ -529,9 +537,7 @@ async def run_cv(
 
     splitter: CombinatorialPurgedCV | PurgedKFold | WalkForward
     if req.splitter == "cpcv":
-        splitter = CombinatorialPurgedCV(
-            req.n_folds, req.n_test_folds, embargo_pct=req.embargo_pct
-        )
+        splitter = CombinatorialPurgedCV(req.n_folds, req.n_test_folds, embargo_pct=req.embargo_pct)
     elif req.splitter == "purged_kfold":
         splitter = PurgedKFold(req.n_folds, embargo_pct=req.embargo_pct)
     else:
@@ -688,6 +694,8 @@ async def _run_engine(
     leverage: int = 1,
     funding_rate: float = 0.0,
     annualization_periods: int | None = None,
+    events: list[MarketEvent] | None = None,
+    event_execution_policy: EventExecutionPolicy | None = None,
 ) -> BacktestReport:
     """调度 engine 执行：pool 已起则丢 ProcessPool，未起则同进程跑兜底。
 
@@ -724,6 +732,8 @@ async def _run_engine(
             leverage=leverage,
             funding_rate=funding_rate,
             annualization_periods=annualization_periods,
+            events=events,
+            event_execution_policy=event_execution_policy,
         )
 
     loop = asyncio.get_running_loop()
@@ -747,13 +757,13 @@ async def _run_engine(
         leverage=leverage,
         funding_rate=funding_rate,
         annualization_periods=annualization_periods,
+        events=events,
+        event_execution_policy=event_execution_policy,
     )
     return await loop.run_in_executor(pool, fn)
 
 
-def _protective_thresholds() -> tuple[
-    float | None, float | None, float | None, float | None, int
-]:
+def _protective_thresholds() -> tuple[float | None, float | None, float | None, float | None, int]:
     """从 Settings 读 ADR-0052 框架级持仓保护止损阈值
     ``(stop_loss, take_profit, trailing, chandelier_atr_mult, chandelier_atr_period)``。"""
     s = get_paper_settings()
@@ -785,6 +795,8 @@ def _make_pool_call(
     leverage: int = 1,
     funding_rate: float = 0.0,
     annualization_periods: int | None = None,
+    events: list[MarketEvent] | None = None,
+    event_execution_policy: EventExecutionPolicy | None = None,
 ) -> Any:
     """生成一个无参 callable，丢给 ``run_in_executor``。
 
@@ -812,4 +824,6 @@ def _make_pool_call(
         leverage=leverage,
         funding_rate=funding_rate,
         annualization_periods=annualization_periods,
+        events=events,
+        event_execution_policy=event_execution_policy,
     )

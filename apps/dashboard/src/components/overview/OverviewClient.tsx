@@ -68,6 +68,8 @@ export function OverviewClient() {
 
       <FxWarningBanner warnings={data.account.fx_warnings} />
 
+      <EvolutionSummary summary={data.evolutionSummary} />
+
       <KpiBar data={data} />
 
       {/* 执行态一排:live runner + 持仓(在跑什么 ↔ 仓位什么样)。
@@ -100,6 +102,18 @@ export function OverviewClient() {
       </div>
     </div>
   );
+}
+
+/** Surface event-evolution operations without mixing sandbox state into Runner panels. */
+function EvolutionSummary({ summary }: { summary: OverviewPayload["evolutionSummary"] }) {
+  const t = useTranslations("overview.evolution");
+  const items = [
+    [t("active"), summary.activeCampaigns, "text-cyan"],
+    [t("waiting"), summary.waitingEvents, "text-gold"],
+    [t("adoption"), summary.readyForAdoption, "text-bull"],
+    [t("sources"), summary.eventSourceFailures, summary.eventSourceFailures ? "text-fox-red" : "text-bull"],
+  ] as const;
+  return <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{items.map(([label, value, tone]) => <div key={label} className="rounded-xl border border-border-subtle bg-bg-elev/20 px-4 py-3"><div className="font-mono text-[10px] uppercase tracking-wider text-fg-muted">{label}</div><div className={`mt-1 font-mono text-xl ${tone}`}>{value}</div></div>)}</div>;
 }
 
 function OverviewSkeleton() {

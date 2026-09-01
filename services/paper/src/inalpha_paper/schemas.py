@@ -1,4 +1,5 @@
 """REST API 请求 / 响应 schema。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -88,6 +89,14 @@ class BacktestRequest(BaseModel):
         default=None,
         description="触发本次回测的原始 strategy_hint（审计用，可空）",
     )
+    event_snapshot_id: UUID | None = Field(
+        default=None,
+        description="冻结的 Data EventSnapshot；提供后按 available_at 在 bar 决策点回放。",
+    )
+    execution_model_version: Literal["legacy-bar-v1", "event-fill-v1"] = Field(
+        default="legacy-bar-v1",
+        description="事件策略必须显式使用 event-fill-v1 保守冲击/容量模型。",
+    )
 
     @field_validator("from_ts", "to_ts", mode="after")
     @classmethod
@@ -103,6 +112,11 @@ class BacktestRequest(BaseModel):
             raise PydanticCustomError(
                 "strategy_source",
                 "must provide exactly one of strategy_id / candidate_id, not both / neither",
+            )
+        if self.event_snapshot_id is not None and self.execution_model_version != "event-fill-v1":
+            raise PydanticCustomError(
+                "event_execution_model",
+                "event_snapshot_id requires execution_model_version='event-fill-v1'",
             )
         return self
 
@@ -127,9 +141,7 @@ class CVBacktestRequest(BacktestRequest):
         default=0.05, ge=0.0, lt=1.0, description="purge+embargo 占总 bar 比例（按 bar 数）"
     )
     wf_test_size: int = Field(default=21, ge=1, description="walk_forward 每折 test bar 数")
-    wf_train_size: int = Field(
-        default=252, ge=1, description="walk_forward train 窗口 bar 数"
-    )
+    wf_train_size: int = Field(default=252, ge=1, description="walk_forward train 窗口 bar 数")
 
     @model_validator(mode="after")
     def _check_cpcv_test_folds(self) -> CVBacktestRequest:
@@ -159,9 +171,7 @@ class CVBacktestResponse(BaseModel):
     sharpe_mean: float
     dsr: float | None = None
     dsr_p_value: float | None = None
-    note: str | None = Field(
-        default=None, description="回落 / 降级说明（如 cpcv → walk_forward）"
-    )
+    note: str | None = Field(default=None, description="回落 / 降级说明（如 cpcv → walk_forward）")
 
 
 class PositionSnapshot(BaseModel):
@@ -372,6 +382,14 @@ class BacktestResponse(BaseModel):
     candidate_id: UUID | None = Field(
         default=None,
         description="D-9 起：若本次回测走候选路径，回填 candidate_id，便于前端串血缘",
+    )
+    event_snapshot_id: UUID | None = Field(
+        default=None,
+        description="本次回放使用的不可变事件快照；无事件回测为 null。",
+    )
+    execution_model_version: str = Field(
+        default="legacy-bar-v1",
+        description="撮合/冲击成本模型版本，缓存和审计必须包含。",
     )
     fitness: float | None = Field(
         default=None,
@@ -641,7 +659,9 @@ class SubmitOrderRequest(BaseModel):
         "仅 crypto 永续标的如 BTC/USDT:USDT 生效)",
     )
     leverage: int = Field(
-        default=1, ge=1, le=20,
+        default=1,
+        ge=1,
+        le=20,
         description="杠杆倍数(perp 用,1..20);spot 恒 1",
     )
 
@@ -653,9 +673,7 @@ class SubmitOrderRequest(BaseModel):
         if self.order_type == "LIMIT" and self.price is None:
             raise PydanticCustomError("limit_requires_price", "LIMIT order requires price")
         if self.order_type == "MARKET" and self.price is not None:
-            raise PydanticCustomError(
-                "market_no_price", "MARKET order must not specify price"
-            )
+            raise PydanticCustomError("market_no_price", "MARKET order must not specify price")
         return self
 
     model_config = {"populate_by_name": True}
@@ -718,12 +736,9 @@ class PositionRecord(BaseModel):
     symbol: str
     quantity: float
     avg_open_price: float
-    realized_pnl: float = Field(
-        description="全历史累计已实现盈亏（毛口径，不含手续费）"
-    )
+    realized_pnl: float = Field(description="全历史累计已实现盈亏（毛口径，不含手续费）")
     session_realized_pnl: float = Field(
-        default=0.0,
-        description="当前持仓相关的已实现盈亏（开仓时清零，平仓时累加）"
+        default=0.0, description="当前持仓相关的已实现盈亏（开仓时清零，平仓时累加）"
     )
     generation: int
     currency: str | None = Field(
@@ -811,16 +826,18 @@ class DepositRequest(BaseModel):
     """``POST /accounts/me/deposit`` 请求体:给账户充值(外生资金事件,写流水)。"""
 
     amount: float = Field(
-        ..., gt=0, le=1e9,
+        ...,
+        gt=0,
+        le=1e9,
         description="充值金额(>0);上限 1e9 防超大值",
     )
     currency: str | None = Field(
-        default=None, min_length=1, max_length=16,
+        default=None,
+        min_length=1,
+        max_length=16,
         description="入账币种桶;省略 = 账户 base_currency",
     )
-    note: str | None = Field(
-        default=None, max_length=500, description="备注(留痕,可空)"
-    )
+    note: str | None = Field(default=None, max_length=500, description="备注(留痕,可空)")
 
 
 class ResetAccountRequest(BaseModel):
@@ -831,12 +848,12 @@ class ResetAccountRequest(BaseModel):
     """
 
     initial_cash: float | None = Field(
-        default=None, gt=0, le=1e9,
+        default=None,
+        gt=0,
+        le=1e9,
         description="新一轮初始资金(base_currency 计);省略 = 沿用账户当前 initial_cash",
     )
-    note: str | None = Field(
-        default=None, max_length=500, description="备注(留痕,可空)"
-    )
+    note: str | None = Field(default=None, max_length=500, description="备注(留痕,可空)")
 
 
 class CashFlowRecord(BaseModel):
@@ -964,7 +981,9 @@ class StartStrategyRunRequest(BaseModel):
     )
     leverage: int = Field(default=1, ge=1, le=20, description="杠杆倍数(perp 用,1..20);spot 恒 1")
     allocation: float | None = Field(
-        default=None, gt=0, le=1e9,
+        default=None,
+        gt=0,
+        le=1e9,
         description="本 run 的资金额度(账户 base_currency 计):sizing 与 run 级购买力"
         "都以它为上限,多 run 共享账户时各自的资金边界。省略时服务端取 "
         "min(10000, 账户折算可用现金);账户可用 ≤0 时拒绝 start",

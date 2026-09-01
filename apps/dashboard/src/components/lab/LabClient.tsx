@@ -88,6 +88,10 @@ export function LabClient() {
         }
       />
 
+      <Panel title={t("experimental.title")}>
+        {data.experimentalAdoptions.length === 0 ? <TableEmpty>{t("experimental.empty")}</TableEmpty> : <div className="grid gap-3 p-4 md:grid-cols-2">{data.experimentalAdoptions.map((adoption) => <article key={adoption.adoption_id} className="rounded-lg border border-gold/25 bg-gold/5 p-3"><div className="flex items-center justify-between"><span className="font-mono text-xs text-gold">{t("experimental.badge")}</span><span className="font-mono text-[10px] text-fg-muted">runner=false</span></div><div className="mt-2 font-mono text-sm text-fg">{adoption.source_hash.slice(0, 16)}</div><div className="mt-2 text-xs text-fg-muted">{t("experimental.grade", { grade: adoption.evidence_grade })}</div>{adoption.campaign_id && <Link href={`/evolution/campaigns/${adoption.campaign_id}`} className="mt-3 inline-block font-mono text-xs text-cyan hover:underline">{t("experimental.lineage")} →</Link>}</article>)}</div>}
+      </Panel>
+
       <Panel
         title={t("candidates")}
         aside={

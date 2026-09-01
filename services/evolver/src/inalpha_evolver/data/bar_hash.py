@@ -16,12 +16,13 @@ def bars_content_hash(
 ) -> str:
     """按市场身份、时间戳和 OHLCV 的规范二进制编码计算 SHA-256。"""
     digest = hashlib.sha256()
-    identity = f"e1-bars-v1\0{instrument.venue}\0{instrument.symbol}\0{context.canonical_timeframe}\0"
+    identity = f"e2-bars-v2\0{instrument.venue}\0{instrument.symbol}\0{context.canonical_timeframe}\0"
     digest.update(identity.encode())
     for bar in bars:
         digest.update(
             struct.pack(
-                "!q5d",
+                "!qq5d",
+                bar.bar_open_at,
                 bar.ts_event,
                 bar.open,
                 bar.high,

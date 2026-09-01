@@ -19,15 +19,19 @@ internal topic 约定（仅在本服务内使用）：
 - ``internal.venue.filled`` —— venue 撮合成功
 - ``internal.venue.rejected`` —— venue 拒单（如不支持的 OrderType / 现金不足）
 """
+
 from __future__ import annotations
 
 import logging
+from collections import deque
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..kernel.clock import Clock
 from ..kernel.identifiers import ClientOrderId, StrategyId, VenueOrderId
 from ..kernel.msgbus import MessageBus
 from ..model.data import Bar
+from ..model.market_events import MarketEvent
 from ..model.orders import Order, OrderSide, OrderType, is_protective_order
 from .gateway import Gateway
 
@@ -39,10 +43,34 @@ EXECUTION_ENGINE_ENDPOINT = "ExecutionEngine.execute"
 _logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class EventExecutionPolicy:
+    """Versioned conservative fill assumptions for event-driven backtests."""
+
+    version: str = "event-fill-v1"
+    max_participation_rate: float = 0.01
+    liquidity_floor_bps: float = 8.0
+    severity_bps: float = 35.0
+    atr_fraction: float = 0.10
+    impact_bars: int = 3
+
+    def __post_init__(self) -> None:
+        if not 0 < self.max_participation_rate <= 0.1:
+            raise ValueError("max_participation_rate must be within (0,0.1]")
+        if self.impact_bars < 1:
+            raise ValueError("impact_bars must be positive")
+
+
 class SimulatedExchange(Gateway):
     """同时是 Gateway 和 venue 撮合器。"""
 
-    def __init__(self, msgbus: MessageBus, clock: Clock) -> None:
+    def __init__(
+        self,
+        msgbus: MessageBus,
+        clock: Clock,
+        *,
+        event_policy: EventExecutionPolicy | None = None,
+    ) -> None:
         self._msgbus = msgbus
         self._clock = clock
         # 待撮合订单：list of (order, strategy_id)
@@ -53,6 +81,13 @@ class SimulatedExchange(Gateway):
         # 本轮 process_bar 内被 portfolio 守门拒的 client_order_id
         # 用于 process_bar 末把它们从 _pending 移除（避免下一根 bar 重复拒）
         self._denied_this_round: set[ClientOrderId] = set()
+        self._event_policy = event_policy
+        self._active_event_severity = 0.0
+        self._event_impact_bars_remaining = 0
+        self._previous_volume: float | None = None
+        self._known_ranges: deque[tuple[float, float]] = deque(maxlen=20)
+        if event_policy is not None:
+            self._msgbus.subscribe("data.market_events", self._on_market_event)
 
     def bind_portfolio(self, portfolio: Portfolio) -> None:
         """注入 Portfolio 让 ``_try_fill`` 能在撮合前做现金 / 持仓守门。
@@ -137,6 +172,13 @@ class SimulatedExchange(Gateway):
             filled_count += 1
 
         self._pending = remaining
+        if self._event_impact_bars_remaining > 0:
+            self._event_impact_bars_remaining -= 1
+            if self._event_impact_bars_remaining == 0:
+                self._active_event_severity = 0.0
+        self._previous_volume = bar.volume
+        if bar.close > 0:
+            self._known_ranges.append((bar.high - bar.low, bar.close))
         return filled_count
 
     def flush_protective_at_close(self, bar: Bar) -> int:
@@ -167,21 +209,20 @@ class SimulatedExchange(Gateway):
                 # 正常不可达(guard 出场量=持仓);留日志便于未来排查边界异常
                 _logger.warning(
                     "flush_protective_at_close: 保护单 %s 量 %s 超持仓被守门拒,跳过",
-                    order.client_order_id, order.quantity,
+                    order.client_order_id,
+                    order.quantity,
                 )
                 remaining.append((order, strategy_id))
                 continue
             # perp reduce-only 校验（#117）：BUY 保护单必须对应空头持仓，与 live_runner 同口径
-            if (
-                order.side == OrderSide.BUY
-                and self._portfolio is not None
-            ):
+            if order.side == OrderSide.BUY and self._portfolio is not None:
                 pos = self._portfolio.position(order.instrument_id)
                 cur_qty = pos.quantity if pos is not None else 0.0
                 if cur_qty >= 0:  # 不持空头 → 不允许保护性 BUY（无持仓可平）
                     _logger.warning(
                         "flush_protective_at_close: perp BUY 保护单 %s 无空头持仓(当前 %s),跳过",
-                        order.client_order_id, cur_qty,
+                        order.client_order_id,
+                        cur_qty,
                     )
                     remaining.append((order, strategy_id))
                     continue
@@ -250,6 +291,24 @@ class SimulatedExchange(Gateway):
         if fill_price is None:
             return None  # LIMIT 未触发
 
+        if self._event_policy is not None and self._event_impact_bars_remaining > 0:
+            if (
+                self._previous_volume is not None
+                and fill_qty > self._previous_volume * self._event_policy.max_participation_rate
+            ):
+                participation_limit = (
+                    f"{self._event_policy.max_participation_rate * 100:g}%"
+                )
+                self._emit_denied(
+                    order,
+                    strategy_id,
+                    "EVENT_CAPACITY_EXCEEDED: order quantity exceeds "
+                    f"{participation_limit} of previously known bar volume",
+                )
+                return None
+            if order.type == OrderType.MARKET:
+                fill_price = self._event_adjusted_price(fill_price, order.side)
+
         # spot 守门：portfolio 注入后启用；未注入时退化为旧行为
         if self._portfolio is not None:
             if order.side == OrderSide.BUY:
@@ -281,6 +340,32 @@ class SimulatedExchange(Gateway):
 
         return (fill_qty, fill_price)
 
+    def _on_market_event(self, message: object) -> None:
+        """Activate conservative impact assumptions without retaining raw evidence."""
+        if not isinstance(message, MarketEvent) or self._event_policy is None:
+            return
+        self._active_event_severity = max(self._active_event_severity, message.severity)
+        self._event_impact_bars_remaining = max(
+            self._event_impact_bars_remaining,
+            self._event_policy.impact_bars,
+        )
+
+    def _event_adjusted_price(self, open_price: float, side: OrderSide) -> float:
+        """Apply only information known before the fill bar to adverse slippage."""
+        assert self._event_policy is not None
+        atr_ratio = 0.0
+        if self._known_ranges:
+            atr_ratio = sum(range_ / close for range_, close in self._known_ranges) / len(
+                self._known_ranges
+            )
+        bps = max(
+            self._event_policy.liquidity_floor_bps,
+            self._active_event_severity * self._event_policy.severity_bps
+            + atr_ratio * 10_000 * self._event_policy.atr_fraction,
+        )
+        direction = 1.0 if side == OrderSide.BUY else -1.0
+        return open_price * (1.0 + direction * bps / 10_000)
+
     def _emit_denied(self, order: Order, strategy_id: StrategyId, reason: str) -> None:
         """守门拒单：emit rejected + 加入 denied 集合让 process_bar drop。"""
         self._denied_this_round.add(order.client_order_id)
@@ -293,3 +378,6 @@ class SimulatedExchange(Gateway):
                 "ts": self._clock.now_ns(),
             },
         )
+
+
+__all__ = ["EventExecutionPolicy", "SimulatedExchange"]

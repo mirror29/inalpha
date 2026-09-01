@@ -74,6 +74,20 @@ class EvolverSettings(BaseSettings):
         default="http://127.0.0.1:8001",
         alias="DATA_SERVICE_URL",
     )
+    evolver_data_timeout_s: int = Field(
+        default=60,
+        alias="EVOLVER_DATA_TIMEOUT_S",
+        ge=5,
+        le=300,
+        description="E2 冻结行情与事件快照预检超时。",
+    )
+    evolver_credential_timeout_s: int = Field(
+        default=60,
+        alias="EVOLVER_CREDENTIAL_TIMEOUT_S",
+        ge=5,
+        le=300,
+        description="Dashboard owner LLM 凭据兑换超时。",
+    )
     dashboard_service_url: str = Field(
         default="http://127.0.0.1:3001",
         alias="DASHBOARD_SERVICE_URL",
@@ -91,6 +105,23 @@ class EvolverSettings(BaseSettings):
         default="",
         alias="EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64",
         description="Orchestration Ed25519 签名公钥（SPKI DER base64）。",
+    )
+    event_evolution_enabled: bool = Field(default=False, alias="EVENT_EVOLUTION_ENABLED")
+    """E2 campaign API/dispatcher feature flag；E1 run 不受影响。"""
+
+    campaign_lease_ttl_s: int = Field(
+        default=90,
+        ge=30,
+        le=600,
+        alias="CAMPAIGN_LEASE_TTL_S",
+        description="E2 campaign worker lease 与 fencing token 续租周期基准。",
+    )
+    campaign_max_concurrent: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        alias="CAMPAIGN_MAX_CONCURRENT",
+        description="单个 Evolver 进程同时执行的 campaign 上限。",
     )
 
     # ---- LLM ----

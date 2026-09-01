@@ -35,11 +35,13 @@ export async function GET(
     const issuedAt = payload.iat;
     const expiresAt = payload.exp;
     const now = Math.floor(Date.now() / 1_000);
+    const grantPurpose = payload.grant_purpose ?? "e1_run";
     if (
       payload.token_use !== "evolution_credential" ||
       payload.config_id !== configId ||
       typeof payload.operation_id !== "string" ||
       payload.operation_id.length < 8 ||
+      (grantPurpose !== "e1_run" && grantPurpose !== "event_campaign") ||
       typeof payload.llm_config_digest !== "string" ||
       !/^[0-9a-f]{64}$/.test(payload.llm_config_digest) ||
       typeof payload.request_digest !== "string" ||
@@ -67,11 +69,13 @@ export async function GET(
     if (!config) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
     let recorded;
+    const maxRedemptions = grantPurpose === "event_campaign" ? 8 : 2;
+    const redemptionWindow = grantPurpose === "event_campaign" ? "30 hours" : "2 minutes";
     try {
       recorded = await getPool().query(
         `INSERT INTO evolution_credential_grant_uses
-         (jti,owner_sub,config_id,operation_id,config_digest,request_digest,consumed_at)
-         VALUES ($1,$2,$3,$4,$5,$6,NOW())
+         (jti,owner_sub,config_id,operation_id,config_digest,request_digest,grant_purpose,consumed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
          ON CONFLICT (jti) DO UPDATE SET
            redemption_count=evolution_credential_grant_uses.redemption_count+1,
            last_redeemed_at=NOW()
@@ -80,8 +84,9 @@ export async function GET(
            AND evolution_credential_grant_uses.operation_id=EXCLUDED.operation_id
            AND evolution_credential_grant_uses.config_digest=EXCLUDED.config_digest
            AND evolution_credential_grant_uses.request_digest=EXCLUDED.request_digest
-           AND evolution_credential_grant_uses.redemption_count<2
-           AND evolution_credential_grant_uses.consumed_at>=NOW()-INTERVAL '2 minutes'
+           AND evolution_credential_grant_uses.grant_purpose=EXCLUDED.grant_purpose
+           AND evolution_credential_grant_uses.redemption_count<$8
+           AND evolution_credential_grant_uses.consumed_at>=NOW()-$9::INTERVAL
          RETURNING jti`,
         [
           payload.jti,
@@ -90,6 +95,9 @@ export async function GET(
           payload.operation_id,
           payload.llm_config_digest,
           payload.request_digest,
+          grantPurpose,
+          maxRedemptions,
+          redemptionWindow,
         ],
       );
     } catch {

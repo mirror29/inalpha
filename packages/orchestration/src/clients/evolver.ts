@@ -22,6 +22,106 @@ export type EvolutionStartRequest = {
   llm: EvolutionLLMSnapshot;
 };
 
+export type EventCampaignRequest = {
+  event_snapshot_id: string;
+  source_run_id: string | null;
+  config: {
+    venue: string;
+    symbol: string;
+    timeframe: "15m" | "1h" | "4h";
+    from_ts: string;
+    as_of: string;
+    initial_cash: number;
+    fee_rate: number;
+    trading_mode: "spot" | "perp";
+    leverage: number;
+    discovery_ratio: 0.6;
+    generation_validation_ratio: 0.2;
+    sealed_holdout_ratio: 0.2;
+    execution_model_version: "event-fill-v1";
+    control_matcher_version: "event-control-v1";
+    random_seed: number;
+  };
+  llm: EvolutionLLMSnapshot;
+  hypotheses: [];
+};
+
+export type EventCampaignResult = {
+  campaign_id: string;
+  status: string;
+  active_generation: number;
+  max_generations: number;
+  event_snapshot_id: string;
+  llm_cost_usd: number;
+};
+
+type EventCampaignConfigBase = Omit<
+  EventCampaignRequest["config"],
+  "discovery_ratio" | "generation_validation_ratio" | "sealed_holdout_ratio" | "execution_model_version" | "control_matcher_version"
+>;
+export type EventCampaignConfigInput = Omit<
+  EventCampaignConfigBase,
+  "initial_cash" | "fee_rate" | "trading_mode" | "leverage" | "random_seed"
+> & Partial<Pick<EventCampaignConfigBase, "initial_cash" | "fee_rate" | "trading_mode" | "leverage" | "random_seed">>;
+
+/** Build the fixed 60/20/20 automatic event campaign request. */
+export function buildEventCampaignRequest(options: {
+  eventSnapshotId: string;
+  sourceRunId?: string;
+  config: EventCampaignConfigInput;
+  llmSnapshot: EvolutionLLMSnapshot;
+}): EventCampaignRequest {
+  return {
+    event_snapshot_id: options.eventSnapshotId,
+    source_run_id: options.sourceRunId ?? null,
+    config: {
+      ...options.config,
+      from_ts: new Date(options.config.from_ts).toISOString(),
+      as_of: new Date(options.config.as_of).toISOString(),
+      initial_cash: options.config.initial_cash ?? 10_000,
+      fee_rate: options.config.fee_rate ?? 0.001,
+      trading_mode: options.config.trading_mode ?? "perp",
+      leverage: options.config.leverage ?? 1,
+      random_seed: options.config.random_seed ?? 0,
+      discovery_ratio: 0.6,
+      generation_validation_ratio: 0.2,
+      sealed_holdout_ratio: 0.2,
+      execution_model_version: "event-fill-v1",
+      control_matcher_version: "event-control-v1",
+    },
+    llm: options.llmSnapshot,
+    hypotheses: [],
+  };
+}
+
+/** Match Python's sorted compact JSON digest for the auto-campaign request. */
+export function eventCampaignRequestDigest(request: EventCampaignRequest): string {
+  const config = request.config;
+  const hypothesesHash = createHash("sha256").update("[]").digest("hex");
+  const canonical = [
+    request.event_snapshot_id,
+    request.source_run_id ?? "",
+    config.venue,
+    config.symbol,
+    config.timeframe,
+    numberText(Date.parse(config.from_ts)),
+    numberText(Date.parse(config.as_of)),
+    float64Hex(config.initial_cash),
+    float64Hex(config.fee_rate),
+    config.trading_mode,
+    numberText(config.leverage),
+    float64Hex(config.discovery_ratio),
+    float64Hex(config.generation_validation_ratio),
+    float64Hex(config.sealed_holdout_ratio),
+    config.execution_model_version,
+    config.control_matcher_version,
+    numberText(config.random_seed),
+    request.llm.config_digest,
+    hypothesesHash,
+  ];
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
 /** 将 tool 输入收口为签名与发送共用的唯一请求体。 */
 export function buildEvolutionStartRequest(options: {
   budget?: number;
@@ -146,6 +246,42 @@ export class EvolverClient {
       if (!(error instanceof HttpClientError) || ![502, 504].includes(error.status)) throw error;
       return await this.http.post<RunStatusResult>("/api/v1/runs", options.request, headers);
     }
+  }
+
+  /** Create and start one automatic five-generation event campaign. */
+  async startEventCampaign(options: {
+    request: EventCampaignRequest;
+    idempotencyKey: string;
+    credentialGrant: string;
+  }): Promise<EventCampaignResult> {
+    const headers = {
+      "Idempotency-Key": options.idempotencyKey,
+      "X-Evolution-Credential": options.credentialGrant,
+    };
+    const created = await this.http.post<EventCampaignResult>(
+      "/api/v1/campaigns",
+      options.request,
+      headers,
+    );
+    if (created.status !== "draft") return created;
+
+    try {
+      return await this.http.post<EventCampaignResult>(
+        `/api/v1/campaigns/${created.campaign_id}/start`,
+        {},
+      );
+    } catch (error) {
+      if (!(error instanceof HttpClientError) || error.code !== "CAMPAIGN_STATE_CONFLICT") {
+        throw error;
+      }
+      const current = await this.getEventCampaign(created.campaign_id);
+      if (current.status === "draft") throw error;
+      return current;
+    }
+  }
+
+  async getEventCampaign(campaignId: string): Promise<EventCampaignResult> {
+    return await this.http.get<EventCampaignResult>(`/api/v1/campaigns/${campaignId}`);
   }
 
   async listRuns(limit = 20): Promise<RunListResult> {

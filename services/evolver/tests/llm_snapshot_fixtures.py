@@ -53,6 +53,7 @@ def approval_token(
         {
             "sub": subject,
             "token_use": "evolution_credential",
+            "grant_purpose": "e1_run",
             "aud": ["inalpha-evolver", "inalpha-dashboard-credential"],
             "jti": "11111111-1111-4111-8111-111111111111",
             "operation_id": operation_id,

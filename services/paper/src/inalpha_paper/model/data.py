@@ -3,6 +3,7 @@
 ``data_epoch`` 是 [ADR-0013](../../../../docs/decisions/0013-stale-state-detection.md) 的落地：
 每次数据连接重连 +1，策略 / 模型在跨 epoch 时必须 reset indicator。
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -52,7 +53,12 @@ class TradeTick:
 
 @dataclass(frozen=True, slots=True)
 class Bar:
-    """K 线。``timeframe`` 走 CCXT 风格字符串（``1m`` / ``5m`` / ``1h`` / ``1d``）。"""
+    """K 线，区分窗口开盘时间与完整 OHLC 已知时间。
+
+    ``ts_event`` 始终表示本根完整 OHLC 可被策略使用的 ``bar_known_at``。从
+    data-service 转换的 bar 同时携带 ``ts_open``；旧测试或内存调用未提供
+    ``ts_open`` 时保持原有 ``ts_event`` 语义，避免无事件路径发生行为漂移。
+    """
 
     instrument_id: InstrumentId
     timeframe: str
@@ -65,3 +71,14 @@ class Bar:
     ts_init: int
     data_epoch: int = 1
     is_stale_after_reconnect: bool = False
+    ts_open: int | None = None
+
+    @property
+    def bar_open_at(self) -> int:
+        """Return the candle window open timestamp in nanoseconds."""
+        return self.ts_open if self.ts_open is not None else self.ts_event
+
+    @property
+    def bar_known_at(self) -> int:
+        """Return the earliest timestamp at which full OHLC is available."""
+        return self.ts_event

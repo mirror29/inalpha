@@ -4,6 +4,7 @@
 避免 services 之间互相 import（[docs/miro/03 §模块依赖图](../../../docs/miro/03-kernel-design.md)
 强约束：service 间只能通过 HTTP，不互相 import）。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -46,6 +47,32 @@ class DataClient:
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    async def get_raw_event(self, event_id: str) -> dict[str, Any]:
+        """Load raw evidence inside the trusted platform extraction boundary."""
+        response = await self._client.get(f"/events/raw/{event_id}")
+        if response.status_code >= 400:
+            raise DataServiceError(
+                f"raw event request failed with upstream {response.status_code}",
+                code="RAW_EVENT_UNAVAILABLE",
+            )
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise DataServiceError("raw event response must be an object")
+        return payload
+
+    async def write_event_fact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist one normalized fact while keeping raw text out of the response path."""
+        response = await self._client.post("/events/facts", json=payload)
+        if response.status_code >= 400:
+            raise DataServiceError(
+                f"event fact write failed with upstream {response.status_code}",
+                code="EVENT_FACT_WRITE_FAILED",
+            )
+        result = response.json()
+        if not isinstance(result, dict):
+            raise DataServiceError("event fact response must be an object")
+        return result
 
     async def get_bars(
         self,
@@ -179,8 +206,11 @@ class DataClient:
             r = await self._client.get("/news", params=params)
         except Exception as exc:
             return {
-                "items": [], "providers": [], "is_partial": True,
-                "coverage_complete": False, "error": str(exc),
+                "items": [],
+                "providers": [],
+                "is_partial": True,
+                "coverage_complete": False,
+                "error": str(exc),
             }
         if 400 <= r.status_code < 500:
             raise DataServiceError(
@@ -200,13 +230,23 @@ class DataClient:
             payload = r.json()
         except Exception:
             return {
-                "items": [], "providers": [], "is_partial": True,
-                "coverage_complete": False, "error": "invalid json",
+                "items": [],
+                "providers": [],
+                "is_partial": True,
+                "coverage_complete": False,
+                "error": "invalid json",
             }
-        return payload if isinstance(payload, dict) else {
-            "items": [], "providers": [], "is_partial": True,
-            "coverage_complete": False, "error": "invalid payload",
-        }
+        return (
+            payload
+            if isinstance(payload, dict)
+            else {
+                "items": [],
+                "providers": [],
+                "is_partial": True,
+                "coverage_complete": False,
+                "error": "invalid payload",
+            }
+        )
 
     async def get_fundamentals(
         self, venue: str, symbol: str, as_of: datetime | None = None
@@ -233,9 +273,7 @@ class DataClient:
         except Exception:
             return {"available": False, "reason": "invalid json"}
 
-    async def get_web_search(
-        self, query: str, max_results: int = 5
-    ) -> list[dict[str, Any]]:
+    async def get_web_search(self, query: str, max_results: int = 5) -> list[dict[str, Any]]:
         """``GET /web/search`` —— web 搜索。
 
         失败时返空 list（不阻断整条链路）。

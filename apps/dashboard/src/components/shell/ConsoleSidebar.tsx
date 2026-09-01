@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 import {
   Activity,
+  Database,
   FlaskConical,
   Key,
   LayoutDashboard,
@@ -59,6 +60,7 @@ const NAV: NavItem[] = [
   { key: "risk", href: "/risk", icon: ShieldAlert },
   // E2 策略演化引擎（LLM 自动变异 + 评估）
   { key: "evolution", href: "/evolution", icon: Workflow },
+  { key: "dataHealth", href: "/data-health", icon: Database },
   // 玄学彩蛋占卜台(纯娱乐)
   { key: "divination", href: "/divination", icon: Sparkles },
   { key: "activity", href: "/activity", icon: Activity },

@@ -47,6 +47,7 @@ async def start_run(
         provider=body.llm.provider,
         llm_config_digest=body.llm.config_digest,
         request_digest=approval_request_digest(body),
+        grant_purpose="e1_run",
         settings=settings,
     )
     async with db.transaction():

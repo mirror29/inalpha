@@ -19,6 +19,7 @@ D-5 阶段简化：
 - 单 strategy 单 instrument（多策略 / 多标的能跑但没专门测试过）
 - 不收盘强平（最后剩仓位的 PnL 用最后 mark 估）
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
@@ -26,13 +27,14 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from ..execution import perp_margin
-from ..execution.exchange import SimulatedExchange
+from ..execution.exchange import EventExecutionPolicy, SimulatedExchange
 from ..execution.execution_engine import ExecutionEngine
 from ..execution.risk_engine import RiskEngine
 from ..execution.risk_rules import LockStore, RiskRule
 from ..kernel.clock import TestClock
 from ..kernel.msgbus import MessageBus
 from ..model.data import Bar
+from ..model.market_events import MarketEvent
 from ..strategy.base import Strategy
 from .cv import CombinatorialPurgedCV, PurgedKFold, WalkForward
 from .metrics import max_drawdown_pct, periods_per_year, sharpe_ratio
@@ -61,6 +63,7 @@ class BacktestEngine:
         leverage: int = 1,
         funding_rate: float = 0.0,
         annualization_periods: int | None = None,
+        event_execution_policy: EventExecutionPolicy | None = None,
     ) -> None:
         """初始化。
 
@@ -85,7 +88,11 @@ class BacktestEngine:
         self.msgbus = MessageBus()
 
         # 执行链（注册顺序：endpoint 先注册，否则 RiskEngine forward 会抛 KeyError）
-        self.exchange = SimulatedExchange(self.msgbus, self.clock)
+        self.exchange = SimulatedExchange(
+            self.msgbus,
+            self.clock,
+            event_policy=event_execution_policy,
+        )
         self.execution_engine = ExecutionEngine(self.msgbus, self.exchange)
         # rules + starting_balance 统一从 BacktestEngine.initial_cash 派生
         self.risk_engine = RiskEngine(
@@ -96,8 +103,11 @@ class BacktestEngine:
             lock_store=lock_store,
         )
         self.portfolio = Portfolio(
-            self.msgbus, initial_cash=initial_cash, fee_rate=fee_rate,
-            trading_mode=trading_mode, leverage=leverage,
+            self.msgbus,
+            initial_cash=initial_cash,
+            fee_rate=fee_rate,
+            trading_mode=trading_mode,
+            leverage=leverage,
         )
         # perp 资金费驱动用:每根 bar 在结算时点按此(常数)费率计提。v1 用常数;接历史
         # funding 序列见 data.fetch_perp_funding_rate(后续把逐根真 rate 喂进来)。
@@ -141,11 +151,23 @@ class BacktestEngine:
         if self._guard is not None:
             self._guard.bind_strategy(strategy.strategy_id)
 
-    def run(self, bars: Iterable[Bar]) -> BacktestReport:
-        """跑回测，返回 ``BacktestReport``。"""
+    def run(
+        self,
+        bars: Iterable[Bar],
+        *,
+        events: Iterable[MarketEvent] | None = None,
+    ) -> BacktestReport:
+        """跑回测；在每个 ``bar_known_at`` 决策点先发布已可用事件，再发布 bar。
+
+        ``events=None`` 与空序列都不新增消息，保持 E1/现有策略的行为不变。相同
+        ``event_id`` 只发布一次，输入顺序不影响结果。
+        """
         bars_list = list(bars)
         if not bars_list:
             raise ValueError("backtest needs at least one bar")
+        ordered_events = sorted(events or (), key=lambda item: (item.available_at, item.event_id))
+        event_cursor = 0
+        published_event_ids: set[str] = set()
 
         # 初始化时间（第一根 bar 之前），便于 strategy.on_start 时拿 clock.now
         first_ts = bars_list[0].ts_event
@@ -172,6 +194,19 @@ class BacktestEngine:
                         bar.instrument_id, self._funding_rate, mark=bar.close
                     )
             prev_ts_ns = bar.ts_event
+            # 3.25 事件事实只在 ``available_at <= bar_known_at`` 后对策略可见。同一
+            # 决策点先 event 后 bar，让确认型策略可用当前刚关闭 bar，但订单仍只会在
+            # 下一根 process_bar 撮合；不会按“最新价”假成交。
+            while (
+                event_cursor < len(ordered_events)
+                and ordered_events[event_cursor].available_at <= bar.bar_known_at
+            ):
+                market_event = ordered_events[event_cursor]
+                event_cursor += 1
+                if market_event.event_id in published_event_ids:
+                    continue
+                published_event_ids.add(market_event.event_id)
+                self.msgbus.publish("data.market_events", market_event)
             # 3.5 ADR-0052：框架级持仓保护止损在 mark 更新后判定（与 live session 同点），
             #     触发的保护性出场单进 pending，下一根 process_bar 撮合（不偷未来）。
             #     已知限制（CR #88，仅显式传 rules 的回测受影响、生产 runner rules=None 不触达、
@@ -183,8 +218,7 @@ class BacktestEngine:
                 self._guard.evaluate(bar)
             # 4. 发布 bar，触发 strategy.on_bar
             topic = (
-                f"data.bars.{bar.instrument_id.venue}."
-                f"{bar.instrument_id.symbol}.{bar.timeframe}"
+                f"data.bars.{bar.instrument_id.venue}.{bar.instrument_id.symbol}.{bar.timeframe}"
             )
             self.msgbus.publish(topic, bar)
             # 5. 记 equity curve（含本根 bar 上策略发单后的最新 mark；下一根 bar 撮合后会再更新一次同 ts 的快照）
@@ -320,9 +354,7 @@ def run_cv_backtest(
         for k in range(1, len(eq)):
             orig = run_idx[k]
             if orig in test_set and eq[k - 1] > 0:
-                returns_by_path.setdefault(sp.path_id, []).append(
-                    (orig, eq[k] / eq[k - 1] - 1.0)
-                )
+                returns_by_path.setdefault(sp.path_id, []).append((orig, eq[k] / eq[k - 1] - 1.0))
 
     sharpe_per_path: list[float] = []
     max_dd_per_path: list[float] = []

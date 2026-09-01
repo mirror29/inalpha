@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from inalpha_shared.errors import ValidationError
 
 from .engine.backtest import BacktestEngine
+from .execution.exchange import EventExecutionPolicy
 from .strategies import get_strategy_class
 from .strategy_authoring import (
     ContractError,
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from .engine.report import BacktestReport
     from .kernel.identifiers import InstrumentId
     from .model.data import Bar
+    from .model.market_events import MarketEvent
 
 
 def run_engine_worker(
@@ -42,6 +44,8 @@ def run_engine_worker(
     leverage: int = 1,
     funding_rate: float = 0.0,
     annualization_periods: int | None = None,
+    events: list[MarketEvent] | None = None,
+    event_execution_policy: EventExecutionPolicy | None = None,
 ) -> BacktestReport:
     """实例化 engine 与策略并执行冻结 bars，不做 IO。"""
     engine = BacktestEngine(
@@ -56,6 +60,7 @@ def run_engine_worker(
         leverage=leverage,
         funding_rate=funding_rate,
         annualization_periods=annualization_periods,
+        event_execution_policy=event_execution_policy,
     )
     if candidate_code is not None:
         audit = audit_strategy_code(candidate_code)
@@ -106,7 +111,7 @@ def run_engine_worker(
         **strategy_kwargs,
     )
     engine.add_strategy(strategy)
-    return engine.run(bars)
+    return engine.run(bars, events=events)
 
 
 __all__ = ["run_engine_worker"]

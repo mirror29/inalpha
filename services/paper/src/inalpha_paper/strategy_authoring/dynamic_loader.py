@@ -10,6 +10,7 @@
 - 受限 globals 的 ``__builtins__`` 是裁剪过的子集（``ast_audit`` 已拦但 defense in depth）
 - exec 后从 namespace 里捞出唯一一个 ``Strategy`` 子类
 """
+
 from __future__ import annotations
 
 import builtins
@@ -31,6 +32,7 @@ from ..model.events import (
     PositionClosed,
     PositionOpened,
 )
+from ..model.market_events import MarketEvent
 from ..model.orders import Order, OrderSide, OrderType
 from ..strategy.base import Strategy
 
@@ -44,17 +46,66 @@ class DynamicLoadError(RuntimeError):
 _SAFE_BUILTINS: Final[dict[str, Any]] = {
     name: getattr(builtins, name)
     for name in (
-        "abs", "all", "any", "bool", "bytes", "callable", "chr", "complex",
-        "dict", "divmod", "enumerate", "filter", "float", "format", "frozenset",
-        "hash", "hex", "id", "int", "isinstance", "issubclass", "iter", "len",
-        "list", "map", "max", "min", "next", "object", "oct", "ord", "pow",
-        "print", "range", "repr", "reversed", "round", "set", "slice", "sorted",
-        "str", "sum", "tuple", "type", "zip",
+        "abs",
+        "all",
+        "any",
+        "bool",
+        "bytes",
+        "callable",
+        "chr",
+        "complex",
+        "dict",
+        "divmod",
+        "enumerate",
+        "filter",
+        "float",
+        "format",
+        "frozenset",
+        "hash",
+        "hex",
+        "id",
+        "int",
+        "isinstance",
+        "issubclass",
+        "iter",
+        "len",
+        "list",
+        "map",
+        "max",
+        "min",
+        "next",
+        "object",
+        "oct",
+        "ord",
+        "pow",
+        "print",
+        "range",
+        "repr",
+        "reversed",
+        "round",
+        "set",
+        "slice",
+        "sorted",
+        "str",
+        "sum",
+        "tuple",
+        "type",
+        "zip",
         # 异常类——LLM 写策略时可能 raise ValueError 校验参数
-        "Exception", "ValueError", "TypeError", "KeyError", "RuntimeError",
-        "IndexError", "ZeroDivisionError", "ArithmeticError", "AssertionError",
+        "Exception",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "RuntimeError",
+        "IndexError",
+        "ZeroDivisionError",
+        "ArithmeticError",
+        "AssertionError",
         # 用于 super() 和类相关
-        "super", "property", "staticmethod", "classmethod",
+        "super",
+        "property",
+        "staticmethod",
+        "classmethod",
         # True/False/None 是关键字不在 builtins，但 NotImplemented 是
         "NotImplemented",
     )
@@ -84,6 +135,7 @@ def _build_restricted_globals() -> dict[str, Any]:
         "StrategyId": StrategyId,
         # 数据 / 订单 model
         "Bar": Bar,
+        "MarketEvent": MarketEvent,
         "Order": Order,
         "OrderSide": OrderSide,
         "OrderType": OrderType,
@@ -129,18 +181,12 @@ def load_strategy_class(code: str) -> type[Strategy]:
     try:
         exec(compiled, restricted_globals, namespace)
     except Exception as exc:
-        raise DynamicLoadError(
-            f"exec 策略源码失败：{type(exc).__name__}: {exc}"
-        ) from exc
+        raise DynamicLoadError(f"exec 策略源码失败：{type(exc).__name__}: {exc}") from exc
 
     # 找 Strategy 子类（必须是 namespace 里**新定义**的，不能是注入的 Strategy 本身）
     candidates: list[type[Strategy]] = []
     for value in namespace.values():
-        if (
-            isinstance(value, type)
-            and issubclass(value, Strategy)
-            and value is not Strategy
-        ):
+        if isinstance(value, type) and issubclass(value, Strategy) and value is not Strategy:
             candidates.append(value)
 
     if not candidates:

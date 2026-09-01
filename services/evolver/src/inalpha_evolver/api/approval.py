@@ -24,6 +24,7 @@ def verify_evolution_approval(
     provider: str,
     llm_config_digest: str,
     request_digest: str,
+    grant_purpose: str,
     settings: EvolverSettings,
 ) -> None:
     """Verify one owner/request-bound grant without giving Evolver signing authority."""
@@ -54,6 +55,7 @@ def verify_evolution_approval(
         "operation_id": operation_id,
         "config_id": config_id,
         "provider": provider,
+        "grant_purpose": grant_purpose,
         "llm_config_digest": llm_config_digest,
         "request_digest": request_digest,
     }

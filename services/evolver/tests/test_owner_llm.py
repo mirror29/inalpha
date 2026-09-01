@@ -54,6 +54,7 @@ def _settings() -> SimpleNamespace:
         jwt_secret="test-secret-at-least-32-bytes-long",
         jwt_algorithm="HS256",
         evolver_llm_timeout_s=45,
+        evolver_credential_timeout_s=60,
     )
 
 
@@ -76,6 +77,7 @@ async def test_owner_mutator_uses_frozen_snapshot_and_credential_reference(
     mutator = await build_owner_mutator(run, settings)  # type: ignore[arg-type]
 
     assert _CredentialClient.kwargs["trust_env"] is False
+    assert _CredentialClient.kwargs["timeout"] == 60
     assert _CredentialClient.requested_url.endswith("/api/internal/llm-config/config-1")
     assert _CredentialClient.requested_headers["Authorization"] == "Bearer signed-credential-grant"
     assert mutator.llm_client.settings.effective_api_key == "owner-test-key"

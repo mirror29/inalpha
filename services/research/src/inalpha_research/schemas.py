@@ -1,15 +1,58 @@
 """REST API + 内部数据契约。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _assume_utc_if_naive(v: datetime) -> datetime:
     return v.replace(tzinfo=UTC) if v.tzinfo is None else v
+
+
+class ExtractEventFactsRequest(BaseModel):
+    """Platform-level raw-event extraction request; no owner model is involved."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    raw_event_ids: list[UUID] = Field(min_length=1, max_length=500)
+    policy_version: str = Field(default="event-time-policy-v1", min_length=1, max_length=120)
+
+
+class ExtractedEventFact(BaseModel):
+    """Safe extraction result containing evidence IDs and hashes, never raw content."""
+
+    fact_id: UUID
+    raw_event_id: UUID
+    event_type: Literal[
+        "listing",
+        "delisting",
+        "exploit",
+        "chain_halt",
+        "regulatory",
+        "upgrade",
+        "unlock",
+        "burn",
+        "partnership",
+        "macro",
+        "other",
+    ]
+    assets: list[str]
+    action: str
+    effective_at: datetime
+    available_at: datetime
+    evidence_ids: list[str]
+    created: bool
+
+
+class ExtractEventFactsResponse(BaseModel):
+    """Batch extraction summary used to build event snapshots."""
+
+    facts: list[ExtractedEventFact]
+    failed_event_ids: list[UUID]
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -90,9 +133,7 @@ FactorKind = Literal["momentum", "mean_reversion", "volatility", "macro", "senti
 
 Horizon = Literal["intraday", "swing", "position"]
 
-StrategyFamily = Literal[
-    "trend", "mean_reversion", "buy_hold", "breakout", "volatility", "none"
-]
+StrategyFamily = Literal["trend", "mean_reversion", "buy_hold", "breakout", "volatility", "none"]
 """策略族。docs/miro/11 M4 起加 breakout（Donchian 通道突破）/ volatility（ATR 通道）。
 ``none`` 表示因子不支持任何已注册策略族，由 compose 引擎拒绝。"""
 
@@ -173,11 +214,20 @@ class AnalystBrief(BaseModel):
     """单个 analyst 的输出 —— 1 视角研究简报。"""
 
     analyst: Literal[
-        "technical", "fundamental", "sentiment", "risk", "macro", "valuation",
+        "technical",
+        "fundamental",
+        "sentiment",
+        "risk",
+        "macro",
+        "valuation",
         # ADR-0037 §A：投资大师人格 persona（可选启用）。runner 的合法类型集从本
         # Literal 动态派生（typing.get_args），新增 persona 只需在这里加值。
-        "persona_buffett", "persona_lynch", "persona_wood",
-        "persona_burry", "persona_druckenmiller", "persona_marks",
+        "persona_buffett",
+        "persona_lynch",
+        "persona_wood",
+        "persona_burry",
+        "persona_druckenmiller",
+        "persona_marks",
     ] = Field(
         ...,
         description="哪种分析师产出",

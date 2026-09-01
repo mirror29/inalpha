@@ -8,6 +8,7 @@
 
 后续 D-7+ 长任务 / WS 订阅另外加 client。
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -92,9 +93,7 @@ class DataClient:
 
         result = r.json()
         if not isinstance(result, dict):
-            raise DataServiceError(
-                f"unexpected ticker response shape: {type(result).__name__}"
-            )
+            raise DataServiceError(f"unexpected ticker response shape: {type(result).__name__}")
         return result
 
     async def get_execution_ticker(
@@ -126,12 +125,11 @@ class DataClient:
         best-effort 兜底(funding=0 + 用 bar close 当 mark + 标注失真)。
         """
         try:
-            r = await self._client.get(
-                "/perp/funding", params={"venue": venue, "symbol": symbol}
-            )
+            r = await self._client.get("/perp/funding", params={"venue": venue, "symbol": symbol})
         except httpx.RequestError as e:
             raise DataServiceError(
-                f"failed to reach data-service: {e}", code="DATA_SERVICE_UNREACHABLE",
+                f"failed to reach data-service: {e}",
+                code="DATA_SERVICE_UNREACHABLE",
             ) from e
         if r.status_code >= 400:
             try:
@@ -188,9 +186,7 @@ class DataClient:
 
         result = r.json()
         if not isinstance(result, dict):
-            raise DataServiceError(
-                f"unexpected fx response shape: {type(result).__name__}"
-            )
+            raise DataServiceError(f"unexpected fx response shape: {type(result).__name__}")
         return result
 
     async def get_bars(
@@ -318,6 +314,34 @@ class DataClient:
                 out.append(b)
         return out
 
+    async def get_event_snapshot(self, snapshot_id: str) -> dict[str, Any]:
+        """Load an immutable point-in-time event snapshot from data-service."""
+        try:
+            response = await self._client.get(f"/events/snapshots/{snapshot_id}")
+        except httpx.RequestError as exc:
+            raise DataServiceError(
+                f"failed to reach data-service event snapshot: {exc}",
+                code="DATA_SERVICE_UNREACHABLE",
+            ) from exc
+        if response.status_code >= 400:
+            try:
+                detail = response.json()
+            except Exception:
+                detail = {"message": response.text}
+            raise DataServiceError(
+                f"data-service event snapshot {response.status_code}: "
+                f"{detail.get('message', 'unknown')}",
+                code=detail.get("code", "EVENT_SNAPSHOT_UNAVAILABLE"),
+                details={"upstream_status": response.status_code, "upstream_body": detail},
+            )
+        result = response.json()
+        if not isinstance(result, dict) or not isinstance(result.get("facts"), list):
+            raise DataServiceError(
+                "unexpected event snapshot response shape",
+                code="EVENT_SNAPSHOT_INVALID",
+            )
+        return result
+
     async def backfill_bars(
         self,
         *,
@@ -362,7 +386,5 @@ class DataClient:
 
         result = r.json()
         if not isinstance(result, dict):
-            raise DataServiceError(
-                f"unexpected backfill response shape: {type(result).__name__}"
-            )
+            raise DataServiceError(f"unexpected backfill response shape: {type(result).__name__}")
         return result

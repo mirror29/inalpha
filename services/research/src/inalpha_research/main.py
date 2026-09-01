@@ -2,6 +2,7 @@
 
 启动：``uvicorn inalpha_research.main:app --port 8003``
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -15,7 +16,7 @@ from inalpha_shared import (
 )
 
 from . import __version__
-from .api import deep_dive, health
+from .api import deep_dive, event_facts, health
 from .config import get_research_settings
 
 _settings = get_research_settings()
@@ -39,3 +40,4 @@ install_error_handler(app)
 
 app.include_router(health.router)
 app.include_router(deep_dive.router)
+app.include_router(event_facts.router)

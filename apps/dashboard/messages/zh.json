@@ -13,6 +13,7 @@
     "risk": "风控",
     "divination": "狐神签",
     "evolution": "策略演化",
+    "dataHealth": "事件数据健康",
     "soon": "即将",
     "menu": "菜单",
     "close": "关闭",
@@ -65,6 +66,12 @@
   "overview": {
     "title": "组合总览",
     "subtitle": "账户、持仓、订单与策略池的实时快照。",
+    "evolution": {
+      "active": "活跃 Campaign",
+      "waiting": "等待事件",
+      "adoption": "待人工采用",
+      "sources": "事件源故障"
+    },
     "kpi": {
       "totalEquity": "总权益",
       "totalReturn": "总收益率",
@@ -271,6 +278,7 @@
       "order": "订单",
       "backtest": "回测",
       "runner": "模拟盘",
+      "evolution": "演化",
       "conversation": "会话"
     },
     "empty": "暂无活动。",
@@ -305,6 +313,13 @@
     "resize": "拖动调整高度"
   },
   "lab": {
+    "experimental": {
+      "title": "实验性演化策略",
+      "empty": "暂无已采用的事件演化赢家。",
+      "badge": "有限证据 · 实验性",
+      "grade": "证据等级：{grade}",
+      "lineage": "查看演化血缘"
+    },
     "title": "策略实验室",
     "subtitle": "LLM 自创的策略候选,按多目标 fitness 排序 —— 附最近一次回测指标。",
     "candidates": "候选",
@@ -565,7 +580,7 @@
   },
   "evolution": {
     "title": "策略演化",
-    "subtitle": "LLM 驱动的策略自动变异与评估 —— 每轮运行通过代码变异、AST 审计、沙盒执行、回测评估产出候选策略。",
+    "subtitle": "事件事实与模拟盘反馈驱动的双层自动演化 —— Agent 发散假设，确定性 DSL 消融验证，单冠军进入耐久 Forward。",
     "runs": "总运行轮次",
     "running": "运行中",
     "llmCost": "LLM 费用",
@@ -632,10 +647,58 @@
     },
     "loadMore": "加载更多",
     "loadingMore": "正在加载…"
+    ,"campaign": {
+      "title": "事件 Campaign",
+      "empty": "暂无事件演化 Campaign；E1 单代演化仍保留原语义。",
+      "id": "Campaign",
+      "status": "状态",
+      "stage": "代际",
+      "budget": "每代候选",
+      "events": "Forward 事件",
+      "holdout": "封存测试",
+      "updated": "更新",
+      "sealed": "未消费",
+      "consumed": "已消费",
+      "back": "返回演化列表",
+      "detailTitle": "事件演化",
+      "detailSubtitle": "冻结事实、假设血缘、代际选择、消融验证与一次性 Holdout 的完整审计轨迹。",
+      "track": "代际轨道",
+      "frozenData": "冻结事实与执行契约",
+      "snapshot": "事件快照",
+      "facts": "事实数",
+      "eventHash": "事件哈希",
+      "executionModel": "撮合模型",
+      "forwardHoldout": "Forward 与 Holdout",
+      "forwardEvents": "独立事件",
+      "deadline": "最长等待",
+      "winner": "锁定冠军",
+      "hypotheses": "假设、证据与血缘",
+      "selected": "入选父代",
+      "ablations": "实现消融与事件效应",
+      "failure": "失败原因",
+      "adopt": "采用到策略实验室",
+      "adopting": "正在采用…",
+      "adopted": "已作为实验性策略采用",
+      "adoptHint": "采用不会 promote、启动 Runner 或下单；后端强制 runner_eligible=false。"
+    }
   },
   "backtests": {
     "back": "Agent 活动",
     "notFound": "未找到该回测记录。",
     "viewCandidate": "查看策略详情"
+  }
+  ,"dataHealth": {
+    "title": "事件数据健康",
+    "subtitle": "事件唯一事实源的覆盖、首次接收、修订与冻结快照完整性。",
+    "rawEvents": "原始事件",
+    "facts": "规范事实",
+    "retractions": "修订 / 撤回",
+    "lastAccepted": "最后接收",
+    "sources": "来源覆盖",
+    "source": "来源",
+    "count": "事件数",
+    "latest": "最后抓取",
+    "versions": "最高版本",
+    "empty": "尚未归档事件来源。"
   }
 }

@@ -8,6 +8,7 @@ import type {
   ActivityPayload,
   ActivityStat,
   ActivityTone,
+  EvolutionCampaign,
   OrderRecord,
   StrategyRunDecisionRecord,
   StrategyRunRecord,
@@ -109,6 +110,7 @@ export async function GET() {
     strategyRunsR,
     ordersR,
     backtestsR,
+    campaignsR,
     threadsR,
   ] = await Promise.allSettled([
       backendFetch<SchedulerJobsResp>("mastra", "/scheduler/jobs", {
@@ -140,6 +142,10 @@ export async function GET() {
       // 回测史(无 filter = 全局最近 N 条)—— agent 跑的策略回测进活动流。
       backendFetch<BacktestRunRow[]>("paper", "/backtest_runs", {
         query: { limit: 30 },
+      }),
+      backendFetch<{ items: EvolutionCampaign[] }>("evolver", "/api/v1/campaigns", {
+        query: { limit: 20 },
+        timeoutMs: 5_000,
       }),
       // 用户对话(mastra memory threads)—— 让"发起了什么会话"进入活动流。
       // 8s 轮询热路径:跳过标题回填(下方用 `#id` 兜底),回填只在历史下拉里做。
@@ -391,6 +397,38 @@ export async function GET() {
     sources.backtests = false;
   }
 
+  // ── 事件演化:只展示规范化提案、选择和终态,永不展示原始新闻正文。──
+  if (campaignsR.status === "fulfilled") {
+    for (const campaign of campaignsR.value.items) {
+      events.push({
+        id: `campaign:${campaign.campaign_id}:${campaign.state_version}`,
+        kind: "evolution",
+        ts: campaign.updated_at,
+        title: `campaign ${campaign.campaign_id.slice(0, 8)}`,
+        detail: `generation ${campaign.active_generation}/${campaign.max_generations} · snapshot ${campaign.event_snapshot_id.slice(0, 8)}`,
+        outcome: campaign.status,
+        tone: campaign.status === "graduated" ? "bull" : campaign.failure_code ? "fox" : "cyan",
+        href: `/evolution/campaigns/${campaign.campaign_id}`,
+        stats: [{ text: `${campaign.hypothesis_budget * campaign.implementations_per_hypothesis} candidates/gen`, tone: "muted" }],
+      });
+      for (const hypothesis of campaign.hypotheses.filter((item) => item.selected).slice(-8)) {
+        events.push({
+          id: `hypothesis:${hypothesis.hypothesis_id}:selected`,
+          kind: "evolution",
+          ts: hypothesis.created_at,
+          title: `G${hypothesis.generation} ${hypothesis.lane}`,
+          detail: `selected · ${hypothesis.lineage_kind} · ${hypothesis.spec_hash.slice(0, 10)}`,
+          outcome: "selected",
+          tone: "gold",
+          href: `/evolution/campaigns/${campaign.campaign_id}`,
+          stats: hypothesis.upper_credit === null ? undefined : [{ text: `credit ${hypothesis.upper_credit.toFixed(3)}`, tone: "cyan" }],
+        });
+      }
+    }
+  } else {
+    sources.evolution = false;
+  }
+
   // ── 用户对话(会话发起 / 最近活跃)──
   if (threadsR.status === "fulfilled") {
     for (const th of threadsR.value) {
@@ -496,6 +534,7 @@ function countByKind(events: ActivityEvent[]): Record<ActivityKind, number> {
     order: 0,
     backtest: 0,
     runner: 0,
+    evolution: 0,
     conversation: 0,
   };
   for (const e of events) c[e.kind] += 1;

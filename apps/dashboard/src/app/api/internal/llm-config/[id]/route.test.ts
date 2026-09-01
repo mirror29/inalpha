@@ -117,6 +117,31 @@ describe("internal owner LLM credential route", () => {
     expect(mockedDecryptUserApiKey).toHaveBeenCalledTimes(3);
   });
 
+  it("allows bounded campaign recovery redemptions for the grant lifetime", async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 1 });
+    mockedGetPool.mockReturnValue({ query } as never);
+    mockedDecryptUserApiKey.mockResolvedValue({
+      id: "config-1",
+      provider: "deepseek",
+      api_key: "owner-key",
+    } as never);
+
+    expect(
+      (await callRoute(`Bearer ${await token({ grant_purpose: "event_campaign" })}`)).status,
+    ).toBe(200);
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      "11111111-1111-4111-8111-111111111111",
+      "user:alice",
+      "config-1",
+      "operation-1",
+      "a".repeat(64),
+      "b".repeat(64),
+      "event_campaign",
+      8,
+      "30 hours",
+    ]);
+  });
+
   it("rejects a reused jti whose recorded scope differs", async () => {
     mockedGetPool.mockReturnValue({
       query: vi.fn().mockResolvedValue({ rowCount: 0 }),

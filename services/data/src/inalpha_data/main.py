@@ -22,6 +22,7 @@ from .api import (
     backfill,
     bars,
     constituents,
+    events,
     fundamentals,
     fx,
     health,
@@ -38,6 +39,7 @@ from .connectors import alpaca as alpaca_conn
 from .connectors import baostock as baostock_conn
 from .connectors import binance as binance_conn
 from .connectors import cn_market as cn_market_conn
+from .connectors import coinmarketcal as coinmarketcal_conn
 from .connectors import fred as fred_conn
 from .connectors import news as news_conn
 from .connectors import symbol_search as symbol_search_conn
@@ -48,6 +50,7 @@ from .connectors.news.feed_models import DEFAULT_CRYPTO_FEEDS
 from .connectors.news.hkex import HkexNewsProvider
 from .connectors.news.rss import RssFeedProvider
 from .connectors.news.sec import SecNewsProvider
+from .event_archive import EventArchiveScheduler
 from .scheduler import ConstituentSnapshotScheduler, parse_indices
 
 _settings = get_data_settings()
@@ -75,6 +78,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     fred_conn.init_connector(api_key=_settings.fred_api_key)
     web_search_conn.init_connector()
     cn_market_conn.init_connector()
+    coinmarketcal_conn.init_connector(
+        api_key=_settings.coinmarketcal_api_key,
+        base_url=_settings.coinmarketcal_base_url,
+        timeout_s=_settings.event_provider_timeout_s,
+        historical_latency_s=_settings.event_historical_latency_s,
+    )
     news_conn.init_router(
         [
             SecNewsProvider(
@@ -98,9 +107,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         interval_s=_settings.constituent_snapshot_interval_h * 3600,
     )
     snapshot_scheduler.start()
+    event_archive = EventArchiveScheduler(
+        enabled=_settings.event_archive_enabled,
+        interval_s=_settings.event_archive_interval_s,
+    )
+    event_archive.start()
     try:
         yield
     finally:
+        await event_archive.stop()
         await snapshot_scheduler.stop()
         await symbol_search_conn.close_connector()
         await news_conn.close_router()
@@ -109,6 +124,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await yfinance_conn.close_connector()
         await cn_market_conn.close_connector()
         await web_search_conn.close_connector()
+        await coinmarketcal_conn.close_connector()
         await baostock_conn.close_connector()
         await alpaca_conn.close_connector()
         await binance_conn.close_connector()
@@ -129,6 +145,7 @@ app.include_router(bars.router)
 app.include_router(backfill.router)
 app.include_router(ticker.router)
 app.include_router(news.router)
+app.include_router(events.router)
 app.include_router(market.router)
 app.include_router(constituents.router)
 app.include_router(fundamentals.router)

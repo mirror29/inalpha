@@ -83,7 +83,7 @@ def _validate_grid(
 
 
 def _bar_datetime(bar: Bar) -> datetime:
-    return datetime.fromtimestamp(bar.ts_event / 1_000_000_000, tz=UTC)
+    return datetime.fromtimestamp(bar.bar_open_at / 1_000_000_000, tz=UTC)
 
 
 def _utc(value: datetime) -> datetime:

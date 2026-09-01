@@ -1,10 +1,13 @@
 """冻结数据集上的真实策略评估。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from inalpha_paper.evaluation_executor import KillableEngineRunner
+from inalpha_paper.execution.exchange import EventExecutionPolicy
 from inalpha_paper.kernel.identifiers import InstrumentId
+from inalpha_paper.model.market_events import MarketEvent
 from inalpha_paper.strategy_evaluation import (
     evaluate_buy_and_hold,
     evaluate_strategy_source,
@@ -23,6 +26,10 @@ class FrozenDatasetEvaluator:
     initial_cash: float = 10_000.0
     fee_rate: float = 0.001
     validation_split: float = 0.3
+    trading_mode: str = "spot"
+    leverage: int = 1
+    events: tuple[MarketEvent, ...] = ()
+    event_execution_policy: EventExecutionPolicy | None = None
 
     async def evaluate_baseline(self) -> dict:
         """在同一 frozen bars 上计算一次市场买入持有基准。"""
@@ -52,6 +59,10 @@ class FrozenDatasetEvaluator:
             fee_rate=self.fee_rate,
             validation_split=self.validation_split,
             annualization_periods=float(manifest.annualization_periods),
+            events=list(self.events),
+            event_execution_policy=self.event_execution_policy,
+            trading_mode=self.trading_mode,
+            leverage=self.leverage,
         )
         return EvaluationResult(
             report=result.snapshot.model_dump(mode="json"),

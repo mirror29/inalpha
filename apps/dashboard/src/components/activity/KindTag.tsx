@@ -9,6 +9,7 @@ import {
   Radio,
   ShieldAlert,
   ShieldQuestion,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ const META: Record<ActivityKind, { icon: LucideIcon; cls: string }> = {
   order: { icon: ArrowLeftRight, cls: "border-border-subtle bg-bg-elev/40 text-fg-muted" },
   backtest: { icon: FlaskConical, cls: "border-cyan/30 bg-cyan/10 text-cyan" },
   runner: { icon: Radio, cls: "border-bull/30 bg-bull/10 text-bull" },
+  evolution: { icon: Workflow, cls: "border-cyan/30 bg-cyan/10 text-cyan" },
   conversation: { icon: MessageSquare, cls: "border-seal/30 bg-seal/10 text-seal" },
 };
 

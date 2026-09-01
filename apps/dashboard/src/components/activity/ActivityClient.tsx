@@ -24,6 +24,7 @@ const KINDS: ActivityKind[] = [
   "order",
   "backtest",
   "runner",
+  "evolution",
   "conversation",
 ];
 type Filter = ActivityKind | "all";

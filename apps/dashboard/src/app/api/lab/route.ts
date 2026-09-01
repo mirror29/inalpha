@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
-import type { LabPayload, StrategyCandidateSummary } from "@/lib/types";
+import type { ExperimentalStrategyAdoption, LabPayload, StrategyCandidateSummary } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +13,15 @@ export async function GET() {
   try {
     // 多取 1 条探测「是否还有更多候选」(命中上限 → 截断提示,不静默)。
     const CANDIDATES_SHOWN = 100;
-    const raw = await backendFetch<StrategyCandidateSummary[]>(
-      "paper",
-      "/strategy_candidates",
-      { query: { limit: CANDIDATES_SHOWN + 1 } },
-    );
+    const [raw, adoptions] = await Promise.all([
+      backendFetch<StrategyCandidateSummary[]>("paper", "/strategy_candidates", {
+        query: { limit: CANDIDATES_SHOWN + 1 },
+      }),
+      backendFetch<{ items: ExperimentalStrategyAdoption[] }>("evolver", "/api/v1/adoptions", {
+        query: { limit: 50 },
+        timeoutMs: 5_000,
+      }).catch(() => ({ items: [] })),
+    ]);
     const truncated = raw.length > CANDIDATES_SHOWN;
     const candidates = raw.slice(0, CANDIDATES_SHOWN);
     const counts = {
@@ -30,6 +34,7 @@ export async function GET() {
       candidates,
       counts,
       truncated,
+      experimentalAdoptions: adoptions.items,
       asOf: new Date().toISOString(),
     };
     return NextResponse.json(payload, {

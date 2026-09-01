@@ -3,6 +3,7 @@
 用户子类化 ``Strategy`` 实现交易策略。``submit_order`` 走 ``msgbus.send`` 推到
 ``RiskEngine.execute`` endpoint，**不直接调 Gateway**。
 """
+
 from __future__ import annotations
 
 from ..kernel.clock import Clock
@@ -19,6 +20,7 @@ from ..model.events import (
     PositionClosed,
     PositionOpened,
 )
+from ..model.market_events import MarketEvent
 from ..model.orders import Order
 from .actor import Actor
 
@@ -40,6 +42,7 @@ class Strategy(Actor):
         # 订阅本策略的订单 / 仓位事件
         self._msgbus.subscribe(f"events.order.{name}", self._handle_order_event)
         self._msgbus.subscribe(f"events.position.{name}", self._handle_position_event)
+        self._msgbus.subscribe("data.market_events", self._handle_market_event)
 
     @property
     def strategy_id(self) -> StrategyId:
@@ -108,6 +111,11 @@ class Strategy(Actor):
         elif isinstance(msg, PositionClosed):
             self.on_position_closed(msg)
 
+    def _handle_market_event(self, msg: object) -> None:
+        """Dispatch only normalized market events to untrusted strategy code."""
+        if isinstance(msg, MarketEvent):
+            self.on_market_event(msg)
+
     # ─── 用户覆盖的事件回调 ───
 
     def on_order_submitted(self, event: OrderSubmitted) -> None: ...
@@ -118,3 +126,4 @@ class Strategy(Actor):
     def on_position_opened(self, event: PositionOpened) -> None: ...
     def on_position_changed(self, event: PositionChanged) -> None: ...
     def on_position_closed(self, event: PositionClosed) -> None: ...
+    def on_market_event(self, event: MarketEvent) -> None: ...
