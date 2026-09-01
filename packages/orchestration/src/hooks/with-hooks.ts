@@ -54,6 +54,12 @@ type GenericTool = {
   [key: string]: unknown;
 };
 
+const DURABLE_EVOLUTION_APPROVAL_TOOLS = new Set([
+  "evolver.run_evolution",
+  "evolver.run_event_campaign",
+]);
+const E2_CAMPAIGN_RETRY_WINDOW_MS = 2 * 60 * 1_000;
+
 /**
  * mastra ``server.middleware`` 从 Bearer JWT 解出的已认证主体（sub）写进 RequestContext
  * 的 key（#91）。getSessionId 最高优先读它 → askCache 按已认证主体 scope（替代 __global__）。
@@ -201,14 +207,14 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
         if (permDecision === "ask") {
           const store = opts.pendingApprovals ?? defaultPendingApprovals;
           const projectedInput = projectApprovalInput(toolName, effectiveInput);
-          const llmSnapshot =
-            toolName === "evolver.run_evolution"
-              ? getRequestContextValue<EvolutionLLMSnapshot>(ctx, USER_LLM_SNAPSHOT_KEY)
-              : undefined;
+          const durableEvolutionApproval = DURABLE_EVOLUTION_APPROVAL_TOOLS.has(toolName);
+          const llmSnapshot = durableEvolutionApproval
+            ? getRequestContextValue<EvolutionLLMSnapshot>(ctx, USER_LLM_SNAPSHOT_KEY)
+            : undefined;
           const approvalInput = llmSnapshot
             ? { request: projectedInput, llm_snapshot: llmSnapshot }
             : projectedInput;
-          if (!authSub || !sessionId || (toolName === "evolver.run_evolution" && !llmSnapshot)) {
+          if (!authSub || !sessionId || (durableEvolutionApproval && !llmSnapshot)) {
             return {
               isError: true,
               deniedBy: "permission-ask",
@@ -228,6 +234,10 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
             toolName,
             approvalInput,
             reuseAfterConsume: toolName === "evolver.run_evolution",
+            reuseOnceAfterConsumeMs:
+              toolName === "evolver.run_event_campaign"
+                ? E2_CAMPAIGN_RETRY_WINDOW_MS
+                : undefined,
           });
           if (!operationId) {
             const approvalViewInput = llmSnapshot
@@ -242,7 +252,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
               timeoutMs:
                 opts.askTimeoutMs && opts.askTimeoutMs > 0
                   ? opts.askTimeoutMs
-                  : toolName === "evolver.run_evolution"
+                  : durableEvolutionApproval
                     ? 300_000
                     : undefined,
             });

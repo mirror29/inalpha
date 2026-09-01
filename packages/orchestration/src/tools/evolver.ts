@@ -5,7 +5,7 @@ import { z } from "zod";
 import {
   evolutionConfigSchema,
   eventCampaignConfigSchema,
-  getAutomaticEventCampaignContext,
+  getApprovedEventCampaignContext,
   getApprovedEvolutionRunContext,
   getEvolverClient,
   type ToolRequestContext,
@@ -17,7 +17,7 @@ export const evolverRunEventCampaignTool = createTool({
 基于冻结事件事实与模拟盘反馈启动五代双层自动演化；每代两个 Agent proposer 产生八个假设，每个确定性展开三条实现，并锁定唯一冠军等待独立 Forward。
 何时用：用户要求从事件机制发散新策略方向，且已有 point-in-time event snapshot 与 15m/1h/4h 冻结行情。
 何时不用：只优化既有代码用 evolver.run_evolution；没有事件快照、需要实盘或希望自动下单时不要用。
-坑：模拟研究阶段自动迭代不逐代审批，但只产出 sandbox 候选；不会 promote、启动 Runner 或下单，Forward 与一次性 holdout 仍是硬门禁。
+坑：启动整个五代 campaign 需要一次显式审批；审批后内部自动迭代不逐代审批，只产出 sandbox 候选；不会 promote、启动 Runner 或下单，Forward 与一次性 holdout 仍是硬门禁。
   `.trim(),
   inputSchema: z.object({
     eventSnapshotId: z.string().uuid(),
@@ -25,14 +25,14 @@ export const evolverRunEventCampaignTool = createTool({
     config: eventCampaignConfigSchema,
   }),
   execute: async (inputData, ctx) => {
-    const automatic = await getAutomaticEventCampaignContext(
+    const approved = await getApprovedEventCampaignContext(
       inputData,
       ctx?.requestContext as ToolRequestContext | undefined,
     );
-    return await automatic.client.startEventCampaign({
-      request: automatic.request,
-      idempotencyKey: automatic.operationId,
-      credentialGrant: automatic.credentialGrant,
+    return await approved.client.startEventCampaign({
+      request: approved.request,
+      idempotencyKey: approved.operationId,
+      credentialGrant: approved.credentialGrant,
     });
   },
 });

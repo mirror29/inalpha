@@ -1,7 +1,5 @@
 /** Evolver Mastra tools 的共享 schema 与客户端解析。 */
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
-
 import { resolveRequestToken } from "../auth.js";
 import {
   buildEvolutionStartRequest,
@@ -71,8 +69,8 @@ export async function getApprovedEvolutionRunContext(
   };
 }
 
-/** Build a credential-bound automatic campaign without a per-generation approval pause. */
-export async function getAutomaticEventCampaignContext(
+/** Build one approved campaign context; its internal five generations remain automatic. */
+export async function getApprovedEventCampaignContext(
   input: {
     eventSnapshotId: string;
     sourceRunId?: string;
@@ -80,15 +78,18 @@ export async function getAutomaticEventCampaignContext(
   },
   ctx?: ToolRequestContext,
 ) {
+  const operationId = getRequestContextValue<string>(
+    { requestContext: ctx },
+    APPROVAL_OPERATION_ID_KEY,
+  );
   const llmSnapshot = getRequestContextValue<EvolutionLLMSnapshot>(
     { requestContext: ctx },
     USER_LLM_SNAPSHOT_KEY,
   );
   const authSub = ctx?.get?.(AUTH_SUB_KEY);
-  if (!llmSnapshot || typeof authSub !== "string" || !authSub) {
-    throw new Error("event campaign requires a verified owner and frozen LLM configuration");
+  if (!operationId || !llmSnapshot || typeof authSub !== "string" || !authSub) {
+    throw new Error("explicit event campaign approval context is missing");
   }
-  const operationId = randomUUID();
   const request = buildEventCampaignRequest({
     eventSnapshotId: input.eventSnapshotId,
     sourceRunId: input.sourceRunId,

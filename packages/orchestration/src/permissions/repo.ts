@@ -141,11 +141,14 @@ export async function markResolved(
 
 /** Persist one approved evolution identity before the costful tool is allowed to execute. */
 export async function rememberEvolutionOperation(
-  args: EvolutionOperationScope & { operationId: string },
+  args: EvolutionOperationScope & { operationId: string; retentionMs?: number },
 ): Promise<{ expiresAt: string } | undefined> {
   const pool = getPoolOrNull();
   if (!pool) return undefined;
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1_000);
+  const retentionMs = args.retentionMs && args.retentionMs > 0
+    ? args.retentionMs
+    : 24 * 60 * 60 * 1_000;
+  const expiresAt = new Date(Date.now() + retentionMs);
   const result = await pool.query(
     `INSERT INTO evolution_approval_operations
        (operation_id,auth_sub,session_id,tool_name,input_digest,approved_at,expires_at)
@@ -178,6 +181,25 @@ export async function findEvolutionOperation(
     `SELECT operation_id,expires_at FROM evolution_approval_operations
      WHERE auth_sub=$1 AND session_id=$2 AND tool_name=$3 AND input_digest=$4
        AND expires_at>NOW()`,
+    [args.authSub, args.sessionId, args.toolName, args.inputDigest],
+  );
+  const row = result.rows[0];
+  return row
+    ? { operationId: String(row.operation_id), expiresAt: toIso(row.expires_at) }
+    : undefined;
+}
+
+/** Atomically consume one unexpired recovery entitlement. */
+export async function claimEvolutionOperation(
+  args: EvolutionOperationScope,
+): Promise<{ operationId: string; expiresAt: string } | undefined> {
+  const pool = getPoolOrNull();
+  if (!pool) return undefined;
+  const result = await pool.query(
+    `DELETE FROM evolution_approval_operations
+     WHERE auth_sub=$1 AND session_id=$2 AND tool_name=$3 AND input_digest=$4
+       AND expires_at>NOW()
+     RETURNING operation_id,expires_at`,
     [args.authSub, args.sessionId, args.toolName, args.inputDigest],
   );
   const row = result.rows[0];

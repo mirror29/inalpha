@@ -263,10 +263,21 @@ export class EvolverClient {
       options.request,
       headers,
     );
-    return await this.http.post<EventCampaignResult>(
-      `/api/v1/campaigns/${created.campaign_id}/start`,
-      {},
-    );
+    if (created.status !== "draft") return created;
+
+    try {
+      return await this.http.post<EventCampaignResult>(
+        `/api/v1/campaigns/${created.campaign_id}/start`,
+        {},
+      );
+    } catch (error) {
+      if (!(error instanceof HttpClientError) || error.code !== "CAMPAIGN_STATE_CONFLICT") {
+        throw error;
+      }
+      const current = await this.getEventCampaign(created.campaign_id);
+      if (current.status === "draft") throw error;
+      return current;
+    }
   }
 
   async getEventCampaign(campaignId: string): Promise<EventCampaignResult> {

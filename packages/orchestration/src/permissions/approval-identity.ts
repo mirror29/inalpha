@@ -58,6 +58,8 @@ export const APPROVAL_IDENTITY_FIELDS: Readonly<Record<string, readonly string[]
   ],
   // 演化审批绑定完整计算范围；idempotencyKey 只是传输重试标识，不改变成本或行为。
   "evolver.run_evolution": ["seedStrategyId", "budget", "config"],
+  // E2 一次审批绑定事件快照、可选来源 run 与完整 campaign 配置。
+  "evolver.run_event_campaign": ["eventSnapshotId", "sourceRunId", "config"],
 };
 
 /**
