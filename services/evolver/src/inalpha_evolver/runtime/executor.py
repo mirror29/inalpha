@@ -64,6 +64,8 @@ async def execute_run(
         initial_cash=float(config["initial_cash"]),
         fee_rate=float(config.get("fee_rate", 0.001)),
         validation_split=float(config.get("validation_split", 0.3)),
+        trading_mode=config.get("trading_mode", "spot"),
+        leverage=int(config.get("leverage", 1)),
     )
     async with _run_mutator(run, mutator, settings) as active_mutator:
         await execute_generation(run, mutator=active_mutator, evaluator=evaluator)

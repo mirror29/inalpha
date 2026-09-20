@@ -46,10 +46,43 @@ def test_request_hash_is_stable_and_payload_sensitive() -> None:
     assert hash_a != hash_c
 
 
+def test_e1_preserves_perpetual_execution_config() -> None:
+    config = EvolutionConfig.model_validate(
+        {
+            **_request().config.model_dump(),
+            "trading_mode": "perp",
+            "leverage": 3,
+        }
+    )
+    payload = config.model_dump()
+    assert payload["trading_mode"] == "perp"
+    assert payload["leverage"] == 3
+
+
+def test_e1_rejects_leveraged_spot_config() -> None:
+    with pytest.raises(ValueError, match="spot"):
+        EvolutionConfig.model_validate(
+            {
+                **_request().config.model_dump(),
+                "trading_mode": "spot",
+                "leverage": 3,
+            }
+        )
+
+
+def test_execution_config_is_bound_to_approval() -> None:
+    request = _request()
+    spot_digest = approval_request_digest(request)
+    request.config.trading_mode = "perp"
+    perp_digest = approval_request_digest(request)
+    request.config.leverage = 3
+    assert len({spot_digest, perp_digest, approval_request_digest(request)}) == 3
+
+
 def test_approval_request_digest_matches_typescript_contract() -> None:
     assert (
         approval_request_digest(_request())
-        == "f0fd300e586f96bf3f9cba26b4b3452660fbc51c0bab0274ad196bb0f53ff64f"
+        == "e3c4c9711d8e4b263ad4cb07b4f89f54603dcf7aa37a504e7a179ec41c8b5b50"
     )
 
 

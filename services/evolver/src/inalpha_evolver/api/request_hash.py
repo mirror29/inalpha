@@ -35,6 +35,8 @@ def approval_request_digest(request: StartRunRequest) -> str:
         _float64_hex(config.initial_cash),
         _float64_hex(config.fee_rate),
         _float64_hex(config.validation_split),
+        config.trading_mode,
+        _number_text(config.leverage),
         request.llm.config_digest,
     ]
     return hashlib.sha256(

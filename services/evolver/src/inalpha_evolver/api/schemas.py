@@ -29,6 +29,8 @@ class EvolutionConfig(BaseModel):
     initial_cash: float = Field(default=10_000.0, ge=100)
     fee_rate: float = Field(default=0.001, ge=0, le=0.1)
     validation_split: float = Field(default=0.3, ge=0, le=0.5)
+    trading_mode: Literal["spot", "perp"] = "spot"
+    leverage: int = Field(default=1, ge=1, le=20)
 
     @field_validator("from_ts", "as_of")
     @classmethod
@@ -42,6 +44,8 @@ class EvolutionConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_window(self) -> EvolutionConfig:
+        if self.trading_mode == "spot" and self.leverage != 1:
+            raise ValueError("spot evolution requires leverage=1")
         if self.as_of > datetime.now(UTC) + MAX_AS_OF_CLOCK_SKEW:
             raise ValueError("as_of exceeds trusted current time")
         if self.from_ts >= self.as_of:

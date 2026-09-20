@@ -32,6 +32,8 @@ type EvolutionConfig = {
   as_of: string;
   initial_cash: number;
   fee_rate: number;
+  trading_mode?: "spot" | "perp";
+  leverage?: number;
 };
 
 export type EvolutionTargetResolution = {
@@ -299,6 +301,8 @@ function normalizeEvolutionConfig(raw: Record<string, unknown>): EvolutionConfig
     as_of: asOf,
     initial_cash: finiteNumber(raw.initial_cash) ?? 10_000,
     fee_rate: finiteNumber(raw.fee_rate) ?? 0.001,
+    trading_mode: raw.trading_mode === "perp" ? "perp" : "spot",
+    leverage: finiteNumber(raw.leverage) ?? 1,
   };
 }
 
@@ -328,6 +332,8 @@ function evolutionConfigFromRunner(runner: StrategyRunRecord): EvolutionConfig |
     as_of: asOf,
     initial_cash: runner.allocation ?? 10_000,
     fee_rate: 0.001,
+    trading_mode: runner.trading_mode,
+    leverage: runner.leverage,
   };
 }
 

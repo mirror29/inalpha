@@ -16,6 +16,8 @@ const frozenConfig = {
   as_of: "2026-07-01T00:00:00.000Z",
   initial_cash: 10_000,
   fee_rate: 0.001,
+  trading_mode: "perp",
+  leverage: 3,
 };
 
 beforeEach(() => {

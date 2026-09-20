@@ -13,6 +13,8 @@ export type EvolutionConfig = {
   initial_cash?: number;
   fee_rate?: number;
   validation_split?: number;
+  trading_mode?: "spot" | "perp";
+  leverage?: number;
 };
 
 export type EvolutionStartRequest = {
@@ -186,6 +188,8 @@ export function buildEvolutionStartRequest(options: {
       initial_cash: options.config.initial_cash ?? 10_000,
       fee_rate: options.config.fee_rate ?? 0.001,
       validation_split: options.config.validation_split ?? 0.3,
+      trading_mode: options.config.trading_mode ?? "spot",
+      leverage: options.config.leverage ?? 1,
     },
     llm: options.llmSnapshot,
   };
@@ -205,6 +209,8 @@ export function evolutionRequestDigest(request: EvolutionStartRequest): string {
     float64Hex(config.initial_cash),
     float64Hex(config.fee_rate),
     float64Hex(config.validation_split),
+    config.trading_mode,
+    numberText(config.leverage),
     request.llm.config_digest,
   ];
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
