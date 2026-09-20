@@ -40,6 +40,19 @@ afterEach(() => {
 const ctx = { requestContext: { authToken: TOKEN } } as never;
 
 describe("evolver.resolve_target", () => {
+  it("reads loop detail without launching research or requesting model credentials", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe(`http://evolver.test/api/v1/evolution-loops/${TARGET_ID}`);
+      expect(init?.method ?? "GET").toBe("GET");
+      return new Response(JSON.stringify({ loop_id: TARGET_ID, status: "baseline_ready", campaign_id: null }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }));
+    expect(await resolve("evolution_loop", TARGET_ID)).toMatchObject({
+      next_action: "inspect_loop", start_input: null,
+      evidence: { loop_id: TARGET_ID, loop_status: "baseline_ready" },
+    });
+  });
   it("reuses a workflow without a model grant or new snapshot even when new launches are disabled", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       expect(init?.method ?? "GET").toBe("GET");

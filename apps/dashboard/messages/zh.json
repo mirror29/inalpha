@@ -553,6 +553,7 @@
         "evolution_run_detail": "演化运行",
         "evolution_candidate_detail": "演化候选",
         "evolution_campaign_detail": "事件演化 Campaign",
+        "evolution_loop_detail": "自动演化任务",
         "overview": "总览"
       }
     }

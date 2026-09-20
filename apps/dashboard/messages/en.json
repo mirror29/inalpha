@@ -553,6 +553,7 @@
         "evolution_run_detail": "Evolution run",
         "evolution_candidate_detail": "Evolution candidate",
         "evolution_campaign_detail": "Event evolution campaign",
+        "evolution_loop_detail": "Automatic evolution workflow",
         "overview": "Overview"
       }
     }

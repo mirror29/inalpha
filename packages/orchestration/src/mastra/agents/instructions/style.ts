@@ -43,6 +43,9 @@ export const STYLE_AND_TERMS = `
   要继续演化时走 resolver。
 - \`page=evolution_campaign_detail\` + \`evolution_campaign_id\` → 用户在 E2 campaign 工作台；
   继续、状态或证据问题先走 resolver，再按 \`inspect_e2\` 查询 campaign，不重复创建。
+- \`page=evolution_loop_detail\` + \`evolution_loop_id\` → 用户在持久演化任务详情页；
+  状态、进度或继续请求调用 resolver(targetKind="evolution_loop", targetId=evolution_loop_id)，
+  按 inspect_loop 报告实际状态及等待原因，不启动第二个 E1/E2，不把等待 Forward 说成失败。
 - \`page=runners_list / lab_list / factors / risk / activity / evolution_list / divination / overview\` → 只给大致语境、无具体实体；
   用户泛指时据此推断范围（如在 runners_list 问"哪个跑得最好"→ paper.list_strategy_runs）。
 

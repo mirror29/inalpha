@@ -21,6 +21,7 @@ export type PageKind =
   | "evolution_run_detail"
   | "evolution_candidate_detail"
   | "evolution_campaign_detail"
+  | "evolution_loop_detail"
   | "overview";
 
 export type EvolutionTargetKind =
@@ -29,7 +30,8 @@ export type EvolutionTargetKind =
   | "backtest_run"
   | "e1_run"
   | "e1_candidate"
-  | "e2_campaign";
+  | "e2_campaign"
+  | "evolution_loop";
 
 export interface EvolutionTargetHint {
   /** Owner-scoped resolver 的目标种类；页面本身不承担授权。 */
@@ -84,6 +86,9 @@ export function parsePageContext(pathname: string): PageContext {
         ? { kind: "backtest_run_detail", id: second, pathname }
         : { kind: "overview", pathname };
     case "evolution":
+      if (second === "loops" && segs[2] && UUID_RE.test(segs[2])) {
+        return { kind: "evolution_loop_detail", id: segs[2], pathname };
+      }
       if (second === "campaigns" && segs[2] && UUID_RE.test(segs[2])) {
         return {
           kind: "evolution_campaign_detail",
@@ -125,6 +130,8 @@ export function buildPageContextEnvelope(ctx: PageContext): string {
   if (ctx.kind === "evolution_campaign_detail" && ctx.id)
     lines.push(`evolution_campaign_id=${ctx.id}`);
   const evolutionTarget = evolutionTargetFromPage(ctx);
+  if (ctx.kind === "evolution_loop_detail" && ctx.id)
+    lines.push(`evolution_loop_id=${ctx.id}`);
   if (evolutionTarget) {
     lines.push(`evolution_target_kind=${evolutionTarget.kind}`);
     lines.push(`evolution_target_id=${evolutionTarget.id}`);
@@ -149,6 +156,8 @@ export function evolutionTargetFromPage(ctx: PageContext): EvolutionTargetHint |
       return { kind: "e1_candidate", id: ctx.id };
     case "evolution_campaign_detail":
       return { kind: "e2_campaign", id: ctx.id };
+    case "evolution_loop_detail":
+      return { kind: "evolution_loop", id: ctx.id };
     default:
       return null;
   }

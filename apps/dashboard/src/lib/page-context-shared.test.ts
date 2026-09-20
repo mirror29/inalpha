@@ -12,6 +12,12 @@ const CANDIDATE_ID = "22222222-2222-4222-8222-222222222222";
 const CAMPAIGN_ID = "33333333-3333-4333-8333-333333333333";
 
 describe("evolution page context", () => {
+  it("keeps the durable loop identity in chat before E2 exists", () => {
+    const context = parsePageContext(`/evolution/loops/${RUN_ID}`);
+    expect(context.kind).toBe("evolution_loop_detail");
+    expect(buildPageContextEnvelope(context)).toContain("evolution_target_kind=evolution_loop");
+    expect(buildPageContextEnvelope(context)).toContain(`evolution_target_id=${RUN_ID}`);
+  });
   it("解析列表、运行详情与候选详情", () => {
     expect(parsePageContext("/evolution")).toEqual({
       kind: "evolution_list",

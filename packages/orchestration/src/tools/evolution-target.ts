@@ -20,6 +20,7 @@ export const evolutionTargetKindSchema = z.enum([
   "e1_run",
   "e1_candidate",
   "e2_campaign",
+  "evolution_loop",
 ]);
 
 export type EvolutionTargetKind = z.infer<typeof evolutionTargetKindSchema>;
@@ -63,7 +64,7 @@ export async function resolveEvolutionTarget(
   ctx?: ToolRequestContext,
 ): Promise<EvolutionTargetResolution> {
   const target = await resolveTargetRecord(targetKind, targetId, ctx);
-  if (targetKind === "e2_campaign") return target;
+  if (targetKind === "e2_campaign" || targetKind === "evolution_loop") return target;
   const evolver = await getEvolverClient(ctx);
   const loop = await evolver.findEvolutionLoop(targetKind, targetId);
   if (loop) {
@@ -88,6 +89,13 @@ async function resolveTargetRecord(
   const evolver = await getEvolverClient(ctx);
 
   switch (targetKind) {
+    case "evolution_loop": {
+      const loop = await evolver.getEvolutionLoop(targetId);
+      return resolution({
+        targetKind, targetId, status: loop.status, nextAction: "inspect_loop",
+        startInput: null, blockers: [], evidence: { ...loop, loop_status: loop.status },
+      });
+    }
     case "strategy_candidate": {
       const candidate = await paper.getCandidate(targetId);
       const backtest = await getCandidateBacktest(paper, candidate);

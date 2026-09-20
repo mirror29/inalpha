@@ -12,6 +12,7 @@ const EVOLUTION_KINDS = [
   "evolution_run_detail",
   "evolution_candidate_detail",
   "evolution_campaign_detail",
+  "evolution_loop_detail",
 ] as const;
 
 function messages(locale: "zh" | "en") {

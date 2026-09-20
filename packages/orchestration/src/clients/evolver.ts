@@ -296,6 +296,11 @@ export type RunListResult = { items: RunStatusResult[]; next_cursor: string | nu
 export class EvolverClient {
   private readonly http: HttpClient;
 
+  /** Read an owner-scoped durable workflow without advancing or restarting it. */
+  async getEvolutionLoop(loopId: string): Promise<EvolutionLoopResult> {
+    return await this.http.get<EvolutionLoopResult>(`/api/v1/evolution-loops/${loopId}`);
+  }
+
   constructor(options: { baseUrl: string; token: string; timeoutMs?: number }) {
     this.http = new HttpClient(options);
   }
