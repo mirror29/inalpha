@@ -44,6 +44,7 @@ import { getSettings } from "../config.js";
 import { divinationApiRoutes } from "../divination/api.js";
 import { closePool as closeDivinationPool } from "../divination/repo.js";
 import { permissionsApiRoutes } from "../permissions/api.js";
+import { loopCredentialApiRoutes, closeLoopCredentialPool } from "../evolution/credentials.js";
 import { pendingApprovals } from "../permissions/pending.js";
 import {
   closePool as closeApprovalsPool,
@@ -117,7 +118,7 @@ export const mastra = new Mastra({
   server: {
     timeout: 600_000,
     middleware: identityMiddleware,
-    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes, ...divinationApiRoutes],
+    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes, ...divinationApiRoutes, ...loopCredentialApiRoutes],
   },
 });
 
@@ -147,6 +148,7 @@ function hookPendingApprovalsShutdown(): void {
     // Postgres 端会留一批 idle 连接到 idle_in_transaction 超时,易顶满 max_connections。
     void closeDivinationPool().catch(() => {});
     void closeApprovalsPool().catch(() => {});
+    void closeLoopCredentialPool().catch(() => {});
   };
   process.once("SIGTERM", drain);
   process.once("SIGINT", drain);

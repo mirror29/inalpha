@@ -12,7 +12,7 @@ from inalpha_shared_llm.client import (  # type: ignore[import-untyped]
 )
 from inalpha_shared_llm.types import CacheMetrics, MutationRequest  # type: ignore[import-untyped]
 
-from ..exceptions import DiffApplyError, LLMError
+from ..exceptions import DiffApplyError, LLMError, LoopControlError
 from .diff_applier import apply_diff, repair_hunk_counts
 from .prompt_templates import SYSTEM_PROMPT, build_user_prompt
 
@@ -148,6 +148,8 @@ class Mutator:
 
         try:
             response = await self.llm_client.mutate(request)
+        except LoopControlError:
+            raise
         except Exception as exc:
             raise LLMError(f"LLM 变异调用失败：{exc}") from exc
 

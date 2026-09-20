@@ -188,6 +188,51 @@ async def test_owner_mutator_propagates_credential_network_failure(
         await build_owner_mutator(_run(), _settings())  # type: ignore[arg-type]
 
 
+@pytest.mark.asyncio
+async def test_loop_renews_owner_credential_instead_of_reusing_expired_chat_grant(monkeypatch):
+    from uuid import uuid4
+
+    import jwt
+
+    from inalpha_evolver.loop_llm import LoopModelScope
+
+    scope = LoopModelScope(uuid4(), uuid4(), uuid4(), "baseline")
+    settings = _settings()
+    settings.orchestration_service_url = "http://orchestration:4111"
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if request.method == "POST":
+            claims = jwt.decode(
+                request.headers["authorization"].split(" ")[1], settings.jwt_secret,
+                algorithms=["HS256"], audience="inalpha-orchestration",
+            )
+            assert claims["sub"] == "service:evolver"
+            assert claims["token_purpose"] == "evolution_loop_credential"
+            assert claims["owner_account_id"] == str(scope.owner_account_id)
+            assert claims["lease_token"] == str(scope.lease_token)
+            assert claims["exp"] - claims["iat"] <= 300
+            return httpx.Response(200, json={"credential_grant": "fresh-loop-grant"})
+        assert request.headers["authorization"] == "Bearer fresh-loop-grant"
+        return httpx.Response(200, json=_Response.payload)
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(
+        "inalpha_evolver.owner_llm.httpx.AsyncClient",
+        lambda **kwargs: client_type(**kwargs, transport=httpx.MockTransport(respond)),
+    )
+    run = {**_run(), "owner_account_id": scope.owner_account_id, "llm_credential_grant": None}
+    mutator = await build_owner_mutator(run, settings, loop_scope=scope)
+    try:
+        assert len(requests) == 2
+        assert str(requests[0].url).endswith(f"/{scope.loop_id}/credential-grant")
+        assert run["llm_credential_grant"] is None
+        assert "api_key" not in run
+    finally:
+        await mutator.close()
+
+
 class _ClosableMutator:
     def __init__(self) -> None:
         self.closed = False

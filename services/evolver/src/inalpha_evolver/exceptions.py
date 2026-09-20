@@ -42,3 +42,7 @@ class StoreError(RuntimeError):
 
 class LLMError(RuntimeError):
     """LLM 调用失败。"""
+
+
+class LoopControlError(RuntimeError):
+    """Durable authority, budget, or fencing failure; never a proposal fallback."""

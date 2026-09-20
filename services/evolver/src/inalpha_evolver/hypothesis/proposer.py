@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from inalpha_shared_llm.types import MutationRequest  # type: ignore[import-untyped]
 
+from ..exceptions import LoopControlError
 from ..mutator import Mutator
 from .models import HypothesisSpec
 
@@ -64,6 +65,9 @@ async def propose_generation(
         for index in (0, 4)
     ]
     results = await asyncio.gather(*calls, return_exceptions=True)
+    for result in results:
+        if isinstance(result, (LoopControlError, asyncio.CancelledError)):
+            raise result
     hypotheses: list[HypothesisSpec] = []
     cost = 0.0
     fallback_calls = 0

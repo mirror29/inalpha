@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { decryptUserApiKey } from "@/lib/user-preferences";
 import { getPool } from "@/lib/db";
+import { validLoopCredential } from "@/lib/loop-credential";
 
 const MAX_CREDENTIAL_TTL_SECONDS = 30 * 60 * 60;
 const GRANT_AUDIENCE = "inalpha-dashboard-credential";
@@ -59,6 +60,14 @@ export async function GET(
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     subject = payload.sub;
+
+    try {
+      if (!await validLoopCredential(payload)) {
+        return NextResponse.json({ error: "loop_credential_scope_conflict" }, { status: 403 });
+      }
+    } catch {
+      return NextResponse.json({ error: "loop_authorization_unavailable" }, { status: 503 });
+    }
 
     let config;
     try {

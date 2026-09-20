@@ -18,7 +18,8 @@ export async function mintEvolutionCredentialGrant(args: {
   operationId: string;
   requestDigest: string;
   snapshot: EvolutionLLMSnapshot;
-  purpose?: "e1_run" | "event_campaign";
+  purpose?: "e1_run" | "event_campaign" | "evolution_loop_start";
+  loopScope?: { loopId: string; leaseToken: string; phase: "baseline" | "campaign" };
 }): Promise<string> {
   const encoded = process.env.EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64?.trim();
   if (!encoded) {
@@ -43,12 +44,17 @@ export async function mintEvolutionCredentialGrant(args: {
     grant_purpose: args.purpose ?? "e1_run",
     request_digest: args.requestDigest,
     llm_config_digest: args.snapshot.config_digest,
+    ...(args.loopScope ? {
+      loop_id: args.loopScope.loopId,
+      lease_token: args.loopScope.leaseToken,
+      loop_phase: args.loopScope.phase,
+    } : {}),
   })
     .setProtectedHeader({ alg: "EdDSA", typ: "JWT" })
     .setSubject(args.authSub)
     .setAudience(["inalpha-evolver", GRANT_AUDIENCE])
     .setJti(randomUUID())
     .setIssuedAt(now)
-    .setExpirationTime(now + GRANT_TTL_SECONDS)
+    .setExpirationTime(now + (args.loopScope || args.purpose === "evolution_loop_start" ? 300 : GRANT_TTL_SECONDS))
     .sign(privateKey);
 }

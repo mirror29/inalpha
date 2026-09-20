@@ -96,6 +96,10 @@ class EvolverSettings(BaseSettings):
         default="http://127.0.0.1:3001",
         alias="DASHBOARD_SERVICE_URL",
     )
+    orchestration_service_url: str = Field(
+        default="http://127.0.0.1:4111",
+        alias="ORCHESTRATION_SERVICE_URL",
+    )
     evolver_llm_timeout_s: int = Field(
         default=120,
         alias="EVOLVER_LLM_TIMEOUT_S",
