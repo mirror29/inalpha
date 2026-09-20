@@ -9,12 +9,15 @@ from uuid import UUID, uuid4
 
 from psycopg import AsyncConnection
 
+from ..loop_fencing import fenced_baseline_write
+
 _COLUMNS = """candidate_id,run_id,slot,generation,parent_id,stage,outcome,source_code,
 source_hash,unified_diff,mutation_hint,llm_cost_usd,cache_hit_tokens,input_tokens,
 output_tokens,fitness,evaluation_snapshot,audit_snapshot,contract_snapshot,error_code,
 error_message,overfitting_risk,data_epoch,created_at,updated_at"""
 
 
+@fenced_baseline_write
 async def insert_slot(
     conn: AsyncConnection,
     run_id: UUID,
@@ -33,6 +36,7 @@ RETURNING {_COLUMNS}""",
     return dict(row)
 
 
+@fenced_baseline_write
 async def update_slot(
     conn: AsyncConnection,
     run_id: UUID,
@@ -98,6 +102,7 @@ USING(run_id)WHERE c.candidate_id=%s AND r.owner_account_id=%s""",
     return dict(row) if row else None
 
 
+@fenced_baseline_write
 async def close_pending(
     conn: AsyncConnection,
     run_id: UUID,

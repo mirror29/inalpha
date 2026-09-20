@@ -43,7 +43,12 @@ async def execute_generation(
         await _checkpoint(run["run_id"])
         hint = hints.next()
         async with get_conn() as conn:
-            await candidates.insert_slot(conn, run["run_id"], slot, hint)
+            persisted = await candidates.insert_slot(conn, run["run_id"], slot, hint)
+        if persisted["outcome"] != "pending":
+            continue
+        if persisted["stage"] == "evaluation" and persisted["source_code"]:
+            await evaluate_slot(run["run_id"], slot, persisted["source_code"], evaluator)
+            continue
         try:
             mutation = await mutator.mutate(source, seed_result.report, hint)
         except LLMError as exc:

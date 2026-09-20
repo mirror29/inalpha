@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from psycopg import AsyncConnection
 
+from ..loop_fencing import fenced_baseline_write
+
 _COLUMNS = """run_id,owner_account_id,requested_by_sub,seed_strategy_id,budget,config,
 llm_snapshot,llm_config_digest,llm_credential_grant,status,llm_cost_usd,queued_at,started_at,updated_at,finished_at,
 venue,symbol,request_timeframe,data_timeframe,engine_timeframe,requested_as_of,
@@ -92,6 +94,7 @@ async def get_run(
     return dict(row) if row else None
 
 
+@fenced_baseline_write
 async def clear_credential_grant(conn: AsyncConnection, run_id: UUID) -> None:
     """凭据 capability 兑换成功后立即从持久化队列清除。"""
     result = await conn.execute(
@@ -104,6 +107,7 @@ async def clear_credential_grant(conn: AsyncConnection, run_id: UUID) -> None:
         raise RuntimeError("credential grant can only be cleared for a running run")
 
 
+@fenced_baseline_write
 async def transition(
     conn: AsyncConnection,
     run_id: UUID,
