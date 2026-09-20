@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request, status
@@ -34,9 +34,7 @@ async def create_evolution_loop(
     background: BackgroundTasks,
     db: DBConn,
     user: Annotated[User, Depends(get_current_user)],
-    idempotency_key: Annotated[
-        str, Header(alias="Idempotency-Key", min_length=8, max_length=128)
-    ],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
     evolution_credential: Annotated[
         str,
         Header(alias="X-Evolution-Credential", min_length=100, max_length=4096),
@@ -92,6 +90,20 @@ async def list_evolution_loops(
     return EvolutionLoopListResponse(items=[EvolutionLoopResponse(**row) for row in rows])
 
 
+@router.get("/for-target", response_model=EvolutionLoopResponse | None)
+async def find_evolution_loop(
+    target_kind: Literal[
+        "strategy_candidate", "paper_runner", "backtest_run", "e1_run", "e1_candidate"
+    ],
+    target_id: UUID,
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+) -> EvolutionLoopResponse | None:
+    """Resolve a detail page to its owned workflow without creating another experiment."""
+    row = await store.get_loop_for_target(db, account_id_from_user(user), target_kind, target_id)
+    return None if row is None else EvolutionLoopResponse(**row)
+
+
 @router.get("/{loop_id}", response_model=EvolutionLoopResponse)
 async def get_evolution_loop(
     loop_id: UUID,
@@ -134,7 +146,7 @@ async def get_evolution_loop_events(
                 f"event: {item.event_type}\n"
                 f"data: {json.dumps(item.model_dump(mode='json'), separators=(',', ':'))}\n\n"
             )
-        yield f"event: heartbeat\ndata: {{\"state_version\":{loop['state_version']}}}\n\n"
+        yield f'event: heartbeat\ndata: {{"state_version":{loop["state_version"]}}}\n\n'
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 

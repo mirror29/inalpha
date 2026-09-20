@@ -232,6 +232,25 @@ WHERE campaign_id=%s AND owner_account_id=%s""",
     return None if row is None else await get_loop(conn, row["loop_id"], owner_account_id)
 
 
+async def get_loop_for_target(
+    conn: AsyncConnection,
+    owner_account_id: UUID,
+    target_kind: str,
+    target_id: UUID,
+) -> dict[str, Any] | None:
+    """Reuse active original targets; baseline detail always points to its existing workflow."""
+    if target_kind != "e1_run":
+        return await get_active_loop_for_target(conn, owner_account_id, target_kind, str(target_id))
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """SELECT loop_id FROM evolution_loops
+WHERE owner_account_id=%s AND e1_run_id=%s ORDER BY created_at DESC,loop_id DESC LIMIT 1""",
+            (owner_account_id, target_id),
+        )
+        row = await cur.fetchone()
+    return None if row is None else await get_loop(conn, row["loop_id"], owner_account_id)
+
+
 async def sync_from_campaign(
     conn: AsyncConnection,
     loop_id: UUID,
