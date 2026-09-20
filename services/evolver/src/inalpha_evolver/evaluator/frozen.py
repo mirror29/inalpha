@@ -33,6 +33,11 @@ class FrozenDatasetEvaluator:
     trading_mode: str = "spot"
     leverage: int = 1
     funding_rate: float = 0.0
+    protective_stop_loss_pct: float | None = None
+    protective_take_profit_pct: float | None = None
+    protective_trailing_stop_pct: float | None = None
+    protective_chandelier_atr_mult: float | None = None
+    protective_chandelier_atr_period: int = 22
     params: dict[str, Any] = field(default_factory=dict)
     events: tuple[MarketEvent, ...] = ()
     event_execution_policy: EventExecutionPolicy | None = None
@@ -76,6 +81,11 @@ class FrozenDatasetEvaluator:
             trading_mode=self.trading_mode,
             leverage=self.leverage,
             funding_rate=self.funding_rate,
+            protective_stop_loss_pct=self.protective_stop_loss_pct,
+            protective_take_profit_pct=self.protective_take_profit_pct,
+            protective_trailing_stop_pct=self.protective_trailing_stop_pct,
+            protective_chandelier_atr_mult=self.protective_chandelier_atr_mult,
+            protective_chandelier_atr_period=self.protective_chandelier_atr_period,
         )
         return EvaluationResult(
             report=result.snapshot.model_dump(mode="json"),

@@ -142,3 +142,23 @@ async def test_frozen_perpetual_evaluation_accounts_for_funding():
     evaluator.funding_rate = 0
     unfunded = await evaluator.evaluate(source)
     assert funded.report["final_equity"] > unfunded.report["final_equity"]
+
+
+@pytest.mark.asyncio
+async def test_frozen_evaluation_executes_protective_stop():
+    from inalpha_evolver.evaluator.frozen import FrozenDatasetEvaluator
+
+    async def runner(**kwargs):
+        return run_engine_worker(**kwargs)
+
+    source = SHORT_SOURCE.replace("self.count == 3", "self.count == 30")
+    evaluator = FrozenDatasetEvaluator(
+        dataset=_dataset(), runner=runner, trading_mode="perp",
+        protective_stop_loss_pct=0.02,
+    )
+    protected = await evaluator.evaluate(source)
+    evaluator.protective_stop_loss_pct = None
+    unprotected = await evaluator.evaluate(source)
+    assert protected.report["protective_exits"] == 1
+    assert unprotected.report["protective_exits"] == 0
+    assert protected.report["final_equity"] > unprotected.report["final_equity"]

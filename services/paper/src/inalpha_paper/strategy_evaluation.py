@@ -44,6 +44,11 @@ async def evaluate_strategy_source(
     trading_mode: str = "spot",
     leverage: int = 1,
     funding_rate: float = 0.0,
+    protective_stop_loss_pct: float | None = None,
+    protective_take_profit_pct: float | None = None,
+    protective_trailing_stop_pct: float | None = None,
+    protective_chandelier_atr_mult: float | None = None,
+    protective_chandelier_atr_period: int = 22,
     events: list[MarketEvent] | None = None,
     event_execution_policy: EventExecutionPolicy | None = None,
 ) -> SourceEvaluation:
@@ -51,6 +56,17 @@ async def evaluate_strategy_source(
     _validate_bars(bars)
     audited_source = audit_strategy_source(source_code)
     periods = annualization_periods or float(periods_per_year(timeframe))
+    protection: dict[str, Any] = {}
+    for key, value in (
+        ("protective_stop_loss_pct", protective_stop_loss_pct),
+        ("protective_take_profit_pct", protective_take_profit_pct),
+        ("protective_trailing_stop_pct", protective_trailing_stop_pct),
+        ("protective_chandelier_atr_mult", protective_chandelier_atr_mult),
+    ):
+        if value is not None:
+            protection[key] = value
+    if protective_chandelier_atr_mult is not None:
+        protection["protective_chandelier_atr_period"] = protective_chandelier_atr_period
     report = await run_engine(
         bars=bars,
         instrument_id=instrument_id,
@@ -63,6 +79,7 @@ async def evaluate_strategy_source(
         trading_mode=trading_mode,
         leverage=leverage,
         funding_rate=funding_rate,
+        **protection,
         annualization_periods=int(periods),
         events=events,
         event_execution_policy=event_execution_policy,
