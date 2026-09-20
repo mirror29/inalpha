@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+
+import { useTranslations } from "next-intl";
 
 import { cn } from "@/lib/cn";
 
@@ -35,6 +37,10 @@ export function ToolOutput({ raw }: { raw: string }) {
     );
   }
 
+  if (isApprovalEnvelope(parsed)) {
+    return <ChatApprovalActions requestId={parsed.requestId} />;
+  }
+
   // mastra 工具报错封套:红标头 + 直接展开 output(不让用户先点开一层 isError)。
   if (isErrorEnvelope(parsed)) {
     return (
@@ -50,6 +56,73 @@ export function ToolOutput({ raw }: { raw: string }) {
   return (
     <div className="max-h-64 overflow-auto px-2.5 py-1.5">
       <JsonNode value={parsed} depth={0} />
+    </div>
+  );
+}
+
+function isApprovalEnvelope(
+  value: unknown,
+): value is { requiresApproval: true; requestId: string } {
+  return Boolean(
+    value
+      && typeof value === "object"
+      && (value as { requiresApproval?: unknown }).requiresApproval === true
+      && typeof (value as { requestId?: unknown }).requestId === "string",
+  );
+}
+
+/** Complete the trusted approval in-place, then resume the same chat operation. */
+function ChatApprovalActions({ requestId }: { requestId: string }) {
+  const t = useTranslations("activity.approval");
+  const [state, setState] = useState<"idle" | "allow" | "deny" | "approved" | "failed">("idle");
+
+  const respond = async (decision: "allow" | "deny") => {
+    setState(decision);
+    try {
+      const response = await fetch(`/api/permissions/${encodeURIComponent(requestId)}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      if (!response.ok) throw new Error(`approval failed (${response.status})`);
+      if (decision === "allow") {
+        setState("approved");
+        window.dispatchEvent(new CustomEvent("inalpha:approval-resume"));
+      } else {
+        setState("idle");
+      }
+    } catch {
+      setState("failed");
+    }
+  };
+
+  if (state === "approved") {
+    return <p className="px-2.5 py-2 font-mono text-[11px] text-bull">{t("working")}</p>;
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-2.5 py-2">
+      <span className="font-mono text-[10px] text-fg-muted">
+        {state === "failed" ? t("failed") : requestId.slice(0, 8)}
+      </span>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          disabled={state === "allow" || state === "deny"}
+          onClick={() => void respond("deny")}
+          className="rounded-md border border-fox-red/35 px-2 py-1 font-mono text-[10px] uppercase text-fox-red disabled:opacity-40"
+        >
+          {state === "deny" ? t("working") : t("deny")}
+        </button>
+        <button
+          type="button"
+          disabled={state === "allow" || state === "deny"}
+          onClick={() => void respond("allow")}
+          className="rounded-md border border-bull/35 bg-bull/10 px-2 py-1 font-mono text-[10px] uppercase text-bull disabled:opacity-40"
+        >
+          {state === "allow" ? t("working") : t("allow")}
+        </button>
+      </div>
     </div>
   );
 }

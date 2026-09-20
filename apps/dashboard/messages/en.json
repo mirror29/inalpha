@@ -517,6 +517,7 @@
     "toolDenied": "denied",
     "toolAwaitingApproval": "awaiting approval",
     "toolResponded": "responded",
+    "approvalResumePrompt": "I approved this operation's cost. Continue the previous action.",
     "toolResult": "output",
     "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",
     "errorIncompleteStream": "The upstream model interrupted its reply. Check the active model balance, quota, or API key, then retry.",

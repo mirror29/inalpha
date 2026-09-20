@@ -5,7 +5,7 @@ import { isDivinationTool, parseDivination } from "@/components/divination/types
 import { stripPageContext } from "@/lib/page-context";
 import { ChatStreamdown } from "./ChatStreamdown";
 import { ChatToolChip } from "./ChatToolChip";
-import { inferToolState, type ToolState } from "./tool-states";
+import { inferToolResultState, inferToolState, type ToolState } from "./tool-states";
 
 /** AG-UI 消息最小形态。 */
 export type AGMessage = {
@@ -74,15 +74,7 @@ export function ChatMessage({
         );
       }
     }
-    const hasError = (() => {
-      try {
-        const parsed = JSON.parse(text);
-        return Boolean(parsed?.isError || parsed?.error);
-      } catch {
-        return false;
-      }
-    })();
-    const state = inferToolState(true, hasError);
+    const state = inferToolResultState(text);
     const stateLabel = toolStateLabels[state];
 
     return (

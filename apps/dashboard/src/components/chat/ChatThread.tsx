@@ -303,6 +303,25 @@ export function ChatThread({
     return () => window.removeEventListener("inalpha:evolution-start", handler);
   }, [submitText]);
 
+  const approvalResumePendingRef = useRef(false);
+  useEffect(() => {
+    const handler = () => {
+      if (isLoading) {
+        approvalResumePendingRef.current = true;
+        return;
+      }
+      void submitText(t("approvalResumePrompt"));
+    };
+    window.addEventListener("inalpha:approval-resume", handler);
+    return () => window.removeEventListener("inalpha:approval-resume", handler);
+  }, [isLoading, submitText, t]);
+
+  useEffect(() => {
+    if (isLoading || !approvalResumePendingRef.current) return;
+    approvalResumePendingRef.current = false;
+    void submitText(t("approvalResumePrompt"));
+  }, [isLoading, submitText, t]);
+
   // Resize handler
   const startResize = useCallback((e: ReactPointerEvent) => {
     e.preventDefault();

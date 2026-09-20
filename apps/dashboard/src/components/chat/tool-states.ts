@@ -87,7 +87,7 @@ export const TOOL_STATE_MAP: Record<ToolState, ToolStateProps> = {
     label: "Awaiting Approval",
     Icon: Clock,
     color: "text-yellow-500",
-    expandable: false,
+    expandable: true,
     pulse: true,
   },
   "approval-responded": {
@@ -131,4 +131,21 @@ export function inferToolState(
 ): ToolState {
   if (hasResult) return hasError ? "output-error" : "output-available";
   return "input-available";
+}
+
+/** Infer approval/denial states from the structured tool result envelope. */
+export function inferToolResultState(raw: string): ToolState {
+  try {
+    const result = JSON.parse(raw) as {
+      isError?: boolean;
+      requiresApproval?: boolean;
+      requestId?: string;
+      deniedBy?: string;
+    };
+    if (result.requiresApproval && result.requestId) return "approval-requested";
+    if (result.deniedBy === "permission" && result.isError) return "output-denied";
+    return inferToolState(true, Boolean(result.isError));
+  } catch {
+    return inferToolState(true, false);
+  }
 }
