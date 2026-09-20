@@ -380,7 +380,11 @@ async def test_capabilities_is_the_authoritative_e2_feature_gate(
         )(),
     )
 
-    capability = await campaign_routes.evolution_capabilities(User(user_id="user:alice"))
+    from fastapi import FastAPI, Request
+
+    capability = await campaign_routes.evolution_capabilities(
+        User(user_id="user:alice"), Request({"type": "http", "app": FastAPI()})
+    )
 
     assert capability.event_evolution_enabled is False
     assert capability.reason == "EVENT_EVOLUTION_ENABLED is false"

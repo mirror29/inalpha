@@ -52,12 +52,16 @@ async def claim_next(
             """UPDATE strategy_evo_runs SET status='aborted',active_stage='aborted',
 finished_at=%s,updated_at=%s,failure_code='EVOLUTION_QUEUE_TIMEOUT',
 failure_message='run exceeded its queue deadline'
-WHERE status='queued' AND queued_at < %s - make_interval(secs => %s)""",
+WHERE status='queued' AND queued_at < %s - make_interval(secs => %s)
+AND NOT EXISTS(SELECT 1 FROM evolution_loops l JOIN evolution_loop_authorizations a USING(loop_id)
+WHERE l.e1_run_id=strategy_evo_runs.run_id)""",
             (now, now, now, queue_timeout_s),
         )
         await cur.execute(
             f"""WITH picked AS(SELECT run_id FROM strategy_evo_runs WHERE status='queued'
 AND llm_snapshot_required AND llm_credential_grant_required
+AND NOT EXISTS(SELECT 1 FROM evolution_loops l JOIN evolution_loop_authorizations a USING(loop_id)
+WHERE l.e1_run_id=strategy_evo_runs.run_id)
 ORDER BY queued_at FOR UPDATE SKIP LOCKED LIMIT 1)UPDATE strategy_evo_runs r SET
 status='running',active_stage='loading_data',started_at=%s,updated_at=%s FROM picked
 WHERE r.run_id=picked.run_id RETURNING {",".join(f"r.{name.strip()}" for name in _COLUMNS.split(","))}""",
@@ -102,21 +106,27 @@ async def reconcile_interrupted(conn: AsyncConnection) -> int:
             """UPDATE strategy_evo_runs SET status='aborted',active_stage='aborted',
 finished_at=%s,updated_at=%s,failure_code='EVOLUTION_UPGRADE_ABORTED',
 failure_message='run queued by an image without owner LLM authorization metadata'
-WHERE status='queued' AND (NOT llm_snapshot_required OR NOT llm_credential_grant_required)""",
+WHERE status='queued' AND (NOT llm_snapshot_required OR NOT llm_credential_grant_required)
+AND NOT EXISTS(SELECT 1 FROM evolution_loops l JOIN evolution_loop_authorizations a USING(loop_id)
+WHERE l.e1_run_id=strategy_evo_runs.run_id)""",
             (now, now),
         )
         await cur.execute(
             """UPDATE strategy_evo_candidates c SET stage='completed',outcome='cancelled',
 error_code='EVOLUTION_SERVICE_RESTARTED',error_message='service restarted during execution',
 updated_at=%s FROM strategy_evo_runs r WHERE c.run_id=r.run_id AND c.outcome='pending'
-AND r.status=ANY(%s)""",
+AND r.status=ANY(%s)
+AND NOT EXISTS(SELECT 1 FROM evolution_loops l JOIN evolution_loop_authorizations a USING(loop_id)
+WHERE l.e1_run_id=r.run_id)""",
             (now, ["running", "cancelling"]),
         )
         await cur.execute(
             """UPDATE strategy_evo_runs SET status='aborted',active_stage='aborted',
 finished_at=%s,updated_at=%s,failure_code='EVOLUTION_SERVICE_RESTARTED',
 failure_message='service restarted during execution'
-WHERE status=ANY(%s)""",
+WHERE status=ANY(%s)
+AND NOT EXISTS(SELECT 1 FROM evolution_loops l JOIN evolution_loop_authorizations a USING(loop_id)
+WHERE l.e1_run_id=strategy_evo_runs.run_id)""",
             (now, now, ["running", "cancelling"]),
         )
         return cur.rowcount

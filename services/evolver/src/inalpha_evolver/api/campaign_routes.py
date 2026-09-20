@@ -51,12 +51,17 @@ def _require_event_evolution() -> None:
 @router.get("/capabilities", response_model=EvolutionCapabilitiesResponse)
 async def evolution_capabilities(
     _user: Annotated[User, Depends(get_current_user)],
+    request: Request,
 ) -> EvolutionCapabilitiesResponse:
     """Return the sole backend authority for whether E2 mutations are available."""
     settings = get_evolver_settings()
     enabled = settings.event_evolution_enabled
+    loop_manager = getattr(request.app.state, "loop_manager", None)
+    loop_enabled = bool(enabled and loop_manager is not None and loop_manager.healthy)
     return EvolutionCapabilitiesResponse(
         event_evolution_enabled=enabled,
+        durable_loop_enabled=loop_enabled,
+        durable_loop_reason=None if loop_enabled else "durable loop dispatcher unavailable or disabled",
         reason=None if enabled else "EVENT_EVOLUTION_ENABLED is false",
         candidate_concurrency=settings.candidate_evaluation_concurrency,
         supported_timeframes=["15m", "1h", "4h"],

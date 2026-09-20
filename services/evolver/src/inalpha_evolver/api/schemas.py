@@ -453,6 +453,8 @@ class EvolutionCapabilitiesResponse(BaseModel):
     """Authoritative feature gate and frozen E2 operating limits."""
 
     event_evolution_enabled: bool
+    durable_loop_enabled: bool = False
+    durable_loop_reason: str | None = "durable loop dispatcher unavailable"
     reason: str | None = None
     max_generations: Literal[5] = 5
     hypotheses_per_generation: Literal[8] = 8

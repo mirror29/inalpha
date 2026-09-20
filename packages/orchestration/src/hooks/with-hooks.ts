@@ -283,7 +283,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
          */
         if (
           permDecision === "allow"
-          && toolName === "evolver.run_event_campaign"
+          && ["evolver.run_event_campaign", "evolver.start_evolution_loop"].includes(toolName)
           && authSub
           && sessionId
           && getRequestContextValue<EvolutionLLMSnapshot>(ctx, USER_LLM_SNAPSHOT_KEY)

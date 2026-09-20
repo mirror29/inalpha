@@ -24,6 +24,20 @@ export type EvolutionStartRequest = {
   llm: EvolutionLLMSnapshot;
 };
 
+export type EvolutionLoopStartRequest = {
+  baseline: EvolutionStartRequest;
+  campaign: EventCampaignRequest;
+  max_cost_usd: number;
+};
+
+/** Covers both stage intents and the hard dollar cap using the Python canonical form. */
+export function evolutionLoopRequestDigest(request: EvolutionLoopStartRequest): string {
+  return createHash("sha256").update(JSON.stringify([
+    "evolution-loop-v1", evolutionRequestDigest(request.baseline),
+    eventCampaignRequestDigest(request.campaign), float64Hex(request.max_cost_usd),
+  ])).digest("hex");
+}
+
 export type EventCampaignRequest = {
   event_snapshot_id: string;
   source_run_id: string | null;
@@ -85,6 +99,8 @@ export type EvolutionLoopResult = {
 
 export type EventEvolutionCapabilities = {
   event_evolution_enabled: boolean;
+  durable_loop_enabled?: boolean;
+  durable_loop_reason?: string | null;
   reason: string | null;
   max_generations: 5;
   hypotheses_per_generation: 8;
@@ -282,6 +298,18 @@ export class EvolverClient {
 
   constructor(options: { baseUrl: string; token: string; timeoutMs?: number }) {
     this.http = new HttpClient(options);
+  }
+
+  /** Start the baseline and its automatic continuation with one bounded authorization. */
+  async startEvolutionLoop(options: {
+    request: EvolutionLoopStartRequest;
+    idempotencyKey: string;
+    credentialGrant: string;
+  }): Promise<EvolutionLoopResult> {
+    return await this.http.post<EvolutionLoopResult>("/api/v1/evolution-loops/start", options.request, {
+      "Idempotency-Key": options.idempotencyKey,
+      "X-Evolution-Credential": options.credentialGrant,
+    });
   }
 
   async startRun(options: {

@@ -49,6 +49,7 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "evolver.resolve_target",
     /** Owner 明确点击/说“开始进化”即授权研究型 E2；签名 operation/grant 仍绑定 owner、模型和请求。 */
     "evolver.run_event_campaign",
+    "evolver.start_evolution_loop",
 
     // Swarm 批量回测（ADR-0025）：只读，无下单路径
     "swarm.*",

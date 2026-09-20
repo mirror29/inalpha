@@ -22,7 +22,7 @@ const AUTOMATIC_EVENT_TYPES: MarketEventType[] = [
   "chain_halt",
 ];
 
-async function createAutomaticEventSnapshot(
+export async function createAutomaticEventSnapshot(
   config: {
     venue: string;
     symbol: string;

@@ -64,7 +64,8 @@ def verify_evolution_approval(
     invalid_ttl = (
         not isinstance(issued_at, int)
         or not isinstance(expires_at, int)
-        or expires_at - issued_at > _MAX_GRANT_TTL_SECONDS
+        or expires_at - issued_at
+        > (300 if grant_purpose == "evolution_loop_start" else _MAX_GRANT_TTL_SECONDS)
         or expires_at <= issued_at
     )
     if invalid_ttl or any(payload.get(key) != value for key, value in expected.items()):
