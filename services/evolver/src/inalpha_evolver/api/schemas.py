@@ -255,8 +255,8 @@ class CandidateResponse(BaseModel):
     contract_snapshot: dict[str, Any] | None = None
     error_code: str | None = None
     error_message: str | None = None
-    overfitting_risk: str = "high"
-    data_epoch: int = 0
+    overfitting_risk: str | None = None
+    data_epoch: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

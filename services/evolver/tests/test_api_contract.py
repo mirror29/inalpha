@@ -229,6 +229,40 @@ def test_candidate_response_exposes_data_epoch() -> None:
     assert response.data_epoch == 1_786_000_000_000
 
 
+def test_pending_candidate_allows_missing_data_epoch() -> None:
+    response = candidate_response(
+        {
+            "candidate_id": "00000000-0000-0000-0000-000000000001",
+            "run_id": "00000000-0000-0000-0000-000000000002",
+            "generation": 1,
+            "slot": 0,
+            "stage": "mutation",
+            "outcome": "pending",
+            "status": "evaluated",
+            "source_code": None,
+            "source_hash": None,
+            "unified_diff": None,
+            "mutation_hint": "test",
+            "llm_cost_usd": 0,
+            "cache_hit_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "fitness": None,
+            "evaluation_snapshot": None,
+            "audit_snapshot": None,
+            "contract_snapshot": None,
+            "error_code": None,
+            "error_message": None,
+            "overfitting_risk": None,
+            "data_epoch": None,
+            "created_at": "2026-09-20T00:00:00Z",
+            "updated_at": "2026-09-20T00:00:00Z",
+        }
+    )
+
+    assert response.data_epoch is None
+
+
 def test_run_dto_exposes_manifest_cutoff_and_lag() -> None:
     manifest = RunStatusResponse.model_json_schema()["$defs"]["DatasetManifest"]
     required = set(manifest["required"])
