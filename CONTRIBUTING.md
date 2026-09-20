@@ -1,9 +1,9 @@
 # Contributing to Inalpha / 贡献指南
 
-> Inalpha is an experimental research framework in **alpha**. Phase D-12 and the E1 production evolution loop have landed; the next milestone is E2 best-parent multi-generation evolution (#7).
+> Inalpha is an experimental research framework in **alpha**. Phase D-12 and the feature-flagged E2 event-evolution loop have landed; the next milestone is small-volume calibration of event coverage, credit assignment, and Forward evidence.
 > Before writing code, we strongly recommend reading: [`AGENTS.md`](AGENTS.md) · [`docs/00-context.md`](docs/00-context.md) · [`docs/01-architecture-overview.md`](docs/01-architecture-overview.md) · [`docs/04-current-state.md`](docs/04-current-state.md)
 >
-> Inalpha 是实验性研究框架，处于 **alpha** 阶段。Phase D-12 与 E1 策略演化生产闭环已落地；下一里程碑是 E2 best-parent 多代演化（#7）。
+> Inalpha 是实验性研究框架，处于 **alpha** 阶段。Phase D-12 与 feature flag 后的 E2 事件演化闭环已落地；下一里程碑是在小流量运行中校准事件覆盖、信用分配与 Forward 证据。
 > 动手之前，强烈建议先读上述四份文档。
 
 ## 1. Before you start / 开始之前

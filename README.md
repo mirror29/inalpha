@@ -415,6 +415,14 @@ and an `en / 中` switcher in the sidebar.
 > The console is the single front door: data, research, backtests, live runners, and the
 > conversation with the orchestrator now all live in one place.
 
+**Try automatic event evolution locally.** Set `EVENT_EVOLUTION_ENABLED=true` in the repository
+`.env`, and either import historical event facts or also enable the archive/extraction workers with
+`EVENT_ARCHIVE_ENABLED=true` and `EVENT_EXTRACTION_ENABLED=true`. Restart the services, then open a strategy, paper-run, or E1-result detail page and choose
+**Start evolution**. You can also type “start evolution” in the docked agent chat. Repeated requests
+reuse the same active owner-and-target loop. E2 runs its generations without per-generation approval,
+but a result still needs manual adoption and remains research-only (`runner_eligible=false`). A target
+with no point-in-time event facts fails before spending LLM budget with `EVENT_SNAPSHOT_EMPTY`.
+
 > The orchestrator and an explicitly approved `services/evolver` run can consume your owner-scoped
 > LLM key; `services/research` currently uses the deployment-level provider/key, and
 > `services/paper` never calls an LLM directly. Evolver resolves the encrypted credential just in

@@ -45,7 +45,7 @@ Inalpha 是一个**用工程纪律驱动的专业量化 agent 框架**。它不�
 
 项目命名取自日本稻荷狐神 **Ina**ri 与量化术语 **alpha**：一个会替你问卜方向、又把每一步记上账的量化伙伴。
 
-> **当前状态：** Inalpha 处于 **alpha** 阶段——79 因子配血缘 + 衰减巡检、受限 DSL 因子发现、三方制研究辩论、多市场模拟盘，以及独立的 E1 策略演化服务。每次演化都要显式审批，冻结数据集与非敏感 LLM/计价快照，且绝不自动 promote 或启动候选。欢迎读代码、参与设计——**请勿用真实资金跑**（真钱实盘不在当前计划）。
+> **当前状态：** Inalpha 处于 **alpha** 阶段——79 因子配血缘 + 衰减巡检、受限 DSL 因子发现、三方制研究辩论、多市场模拟盘，以及 E1/E2 策略演化。feature flag 后的 E2 提供 point-in-time 事件快照、确定性假设 DSL、五代 campaign、Forward 证据与一次性 sealed holdout。演化绝不自动 promote、启动候选或下单。欢迎读代码、参与设计——**请勿用真实资金跑**（真钱实盘不在当前计划）。
 
 ---
 
@@ -126,7 +126,7 @@ Inalpha 是一个**用工程纪律驱动的专业量化 agent 框架**。它不�
 | `services/paper` | 事件驱动内核——回测 + 模拟盘**共用同一份代码**——外加 LLM 自创策略沙盒与 live runner。 |
 | `services/research` | 多 agent 深度研究：6 analyst 并行，再走 bull / bear / risk 辩论（只在分歧时才触发，配软早停，决策链路全程落盘可复盘）。 |
 | `services/factor` | 因子库（pandas-ta / Alpha101 / qlib + FRED 宏观）：IC 检验、当前有效因子择时、血缘衰减巡检、DSL 因子发现。**只产出信号——绝不下单。** |
-| `services/evolver` | owner 隔离的 E1 策略演化：unified-diff 变异、冻结数据评估、run/candidate 血缘、费用记账与显式审批边界。**绝不自动 promote、启动或下单。** |
+| `services/evolver` | owner 隔离的 E1/E2 演化：unified-diff 变异、事件假设 campaign、冻结数据评估、血缘、费用记账、Forward/holdout 门禁与最终人工采用。**绝不自动 promote、启动或下单。** |
 
 **L4 · 持久化 + 外部依赖。** Postgres + TimescaleDB 承载全部时序与业务状态。外部行情覆盖 crypto、美股 / A股 / 港股 及日欧等单股市场、全球指数、FRED 宏观——orchestrator 按市场类型自动路由每个 venue。
 
@@ -254,7 +254,7 @@ Inalpha 把*调度*和*算力*分开：agent runtime 负责扇出网格、聚合
 | ✅ 已上线 | 横截面因子打分 | D-12 | `factor.panel_score` · `POST /panel/score` · 横截面 Rank IC（每期对全池按因子排序 vs 跨标的前瞻收益）· Alpha101 a1/a3 原生 · 与单标的择时口径正交 |
 | ✅ 已上线 | 时序交叉验证 — 防过拟合 | D-12 | WalkForward / PurgedKFold / Combinatorial Purged CV + Deflated Sharpe · `POST /backtest/cv` · test 段始终含最新 bar · 样本不足自动回落 walk-forward |
 | ✅ 已上线 | 财报 point-in-time | D-12 | Baostock 财报按实际披露日期过滤 · `GET /fundamentals?as_of=` · 防前视（yfinance v1 尚未 PIT，已显式标注） |
-| 🗓️ 已规划 | 策略进化 — E2 | E2 | best-parent 多代循环 + early stopping；MAP-Elites / Island Model 延后到真实 run 数据证明需要多样性控制时再做 |
+| ✅ Feature flag | 事件驱动自动演化 | E2 | 五代 8×3 共演化、Forward 与一次性 holdout；MAP-Elites / Island Model 延后到真实 run 数据证明需要时再做 |
 | 🗓️ 已规划 | 因子发现 — L2 / L3 | L2 / L3 | 多 agent 因子小组（L2）+ 每周自动扫描（L3），建立在已上线的 L1 DSL pipeline 之上 |
 | 🗓️ 已规划 | 因子衰减自动处置 | 待定 | 反思驱动回测 + 衰减因子自动剔除——当前衰减巡检只告警、绝不替你动仓 |
 | 🔬 探索中 | Alpha Zoo 冷启动 | E1+ | 公开 alpha 库播种（Qlib / Kakushadze / GTJA） |
@@ -408,6 +408,13 @@ service 起着，它就能连上。内置**黑白双主题**（终端「印章 /
 [`apps/dashboard/design.md`](apps/dashboard/design.md)）与侧栏 `en / 中` 切换。
 
 > 控制台就是统一入口：数据、研究、回测、Live Runner，以及与 orchestrator 的对话，现在都在同一个地方。
+
+**本地试用事件自动演化。** 在仓库根 `.env` 设置 `EVENT_EVOLUTION_ENABLED=true`，并先导入历史
+事件事实，或同时设置 `EVENT_ARCHIVE_ENABLED=true` 与 `EVENT_EXTRACTION_ENABLED=true` 启动归档和抽取 worker。重启服务后，
+进入策略、模拟盘或 E1 结果详情页点击“开始进化”；也可以在右侧 Agent 直接说“开始进化”。
+重复请求会复用同一 owner + target 的活动 loop。E2 各代不再逐代审批，但最终结果仍需人工采用，
+且只会生成研究用途的实验性资产（`runner_eligible=false`）。目标没有 point-in-time 事件事实时，
+系统会在产生 LLM 费用前以 `EVENT_SNAPSHOT_EMPTY` 失败。
 
 > orchestrator 与经显式审批的 `services/evolver` run 会消耗 owner 自己的 LLM key；
 > `services/research` 当前使用部署级 provider/key，`services/paper` 从不直接调用 LLM。Evolver

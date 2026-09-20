@@ -1,6 +1,6 @@
 # 04 · 当前状态：D-12 + E2 事件驱动自动演化
 
-> 状态：**D-12 因子库闭环 + E2 事件驱动 Evolver 已落地（更新至 2026-08-28）**——因子血缘 + 衰减巡检 + monthly
+> 状态：**D-12 因子库闭环 + E2 事件驱动 Evolver 已落地（更新至 2026-09-20）**——因子血缘 + 衰减巡检 + monthly
 > 宏观 + 因子发现 L1，在 D-11（多市场模拟盘）/ D-10（web 搜索 + 财报基本面 +
 > 多市场数据）/ D-9（Plan/Exec 闭环 + LLM 自创策略 + 风控引擎）/ D-9.1a 基础上落地。
 > research-hub（issue #6）已于 2026-06-12 收口；E1 生产代码由 PR #159 合入 main；
@@ -192,7 +192,7 @@ sequenceDiagram
   港股 / 日英德 / 韩澳印 / 全球指数）生效——含节假日 / 午休 / 半日市 / DST，锁
   粒度按交易所 code（issue #8 收口）。D-9 闭环完成。
 
-不在范围（下一阶段）：MAP-Elites / Island Model / 多代选择与 early stopping（E2/E3）。
+不在范围（后续评估）：MAP-Elites / Island Model；五代选择与代际继承已由 E2 落地。
 E1 已拆出 `services/evolver/` 独立服务，完成 unified-diff 单代变异、真实 frozen bars、
 seed / buy-and-hold / 全候选同数据哈希评估、owner 隔离、数据库幂等与异步 run/slot 状态机；
 演化需用户显式授权，不会在候选采纳后自动产生额外 LLM 费用。
@@ -216,8 +216,9 @@ seed / buy-and-hold / 全候选同数据哈希评估、owner 隔离、数据库�
 ### 当前分支收口：冻结 LLM 审批快照（migration 0041）
 
 - 编排层在展示审批前冻结 `config_id/provider/model/base_url/pricing/version/最大单候选估算`，
-  生成稳定 `config_digest` 和 operation id；批准后 5 分钟 JWT 同时绑定 owner、operation 与 digest。
-- Evolver 创建 run 时校验审批 JWT 与 snapshot digest，再持久化非密钥 `llm_snapshot`；数据库
+  生成稳定 `config_digest` 和 operation id；E1 经可信 UI 审批，E2 由 owner 明确指令直接授权。
+- orchestration 随后签发最长 30 小时、绑定 owner/operation/purpose/request digest 的 Ed25519 grant；
+  Evolver 创建 run/campaign 时校验 grant 与 snapshot digest，再持久化非密钥 `llm_snapshot`；数据库
   check constraint 要求新写入具备完整快照，升级前仍在 queued/running 的历史任务会显式
   abort，避免在缺少冻结授权的情况下继续执行。
 - 批准后由 orchestration 用独立 Ed25519 私钥签发短时 credential grant，绑定 owner、operation、
@@ -252,6 +253,8 @@ seed / buy-and-hold / 全候选同数据哈希评估、owner 隔离、数据库�
   不会自动 promote、启动 Runner 或下单。
 - Dashboard 已增加 Campaign 工作台、代际/血缘/消融/Forward/Holdout 视图、首页摘要、实验性
   策略标签、过滤后的 Agent Activity 和事件数据健康页。通过 `EVENT_EVOLUTION_ENABLED` 分阶段开放。
+- 策略、模拟盘与 E1 结果详情可一键或用一句“开始进化”创建 owner-scoped `EvolutionLoop`；重复
+  触发复用同一活动 loop。当前默认模型为 DeepSeek `deepseek-flash`（V4.1 Flash）。
 
 ---
 
