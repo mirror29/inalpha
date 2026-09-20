@@ -1,7 +1,9 @@
 """Durable loop worker ownership and handoff behavior against PostgreSQL."""
 
 import asyncio
-from uuid import uuid4
+import json
+import sys
+from uuid import UUID, uuid4
 
 import pytest
 from psycopg import AsyncConnection
@@ -167,6 +169,76 @@ async def test_competing_connections_only_claim_one_worker_and_restart_respects_
             assert restarted["loop_id"] == winners[0]["loop_id"]
             assert restarted["lease_token"] != winners[0]["lease_token"]
         finally:
+            await setup.execute("DELETE FROM evolution_loops WHERE owner_account_id=%s", (owner,))
+            await setup.execute("DELETE FROM strategy_evo_runs WHERE owner_account_id=%s", (owner,))
+
+
+@pytest.mark.asyncio
+async def test_abrupt_worker_exit_preserves_lease_and_fences_stale_writes():
+    from inalpha_evolver.storage import loop_dispatch
+
+    owner = uuid4()
+    async with await AsyncConnection.connect(
+        database_url(), row_factory=dict_row, autocommit=True
+    ) as setup:
+        args = await create_baseline(setup, owner)
+        process = None
+        try:
+            loop = await loops.ensure_for_e1_run(setup, **args)
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, "-c", """
+import asyncio, json, os, sys
+from psycopg import AsyncConnection
+from psycopg.rows import dict_row
+from inalpha_evolver.storage import loop_dispatch
+
+async def claim():
+    conn = await AsyncConnection.connect(sys.argv[1], row_factory=dict_row, autocommit=True)
+    row = await loop_dispatch.claim_next(conn, worker_id='crashing-process', ttl_s=60)
+    print(json.dumps({key: str(row[key]) for key in ('loop_id', 'lease_token')}), flush=True)
+    os._exit(23)
+
+asyncio.run(claim())
+""", database_url(), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+            assert process.returncode == 23, stderr.decode()
+            previous = json.loads(stdout)
+            assert UUID(previous["loop_id"]) == loop["loop_id"]
+            assert await loop_dispatch.claim_next(setup, worker_id="early-restart") is None
+            await setup.execute(
+                "UPDATE evolution_loops SET lease_expires_at=clock_timestamp()-INTERVAL '1 second' WHERE loop_id=%s",
+                (loop["loop_id"],),
+            )
+            current = await loop_dispatch.claim_next(setup, worker_id="replacement")
+            assert current["loop_id"] == loop["loop_id"]
+            stale = {
+                "loop_id": loop["loop_id"], "owner_account_id": owner,
+                "lease_token": UUID(previous["lease_token"]),
+            }
+            assert current["lease_token"] != stale["lease_token"]
+            assert not await loop_dispatch.renew(setup, **stale)
+            assert not await loop_dispatch.record_failure(
+                setup, **stale, code="STALE", message="late failure", retryable=False,
+            )
+            await setup.execute(
+                "UPDATE strategy_evo_runs SET status='completed' WHERE run_id=%s",
+                (args["e1_run_id"],),
+            )
+            assert not await loop_dispatch.complete_step(
+                setup, **stale, step_key="baseline", output_id=args["e1_run_id"],
+            )
+            assert await loop_dispatch.complete_step(
+                setup, **{**stale, "lease_token": current["lease_token"]},
+                step_key="baseline", output_id=args["e1_run_id"],
+            )
+            restored = await loops.get_loop(setup, loop["loop_id"], owner)
+            assert restored["status"] == "baseline_ready"
+            assert restored["failure_code"] is None
+        finally:
+            if process is not None and process.returncode is None:
+                process.kill()
+                await process.wait()
             await setup.execute("DELETE FROM evolution_loops WHERE owner_account_id=%s", (owner,))
             await setup.execute("DELETE FROM strategy_evo_runs WHERE owner_account_id=%s", (owner,))
 
