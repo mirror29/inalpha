@@ -26,6 +26,7 @@ async def ready_loop(database):
     args["frozen_config"] = {
         **body.baseline.config.model_dump(mode="json"),
         "campaign_request": body.campaign.model_dump(mode="json"),
+        "protection_policy": {"version": "paper-protection-v1", "protective_stop_loss_pct": 0.2},
     }
     loop = await loops.ensure_for_e1_run(database, **args)
     await loop_authorizations.register(
@@ -41,7 +42,7 @@ async def ready_loop(database):
     await database.execute(
         """UPDATE strategy_evo_runs SET status='completed',config=%s,
 dataset_manifest=%s,seed_report_snapshot=%s,baseline_snapshot=%s WHERE run_id=%s""",
-        (json.dumps(body.baseline.config.model_dump(mode="json")),
+        (json.dumps({**body.baseline.config.model_dump(mode="json"), "protection_policy": args["frozen_config"]["protection_policy"]}),
          discovery_dataset(frozen).manifest.model_dump_json(), json.dumps(report),
          json.dumps(report), args["e1_run_id"]),
     )
@@ -98,6 +99,9 @@ async def test_handoff_creates_one_running_campaign_and_reuses_frozen_data(datab
     assert campaign["status"] == "replaying"
     assert campaign["llm_credential_grant"] is None
     assert campaign["data_snapshot_id"] == frozen["snapshot_id"]
+    assert campaign["frozen_config"]["protection_policy"] == {
+        "version": "paper-protection-v1", "protective_stop_loss_pct": 0.2,
+    }
     assert len(campaign["hypotheses"]) == 8
     assert future_fact_id not in json.dumps(campaign["frozen_config"])
     assert all(future_fact_id not in json.dumps(item["spec"]) for item in campaign["hypotheses"])

@@ -69,6 +69,10 @@ async def test_signed_launch_is_atomic_repeatable_and_does_not_start_trading(dat
     )
     monkeypatch.setattr(loop_start, "get_evolver_settings", lambda: settings)
     monkeypatch.setattr(campaign_routes, "get_evolver_settings", lambda: settings)
+    policy_reader = AsyncMock(return_value={
+        "version": "paper-protection-v1", "protective_stop_loss_pct": 0.2,
+    })
+    monkeypatch.setattr(loop_start, "fetch_execution_policy", policy_reader)
     monkeypatch.setattr(
         loop_start,
         "fetch_event_snapshot",
@@ -132,6 +136,9 @@ async def test_signed_launch_is_atomic_repeatable_and_does_not_start_trading(dat
     run = await runs.get_run(database, first.json()["e1_run_id"], owner)
     assert run["status"] == "queued"
     assert run["config"]["trading_mode"] == "perp"
+    assert run["config"]["protection_policy"]["protective_stop_loss_pct"] == 0.2
+    assert first.json()["frozen_config"]["protection_policy"] == run["config"]["protection_policy"]
+    policy_reader.assert_awaited_once()
     assert len(await loops.list_loops(database, owner, limit=20)) == 1
     assert await loops.list_loops(database, uuid4(), limit=20) == []
     assert await run_queries.claim_next(database) is None

@@ -10,8 +10,26 @@ from typing import Any
 
 import httpx
 import jwt
+from inalpha_paper.evolution_execution_policy import EvolutionExecutionPolicy
 
 from .config import EvolverSettings
+
+
+async def fetch_execution_policy(owner_account_id: Any, settings: EvolverSettings) -> dict[str, Any]:
+    """Read and validate Paper's current policy for a single immutable launch snapshot."""
+    now = int(time.time())
+    token = jwt.encode({
+        "sub": "service:evolver", "token_use": "service", "service_audience": "paper",
+        "token_purpose": "evolution_execution_policy_read", "owner_account_id": str(owner_account_id),
+        "iat": now, "exp": now + min(settings.service_token_ttl_s, 300),
+    }, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    async with httpx.AsyncClient(
+        base_url=settings.paper_service_url, timeout=settings.evolver_data_timeout_s,
+        headers={"Authorization": f"Bearer {token}"},
+    ) as client:
+        response = await client.get("/internal/evolution-forward/execution-policy")
+    response.raise_for_status()
+    return EvolutionExecutionPolicy.model_validate(response.json()).model_dump(mode="json")
 
 
 async def create_forward_sandbox(
@@ -54,6 +72,7 @@ async def create_forward_sandbox(
         "timeframe": frozen["timeframe"],
         "source_hash": implementation["source_hash"],
         "frozen_versions": {
+            **({"protection_policy": frozen["protection_policy"]} if "protection_policy" in frozen else {}),
             "data_snapshot_id": str(campaign.get("data_snapshot_id") or ""),
             "event_snapshot_id": str(campaign["event_snapshot_id"]),
             "compiler_version": frozen["compiler_version"],

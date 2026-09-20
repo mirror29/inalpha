@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..config import get_evolver_settings
 from ..event_client import fetch_event_snapshot
+from ..forward_client import fetch_execution_policy
 from ..governor.seed_resolver import resolve_seed
 from ..storage import loop_authorizations, loops, run_queries, runs
 from .approval import verify_evolution_approval
@@ -156,6 +157,7 @@ WHERE l.owner_account_id=%s AND l.operation_id=%s""",
         )
         _validate_event_snapshot(snapshot, body.campaign)
         config, _ = normalized_request(body.baseline)
+        config["protection_policy"] = await fetch_execution_policy(owner, settings)
         run, _ = await runs.insert_run(
             db,
             owner_account_id=owner,

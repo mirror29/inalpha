@@ -13,6 +13,7 @@ from uuid import UUID
 import jwt
 from inalpha_paper.data_client import DataClient
 from inalpha_paper.evaluation_executor import KillableEngineRunner
+from inalpha_paper.evolution_execution_policy import frozen_protection_kwargs
 from inalpha_shared.db import get_conn
 
 from ..config import EvolverSettings
@@ -82,6 +83,7 @@ async def execute_frozen_run(
         leverage=int(config.get("leverage", 1)),
         funding_rate=float(config.get("funding_rate", 0)),
         params=config.get("params", {}),
+        **frozen_protection_kwargs(config),
     )
     async with _run_mutator(run, mutator, settings, loop_scope=loop_scope) as active_mutator:
         await execute_generation(run, mutator=active_mutator, evaluator=evaluator)

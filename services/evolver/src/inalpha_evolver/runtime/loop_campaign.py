@@ -68,6 +68,8 @@ async def handoff_campaign(claimed: dict[str, Any], settings: EvolverSettings) -
         **snapshot, "facts": discovery_facts(snapshot, discovery.manifest.requested_as_of),
     }
     hypotheses, config = prepare_campaign(body, safe_snapshot, feedback)
+    if "protection_policy" in loop["frozen_config"]:
+        config["protection_policy"] = loop["frozen_config"]["protection_policy"]
     digest = campaign_request_digest(body)
     async with get_conn() as conn:
         async with conn.transaction():

@@ -16,6 +16,7 @@ import jwt
 from inalpha_paper.data_client import DataClient
 from inalpha_paper.evaluation_executor import KillableEngineRunner
 from inalpha_paper.event_conversion import market_event_from_fact
+from inalpha_paper.evolution_execution_policy import frozen_protection_kwargs
 from inalpha_paper.execution.exchange import EventExecutionPolicy
 from inalpha_shared.db import get_conn
 
@@ -122,6 +123,7 @@ async def evaluate_sealed_holdout(
         initial_cash=config.initial_cash,
         fee_rate=config.fee_rate,
         validation_split=0.8,
+        **frozen_protection_kwargs(campaign["frozen_config"]),
         funding_rate=config.funding_rate,
         trading_mode=config.trading_mode,
         leverage=config.leverage,
@@ -215,6 +217,7 @@ async def _execute_campaign(
         initial_cash=config.initial_cash,
         fee_rate=config.fee_rate,
         validation_split=math.nextafter(discovery_end / len(search_dataset.bars), 1.0),
+        **frozen_protection_kwargs(campaign["frozen_config"]),
         funding_rate=config.funding_rate,
         trading_mode=config.trading_mode,
         leverage=config.leverage,
