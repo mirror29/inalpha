@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -100,21 +100,29 @@ class CampaignManager:
                 failure = _primary_exception(exc)
                 failure_message = str(getattr(failure, "message", failure))
                 failure_code = str(getattr(failure, "code", "CAMPAIGN_FAILED"))
-                retryable = isinstance(failure, CredentialTemporarilyUnavailable) or (
-                    failure_code
-                    in {
-                        "EVOLUTION_DATA_FRESHNESS_FAILED",
-                        "EVOLUTION_DATA_UNREACHABLE",
-                    }
-                ) or isinstance(failure, (httpx.TimeoutException, httpx.NetworkError)) or (
-                    isinstance(failure, httpx.HTTPStatusError)
-                    and failure.response.status_code >= 500
+                retryable = (
+                    isinstance(failure, CredentialTemporarilyUnavailable)
+                    or (
+                        failure_code
+                        in {
+                            "EVOLUTION_DATA_FRESHNESS_FAILED",
+                            "EVOLUTION_DATA_UNREACHABLE",
+                        }
+                    )
+                    or isinstance(failure, (httpx.TimeoutException, httpx.NetworkError))
+                    or (
+                        isinstance(failure, httpx.HTTPStatusError)
+                        and (
+                            failure.response.status_code >= 500
+                            or failure.response.status_code in {408, 429}
+                        )
+                    )
                 )
                 retry_status = (
                     str(campaign["status"])
                     if campaign.get("status")
                     in {"candidate_locked", "waiting_forward", "holdout_ready"}
-                    else "draft"
+                    else "replaying"
                 )
                 _logger.exception(
                     "campaign_execution_failed",
@@ -129,12 +137,7 @@ class CampaignManager:
                         conn,
                         campaign["campaign_id"],
                         campaign["owner_account_id"],
-                        from_statuses=(
-                            "replaying",
-                            "candidate_locked",
-                            "waiting_forward",
-                            "holdout_ready",
-                        ),
+                        from_statuses=(retry_status,),
                         to_status=retry_status if retryable else "failed",
                         values={
                             "failure_code": failure_code,
@@ -142,7 +145,9 @@ class CampaignManager:
                             "finished_at": None if retryable else datetime.now(UTC),
                             "lease_owner": None,
                             "lease_token": None,
-                            "lease_expires_at": None,
+                            "lease_expires_at": (
+                                datetime.now(UTC) + timedelta(seconds=30) if retryable else None
+                            ),
                         },
                         lease_token=campaign["lease_token"],
                     )

@@ -1,4 +1,5 @@
 """Campaign 输入预检与异步失败信息测试。"""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
+import httpx
 import pytest
 from inalpha_shared.errors import ValidationError
 
@@ -98,7 +100,7 @@ async def test_campaign_manager_persists_taskgroup_leaf_error(monkeypatch) -> No
     assert captured["failure_message"] == (
         "data-service backfill 502: market data upstream unavailable"
     )
-    assert transition["to_status"] == "draft"
+    assert transition["to_status"] == "replaying"
     assert captured["finished_at"] is None
     assert captured["lease_token"] is None
 
@@ -132,10 +134,56 @@ async def test_campaign_manager_requeues_temporary_credential_failure(monkeypatc
 
     await manager_runtime.CampaignManager(settings)._execute(campaign)  # type: ignore[arg-type]
 
-    assert transition["to_status"] == "draft"
+    assert transition["to_status"] == "replaying"
     assert transition["failure_code"] == "EVOLUTION_CREDENTIAL_UNAVAILABLE"
     assert transition["failure_message"].endswith("ReadTimeout")
-    assert transition["lease_expires_at"] is None
+    assert transition["lease_expires_at"] > datetime.now(UTC)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "phase", ["replaying", "candidate_locked", "waiting_forward", "holdout_ready"]
+)
+@pytest.mark.parametrize("status_code", [429, 503, 403])
+async def test_retry_preserves_phase_and_fencing(monkeypatch, phase, status_code):
+    campaign = {
+        "campaign_id": uuid4(),
+        "owner_account_id": uuid4(),
+        "lease_token": uuid4(),
+        "status": phase,
+    }
+    transitions = []
+
+    async def fail_campaign(*args, **kwargs):
+        response = httpx.Response(
+            status_code, request=httpx.Request("GET", "http://paper.test/forward")
+        )
+        response.raise_for_status()
+
+    @asynccontextmanager
+    async def connection():
+        yield object()
+
+    async def transition(*args, **kwargs):
+        transitions.append(kwargs)
+
+    monkeypatch.setattr(manager_runtime, "execute_campaign", fail_campaign)
+    monkeypatch.setattr(manager_runtime, "get_conn", connection)
+    monkeypatch.setattr(manager_runtime.store, "transition", transition)
+    settings = SimpleNamespace(campaign_max_concurrent=1, campaign_lease_ttl_s=90)
+    await manager_runtime.CampaignManager(settings)._execute(campaign)
+
+    assert len(transitions) == 1
+    saved = transitions[0]
+    assert saved["from_statuses"] == (phase,)
+    assert saved["lease_token"] == campaign["lease_token"]
+    if status_code == 403:
+        assert saved["to_status"] == "failed"
+        assert saved["values"]["finished_at"] is not None
+    else:
+        assert saved["to_status"] == phase
+        assert saved["values"]["finished_at"] is None
+        assert saved["values"]["lease_expires_at"] > datetime.now(UTC)
 
 
 @pytest.mark.asyncio
