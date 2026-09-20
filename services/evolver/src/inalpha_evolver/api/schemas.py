@@ -137,6 +137,32 @@ class EvolutionLLMSnapshot(BaseModel):
         return self
 
 
+class StoredEvolutionLLMSnapshot(BaseModel):
+    """Read model for an immutable snapshot accepted by an earlier pricing catalog."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    config_id: str = Field(min_length=1, max_length=128)
+    provider: Literal["deepseek", "openai", "kimi", "zhipu"]
+    model: str = Field(min_length=1, max_length=160)
+    base_url: str | None = Field(default=None, max_length=500)
+    pricing: EvolutionPricingSnapshot
+    config_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str | None) -> str | None:
+        """Keep response data structurally safe without reapplying today's catalog."""
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("LLM base_url must be an absolute HTTP URL")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("LLM base_url cannot contain credentials, query, or fragment")
+        return value.rstrip("/")
+
+
 def compute_llm_config_digest(snapshot: EvolutionLLMSnapshot) -> str:
     """按与 TypeScript 相同的字段顺序和数字文本计算跨语言摘要。"""
     pricing = snapshot.pricing
@@ -240,7 +266,7 @@ class RunStatusResponse(BaseModel):
     seed_strategy_id: str
     budget: int
     config: dict[str, Any]
-    llm_snapshot: EvolutionLLMSnapshot | None = None
+    llm_snapshot: StoredEvolutionLLMSnapshot | None = None
     llm_config_digest: str | None = None
     status: str
     active_stage: str | None = None
@@ -394,7 +420,7 @@ class CampaignResponse(BaseModel):
     event_snapshot_id: UUID
     data_snapshot_id: UUID | None = None
     frozen_config: dict[str, Any]
-    llm_snapshot: EvolutionLLMSnapshot
+    llm_snapshot: StoredEvolutionLLMSnapshot
     llm_config_digest: str
     llm_cost_usd: float
     locked_candidate_id: UUID | None = None

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from inalpha_evolver.api.presenters import candidate_response, run_response
 from inalpha_evolver.api.request_hash import approval_request_digest, normalized_request
 from inalpha_evolver.api.schemas import (
+    CampaignResponse,
     EvolutionConfig,
     EvolutionLLMSnapshot,
     RunStatusResponse,
@@ -133,6 +134,38 @@ def test_run_presenter_converts_numeric_cost() -> None:
     )
     assert response.llm_cost_usd == pytest.approx(0.125)
     assert response.attempted == 2
+
+
+def test_historical_campaign_snapshot_does_not_depend_on_current_pricing_catalog() -> None:
+    """已冻结的旧模型快照必须可读，但不能绕过新请求的价格准入。"""
+    now = datetime(2026, 8, 12, 12, tzinfo=UTC)
+    historical_snapshot = copy.deepcopy(VALID_LLM_SNAPSHOT)
+    historical_snapshot["model"] = "deepseek-v4-pro"
+    historical_snapshot["pricing"]["version"] = "provider-estimate-2026-08"
+
+    response = CampaignResponse.model_validate(
+        {
+            "campaign_id": uuid4(),
+            "owner_account_id": uuid4(),
+            "status": "failed",
+            "active_generation": 5,
+            "hypothesis_budget": 8,
+            "implementations_per_hypothesis": 3,
+            "max_generations": 5,
+            "event_snapshot_id": uuid4(),
+            "frozen_config": {},
+            "llm_snapshot": historical_snapshot,
+            "llm_config_digest": historical_snapshot["config_digest"],
+            "llm_cost_usd": 0,
+            "state_version": 1,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    assert response.llm_snapshot.model == "deepseek-v4-pro"
+    with pytest.raises(ValueError, match="pricing is unavailable"):
+        EvolutionLLMSnapshot.model_validate(historical_snapshot)
 
 
 def test_datetime_inputs_normalize_or_fail_without_type_error() -> None:
