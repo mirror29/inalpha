@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
-import { getEventEvolutionCapability } from "@/lib/evolution-capability";
 import type { EvolutionLoop, EvolutionLoopDetailPayload } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +17,6 @@ export async function GET(
     return NextResponse.json({ error: "invalid evolution loop id" }, { status: 400 });
   }
   try {
-    const capability = await getEventEvolutionCapability();
-    if (!capability.event_evolution_enabled) {
-      return NextResponse.json({ error: capability.reason ?? "disabled" }, { status: 503 });
-    }
     const loop = await backendFetch<EvolutionLoop>(
       "evolver",
       `/api/v1/evolution-loops/${loopId}`,

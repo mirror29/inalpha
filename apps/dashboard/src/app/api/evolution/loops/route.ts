@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
-import { getEventEvolutionCapability } from "@/lib/evolution-capability";
 import type { EvolutionLoop, EvolutionLoopPayload } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -9,13 +8,6 @@ export const dynamic = "force-dynamic";
 /** Return the compact owner-scoped workflow projection used by the evolution workspace. */
 export async function GET() {
   try {
-    const capability = await getEventEvolutionCapability();
-    if (!capability.event_evolution_enabled) {
-      return NextResponse.json(
-        { error: capability.reason ?? "event evolution is disabled", capability },
-        { status: 503 },
-      );
-    }
     const response = await backendFetch<{ items: EvolutionLoop[] }>(
       "evolver",
       "/api/v1/evolution-loops",
