@@ -660,6 +660,25 @@
       "checking": "Checking evolution capability"
     }
     ,"loop": {
+      "back": "Back to evolution",
+      "baseline": "E1 baseline",
+      "adoption": "Manual adoption",
+      "unavailable": "Unable to load this workflow",
+      "refreshFailed": "Refresh failed. Showing the last received state; please retry.",
+      "diagnostic": "Diagnostics",
+      "safety": "Research continues independently of chat. No automatic adoption, Runner launch, or orders.",
+      "guidance": {
+        "target_resolved": "Preparing frozen data and the E1 baseline. No repeat trigger is needed.",
+        "baseline_ready": "The baseline is ready. The scheduler will hand off to E2 automatically.",
+        "campaign_running": "Evaluating five generations. Insufficient evidence ends the campaign without forcing a winner.",
+        "candidate_locked": "The champion is locked. Preparing an independent Forward sandbox.",
+        "waiting_forward": "Waiting for real Forward evidence: at least 30 days and 3 independent events, up to 90 days.",
+        "holdout_running": "Running the one-shot sealed holdout. Another candidate cannot retry it.",
+        "adoption_ready": "Open the Campaign to review evidence and adopt manually. Adoption remains research-only.",
+        "rejected": "Validation did not pass. No automatic adoption; review diagnostics and Campaign evidence.",
+        "insufficient_evidence": "Evidence cannot support a winner conclusion. No strategy will be started automatically.",
+        "failed": "Execution failed. Review diagnostics; refreshing does not charge again or restart the experiment."
+      },
       "title": "Automatic Evolution Loops",
       "empty": "No evolution loop yet. Say “start evolution” from a strategy, paper run, or E1 result.",
       "target": "Target",

@@ -50,7 +50,8 @@ export function EvolutionClient() {
     <div className="flex flex-col gap-6">
       <PageHeader title={t("title")} subtitle={t("subtitle")} right={<LiveStrip asOf={asOf ?? new Date().toISOString()} isValidating={isValidating} isStaleFrame={Boolean(error)} />} />
       <EvolutionStats total={runs.length} active={active} cost={runs.reduce((sum, run) => sum + run.llm_cost_usd, 0)} rejected={runs.reduce((sum, run) => sum + run.rejected, 0)} />
-      <EvolutionLoopTable loops={loops.data?.loops ?? []} />
+      {loops.error && <ErrorState message={t("loop.refreshFailed")} onRetry={() => loops.mutate()} />}
+      {loops.isLoading ? <SkeletonBlock className="h-32" /> : <EvolutionLoopTable loops={loops.data?.loops ?? []} />}
       <EvolutionCampaignTable campaigns={campaigns.data?.campaigns ?? []} />
       <EvolutionRunTable runs={runs} hasMore={hasMore} isLoadingMore={isLoadingMore} onLoadMore={() => void loadMore()} />
     </div>

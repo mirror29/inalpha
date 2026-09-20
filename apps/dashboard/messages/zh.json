@@ -660,6 +660,25 @@
       "checking": "正在检查演化能力"
     }
     ,"loop": {
+      "back": "返回演化列表",
+      "baseline": "E1 基线",
+      "adoption": "人工采用",
+      "unavailable": "暂时无法读取演化任务",
+      "refreshFailed": "更新失败，当前显示上次读取的状态。请重试。",
+      "diagnostic": "诊断信息",
+      "safety": "研究任务独立于聊天持续执行；不会自动采用、启动 Runner 或下单。",
+      "guidance": {
+        "target_resolved": "正在准备冻结数据与 E1 基线，无需重复触发。",
+        "baseline_ready": "基线已完成，调度器将自动交接 E2，无需再次点击开始。",
+        "campaign_running": "正在评估五代候选；证据不足时会结束，不会强行产生赢家。",
+        "candidate_locked": "冠军已锁定，正在准备独立 Forward 沙盒。",
+        "waiting_forward": "等待真实 Forward 证据：至少 30 天、3 个独立事件；最多等待 90 天。",
+        "holdout_running": "正在执行一次性封存测试，不能更换候选重试。",
+        "adoption_ready": "请打开 Campaign 查看证据并手动采用。采用后仍仅限研究。",
+        "rejected": "本轮未通过验证，不会自动采用。请查看诊断与 Campaign 证据。",
+        "insufficient_evidence": "当前证据不足以支持赢家结论，不会自动启动策略。",
+        "failed": "任务执行失败。请查看诊断信息；刷新页面不会重新收费或重启实验。"
+      },
       "title": "自动演化闭环",
       "empty": "暂无演化闭环。可在策略、模拟盘或 E1 结果页说一句“开始进化”。",
       "target": "演化目标",

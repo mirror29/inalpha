@@ -25,11 +25,9 @@ export function EvolutionLoopTable({ loops }: { loops: EvolutionLoop[] }) {
               {loops.map((loop) => (
                 <tr key={loop.loop_id} className="border-t border-border-subtle/60 hover:bg-bg-elev/30">
                   <Td mono>
-                    {loop.campaign_id ? (
-                      <Link href={`/evolution/campaigns/${loop.campaign_id}`} className="text-cyan hover:underline">
+                      <Link href={`/evolution/loops/${loop.loop_id}`} className="text-cyan hover:underline">
                         {loop.target_kind}:{loop.target_id.slice(0, 12)}
                       </Link>
-                    ) : `${loop.target_kind}:${loop.target_id.slice(0, 12)}`}
                   </Td>
                   <Td><StatusBadge label={t(`states.${loop.status}`)} tone={loopTone(loop.status)} dot pulse={isLoopActive(loop.status)} /></Td>
                   <Td mono muted>{loop.campaign_id?.slice(0, 8) ?? t("pending")}</Td>
