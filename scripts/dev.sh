@@ -70,6 +70,41 @@ for arg in "$@"; do
 done
 CMD="${CMD:-up}"
 
+ensure_local_evolution_credentials() {
+    if [[ -n "${EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64:-}" && -n "${EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64:-}" ]]; then
+        return
+    fi
+    if [[ -n "${EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64:-}" || -n "${EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64:-}" ]]; then
+        echo "✗ 演化签名密钥只配置了一半；请同时设置 private/public key" >&2
+        exit 1
+    fi
+    local credentials_file="${ROOT}/.tmp/evolution-credentials.env"
+    if [[ -f "$credentials_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$credentials_file"
+        export EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64 EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64
+        echo "[dev]  已复用 .tmp 中的本地演化签名密钥"
+        return
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "✗ 未配置演化签名密钥，且找不到 openssl 自动生成本地临时密钥" >&2
+        exit 1
+    fi
+
+    local private_pem
+    private_pem="$(mktemp)"
+    openssl genpkey -algorithm ED25519 -out "$private_pem" 2>/dev/null
+    EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64="$(openssl pkey -in "$private_pem" -outform DER | base64 | tr -d '\n')"
+    EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64="$(openssl pkey -in "$private_pem" -pubout -outform DER | base64 | tr -d '\n')"
+    rm -f "$private_pem"
+    export EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64 EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64
+    umask 077
+    printf 'EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64=%s\nEVOLUTION_CREDENTIAL_PUBLIC_KEY_B64=%s\n' \
+        "$EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64" \
+        "$EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64" > "$credentials_file"
+    echo "[dev]  已生成仅供本机开发使用的演化签名密钥（.tmp，权限 600）"
+}
+
 # ---- helpers ----
 
 port_owner() {
@@ -302,6 +337,7 @@ status_report() {
 
 case "$CMD" in
     up)
+        ensure_local_evolution_credentials
         if ! precheck_ports; then
             exit 1
         fi
