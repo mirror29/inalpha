@@ -21,6 +21,7 @@ from .api.routes import router
 from .config import get_evolver_settings
 from .runtime import EvolutionRunManager
 from .runtime.campaign_manager import CampaignManager
+from .runtime.loop_manager import LoopManager
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.campaign_manager = campaign_manager
     if campaign_manager is not None:
         await campaign_manager.start()
+    loop_manager = LoopManager(settings, campaign_manager) if settings.event_evolution_enabled else None
+    app.state.loop_manager = loop_manager
+    if loop_manager is not None:
+        await loop_manager.start()
     try:
         yield
     finally:
+        if loop_manager is not None:
+            await loop_manager.close()
         if campaign_manager is not None:
             await campaign_manager.close()
         await manager.close()
@@ -91,6 +98,12 @@ async def health(request: Request) -> dict[str, str] | JSONResponse:
             },
         )
     response = {"status": "ok", "service": "inalpha-evolver"}
+    loop_manager = getattr(request.app.state, "loop_manager", None)
+    if loop_manager is not None and not loop_manager.healthy:
+        return JSONResponse(status_code=503, content={
+            "status": "unhealthy", "service": "inalpha-evolver",
+            "reason": loop_manager.unhealthy_reason or "loop dispatcher unavailable",
+        })
     if campaign_manager is not None:
         response["event_evolution"] = "enabled"
     return response

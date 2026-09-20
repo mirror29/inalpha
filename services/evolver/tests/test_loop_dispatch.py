@@ -196,3 +196,42 @@ async def test_late_baseline_cannot_resurrect_a_terminal_loop(database):
     result = await loops.get_loop(database, loop["loop_id"], args["owner_account_id"])
     assert result["status"] == "failed"
     assert result["failure_code"] == "BUDGET_EXHAUSTED"
+
+
+@pytest.mark.asyncio
+async def test_automatic_dispatch_requires_authority_and_retains_retry_reason(database):
+    from decimal import Decimal
+
+    from inalpha_evolver.storage import loop_authorizations, loop_dispatch
+
+    args = await create_baseline(database, uuid4())
+    loop = await loops.ensure_for_e1_run(database, **args)
+    assert await loop_dispatch.claim_next(database, worker_id="automatic", authorized_only=True) is None
+    await loop_authorizations.register(
+        database, loop_id=loop["loop_id"], owner_account_id=args["owner_account_id"],
+        request_digest="a" * 64, max_cost_usd=Decimal("1"),
+    )
+    first = await loop_dispatch.claim_next(database, worker_id="first", authorized_only=True)
+    scope = {key: first[key] for key in ("loop_id", "owner_account_id", "lease_token")}
+    assert await loop_dispatch.record_failure(
+        database, **scope, code="DEPENDENCY_DOWN", message="retry later", retryable=True,
+    )
+    retrying = await loops.get_loop(database, loop["loop_id"], args["owner_account_id"])
+    assert retrying["failure_code"] == "DEPENDENCY_DOWN"
+    assert retrying["status"] == "target_resolved"
+    assert await loop_dispatch.claim_next(database, worker_id="too-soon", authorized_only=True) is None
+    await database.execute(
+        "UPDATE evolution_loops SET next_attempt_at=clock_timestamp() WHERE loop_id=%s",
+        (loop["loop_id"],),
+    )
+    second = await loop_dispatch.claim_next(database, worker_id="second", authorized_only=True)
+    assert not await loop_dispatch.record_failure(
+        database, **scope, code="STALE", message="late", retryable=False,
+    )
+    assert await loop_dispatch.record_failure(
+        database, **{**scope, "lease_token": second["lease_token"]},
+        code="LOOP_BUDGET_EXHAUSTED", message="budget exhausted", retryable=False,
+    )
+    terminal = await loops.get_loop(database, loop["loop_id"], args["owner_account_id"])
+    assert terminal["status"] == "failed"
+    assert terminal["failure_code"] == "LOOP_BUDGET_EXHAUSTED"

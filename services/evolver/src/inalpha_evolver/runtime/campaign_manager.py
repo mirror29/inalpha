@@ -8,14 +8,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-import httpx
 from inalpha_shared import get_logger
 from inalpha_shared.db import get_conn
 
 from ..config import EvolverSettings
-from ..owner_llm import CredentialTemporarilyUnavailable
 from ..storage import campaigns as store
+from ..storage import loops
 from .campaign import execute_campaign
+from .retry_policy import primary_exception, retryable_failure
 
 _logger = get_logger(__name__)
 
@@ -100,24 +100,7 @@ class CampaignManager:
                 failure = _primary_exception(exc)
                 failure_message = str(getattr(failure, "message", failure))
                 failure_code = str(getattr(failure, "code", "CAMPAIGN_FAILED"))
-                retryable = (
-                    isinstance(failure, CredentialTemporarilyUnavailable)
-                    or (
-                        failure_code
-                        in {
-                            "EVOLUTION_DATA_FRESHNESS_FAILED",
-                            "EVOLUTION_DATA_UNREACHABLE",
-                        }
-                    )
-                    or isinstance(failure, (httpx.TimeoutException, httpx.NetworkError))
-                    or (
-                        isinstance(failure, httpx.HTTPStatusError)
-                        and (
-                            failure.response.status_code >= 500
-                            or failure.response.status_code in {408, 429}
-                        )
-                    )
-                )
+                retryable = retryable_failure(failure)
                 retry_status = (
                     str(campaign["status"])
                     if campaign.get("status")
@@ -151,6 +134,14 @@ class CampaignManager:
                         },
                         lease_token=campaign["lease_token"],
                     )
+            finally:
+                try:
+                    async with get_conn() as conn:
+                        await loops.get_loop_by_campaign(
+                            conn, campaign["campaign_id"], campaign["owner_account_id"],
+                        )
+                except Exception:
+                    _logger.warning("campaign_loop_projection_delayed", campaign_id=str(campaign["campaign_id"]))
 
     async def _heartbeat(
         self,
@@ -160,7 +151,7 @@ class CampaignManager:
         """Renew the fencing token until work completes; lease loss cancels the worker."""
         interval = max(1.0, self.settings.campaign_lease_ttl_s / 3)
         while not work.done():
-            await asyncio.sleep(interval)
+            await asyncio.wait({work}, timeout=interval)
             if work.done():
                 return
             async with get_conn() as conn:
@@ -190,13 +181,7 @@ class CampaignManager:
 
 def _primary_exception(exc: Exception) -> Exception:
     """Unwrap TaskGroup failures so persisted campaign errors remain actionable."""
-    current = exc
-    while isinstance(current, BaseExceptionGroup):
-        nested = [item for item in current.exceptions if isinstance(item, Exception)]
-        if not nested:
-            return exc
-        current = nested[0]
-    return current
+    return primary_exception(exc)
 
 
 __all__ = ["CampaignManager"]

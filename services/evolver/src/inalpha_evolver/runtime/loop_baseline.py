@@ -42,7 +42,10 @@ async def execute_loop_baseline(
             async with get_conn() as conn:
                 run = await runs.transition(
                     conn, lease.run_id, from_statuses=("queued", "running"), to_status="running",
-                    values={"started_at": run.get("started_at") or datetime.now(UTC)},
+                    values={
+                        "started_at": run.get("started_at") or datetime.now(UTC),
+                        "failure_code": None, "failure_message": None,
+                    },
                 )
             if run is None:
                 raise BaselineLeaseLost("baseline is no longer running")
