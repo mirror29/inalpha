@@ -171,7 +171,7 @@ Inalpha 是一个**用工程纪律驱动的专业量化 agent 框架**。它不�
 - **端到端可复现。** 每个 run 冻结 `as_of`、已收盘 bar 的 manifest/hash、种子源码、基线、候选源码/diff、评估快照与非敏感 LLM/provider/计价元数据。用户加密 API key 只按 owner 临时解析，不写入 run。
 - **显式授权且绝不自动晋级。** Run 启动审批绑定 owner、operation ID、请求、预估费用和冻结 LLM 快照；完成后不会自动 promote、start，更不会进入下单路径。
 
-> E1 已拆成独立的 `services/evolver:8005`。E2 先只做 best-parent 多代选择 + early stopping；MAP-Elites / Island Model 等真实 run 数据证明存在多样性问题后再引入。
+> E1 已拆成独立的 `services/evolver:8005`。feature flag 后的 E2 使用固定五代 8×3 共演化、行为 novelty、单冠军 Forward 与一次性 sealed holdout；MAP-Elites / Island Model 等更复杂搜索仍后置到真实 run 数据证明有必要后再引入。
 
 ### 4. Swarm · 一次跑几十个回测
 
