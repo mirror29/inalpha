@@ -4,7 +4,7 @@
 环境:
 - ``DEEPSEEK_API_KEY``（必填）
 - ``DEEPSEEK_BASE_URL``（默认 https://api.deepseek.com/v1）
-- ``DEEPSEEK_MODEL``（默认 deepseek-v4-pro）
+- ``DEEPSEEK_MODEL``（默认 deepseek-flash，即 V4.1 Flash）
 
 输入:
 - ``/tmp/pr_diff.txt``   PR diff（claude-review.yml 前一步 ``gh pr diff`` 落盘）
@@ -31,7 +31,7 @@ RULES_PATH = "CLAUDE.md"
 OUT_PATH = "/tmp/review_body.txt"
 
 BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
+MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
 TIMEOUT_S = 900  # 全量 diff 给足推理时间
 MAX_ATTEMPTS = 2  # 正常结束但 content 为空时仅重试一次
 

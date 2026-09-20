@@ -13,14 +13,14 @@ import { getApprovedEventCampaignContext } from "../src/tools/evolver-shared.js"
 const snapshotA = buildEvolutionLLMSnapshot({
   id: "config-a",
   provider: "deepseek",
-  model: "deepseek-v4-pro",
+  model: "deepseek-flash",
   api_key: "not-forwarded-a",
 });
 
 const snapshotB = buildEvolutionLLMSnapshot({
   id: "config-b",
   provider: "deepseek",
-  model: "deepseek-v4-pro",
+  model: "deepseek-flash",
   api_key: "not-forwarded-b",
 });
 

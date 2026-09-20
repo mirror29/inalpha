@@ -347,11 +347,11 @@ cp .env.example .env
 
 在 `.env` 里把 `LLM_PROVIDER` 设成 `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` 之一，填对应 key。
 
-默认值是各家 **2026-05 当前主流旗舰**；要 reasoning / 廉价变体，`LLM_MODEL=...` 覆盖即可。
+默认值是各家 **2026-09 兼顾能力与成本的推荐模型**；要 reasoning / 旗舰变体，`LLM_MODEL=...` 覆盖即可。
 
-| Provider | env 字段 | 默认模型（2026-05）| 获取 key |
+| Provider | env 字段 | 默认模型（2026-09）| 获取 key |
 |---|---|---|---|
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-pro` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` | [platform.deepseek.com](https://platform.deepseek.com) |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-8` | [console.anthropic.com](https://console.anthropic.com) |
 | `openai` | `OPENAI_API_KEY` | `gpt-5.5` | [platform.openai.com](https://platform.openai.com) |
 | `gemini` | `GEMINI_API_KEY` | `gemini-3-pro` | [aistudio.google.com](https://aistudio.google.com) |

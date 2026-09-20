@@ -58,7 +58,7 @@ class DeepSeekReviewTest(unittest.TestCase):
             module = _load_module()
 
         self.assertEqual(module.BASE_URL, "https://api.deepseek.com/v1")
-        self.assertEqual(module.MODEL, "deepseek-v4-pro")
+        self.assertEqual(module.MODEL, "deepseek-flash")
 
     def test_request_uses_deepseek_model_and_bearer_key(self) -> None:
         module = _load_module()
@@ -77,7 +77,7 @@ class DeepSeekReviewTest(unittest.TestCase):
         self.assertEqual(result, "LGTM")
         self.assertEqual(request.full_url, "https://api.deepseek.com/v1/chat/completions")
         self.assertEqual(request.get_header("Authorization"), "Bearer secret-value")
-        self.assertEqual(payload["model"], "deepseek-v4-pro")
+        self.assertEqual(payload["model"], "deepseek-flash")
         self.assertEqual(payload["max_tokens"], 32768)
         self.assertIn("## 项目规则（CLAUDE.md）\nproject rules", payload["messages"][1]["content"])
         self.assertEqual(captured["timeout"], module.TIMEOUT_S)

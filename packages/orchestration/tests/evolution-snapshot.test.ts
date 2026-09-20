@@ -10,14 +10,18 @@ describe("evolution LLM snapshot", () => {
     const snapshot = buildEvolutionLLMSnapshot({
       id: "config-1",
       provider: "deepseek",
-      model: "deepseek-v4-pro",
       api_key: "must-not-be-copied",
       custom_base_url: "https://api.deepseek.com/",
     });
 
-    expect(snapshot.config_digest).toBe(
-      "a4635b0c80f69b6054bdc2330b78cb98d9c81c849d476e7d01f1b8d626015c2c",
-    );
+    expect(snapshot).toMatchObject({
+      model: "deepseek-flash",
+      pricing: {
+        version: "provider-estimate-2026-09",
+        input_usd_per_million: 0.3,
+        output_usd_per_million: 1.2,
+      },
+    });
     expect(JSON.stringify(snapshot)).not.toContain("must-not-be-copied");
     expect(computeEvolutionLLMConfigDigest(snapshot)).toBe(snapshot.config_digest);
   });
@@ -100,7 +104,7 @@ describe("evolution LLM snapshot", () => {
     const snapshot = buildEvolutionLLMSnapshot({
       id: "config-deepseek-v1",
       provider: "deepseek",
-      model: "deepseek-v4-pro",
+      model: "deepseek-flash",
       api_key: "test-key",
       custom_base_url: "https://api.deepseek.com/v1",
     });

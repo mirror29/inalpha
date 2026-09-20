@@ -155,7 +155,7 @@ class EvolverSettings(BaseSettings):
     )
 
     llm_model: str = Field(
-        default="deepseek-chat",
+        default="deepseek-flash",
         alias="LLM_MODEL",
         description="LLM 模型 ID。",
     )

@@ -63,12 +63,12 @@ export const SUPPORTED_PROVIDERS: readonly LLMProvider[] = [
 
 /** 各 provider 默认模型 —— 用户在 `.env` 留空 `LLM_MODEL` 时生效。
  *
- * 选型原则（2026-05 更新，每家**当前主流旗舰**）。开 `.env LLM_MODEL=...` 覆盖
- * 即可换 reasoning / cheap 变体。
+ * 选型原则（2026-09 更新，兼顾 agent 能力与默认成本）。开 `.env LLM_MODEL=...`
+ * 即可覆盖为 reasoning / flagship 变体。
  *
  * | provider | model | 说明 |
  * |---|---|---|
- * | deepseek | deepseek-v4-pro | V4 主旗舰（1.6T MoE）；老 alias deepseek-chat 将在 2026-07-24 下线 |
+ * | deepseek | deepseek-flash | V4.1 Flash 官方 API ID；旧 deepseek-v4-flash 仅为兼容别名 |
  * | anthropic | claude-opus-4-8 | Opus 4.8 旗舰；省钱用 claude-sonnet-4-6 / haiku-4-5 |
  * | openai | gpt-5.5 | 最新 frontier；快速用 gpt-5.4-mini / gpt-5.4-nano；reasoning 走 gpt-5.2-pro |
  * | gemini | gemini-3-pro | Gemini 3 Pro（2025-11 GA，替代 2.5 Pro）；快速廉价用 gemini-3.5-flash |
@@ -77,7 +77,7 @@ export const SUPPORTED_PROVIDERS: readonly LLMProvider[] = [
  * | ollama | llama4 | Llama 4 默认 tag = Scout（17B/109B MoE）；大显存用 llama4:128x17b（Maverick）|
  */
 export const DEFAULT_MODELS: Record<LLMProvider, string> = {
-  deepseek: "deepseek-v4-pro",
+  deepseek: "deepseek-flash",
   anthropic: "claude-opus-4-8",
   openai: "gpt-5.5",
   gemini: "gemini-3-pro",

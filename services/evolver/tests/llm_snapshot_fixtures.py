@@ -13,18 +13,18 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 VALID_LLM_SNAPSHOT = {
     "config_id": "config-1",
     "provider": "deepseek",
-    "model": "deepseek-v4-pro",
+    "model": "deepseek-flash",
     "base_url": "https://api.deepseek.com",
     "pricing": {
-        "version": "provider-estimate-2026-08",
+        "version": "provider-estimate-2026-09",
         "currency": "USD",
-        "input_usd_per_million": 0.56,
-        "output_usd_per_million": 1.68,
+        "input_usd_per_million": 0.3,
+        "output_usd_per_million": 1.2,
         "assumed_input_tokens": 24_000,
         "max_output_tokens": 8_192,
-        "estimated_max_usd_per_candidate": 0.02720256,
+        "estimated_max_usd_per_candidate": 0.0170304,
     },
-    "config_digest": "a4635b0c80f69b6054bdc2330b78cb98d9c81c849d476e7d01f1b8d626015c2c",
+    "config_digest": "e6edd79eabdccaed743ac72ddeb8ff4d5de550a742e9e931d368c93caf1cca4c",
 }
 
 EVOLUTION_GRANT_PRIVATE_KEY = Ed25519PrivateKey.generate()

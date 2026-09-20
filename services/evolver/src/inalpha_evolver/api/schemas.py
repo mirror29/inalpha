@@ -103,7 +103,7 @@ class EvolutionLLMSnapshot(BaseModel):
                 {"provider": self.provider},
             )
         priced_models = {
-            "deepseek": ("deepseek-v4-pro", 0.56, 1.68),
+            "deepseek": ("deepseek-flash", 0.3, 1.2),
             "openai": ("gpt-5.5", 5.0, 15.0),
             "kimi": ("kimi-k2.6", 0.6, 2.5),
             "zhipu": ("glm-5.2", 0.7, 2.8),
@@ -116,7 +116,7 @@ class EvolutionLLMSnapshot(BaseModel):
         ) / 1_000_000
         if (
             self.model != expected_model
-            or pricing.version != "provider-estimate-2026-08"
+            or pricing.version != "provider-estimate-2026-09"
             or pricing.assumed_input_tokens != 24_000
             or pricing.max_output_tokens != 8_192
             or pricing.input_usd_per_million != expected_input_rate

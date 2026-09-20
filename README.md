@@ -349,11 +349,11 @@ cp .env.example .env
 
 Inside `.env`, set `LLM_PROVIDER` to one of `deepseek | anthropic | openai | gemini | kimi | zhipu | ollama` and fill in the matching key.
 
-Defaults pick each vendor's **current flagship** as of 2026-05. Override with `LLM_MODEL=...` if you want a reasoning / cheaper variant.
+Defaults pick each vendor's preferred Inalpha model as of 2026-09. Override with `LLM_MODEL=...` if you want a reasoning / flagship variant.
 
-| Provider | env var | Default model (2026-05) | Get a key |
+| Provider | env var | Default model (2026-09) | Get a key |
 |---|---|---|---|
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-pro` | [platform.deepseek.com](https://platform.deepseek.com) |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-flash` | [platform.deepseek.com](https://platform.deepseek.com) |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-8` | [console.anthropic.com](https://console.anthropic.com) |
 | `openai` | `OPENAI_API_KEY` | `gpt-5.5` | [platform.openai.com](https://platform.openai.com) |
 | `gemini` | `GEMINI_API_KEY` | `gemini-3-pro` | [aistudio.google.com](https://aistudio.google.com) |

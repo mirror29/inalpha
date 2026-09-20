@@ -48,7 +48,7 @@ def test_request_hash_is_stable_and_payload_sensitive() -> None:
 def test_approval_request_digest_matches_typescript_contract() -> None:
     assert (
         approval_request_digest(_request())
-        == "c3084e0f6daee93abc87dd3dc5804295e70649f33fcd2b3613cf6de71e876d88"
+        == "f0fd300e586f96bf3f9cba26b4b3452660fbc51c0bab0274ad196bb0f53ff64f"
     )
 
 

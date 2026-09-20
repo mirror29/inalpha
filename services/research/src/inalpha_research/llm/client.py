@@ -121,7 +121,7 @@ class DeepSeekLLMClient:
         *,
         api_key: str,
         base_url: str = "https://api.deepseek.com/v1",
-        model: str = "deepseek-v4-pro",
+        model: str = "deepseek-flash",
         timeout_seconds: float = 60.0,
         max_concurrent: int = 5,
         max_retries: int = 3,
@@ -558,11 +558,11 @@ class FakeLLMClient:
 
 
 # 各 provider 默认 base_url + 默认模型（OpenAI-compat 家族）。
-# 模型选型原则（2026-05 更新）：每家当前主流旗舰。
+# 模型选型原则（2026-09 更新）：兼顾 agent 能力与默认成本。
 # 详见 packages/orchestration/src/mastra/llm/provider.ts DEFAULT_MODELS 注释表。
 _OPENAI_COMPAT_DEFAULTS: dict[str, tuple[str, str]] = {
     # provider -> (default_base_url, default_model)
-    "deepseek": ("https://api.deepseek.com/v1", "deepseek-v4-pro"),
+    "deepseek": ("https://api.deepseek.com/v1", "deepseek-flash"),
     "openai": ("https://api.openai.com/v1", "gpt-5.5"),
     "kimi": ("https://api.moonshot.cn/v1", "kimi-k2.6"),
     "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "glm-5.2"),

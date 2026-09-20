@@ -81,7 +81,7 @@ async def test_owner_mutator_uses_frozen_snapshot_and_credential_reference(
     assert _CredentialClient.requested_url.endswith("/api/internal/llm-config/config-1")
     assert _CredentialClient.requested_headers["Authorization"] == "Bearer signed-credential-grant"
     assert mutator.llm_client.settings.effective_api_key == "owner-test-key"
-    assert mutator.llm_client.settings.llm_model == "deepseek-v4-pro"
+    assert mutator.llm_client.settings.llm_model == "deepseek-flash"
     assert mutator.max_output_tokens == 8_192
     assert "api_key" not in run["llm_snapshot"]
     client = await mutator.llm_client._ensure_client()

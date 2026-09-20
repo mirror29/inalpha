@@ -72,7 +72,7 @@ describe("identityMiddleware", () => {
         "X-LLM-Config": JSON.stringify({
           id: "config-1",
           provider: "deepseek",
-          model: "deepseek-v4-pro",
+          model: "deepseek-flash",
           api_key: TEST_KEY,
         }),
       },
@@ -83,7 +83,7 @@ describe("identityMiddleware", () => {
     expect(snapshot).toMatchObject({
       config_id: "config-1",
       provider: "deepseek",
-      model: "deepseek-v4-pro",
+      model: "deepseek-flash",
     });
     expect(JSON.stringify(snapshot)).not.toContain(TEST_KEY);
   });

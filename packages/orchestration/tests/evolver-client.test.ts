@@ -28,7 +28,7 @@ import {
 const snapshot = buildEvolutionLLMSnapshot({
   id: "config-1",
   provider: "deepseek",
-  model: "deepseek-v4-pro",
+  model: "deepseek-flash",
   api_key: "not-forwarded",
 });
 
@@ -413,7 +413,7 @@ describe("EvolverClient", () => {
       validation_split: 0.3,
     });
     expect(evolutionRequestDigest(request)).toBe(
-      "0dd54caf902703e4303f252066bd9ad3ec1525c67cdab5bf1353befaefb48a2e",
+      "908c673d3198f940675be81b22ea4f174d63f98d78b2ae8a81170b23e124af25",
     );
   });
 

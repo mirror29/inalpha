@@ -7,7 +7,7 @@ import { DEFAULT_MODELS, PROVIDER_BASE_URLS } from "./provider.js";
 export const USER_LLM_SNAPSHOT_KEY = "inalpha__evolutionLLMSnapshot";
 export const APPROVAL_OPERATION_ID_KEY = "inalpha__approvalOperationId";
 
-const PRICING_VERSION = "provider-estimate-2026-08";
+const PRICING_VERSION = "provider-estimate-2026-09";
 const ASSUMED_INPUT_TOKENS = 24_000;
 const MAX_OUTPUT_TOKENS = 8_192;
 export const EVOLUTION_LLM_PROVIDERS = ["deepseek", "openai", "kimi", "zhipu"] as const;
@@ -17,7 +17,7 @@ const PRICED_MODELS: Record<
   EvolutionLLMProvider,
   Readonly<{ model: string; rates: readonly [number, number] }>
 > = {
-  deepseek: { model: "deepseek-v4-pro", rates: [0.56, 1.68] },
+  deepseek: { model: "deepseek-flash", rates: [0.3, 1.2] },
   openai: { model: "gpt-5.5", rates: [5, 15] },
   kimi: { model: "kimi-k2.6", rates: [0.6, 2.5] },
   zhipu: { model: "glm-5.2", rates: [0.7, 2.8] },
