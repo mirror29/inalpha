@@ -661,6 +661,15 @@
       "checking": "Checking evolution capability"
     }
     ,"loop": {
+      "costTitle": "Model costs · USD",
+      "costUnavailable": "Cost ledger unavailable; this does not mean zero spend.",
+      "costExplanation": "Reservations cover in-flight or unconfirmed calls and are not settled spend.",
+      "cost": {
+        "max_cost_usd": "Authorized limit",
+        "spent_usd": "Settled",
+        "reserved_usd": "Reserved",
+        "available_usd": "Available"
+      },
       "back": "Back to evolution",
       "baseline": "E1 baseline",
       "adoption": "Manual adoption",

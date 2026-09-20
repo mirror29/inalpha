@@ -661,6 +661,15 @@
       "checking": "正在检查演化能力"
     }
     ,"loop": {
+      "costTitle": "模型费用 · USD",
+      "costUnavailable": "暂无费用账本信息，不代表费用为零。",
+      "costExplanation": "预留费用用于在途或结果待确认的调用，尚未计入已结算费用。",
+      "cost": {
+        "max_cost_usd": "授权上限",
+        "spent_usd": "已结算",
+        "reserved_usd": "预留",
+        "available_usd": "剩余可用"
+      },
       "back": "返回演化列表",
       "baseline": "E1 基线",
       "adoption": "人工采用",

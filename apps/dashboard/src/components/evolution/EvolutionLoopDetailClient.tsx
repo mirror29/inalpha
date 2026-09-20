@@ -41,6 +41,15 @@ export function EvolutionLoopDetailClient({ loopId }: { loopId: string }) {
         </ol>
         <p className="px-4 pb-4 text-sm text-fg-muted">{t(`guidance.${loop.status}`)}</p>
       </Panel>
+      <Panel title={t("costTitle")}>
+        {loop.budget_usage ? <dl className="grid gap-4 p-4 text-sm sm:grid-cols-2">
+          {(["max_cost_usd", "spent_usd", "reserved_usd", "available_usd"] as const).map((key) => (
+            <div key={key}><dt className="text-fg-muted">{t(`cost.${key}`)}</dt>
+              <dd className="font-mono">${loop.budget_usage![key].toFixed(4)}</dd></div>
+          ))}
+        </dl> : <p className="p-4 text-sm text-fg-muted">{t("costUnavailable")}</p>}
+        <p className="px-4 pb-4 text-sm text-fg-muted">{t("costExplanation")}</p>
+      </Panel>
       <Panel title={t("target")}>
         <dl className="grid gap-4 p-4 text-sm sm:grid-cols-2">
           <div><dt className="text-fg-muted">{t("target")}</dt><dd className="break-all font-mono">{loop.target_kind}: {loop.target_id}</dd></div>

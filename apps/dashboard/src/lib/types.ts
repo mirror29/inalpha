@@ -765,6 +765,12 @@ export interface EvolutionLoop {
   holdout_attempt_id: string | null;
   frozen_config: Record<string, unknown>;
   budget: Record<string, unknown>;
+  budget_usage?: {
+    max_cost_usd: number;
+    spent_usd: number;
+    reserved_usd: number;
+    available_usd: number;
+  } | null;
   failure_code: string | null;
   failure_message: string | null;
   state_version: number;
