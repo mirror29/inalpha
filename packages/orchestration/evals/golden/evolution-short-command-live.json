@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "agent-eval.v1",
+  "taskVersion": 1,
+  "id": "evolution-short-command-live",
+  "mode": "live",
+  "suites": ["live"],
+  "tags": ["evolution", "page-context", "short-command", "tool-routing"],
+  "prompt": "<page_context>\npage=evolution_run_detail\nevolution_run_id=11111111-1111-4111-8111-111111111111\nevolution_target_kind=e1_run\nevolution_target_id=11111111-1111-4111-8111-111111111111\npath=/evolution/11111111-1111-4111-8111-111111111111\n</page_context>\n\n继续进化",
+  "asOf": "2026-09-01T08:00:00Z",
+  "requestContext": {},
+  "fixtures": {
+    "modelTurns": [],
+    "tools": [
+      {
+        "id": "evolver.resolve_target",
+        "description": "Resolve the owner-scoped page target before any evolution action. Use for short deictic evolution commands; do not invent IDs or frozen inputs.",
+        "behavior": {
+          "type": "return",
+          "value": {
+            "target_kind": "e1_run",
+            "target_id": "11111111-1111-4111-8111-111111111111",
+            "status": "completed",
+            "next_action": "start_e2",
+            "start_input": {
+              "sourceRunId": "11111111-1111-4111-8111-111111111111",
+              "config": {
+                "venue": "binance",
+                "symbol": "BTC/USDT:USDT",
+                "timeframe": "1h",
+                "from_ts": "2026-01-01T00:00:00Z",
+                "as_of": "2026-07-01T00:00:00Z",
+                "initial_cash": 10000,
+                "fee_rate": 0.001
+              }
+            },
+            "blockers": [],
+            "evidence": { "succeeded": 3, "rejected": 1 }
+          }
+        }
+      },
+      {
+        "id": "evolver.run_event_campaign",
+        "description": "Start one automatic event campaign from a completed E1 run and frozen config. Use only after target resolution says start_e2; omit eventSnapshotId for automatic point-in-time freezing.",
+        "behavior": {
+          "type": "return",
+          "value": {
+            "campaign_id": "22222222-2222-4222-8222-222222222222",
+            "status": "replaying",
+            "active_generation": 1,
+            "max_generations": 5
+          }
+        }
+      }
+    ]
+  },
+  "expected": {
+    "outcome": {
+      "includesAll": ["进化"],
+      "includesNone": ["snapshot ID", "UUID", "请提供", "实盘", "下单"]
+    },
+    "trajectory": {
+      "requiredCalls": [
+        {
+          "tool": "evolver.resolve_target",
+          "inputSubset": {
+            "targetKind": "e1_run",
+            "targetId": "11111111-1111-4111-8111-111111111111"
+          },
+          "result": "success"
+        },
+        {
+          "tool": "evolver.run_event_campaign",
+          "inputSubset": {
+            "sourceRunId": "11111111-1111-4111-8111-111111111111"
+          },
+          "result": "success"
+        }
+      ],
+      "orderedTools": [
+        "evolver.resolve_target",
+        "evolver.run_event_campaign"
+      ],
+      "forbiddenAttemptedTools": [],
+      "forbiddenExecutedTools": []
+    }
+  },
+  "budget": { "maxSteps": 4, "maxToolCalls": 2, "timeoutMs": 30000 }
+}

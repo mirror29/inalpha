@@ -2,6 +2,9 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
+import { mintServiceToken, resolveRequestSubject } from "../auth.js";
+import { DataClient, type AssetIdentity, type MarketEventType } from "../clients/data.js";
+import { getSettings } from "../config.js";
 import {
   evolutionConfigSchema,
   eventCampaignConfigSchema,
@@ -11,23 +14,111 @@ import {
   type ToolRequestContext,
 } from "./evolver-shared.js";
 
+const AUTOMATIC_SNAPSHOT_POLICY = "all-visible-facts-v1";
+const AUTOMATIC_EVENT_TYPES: MarketEventType[] = [
+  "listing",
+  "delisting",
+  "exploit",
+  "chain_halt",
+];
+
+async function createAutomaticEventSnapshot(
+  config: {
+    venue: string;
+    symbol: string;
+    as_of: string;
+  },
+  ctx?: ToolRequestContext,
+  existingSnapshotId?: string,
+): Promise<{ snapshotId: string; asset: AssetIdentity }> {
+  const owner = await resolveRequestSubject(ctx);
+  const resolveToken = await mintServiceToken({
+    sub: owner,
+    token_use: "service",
+    service_audience: "data",
+    token_purpose: "asset_resolve",
+  }, 300);
+  const asset = await new DataClient({
+    baseUrl: getSettings().dataServiceUrl,
+    token: resolveToken,
+    timeoutMs: 30_000,
+  }).resolveAsset({ venue: config.venue, symbol: config.symbol });
+  if (existingSnapshotId) return { snapshotId: existingSnapshotId, asset };
+  const snapshotToken = await mintServiceToken({
+    sub: owner,
+    token_use: "service",
+    service_audience: "data",
+    token_purpose: "event_snapshot_create",
+  }, 300);
+  const client = new DataClient({
+    baseUrl: getSettings().dataServiceUrl,
+    token: snapshotToken,
+    timeoutMs: 30_000,
+  });
+  const snapshot = await client.createEventSnapshot({
+    cutoff: config.as_of,
+    policyVersion: AUTOMATIC_SNAPSHOT_POLICY,
+    eventTypes: AUTOMATIC_EVENT_TYPES,
+    assets: [asset.event_asset_code],
+    assetIds: [asset.asset_id],
+  });
+  if (snapshot.fact_count < 1) {
+    throw new Error(
+      "EVENT_SNAPSHOT_EMPTY: no point-in-time event facts cover this asset and cutoff; " +
+        "backfill the event ledger before starting the campaign",
+    );
+  }
+  return { snapshotId: snapshot.snapshot_id, asset };
+}
+
 export const evolverRunEventCampaignTool = createTool({
   id: "evolver.run_event_campaign",
   description: `
 基于冻结事件事实与模拟盘反馈启动五代双层自动演化；每代两个 Agent proposer 产生八个假设，每个确定性展开三条实现，并锁定唯一冠军等待独立 Forward。
-何时用：用户要求从事件机制发散新策略方向，且已有 point-in-time event snapshot 与 15m/1h/4h 冻结行情。
-何时不用：只优化既有代码用 evolver.run_evolution；没有事件快照、需要实盘或希望自动下单时不要用。
-坑：启动整个五代 campaign 需要一次显式审批；审批后内部自动迭代不逐代审批，只产出 sandbox 候选；不会 promote、启动 Runner 或下单，Forward 与一次性 holdout 仍是硬门禁。
+何时用：用户要求从事件机制发散新策略方向；用户要求基于某次模拟结果继续进化时，必须传入该次已完成 E1 run 的 sourceRunId。eventSnapshotId 可省略，系统会按 as_of 和标的自动冻结可见事件。
+何时不用：只优化既有代码用 evolver.run_evolution；需要实盘或希望自动下单时不要用。
+坑：启动整个 campaign 仍需一次绑定 owner 与请求摘要的显式审批；自动快照没有事件时会在产生 LLM 费用前失败；内部自动迭代不逐代审批，不会采纳、启动 Runner 或下单。
   `.trim(),
   inputSchema: z.object({
-    eventSnapshotId: z.string().uuid(),
-    sourceRunId: z.string().uuid().optional(),
+    eventSnapshotId: z.string().uuid().optional(),
+    sourceRunId: z.string().uuid().optional().describe("需要作为第一代进化反馈的已完成、同 owner、同市场 E1 run ID"),
+    targetKind: z.enum([
+      "strategy_candidate", "paper_runner", "backtest_run", "e1_run", "e1_candidate", "e2_campaign",
+    ]).optional(),
+    targetId: z.string().min(1).max(200).optional(),
     config: eventCampaignConfigSchema,
-  }),
+  }).refine(
+    (value) => (value.targetKind === undefined) === (value.targetId === undefined),
+    { message: "targetKind and targetId must be provided together" },
+  ),
   execute: async (inputData, ctx) => {
+    const requestContext = ctx?.requestContext as ToolRequestContext | undefined;
+    const client = await getEvolverClient(requestContext);
+    const capability = await client.getEventEvolutionCapabilities();
+    if (!capability.event_evolution_enabled) {
+      throw new Error(
+        `EVENT_EVOLUTION_DISABLED: ${capability.reason ?? "server capability is disabled"}`,
+      );
+    }
+    const frozen = await createAutomaticEventSnapshot(
+      inputData.config,
+      requestContext,
+      inputData.eventSnapshotId,
+    );
+    const eventSnapshotId = frozen.snapshotId;
     const approved = await getApprovedEventCampaignContext(
-      inputData,
-      ctx?.requestContext as ToolRequestContext | undefined,
+      {
+        ...inputData,
+        eventSnapshotId,
+        targetKind: inputData.targetKind ?? (inputData.sourceRunId ? "e1_run" : undefined),
+        targetId: inputData.targetId ?? inputData.sourceRunId,
+        config: {
+          ...inputData.config,
+          asset_id: frozen.asset.asset_id,
+          event_asset_code: frozen.asset.event_asset_code,
+        },
+      },
+      requestContext,
     );
     return await approved.client.startEventCampaign({
       request: approved.request,

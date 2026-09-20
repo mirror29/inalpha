@@ -39,6 +39,41 @@ export type NewsMarket =
   | "cn" | "us" | "hk" | "jp" | "kr" | "au" | "in" | "uk"
   | "de" | "fr" | "ca" | "br" | "global" | "crypto";
 
+export type MarketEventType =
+  | "listing"
+  | "delisting"
+  | "exploit"
+  | "chain_halt"
+  | "regulatory"
+  | "upgrade"
+  | "unlock"
+  | "burn"
+  | "partnership"
+  | "macro"
+  | "other";
+
+export type EventSnapshotRecord = {
+  snapshot_id: string;
+  cutoff: string;
+  policy_version: string;
+  query_hash: string;
+  events_sha256: string;
+  coverage: Record<string, unknown>;
+  event_types: MarketEventType[];
+  assets: string[];
+  asset_ids: string[];
+  fact_count: number;
+  created_at: string;
+  facts: Array<Record<string, unknown>>;
+};
+
+export type AssetIdentity = {
+  asset_id: string;
+  venue: string;
+  symbol: string;
+  event_asset_code: string;
+};
+
 export class DataClient {
   private readonly http: HttpClient;
 
@@ -149,6 +184,28 @@ export class DataClient {
         error: err instanceof HttpClientError ? `upstream ${err.status}: ${err.message}` : String(err),
       };
     }
+  }
+
+  /** Freeze a deterministic point-in-time event set for one research campaign. */
+  async createEventSnapshot(params: {
+    cutoff: string;
+    policyVersion: string;
+    eventTypes?: MarketEventType[];
+    assets?: string[];
+    assetIds?: string[];
+  }): Promise<EventSnapshotRecord> {
+    return await this.http.post<EventSnapshotRecord>("/events/snapshots", {
+      cutoff: params.cutoff,
+      policy_version: params.policyVersion,
+      event_types: params.eventTypes ?? [],
+      assets: params.assets ?? [],
+      asset_ids: params.assetIds ?? [],
+    });
+  }
+
+  /** Resolve the Data-owned stable identity before freezing campaign inputs. */
+  async resolveAsset(params: { venue: string; symbol: string }): Promise<AssetIdentity> {
+    return await this.http.get<AssetIdentity>("/assets/resolve", params);
   }
 
   async getMarketNews(params: {

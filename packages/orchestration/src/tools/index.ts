@@ -109,6 +109,7 @@ import {
   evolverRunEvolutionTool,
   evolverTools,
 } from "./evolver.js";
+import { evolverResolveTargetTool } from "./evolution-target.js";
 
 export {
   approveTradePlanTool,
@@ -132,6 +133,7 @@ export {
   evolverGetEvolutionTool,
   evolverRunEventCampaignTool,
   evolverRunEvolutionTool,
+  evolverResolveTargetTool,
   factorCatalogTool,
   factorEvaluateCandidateTool,
   factorListCandidatesTool,
@@ -215,6 +217,7 @@ export const allTools = [
   ...divinationTools,
   // E2 演化引擎（LLM 驱动策略变异 + 沙盒 + 评估）
   ...evolverTools,
+  evolverResolveTargetTool,
 ] as const;
 
 /** 给 trader subagent 用（不含 risk 的 approve/reject）。 */
@@ -345,6 +348,7 @@ export const orchestratorToolList = [
   divinationCastHexagramTool,
   divinationDrawTarotTool,
   // E1 演化引擎（显式单代变异 + 真实冻结数据评估）
+  evolverResolveTargetTool,
   evolverRunEventCampaignTool,
   evolverGetEventCampaignTool,
   evolverRunEvolutionTool,

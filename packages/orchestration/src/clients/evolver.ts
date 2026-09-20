@@ -25,9 +25,13 @@ export type EvolutionStartRequest = {
 export type EventCampaignRequest = {
   event_snapshot_id: string;
   source_run_id: string | null;
+  target_kind: "strategy_candidate" | "paper_runner" | "backtest_run" | "e1_run" | "e1_candidate" | "e2_campaign" | null;
+  target_id: string | null;
   config: {
     venue: string;
     symbol: string;
+    asset_id: string;
+    event_asset_code: string;
     timeframe: "15m" | "1h" | "4h";
     from_ts: string;
     as_of: string;
@@ -53,6 +57,41 @@ export type EventCampaignResult = {
   max_generations: number;
   event_snapshot_id: string;
   llm_cost_usd: number;
+  source_run_id?: string | null;
+  frozen_config?: Record<string, unknown>;
+  locked_candidate_id?: string | null;
+  forward_event_count?: number;
+  failure_code?: string | null;
+  failure_message?: string | null;
+  state_version?: number;
+};
+
+export type EvolutionLoopResult = {
+  loop_id: string;
+  operation_id: string;
+  target_kind: string;
+  target_id: string;
+  status: string;
+  e1_run_id: string | null;
+  campaign_id: string | null;
+  forward_sandbox_id: string | null;
+  holdout_attempt_id: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  state_version: number;
+};
+
+export type EventEvolutionCapabilities = {
+  event_evolution_enabled: boolean;
+  reason: string | null;
+  max_generations: 5;
+  hypotheses_per_generation: 8;
+  implementations_per_hypothesis: 3;
+  candidate_concurrency: number;
+  supported_timeframes: Array<"15m" | "1h" | "4h">;
+  automatic_stage_approval: true;
+  automatic_promotion: false;
+  runner_eligible: false;
 };
 
 type EventCampaignConfigBase = Omit<
@@ -68,12 +107,16 @@ export type EventCampaignConfigInput = Omit<
 export function buildEventCampaignRequest(options: {
   eventSnapshotId: string;
   sourceRunId?: string;
+  targetKind?: NonNullable<EventCampaignRequest["target_kind"]>;
+  targetId?: string;
   config: EventCampaignConfigInput;
   llmSnapshot: EvolutionLLMSnapshot;
 }): EventCampaignRequest {
   return {
     event_snapshot_id: options.eventSnapshotId,
     source_run_id: options.sourceRunId ?? null,
+    target_kind: options.targetKind ?? null,
+    target_id: options.targetId ?? null,
     config: {
       ...options.config,
       from_ts: new Date(options.config.from_ts).toISOString(),
@@ -99,10 +142,14 @@ export function eventCampaignRequestDigest(request: EventCampaignRequest): strin
   const config = request.config;
   const hypothesesHash = createHash("sha256").update("[]").digest("hex");
   const canonical = [
+    request.target_kind ?? "",
+    request.target_id ?? "",
     request.event_snapshot_id,
     request.source_run_id ?? "",
     config.venue,
     config.symbol,
+    config.asset_id,
+    config.event_asset_code,
     config.timeframe,
     numberText(Date.parse(config.from_ts)),
     numberText(Date.parse(config.as_of)),
@@ -253,35 +300,24 @@ export class EvolverClient {
     request: EventCampaignRequest;
     idempotencyKey: string;
     credentialGrant: string;
-  }): Promise<EventCampaignResult> {
+  }): Promise<EvolutionLoopResult> {
     const headers = {
       "Idempotency-Key": options.idempotencyKey,
       "X-Evolution-Credential": options.credentialGrant,
     };
-    const created = await this.http.post<EventCampaignResult>(
-      "/api/v1/campaigns",
+    return await this.http.post<EvolutionLoopResult>(
+      "/api/v1/evolution-loops",
       options.request,
       headers,
     );
-    if (created.status !== "draft") return created;
-
-    try {
-      return await this.http.post<EventCampaignResult>(
-        `/api/v1/campaigns/${created.campaign_id}/start`,
-        {},
-      );
-    } catch (error) {
-      if (!(error instanceof HttpClientError) || error.code !== "CAMPAIGN_STATE_CONFLICT") {
-        throw error;
-      }
-      const current = await this.getEventCampaign(created.campaign_id);
-      if (current.status === "draft") throw error;
-      return current;
-    }
   }
 
   async getEventCampaign(campaignId: string): Promise<EventCampaignResult> {
     return await this.http.get<EventCampaignResult>(`/api/v1/campaigns/${campaignId}`);
+  }
+
+  async getEventEvolutionCapabilities(): Promise<EventEvolutionCapabilities> {
+    return await this.http.get<EventEvolutionCapabilities>("/api/v1/capabilities");
   }
 
   async listRuns(limit = 20): Promise<RunListResult> {

@@ -152,7 +152,9 @@ export const TOOL_CATALOG = `
   · 只支持 mode='tool' 的 job；mode='agent' 的 job 会返回 rejected（防递归）
 - scheduler.list_runs —— 列执行历史（用户问"X 最近跑成功没"/"scheduler 最近结果"）
 
-**策略演化（E1 · 真实数据单代变异）**：
+**策略演化（统一目标解析 + E1/E2）**：
+- evolver.resolve_target —— 把详情页的策略 / 模拟盘 / 回测 / E1 / E2 实体解析为 owner-scoped
+  的下一步与冻结输入；用户说“进化这个 / 继续进化”时先调，不要从 URL 自己拼参数
 - evolver.run_evolution —— 显式启动一代 LLM 代码变异（源码审计 → 契约 → 同一冻结行情回测）
   · 何时用：用户明确要求演化、优化或探索已存在策略的新方向
   · 必须传 venue / symbol / timeframe / from_ts / as_of；as_of 是真实当前时点
@@ -162,6 +164,9 @@ export const TOOL_CATALOG = `
 - evolver.get_evolution —— 查 run、数据 manifest 与 slot 状态
 - evolver.get_candidate —— 查单个候选源码、diff、审计与回测快照
 - evolver.abort_evolution —— 用户明确要求时取消 active run，保留已完成 slot
+- evolver.run_event_campaign —— 基于冻结事件事实与已完成 E1 反馈自动运行五代 8×3 共演化；
+  eventSnapshotId 可省略，系统按 as_of 自动冻结；不会自动采纳、启动 Runner 或下单
+- evolver.get_event_campaign —— 查 E2 代际、Forward、holdout、费用和失败状态
 
 **沙盒计算（D-9 spike，ADR-0020 第二道运行隔离）**：
 - sandbox.run_code —— 跑 python / node 小段代码做一次性计算（默认 30s 超时，60s 内 allow，更长 ask）

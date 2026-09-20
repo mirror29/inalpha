@@ -755,6 +755,11 @@ export class PaperClient {
     });
   }
 
+  /** Read one owner-scoped backtest record for detail-page target resolution. */
+  async getBacktestRun(runId: string): Promise<BacktestRunSummary> {
+    return await this.http.get<BacktestRunSummary>(`/backtest_runs/${runId}`);
+  }
+
   /** D-12 · 一次回测的逐笔成交（按成交先后），诊断"亏在哪几笔"用。 */
   async listBacktestTrades(
     runId: string,
@@ -911,6 +916,11 @@ export class PaperClient {
     return await this.http.get<StrategyRunRecord[]>("/strategy_runs", {
       status: filter?.status,
     });
+  }
+
+  /** Read one owner-scoped Paper runner without scanning the capped run list. */
+  async getStrategyRun(runId: string): Promise<StrategyRunRecord> {
+    return await this.http.get<StrategyRunRecord>(`/strategy_runs/${runId}`);
   }
 
   async listStrategyRunDecisions(

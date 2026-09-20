@@ -79,6 +79,20 @@ export async function resolveRequestToken(rc?: {
   return await mintServiceToken({ sub: defaultServiceSubject() });
 }
 
+/** Resolve the authenticated owner subject without forwarding their bearer token. */
+export async function resolveRequestSubject(rc?: {
+  authToken?: string;
+  get?: (key: string) => unknown;
+}): Promise<string> {
+  const mapped = typeof rc?.get === "function" ? rc.get(AUTH_SUB_KEY) : undefined;
+  if (typeof mapped === "string" && mapped) return mapped;
+  if (typeof rc?.authToken === "string" && rc.authToken) {
+    const payload = await verifyToken(rc.authToken);
+    if (typeof payload.sub === "string" && payload.sub) return payload.sub;
+  }
+  return defaultServiceSubject();
+}
+
 /**
  * 验签 + 解码 JWT。失败抛 ``Error``（让 caller 决定怎么响应）。
  */

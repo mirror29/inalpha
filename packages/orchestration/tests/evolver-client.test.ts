@@ -10,6 +10,7 @@ import {
   evolutionRequestDigest,
   EvolverClient,
 } from "../src/clients/evolver.js";
+import { clearSettings, setSettings } from "../src/config.js";
 import { AUTH_SUB_KEY } from "../src/hooks/with-hooks.js";
 import {
   APPROVAL_OPERATION_ID_KEY,
@@ -20,6 +21,9 @@ import {
   getApprovedEvolutionRunContext,
   getApprovedEventCampaignContext,
 } from "../src/tools/evolver-shared.js";
+import {
+  evolverRunEventCampaignTool,
+} from "../src/tools/evolver.js";
 
 const snapshot = buildEvolutionLLMSnapshot({
   id: "config-1",
@@ -39,30 +43,23 @@ function response(status: number): Response {
   );
 }
 
-function campaignResponse(
-  status = 200,
-  campaignStatus = "replaying",
-): Response {
+function loopResponse(status = 201, loopStatus = "campaign_running"): Response {
   return new Response(
     JSON.stringify({
+      loop_id: "44444444-4444-4444-8444-444444444444",
+      operation_id: "approval-operation-e2",
+      target_kind: "e1_run",
+      target_id: "22222222-2222-4222-8222-222222222222",
+      status: loopStatus,
+      e1_run_id: "22222222-2222-4222-8222-222222222222",
       campaign_id: "33333333-3333-4333-8333-333333333333",
-      status: campaignStatus,
-      active_generation: campaignStatus === "draft" ? 0 : 1,
-      max_generations: 5,
-      event_snapshot_id: "11111111-1111-4111-8111-111111111111",
-      llm_cost_usd: 0,
+      forward_sandbox_id: null,
+      holdout_attempt_id: null,
+      failure_code: null,
+      failure_message: null,
+      state_version: 1,
     }),
     { status, headers: { "Content-Type": "application/json" } },
-  );
-}
-
-function campaignConflict(): Response {
-  return new Response(
-    JSON.stringify({
-      code: "CAMPAIGN_STATE_CONFLICT",
-      message: "campaign cannot start",
-    }),
-    { status: 409, headers: { "Content-Type": "application/json" } },
   );
 }
 
@@ -88,6 +85,7 @@ function options() {
 }
 
 afterEach(() => {
+  clearSettings();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -142,6 +140,8 @@ describe("EvolverClient", () => {
     const config = {
       venue: "binance",
       symbol: "BTCUSDT",
+      asset_id: "asset:BTC",
+      event_asset_code: "BTC",
       timeframe: "1h" as const,
       from_ts: "2026-08-01T00:00:00Z",
       as_of: "2026-08-02T00:00:00Z",
@@ -173,23 +173,169 @@ describe("EvolverClient", () => {
     );
   });
 
-  it("recovers a lost start response by returning the already-started campaign on whole-operation retry", async () => {
+  it("freezes a multi-source event snapshot before minting the approved campaign request", async () => {
+    const keys = generateKeyPairSync("ed25519");
+    vi.stubEnv(
+      "EVOLUTION_CREDENTIAL_PRIVATE_KEY_B64",
+      keys.privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"),
+    );
+    setSettings({
+      dataServiceUrl: "http://data.test",
+      paperServiceUrl: "http://paper.test",
+      researchServiceUrl: "http://research.test",
+      factorServiceUrl: "http://factor.test",
+      evolverServiceUrl: "http://evolver.test",
+      jwtSecret: "test-secret-32-chars-or-more-xxxxxxx",
+      jwtAlgorithm: "HS256",
+      schedulerEnabled: false,
+      consoleSubject: "console:dev",
+    });
+    const requestContext = new Map<string, unknown>([
+      [AUTH_SUB_KEY, "user:alice"],
+      [APPROVAL_OPERATION_ID_KEY, "approval-operation-e2"],
+      [USER_LLM_SNAPSHOT_KEY, snapshot],
+    ]);
+    const calls: Array<{ url: string; body: Record<string, unknown>; headers: Headers }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      calls.push({ url, body, headers: new Headers(init?.headers) });
+      if (url === "http://evolver.test/api/v1/capabilities") {
+        return new Response(JSON.stringify({
+          event_evolution_enabled: true,
+          reason: null,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.startsWith("http://data.test/assets/resolve")) {
+        return new Response(JSON.stringify({
+          asset_id: "asset:BTC",
+          venue: "binance",
+          symbol: "BTC/USDT:USDT",
+          event_asset_code: "BTC",
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "http://data.test/events/snapshots") {
+        return new Response(JSON.stringify({
+          snapshot_id: "11111111-1111-4111-8111-111111111111",
+          cutoff: "2026-08-02T00:00:00Z",
+          policy_version: "all-visible-facts-v1",
+          query_hash: "a".repeat(64),
+          events_sha256: "b".repeat(64),
+          coverage: { complete: true },
+          event_types: ["listing", "delisting", "exploit", "chain_halt"],
+          assets: ["BTC"],
+          fact_count: 2,
+          created_at: "2026-08-02T00:00:00Z",
+          facts: [],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        campaign_id: "22222222-2222-4222-8222-222222222222",
+        status: "draft",
+      }), { status: 201, headers: { "Content-Type": "application/json" } });
+    }));
+
+    await evolverRunEventCampaignTool.execute!({
+      sourceRunId: "33333333-3333-4333-8333-333333333333",
+      config: {
+        venue: "binance",
+        symbol: "BTC/USDT:USDT",
+        timeframe: "1h",
+        from_ts: "2026-08-01T00:00:00Z",
+        as_of: "2026-08-02T00:00:00Z",
+      },
+    } as never, { requestContext } as never);
+
+    expect(calls).toHaveLength(4);
+    expect(calls[0]).toMatchObject({
+      url: "http://evolver.test/api/v1/capabilities",
+    });
+    expect(calls[1]).toMatchObject({
+      url: expect.stringContaining("http://data.test/assets/resolve"),
+    });
+    expect(calls[2]).toMatchObject({
+      url: "http://data.test/events/snapshots",
+      body: {
+        cutoff: "2026-08-02T00:00:00Z",
+        policy_version: "all-visible-facts-v1",
+        assets: ["BTC"],
+      },
+    });
+    expect(calls[3]).toMatchObject({
+      url: "http://evolver.test/api/v1/evolution-loops",
+      body: {
+        event_snapshot_id: "11111111-1111-4111-8111-111111111111",
+        source_run_id: "33333333-3333-4333-8333-333333333333",
+        config: expect.objectContaining({
+          asset_id: "asset:BTC",
+          event_asset_code: "BTC",
+        }),
+      },
+    });
+    expect(calls[3]?.headers.get("Idempotency-Key")).toBe("approval-operation-e2");
+  });
+
+  it("stops before campaign LLM spend when the automatic event snapshot is empty", async () => {
+    setSettings({
+      dataServiceUrl: "http://data.test",
+      paperServiceUrl: "http://paper.test",
+      researchServiceUrl: "http://research.test",
+      factorServiceUrl: "http://factor.test",
+      evolverServiceUrl: "http://evolver.test",
+      jwtSecret: "test-secret-32-chars-or-more-xxxxxxx",
+      jwtAlgorithm: "HS256",
+      schedulerEnabled: false,
+      consoleSubject: "console:dev",
+    });
+    const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(
+      url === "http://evolver.test/api/v1/capabilities"
+        ? { event_evolution_enabled: true, reason: null }
+        : url.startsWith("http://data.test/assets/resolve")
+          ? {
+              asset_id: "asset:BTC",
+              venue: "binance",
+              symbol: "BTCUSDT",
+              event_asset_code: "BTC",
+            }
+          : {
+            snapshot_id: "11111111-1111-4111-8111-111111111111",
+            fact_count: 0,
+          },
+    ), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(evolverRunEventCampaignTool.execute!({
+      config: {
+        venue: "binance",
+        symbol: "BTCUSDT",
+        asset_id: "asset:BTC",
+        event_asset_code: "BTC",
+        timeframe: "1h",
+        from_ts: "2026-08-01T00:00:00Z",
+        as_of: "2026-08-02T00:00:00Z",
+      },
+    } as never, {
+      requestContext: new Map([[AUTH_SUB_KEY, "user:alice"]]),
+    } as never)).rejects.toThrow(
+      "EVENT_SNAPSHOT_EMPTY",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("creates or reuses one automatic E2 loop with the approval-derived operation", async () => {
     const request = buildEventCampaignRequest({
       eventSnapshotId: "11111111-1111-4111-8111-111111111111",
       config: {
         venue: "binance",
         symbol: "BTCUSDT",
+        asset_id: "asset:BTC",
+        event_asset_code: "BTC",
         timeframe: "1h",
         from_ts: "2026-08-01T00:00:00Z",
         as_of: "2026-08-02T00:00:00Z",
       },
       llmSnapshot: snapshot,
     });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(campaignResponse(201, "draft"))
-      .mockRejectedValueOnce(new TypeError("start response lost"))
-      .mockResolvedValueOnce(campaignResponse(201, "replaying"));
+    const fetchMock = vi.fn().mockResolvedValue(loopResponse());
     vi.stubGlobal("fetch", fetchMock);
 
     const client = new EvolverClient({
@@ -202,97 +348,22 @@ describe("EvolverClient", () => {
       credentialGrant: "event-campaign-grant",
     };
 
-    await expect(client.startEventCampaign(options)).rejects.toMatchObject({
-      code: "UPSTREAM_UNREACHABLE",
-    });
     await expect(client.startEventCampaign(options)).resolves.toMatchObject({
+      loop_id: "44444444-4444-4444-8444-444444444444",
       campaign_id: "33333333-3333-4333-8333-333333333333",
-      status: "replaying",
+      status: "campaign_running",
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    for (const index of [0, 2]) {
-      const [url, init] = fetchMock.mock.calls[index] as [string, RequestInit];
-      expect(url).toContain("/api/v1/campaigns");
-      expect(url).not.toContain("/start");
-      expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBe(
-        "approval-operation-e2",
-      );
-      expect((init.headers as Record<string, string>)["X-Evolution-Credential"]).toBe(
-        "event-campaign-grant",
-      );
-      expect(init.body).not.toContain("not-forwarded");
-    }
-  });
-
-  it("reconciles a concurrent E2 start conflict when the campaign already advanced", async () => {
-    const request = buildEventCampaignRequest({
-      eventSnapshotId: "11111111-1111-4111-8111-111111111111",
-      config: {
-        venue: "binance",
-        symbol: "BTCUSDT",
-        timeframe: "1h",
-        from_ts: "2026-08-01T00:00:00Z",
-        as_of: "2026-08-02T00:00:00Z",
-      },
-      llmSnapshot: snapshot,
-    });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(campaignResponse(201, "draft"))
-      .mockResolvedValueOnce(campaignConflict())
-      .mockResolvedValueOnce(campaignResponse(200, "replaying"));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      new EvolverClient({
-        baseUrl: "http://evolver.test",
-        token: "owner-token",
-      }).startEventCampaign({
-        request,
-        idempotencyKey: "approval-operation-e2",
-        credentialGrant: "event-campaign-grant",
-      }),
-    ).resolves.toMatchObject({ status: "replaying" });
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/start");
-    expect(String(fetchMock.mock.calls[2]?.[0])).not.toContain("/start");
-  });
-
-  it("preserves E2 start conflicts when reconciliation still finds a draft campaign", async () => {
-    const request = buildEventCampaignRequest({
-      eventSnapshotId: "11111111-1111-4111-8111-111111111111",
-      config: {
-        venue: "binance",
-        symbol: "BTCUSDT",
-        timeframe: "1h",
-        from_ts: "2026-08-01T00:00:00Z",
-        as_of: "2026-08-02T00:00:00Z",
-      },
-      llmSnapshot: snapshot,
-    });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(campaignResponse(201, "draft"))
-      .mockResolvedValueOnce(campaignConflict())
-      .mockResolvedValueOnce(campaignResponse(200, "draft"));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      new EvolverClient({
-        baseUrl: "http://evolver.test",
-        token: "owner-token",
-      }).startEventCampaign({
-        request,
-        idempotencyKey: "approval-operation-e2",
-        credentialGrant: "event-campaign-grant",
-      }),
-    ).rejects.toMatchObject({
-      code: "CAMPAIGN_STATE_CONFLICT",
-      status: 409,
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/evolution-loops");
+    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBe(
+      "approval-operation-e2",
+    );
+    expect((init.headers as Record<string, string>)["X-Evolution-Credential"]).toBe(
+      "event-campaign-grant",
+    );
+    expect(init.body).not.toContain("not-forwarded");
   });
 
   it("retries 502/504 with the same approval-derived operation ID", async () => {

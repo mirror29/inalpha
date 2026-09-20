@@ -10,6 +10,7 @@ import {
   type EvolutionConfig,
   type EvolutionStartRequest,
   type EventCampaignConfigInput,
+  type EventCampaignRequest,
 } from "../clients/evolver.js";
 import { getSettings } from "../config.js";
 import { AUTH_SUB_KEY } from "../hooks/with-hooks.js";
@@ -74,6 +75,8 @@ export async function getApprovedEventCampaignContext(
   input: {
     eventSnapshotId: string;
     sourceRunId?: string;
+    targetKind?: NonNullable<EventCampaignRequest["target_kind"]>;
+    targetId?: string;
     config: EventCampaignConfigInput;
   },
   ctx?: ToolRequestContext,
@@ -93,6 +96,8 @@ export async function getApprovedEventCampaignContext(
   const request = buildEventCampaignRequest({
     eventSnapshotId: input.eventSnapshotId,
     sourceRunId: input.sourceRunId,
+    targetKind: input.targetKind,
+    targetId: input.targetId,
     config: input.config,
     llmSnapshot,
   });
