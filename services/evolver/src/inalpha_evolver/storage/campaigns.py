@@ -165,7 +165,7 @@ async def insert_implementation(
             f"""INSERT INTO evolution_implementations(
 implementation_id,campaign_id,hypothesis_id,generation,profile,source_code,source_hash)
 SELECT %s,%s,%s,%s,%s,%s,%s FROM evolution_campaigns c
-WHERE c.campaign_id=%s AND c.lease_token=%s AND c.lease_expires_at>=NOW()
+WHERE c.campaign_id=%s AND c.lease_token=%s AND c.lease_expires_at>=clock_timestamp()
 ON CONFLICT(hypothesis_id,profile) DO UPDATE SET updated_at=NOW()
 RETURNING {_IMPLEMENTATION_COLUMNS}""",
             (
@@ -204,7 +204,7 @@ async def update_implementation(
             f"""UPDATE evolution_implementations SET {assignments}
 WHERE implementation_id=%s AND campaign_id=%s
 AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=%s
- AND c.lease_token=%s AND c.lease_expires_at>=NOW())
+ AND c.lease_token=%s AND c.lease_expires_at>=clock_timestamp())
 RETURNING {_IMPLEMENTATION_COLUMNS}""",
             params,
         )
@@ -258,7 +258,7 @@ async def update_hypothesis_scores(
                 """UPDATE evolution_hypotheses SET upper_credit=%s,novelty_score=%s,
 pareto_rank=%s,selected=%s WHERE campaign_id=%s AND generation=%s AND hypothesis_id=%s
 AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=%s
- AND c.lease_token=%s AND c.lease_expires_at>=NOW())""",
+ AND c.lease_token=%s AND c.lease_expires_at>=clock_timestamp())""",
                 (
                     score["upper_credit"],
                     score["novelty_score"],
@@ -288,7 +288,7 @@ async def add_llm_cost(
         await cur.execute(
             """UPDATE evolution_campaigns SET llm_cost_usd=llm_cost_usd+%s,
 state_version=state_version+1,updated_at=NOW() WHERE campaign_id=%s
-AND lease_token=%s AND lease_expires_at>=NOW()""",
+AND lease_token=%s AND lease_expires_at>=clock_timestamp()""",
             (amount_usd, campaign_id, lease_token),
         )
         if cur.rowcount != 1:
@@ -309,7 +309,7 @@ async def replace_generation_hypotheses(
 AND NOT EXISTS(SELECT 1 FROM evolution_implementations i
  WHERE i.campaign_id=h.campaign_id AND i.generation=h.generation)
 AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=h.campaign_id
- AND c.lease_token=%s AND c.lease_expires_at>=NOW())""",
+ AND c.lease_token=%s AND c.lease_expires_at>=clock_timestamp())""",
             (campaign_id, generation, lease_token),
         )
         if cur.rowcount == 0:
@@ -338,7 +338,7 @@ async def insert_hypotheses(
                 f"""INSERT INTO evolution_hypotheses(
 hypothesis_id,campaign_id,generation,slot,lineage_kind,lane,parent_ids,spec,spec_hash)
 SELECT %s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s FROM evolution_campaigns c
-WHERE c.campaign_id=%s AND c.lease_token=%s AND c.lease_expires_at>=NOW()
+WHERE c.campaign_id=%s AND c.lease_token=%s AND c.lease_expires_at>=clock_timestamp()
 ON CONFLICT(campaign_id,generation,slot) DO NOTHING
 RETURNING {_HYPOTHESIS_COLUMNS}""",
                 (
@@ -372,7 +372,7 @@ async def advance_generation(
         await cur.execute(
             """UPDATE evolution_campaigns c SET active_generation=%s,state_version=state_version+1,
 updated_at=NOW() WHERE campaign_id=%s AND status='replaying' AND active_generation=%s
-AND lease_token=%s AND lease_expires_at>=NOW()
+AND lease_token=%s AND lease_expires_at>=clock_timestamp()
 AND NOT EXISTS(SELECT 1 FROM evolution_implementations i WHERE i.campaign_id=c.campaign_id
 AND i.generation=%s AND i.outcome='pending')""",
             (
@@ -422,7 +422,7 @@ async def transition(
     params = [json.dumps(value) if isinstance(value, dict) else value for value in updates.values()]
     fence = ""
     if lease_token is not None:
-        fence = " AND lease_token=%s AND lease_expires_at>=NOW()"
+        fence = " AND lease_token=%s AND lease_expires_at>=clock_timestamp()"
     params.extend([campaign_id, owner_account_id, list(from_statuses)])
     if lease_token is not None:
         params.append(lease_token)
@@ -446,15 +446,15 @@ async def acquire_lease(
     ttl_s: int = 60,
 ) -> dict[str, Any] | None:
     """Acquire or steal an expired campaign lease with a fresh fencing token."""
-    now = datetime.now(UTC)
     token = uuid4()
     async with conn.cursor() as cur:
         await cur.execute(
             f"""UPDATE evolution_campaigns SET lease_owner=%s,lease_token=%s,
-lease_expires_at=%s,state_version=state_version+1,updated_at=%s
-WHERE campaign_id=%s AND (lease_expires_at IS NULL OR lease_expires_at<%s OR lease_owner=%s)
+lease_expires_at=clock_timestamp()+%s*INTERVAL '1 second',
+state_version=state_version+1,updated_at=clock_timestamp()
+WHERE campaign_id=%s AND (lease_expires_at IS NULL OR lease_expires_at<clock_timestamp() OR lease_owner=%s)
 RETURNING {_CAMPAIGN_COLUMNS}""",
-            (worker_id, token, now + timedelta(seconds=ttl_s), now, campaign_id, now, worker_id),
+            (worker_id, token, ttl_s, campaign_id, worker_id),
         )
         row = await cur.fetchone()
     return dict(row) if row else None
@@ -467,14 +467,13 @@ async def claim_next_campaign(
     ttl_s: int = 60,
 ) -> dict[str, Any] | None:
     """Claim one active campaign step with SKIP LOCKED and a fresh fencing token."""
-    now = datetime.now(UTC)
     token = uuid4()
     async with conn.transaction():
         async with conn.cursor() as cur:
             await cur.execute(
                 """SELECT campaign_id FROM evolution_campaigns
 WHERE status IN ('replaying','candidate_locked','waiting_forward','holdout_ready')
-AND (lease_expires_at IS NULL OR lease_expires_at<NOW())
+AND (lease_expires_at IS NULL OR lease_expires_at<clock_timestamp())
 ORDER BY updated_at,campaign_id FOR UPDATE SKIP LOCKED LIMIT 1"""
             )
             picked = await cur.fetchone()
@@ -482,9 +481,10 @@ ORDER BY updated_at,campaign_id FOR UPDATE SKIP LOCKED LIMIT 1"""
                 return None
             await cur.execute(
                 f"""UPDATE evolution_campaigns SET lease_owner=%s,lease_token=%s,
-lease_expires_at=%s,updated_at=%s,state_version=state_version+1
+lease_expires_at=clock_timestamp()+%s*INTERVAL '1 second',
+updated_at=clock_timestamp(),state_version=state_version+1
 WHERE campaign_id=%s RETURNING {_CAMPAIGN_COLUMNS}""",
-                (worker_id, token, now + timedelta(seconds=ttl_s), now, picked["campaign_id"]),
+                (worker_id, token, ttl_s, picked["campaign_id"]),
             )
             row = await cur.fetchone()
     return dict(row) if row else None
@@ -501,11 +501,11 @@ async def renew_lease(
     """Renew only the current fencing token; stale workers cannot extend ownership."""
     async with conn.cursor() as cur:
         await cur.execute(
-            """UPDATE evolution_campaigns SET lease_expires_at=%s,updated_at=%s
-WHERE campaign_id=%s AND lease_owner=%s AND lease_token=%s AND lease_expires_at>=NOW()""",
+            """UPDATE evolution_campaigns SET
+lease_expires_at=clock_timestamp()+%s*INTERVAL '1 second',updated_at=clock_timestamp()
+WHERE campaign_id=%s AND lease_owner=%s AND lease_token=%s AND lease_expires_at>=clock_timestamp()""",
             (
-                datetime.now(UTC) + timedelta(seconds=ttl_s),
-                datetime.now(UTC),
+                ttl_s,
                 campaign_id,
                 worker_id,
                 lease_token,
@@ -523,7 +523,7 @@ async def assert_active_lease(
     async with conn.cursor() as cur:
         await cur.execute(
             """SELECT 1 FROM evolution_campaigns
-WHERE campaign_id=%s AND lease_token=%s AND lease_expires_at>=NOW()""",
+WHERE campaign_id=%s AND lease_token=%s AND lease_expires_at>=clock_timestamp()""",
             (campaign_id, lease_token),
         )
         if await cur.fetchone() is None:
@@ -553,7 +553,7 @@ active_generation=max_generations,
 llm_credential_grant=NULL,
 state_version=state_version+1,updated_at=%s
 WHERE campaign_id=%s AND owner_account_id=%s AND status='replaying'
-AND lease_token=%s AND lease_expires_at>=NOW()
+AND lease_token=%s AND lease_expires_at>=clock_timestamp()
 AND active_generation=max_generations AND locked_candidate_id IS NULL
 AND EXISTS(SELECT 1 FROM champion)
 RETURNING {_CAMPAIGN_COLUMNS}""",
@@ -585,7 +585,7 @@ async def start_forward_sandbox(
             f"""UPDATE evolution_campaigns SET status='waiting_forward',forward_sandbox_id=%s,
 forward_started_at=%s,forward_deadline_at=%s,state_version=state_version+1,updated_at=%s
 WHERE campaign_id=%s AND owner_account_id=%s AND status='candidate_locked'
-AND locked_candidate_id IS NOT NULL AND lease_token=%s AND lease_expires_at>=NOW()
+AND locked_candidate_id IS NOT NULL AND lease_token=%s AND lease_expires_at>=clock_timestamp()
 AND EXISTS(SELECT 1 FROM paper_evolution_forward_sandboxes s
  WHERE s.sandbox_id=%s AND s.campaign_id=evolution_campaigns.campaign_id
  AND s.candidate_id=evolution_campaigns.locked_candidate_id)
@@ -684,7 +684,7 @@ async def record_paper_forward(
 forward_metrics=%s::jsonb,finished_at=%s,state_version=state_version+1,updated_at=%s
 WHERE campaign_id=%s AND owner_account_id=%s AND status='waiting_forward'
 AND forward_sandbox_id=%s AND locked_candidate_id=%s
-AND lease_token=%s AND lease_expires_at>=NOW()
+AND lease_token=%s AND lease_expires_at>=clock_timestamp()
 AND EXISTS(SELECT 1 FROM paper_evolution_forward_sandboxes s
  WHERE s.sandbox_id=%s AND s.campaign_id=evolution_campaigns.campaign_id
  AND s.candidate_id=evolution_campaigns.locked_candidate_id)
@@ -745,7 +745,7 @@ SELECT %s,c.campaign_id,c.owner_account_id,c.locked_candidate_id
 FROM evolution_campaigns c
 WHERE c.campaign_id=%s AND c.owner_account_id=%s AND c.status='holdout_ready'
 AND c.locked_candidate_id IS NOT NULL AND c.holdout_consumed_at IS NULL
-AND c.lease_token=%s AND c.lease_expires_at>=NOW()
+AND c.lease_token=%s AND c.lease_expires_at>=clock_timestamp()
 ON CONFLICT(campaign_id) DO NOTHING
 RETURNING {_HOLDOUT_ATTEMPT_COLUMNS}""",
                 (attempt_id, campaign_id, owner_account_id, lease_token),
@@ -789,7 +789,7 @@ async def release_holdout_attempt(
             """UPDATE evolution_holdout_attempts SET status='reserved',fencing_token=NULL,
 lease_expires_at=NULL,updated_at=NOW()
 WHERE attempt_id=%s AND owner_account_id=%s AND status='running'
-AND fencing_token=%s AND lease_expires_at>=NOW()""",
+AND fencing_token=%s AND lease_expires_at>=clock_timestamp()""",
             (attempt_id, owner_account_id, fencing_token),
         )
         return cur.rowcount == 1
@@ -803,23 +803,20 @@ async def claim_holdout_attempt(
     ttl_s: int,
 ) -> dict[str, Any] | None:
     """Claim or resume the same attempt after its prior execution lease expires."""
-    now = datetime.now(UTC)
     token = uuid4()
     async with conn.cursor() as cur:
         await cur.execute(
             f"""UPDATE evolution_holdout_attempts SET status='running',fencing_token=%s,
-lease_expires_at=%s,started_at=COALESCE(started_at,%s),updated_at=%s
+lease_expires_at=clock_timestamp()+%s*INTERVAL '1 second',
+started_at=COALESCE(started_at,clock_timestamp()),updated_at=clock_timestamp()
 WHERE attempt_id=%s AND owner_account_id=%s
-AND (status='reserved' OR (status='running' AND lease_expires_at<%s))
+AND (status='reserved' OR (status='running' AND lease_expires_at<clock_timestamp()))
 RETURNING {_HOLDOUT_ATTEMPT_COLUMNS}""",
             (
                 token,
-                now + timedelta(seconds=ttl_s),
-                now,
-                now,
+                ttl_s,
                 attempt_id,
                 owner_account_id,
-                now,
             ),
         )
         row = await cur.fetchone()
@@ -842,7 +839,7 @@ JOIN evolution_implementations i ON i.implementation_id=a.candidate_id
  AND i.campaign_id=a.campaign_id
 JOIN evolution_hypotheses h ON h.hypothesis_id=i.hypothesis_id
 WHERE a.attempt_id=%s AND a.owner_account_id=%s AND a.status='running'
-AND a.fencing_token=%s AND a.lease_expires_at>=NOW()""",
+AND a.fencing_token=%s AND a.lease_expires_at>=clock_timestamp()""",
             (attempt_id, owner_account_id, fencing_token),
         )
         row = await cur.fetchone()
@@ -866,7 +863,7 @@ async def finalize_holdout_attempt(
                 f"""UPDATE evolution_holdout_attempts SET status=%s,passed=%s,evidence=%s::jsonb,
 finished_at=%s,lease_expires_at=NULL,updated_at=%s
 WHERE attempt_id=%s AND owner_account_id=%s AND status='running'
-AND fencing_token=%s AND lease_expires_at>=NOW()
+AND fencing_token=%s AND lease_expires_at>=clock_timestamp()
 RETURNING {_HOLDOUT_ATTEMPT_COLUMNS}""",
                 (
                     "succeeded" if passed else "failed",
