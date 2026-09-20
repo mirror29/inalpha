@@ -52,7 +52,8 @@ export function EvolutionClient() {
       <EvolutionStats total={runs.length} active={active} cost={runs.reduce((sum, run) => sum + run.llm_cost_usd, 0)} rejected={runs.reduce((sum, run) => sum + run.rejected, 0)} />
       {loops.error && <ErrorState message={t("loop.refreshFailed")} onRetry={() => loops.mutate()} />}
       {loops.isLoading ? <SkeletonBlock className="h-32" /> : <EvolutionLoopTable loops={loops.data?.loops ?? []} />}
-      <EvolutionCampaignTable campaigns={campaigns.data?.campaigns ?? []} />
+      {campaigns.error && <ErrorState message={t("loop.refreshFailed")} onRetry={() => campaigns.mutate()} />}
+      {campaigns.isLoading ? <SkeletonBlock className="h-32" /> : <EvolutionCampaignTable campaigns={campaigns.data?.campaigns ?? []} />}
       <EvolutionRunTable runs={runs} hasMore={hasMore} isLoadingMore={isLoadingMore} onLoadMore={() => void loadMore()} />
     </div>
   );

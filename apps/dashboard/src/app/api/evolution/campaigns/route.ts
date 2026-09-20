@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
-import { getEventEvolutionCapability } from "@/lib/evolution-capability";
 import type { EvolutionCampaign, EvolutionCampaignPayload } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -9,13 +8,6 @@ export const dynamic = "force-dynamic";
 /** Return the owner-scoped event campaign projection without candidate source blobs. */
 export async function GET() {
   try {
-    const capability = await getEventEvolutionCapability();
-    if (!capability.event_evolution_enabled) {
-      return NextResponse.json(
-        { error: capability.reason ?? "event evolution is disabled", capability },
-        { status: 503 },
-      );
-    }
     const response = await backendFetch<{ items: EvolutionCampaign[] }>(
       "evolver",
       "/api/v1/campaigns",

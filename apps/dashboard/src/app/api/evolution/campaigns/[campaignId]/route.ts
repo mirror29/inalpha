@@ -18,10 +18,6 @@ export async function GET(
     return NextResponse.json({ error: "invalid campaign id" }, { status: 400 });
   }
   try {
-    const capability = await getEventEvolutionCapability();
-    if (!capability.event_evolution_enabled) {
-      return NextResponse.json({ error: capability.reason ?? "disabled" }, { status: 503 });
-    }
     const campaign = await backendFetch<EvolutionCampaign>(
       "evolver",
       `/api/v1/campaigns/${campaignId}`,
