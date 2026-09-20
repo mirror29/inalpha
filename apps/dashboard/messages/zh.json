@@ -519,6 +519,7 @@
     "toolResponded": "已响应",
     "toolResult": "输出",
     "errorGeneric": "Agent 回复失败，请重试 —— 多半是上游 LLM 报错或连接中断。",
+    "errorIncompleteStream": "上游模型中断了回复。请检查当前模型配置的余额、额度或 API Key 后重试。",
     "errorDismiss": "关闭",
     "marketNews": {
       "partial": "部分来源失败。",

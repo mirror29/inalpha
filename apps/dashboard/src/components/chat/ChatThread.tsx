@@ -19,6 +19,7 @@ import {
 } from "react";
 
 import { cn } from "@/lib/cn";
+import { formatChatRunError } from "@/lib/chat-run-error";
 import {
   buildPageContextEnvelope,
   evolutionTargetFromPage,
@@ -177,8 +178,13 @@ export function ChatThread({
         const raw = event?.message;
         const code = event?.code;
         if (stoppingRef.current || /abort|BodyStreamBuffer|signal is aborted/i.test(`${raw ?? ""} ${code ?? ""}`)) return;
-        const human = raw && raw !== "[object Object]" ? raw : null;
-        setChatError(human ? `${human}${code ? ` (${code})` : ""}` : code ? `${t("errorGeneric")} (${code})` : t("errorGeneric"));
+        setChatError(formatChatRunError(
+          { message: raw, code },
+          {
+            generic: t("errorGeneric"),
+            incompleteStream: t("errorIncompleteStream"),
+          },
+        ));
       },
     } as Parameters<typeof agent.subscribe>[0]);
     return () => sub.unsubscribe();

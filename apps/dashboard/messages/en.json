@@ -519,6 +519,7 @@
     "toolResponded": "responded",
     "toolResult": "output",
     "errorGeneric": "Agent reply failed. Please retry — likely an upstream LLM error or dropped stream.",
+    "errorIncompleteStream": "The upstream model interrupted its reply. Check the active model balance, quota, or API key, then retry.",
     "errorDismiss": "Dismiss",
     "marketNews": {
       "partial": "Some sources failed.",
