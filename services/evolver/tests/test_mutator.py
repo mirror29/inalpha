@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from inalpha_evolver.mutator.diff_applier import DiffApplyError, apply_diff, apply_diff_strict
+from inalpha_evolver.mutator.diff_applier import (
+    DiffApplyError,
+    apply_diff,
+    apply_diff_strict,
+    repair_hunk_counts,
+)
 
 _SOURCE = """
 class Foo:
@@ -129,3 +134,12 @@ def test_empty_diff_keeps_source() -> None:
 def test_header_without_hunk_is_rejected() -> None:
     with pytest.raises(DiffApplyError):
         apply_diff(_SOURCE, _diff("--- a/strategy.py", "+++ b/strategy.py"))
+
+
+def test_repair_hunk_counts_keeps_strict_context_validation() -> None:
+    malformed = _replace_y().replace("@@ -2,5 +2,5 @@", "@@ -2,99 +2,42 @@")
+
+    repaired = repair_hunk_counts(malformed)
+
+    assert "@@ -2,5 +2,5 @@" in repaired
+    assert "y = 20" in apply_diff(_SOURCE, repaired)

@@ -12,7 +12,7 @@ from inalpha_shared_llm.client import (  # type: ignore[import-untyped]
 from inalpha_shared_llm.types import CacheMetrics, MutationRequest  # type: ignore[import-untyped]
 
 from ..exceptions import DiffApplyError, LLMError
-from .diff_applier import apply_diff
+from .diff_applier import apply_diff, repair_hunk_counts
 from .prompt_templates import SYSTEM_PROMPT, build_user_prompt
 
 
@@ -145,16 +145,21 @@ class Mutator:
         try:
             new_source = apply_diff(current_source, raw_diff, max_fuzz=self.max_fuzz)
         except DiffApplyError as exc:
-            # 带上 cost 信息，上层可决定是否计入成本
-            raise DiffApplyError(
-                str(exc),
-                original=current_source,
-                failed_diff=raw_diff,
-                llm_cost_usd=llm_cost_usd,
-                cache_hit_tokens=metrics.cache_read_tokens,
-                input_tokens=metrics.input_tokens,
-                output_tokens=metrics.output_tokens,
-            ) from exc
+            repaired_diff = repair_hunk_counts(raw_diff)
+            try:
+                new_source = apply_diff(current_source, repaired_diff, max_fuzz=self.max_fuzz)
+                raw_diff = repaired_diff
+            except DiffApplyError:
+                # 带上 cost 信息，上层可决定是否计入成本
+                raise DiffApplyError(
+                    str(exc),
+                    original=current_source,
+                    failed_diff=raw_diff,
+                    llm_cost_usd=llm_cost_usd,
+                    cache_hit_tokens=metrics.cache_read_tokens,
+                    input_tokens=metrics.input_tokens,
+                    output_tokens=metrics.output_tokens,
+                ) from exc
 
         return MutationResult(
             new_source=new_source,

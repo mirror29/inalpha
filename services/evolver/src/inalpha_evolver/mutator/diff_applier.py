@@ -44,6 +44,35 @@ def _clean(raw_diff: str, original: str) -> list[str]:
     return lines[2:]
 
 
+def repair_hunk_counts(raw_diff: str) -> str:
+    """修正 LLM 常见的 hunk 行数声明错误，不改变路径、位置或正文。
+
+    这里只重算 ``@@`` header 的 old/new count；后续 ``apply_diff`` 仍会对
+    文件路径、hunk 位置与原始源码上下文执行严格校验。
+    """
+    lines = raw_diff.splitlines()
+    repaired: list[str] = []
+    index = 0
+    while index < len(lines):
+        match = _HUNK_RE.fullmatch(lines[index])
+        if match is None:
+            repaired.append(lines[index])
+            index += 1
+            continue
+        old_start, _, new_start, _ = match.groups()
+        body_start = index + 1
+        body_end = body_start
+        while body_end < len(lines) and not lines[body_end].startswith("@@"):
+            body_end += 1
+        body = lines[body_start:body_end]
+        old_count = sum(bool(line) and line[0] in {" ", "-"} for line in body)
+        new_count = sum(bool(line) and line[0] in {" ", "+"} for line in body)
+        repaired.append(f"@@ -{old_start},{old_count} +{new_start},{new_count} @@")
+        repaired.extend(body)
+        index = body_end
+    return "\n".join(repaired)
+
+
 def _parse_hunks(lines: list[str], original: str, raw_diff: str) -> list[_Hunk]:
     hunks: list[_Hunk] = []
     index = 0
