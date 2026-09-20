@@ -11,7 +11,7 @@ def test_0044_restores_a_single_upgrade_head(migration_db_url: str) -> None:
     alembic(migration_db_url, "upgrade", "head")
 
     current = alembic(migration_db_url, "current")
-    assert "0044 (head)" in current.stdout
+    assert "0053 (head)" in current.stdout
     assert "0043_waitlist (head)" not in current.stdout
 
     alembic(migration_db_url, "downgrade", "0042")
