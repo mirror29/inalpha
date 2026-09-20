@@ -8,7 +8,11 @@ from uuid import uuid4
 import pytest
 
 from inalpha_evolver.config import EvolverSettings
-from inalpha_evolver.data.persistent_snapshot import persist_loop_data_snapshot
+from inalpha_evolver.data.persistent_snapshot import (
+    get_loop_data_snapshot,
+    persist_loop_data_snapshot,
+)
+from inalpha_evolver.hypothesis.feedback import build_loop_simulation_feedback
 from inalpha_evolver.runtime.generation import execute_generation
 from inalpha_evolver.runtime.loop_baseline import execute_loop_baseline
 from inalpha_evolver.storage import candidates, loop_authorizations, loop_dispatch, loops, runs
@@ -107,6 +111,18 @@ async def test_automatic_baseline_uses_discovery_and_restarts_without_model_call
     run = await runs.get_run(database, args["e1_run_id"])
     assert run["status"] == "completed"
     assert run["dataset_manifest"]["bar_count"] == 6
+    frozen = await get_loop_data_snapshot(database, loop["loop_id"], args["owner_account_id"])
+    feedback = build_loop_simulation_feedback(
+        run, await candidates.list_candidates(database, run["run_id"], args["owner_account_id"]),
+        frozen,
+    )
+    assert feedback["summary"]["metric_scope"] == "loop_discovery_only"
+    assert feedback["records"][1]["metrics"]["num_bars"] == 6
+    assert feedback["records"][2]["metrics"]["num_bars"] == 6
+    with pytest.raises(ValueError, match="discovery"):
+        build_loop_simulation_feedback(
+            {**run, "dataset_manifest": _dataset().manifest.model_dump(mode="json")}, [], frozen,
+        )
     assert (await loops.get_loop(database, loop["loop_id"], args["owner_account_id"]))["status"] == "baseline_ready"
     await execute_loop_baseline(worker, settings, mutator=model)
     assert model.calls == 4

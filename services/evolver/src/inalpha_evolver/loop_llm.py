@@ -20,6 +20,25 @@ class LoopModelScope:
     phase: Literal["baseline", "campaign"]
 
 
+async def campaign_model_scope(campaign: dict[str, Any]) -> LoopModelScope | None:
+    """Resolve durable authority from owned storage, never from a client-supplied config tag."""
+    async with get_conn() as conn:
+        cursor = await conn.execute(
+            """SELECT l.loop_id,a.llm_snapshot FROM evolution_loops l
+JOIN evolution_loop_authorizations a USING(loop_id)
+WHERE l.campaign_id=%s AND l.owner_account_id=%s AND a.owner_account_id=l.owner_account_id""",
+            (campaign["campaign_id"], campaign["owner_account_id"]),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    if campaign["llm_snapshot"] != row["llm_snapshot"]:
+        raise authority.LoopAuthorizationUnavailable("campaign model differs from loop authorization")
+    return LoopModelScope(
+        row["loop_id"], campaign["owner_account_id"], UUID(str(campaign["lease_token"])), "campaign",
+    )
+
+
 class BudgetedLoopClient:
     """Reserve each network attempt, retaining its maximum cost if usage is unknown."""
 

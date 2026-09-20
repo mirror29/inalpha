@@ -12,12 +12,10 @@ from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 from inalpha_shared.errors import ConflictError, NotFoundError, ValidationError
 
+from ..campaign_preparation import prepare_campaign
 from ..config import get_evolver_settings
 from ..event_client import fetch_event_snapshot
-from ..hypothesis.compiler import compile_hypothesis, expand_implementations
 from ..hypothesis.feedback import build_source_simulation_feedback
-from ..hypothesis.seeding import seed_generation_one
-from ..sandbox.ast_audit import assert_safe
 from ..storage import campaigns as store
 from ..storage import candidates, runs
 from ..storage import loops as loop_store
@@ -125,16 +123,6 @@ async def create_campaign(
         settings=settings,
     )
     _validate_event_snapshot(snapshot, body)
-    hypotheses = body.hypotheses or seed_generation_one(
-        snapshot,
-        body.config.event_asset_code,
-        body.config.asset_id,
-    )
-    if len(hypotheses) != 8:
-        raise ValidationError(
-            "event campaign requires exactly eight generation-one hypothesis slots",
-            code="CAMPAIGN_DIRECTION_COVERAGE_REQUIRED",
-        )
     verify_evolution_approval(
         evolution_credential,
         owner_sub=user.user_id,
@@ -146,36 +134,7 @@ async def create_campaign(
         grant_purpose="event_campaign",
         settings=settings,
     )
-    for hypothesis in hypotheses:
-        for implementation in expand_implementations(hypothesis):
-            compiled = compile_hypothesis(implementation)
-            assert_safe(compiled.source_code)
-    frozen_config = {
-        **body.config.model_dump(mode="json"),
-        "event_snapshot": {
-            "snapshot_id": snapshot["snapshot_id"],
-            "events_sha256": snapshot["events_sha256"],
-            "policy_version": snapshot["policy_version"],
-            "fact_count": snapshot["fact_count"],
-            "cutoff": snapshot["cutoff"],
-        },
-        "compiler_version": "event-strategy-compiler-v1",
-        "selection_version": "pareto-novelty-v1",
-        "evidence_threshold_version": "matched-events-v1",
-        "minimum_matched_event_pairs": 8,
-        "minimum_event_match_ratio": 0.70,
-        "fdr_q": 0.10,
-        "llm_call_topology": {"calls_per_generation": 2, "hypotheses_per_call": 4},
-        "estimated_reserved_llm_cost_usd": (10 * body.llm.pricing.estimated_max_usd_per_candidate),
-        "sealed_holdout_thresholds": {
-            "sharpe_gt": 0,
-            "net_return_pct_gt": 0,
-            "max_drawdown_pct_lte": 25,
-            "num_trades_gt": 0,
-        },
-        **({"source_simulation_feedback": source_feedback} if source_feedback is not None else {}),
-        "created_at": datetime.now(UTC).isoformat(),
-    }
+    hypotheses, frozen_config = prepare_campaign(body, snapshot, source_feedback)
     async with db.transaction():
         row = await store.insert_campaign(
             db,

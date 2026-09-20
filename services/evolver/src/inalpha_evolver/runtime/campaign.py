@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import math
+import statistics
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -18,6 +20,7 @@ from inalpha_paper.execution.exchange import EventExecutionPolicy
 from inalpha_shared.db import get_conn
 
 from ..api.schemas import CampaignConfig
+from ..campaign_preparation import discovery_facts
 from ..config import EvolverSettings
 from ..data import FrozenBarsLoader, FrozenDataset
 from ..data.persistent_snapshot import (
@@ -31,6 +34,7 @@ from ..forward_client import create_forward_sandbox, get_forward_sandbox
 from ..hypothesis.compiler import compile_hypothesis, expand_implementations
 from ..hypothesis.models import HypothesisSpec
 from ..hypothesis.proposer import propose_generation
+from ..hypothesis.seeding import seed_generation_one
 from ..hypothesis.selection import (
     HypothesisScore,
     ImplementationScore,
@@ -41,9 +45,11 @@ from ..hypothesis.selection import (
     passes_generation_evidence_gate,
     plan_next_generation,
 )
+from ..loop_llm import campaign_model_scope
 from ..mutator import Mutator
 from ..owner_llm import build_owner_mutator
 from ..storage import campaigns as store
+from ..storage import proposal_checkpoints
 
 
 async def execute_campaign(campaign: dict[str, Any], settings: EvolverSettings) -> None:
@@ -59,7 +65,11 @@ async def execute_campaign(campaign: dict[str, Any], settings: EvolverSettings) 
         return
     config = _campaign_config(campaign)
     dataset, snapshot = await _load_frozen_inputs(campaign, config, settings)
-    mutator = await build_owner_mutator(campaign, settings)
+    loop_scope = await campaign_model_scope(campaign)
+    mutator = (
+        await build_owner_mutator(campaign, settings, loop_scope=loop_scope)
+        if loop_scope is not None else await build_owner_mutator(campaign, settings)
+    )
     try:
         await _execute_campaign(
             campaign,
@@ -183,6 +193,11 @@ async def _execute_campaign(
     lease_token = UUID(str(campaign["lease_token"]))
     all_events = tuple(market_event_from_fact(item) for item in snapshot["facts"])
     search_dataset, validation_bars = _search_dataset(dataset)
+    discovery_end = max(2, int(len(dataset.bars) * 0.60))
+    discovery_cutoff = datetime.fromtimestamp(
+        dataset.bars[discovery_end - 1].bar_known_at / 1e9, tz=UTC,
+    )
+    proposer_facts = discovery_facts(snapshot, discovery_cutoff)
     search_events = tuple(
         event
         for event in all_events
@@ -198,7 +213,7 @@ async def _execute_campaign(
         ),
         initial_cash=config.initial_cash,
         fee_rate=config.fee_rate,
-        validation_split=0.75,
+        validation_split=math.nextafter(discovery_end / len(search_dataset.bars), 1.0),
         trading_mode=config.trading_mode,
         leverage=config.leverage,
         events=search_events,
@@ -224,32 +239,29 @@ async def _execute_campaign(
         has_started_generation = any(
             int(item["generation"]) == generation for item in current.get("implementations", [])
         )
-        if not has_started_generation:
+        async with get_conn() as conn:
+            committed_proposal = await proposal_checkpoints.get_proposal(
+                conn, campaign["campaign_id"], generation,
+            )
+        if not has_started_generation and committed_proposal is None:
+            if generation == 1 and current["frozen_config"].get("hypotheses_source") == "discovery_scaffold":
+                hypotheses = seed_generation_one(
+                    {**snapshot, "facts": proposer_facts}, config.event_asset_code, config.asset_id,
+                )
             proposed = await propose_generation(
                 mutator,
                 generation=generation,
                 scaffolds=hypotheses,
                 feedback=_proposal_feedback(current, generation - 1),
-                frozen_facts=[
-                    item for item in snapshot.get("facts", []) if isinstance(item, dict)
-                ],
+                frozen_facts=proposer_facts,
             )
             hypotheses = list(proposed.hypotheses)
             async with get_conn() as conn:
-                async with conn.transaction():
-                    await store.replace_generation_hypotheses(
-                        conn,
-                        campaign["campaign_id"],
-                        generation,
-                        hypotheses,
-                        lease_token,
-                    )
-                    await store.add_llm_cost(
-                        conn,
-                        campaign["campaign_id"],
-                        proposed.cost_usd,
-                        lease_token,
-                    )
+                await proposal_checkpoints.commit_proposal(
+                    conn, campaign_id=campaign["campaign_id"], generation=generation,
+                    hypotheses=hypotheses, lease_token=lease_token,
+                    cost_usd=proposed.cost_usd, fallback_calls=proposed.fallback_calls,
+                )
         scores = await _evaluate_generation(
             campaign=current,
             generation=generation,
@@ -320,7 +332,7 @@ async def _execute_campaign(
 
 
 def _proposal_feedback(campaign: dict[str, Any], generation: int) -> list[dict[str, Any]]:
-    """Expose only aggregate selection evidence, never bars, trades, or holdout rows."""
+    """Expose discovery metrics and discrete selection outcomes, never validation scores."""
     if generation < 1:
         frozen_config = campaign.get("frozen_config")
         source_feedback = (
@@ -338,14 +350,31 @@ def _proposal_feedback(campaign: dict[str, Any], generation: int) -> list[dict[s
         {
             "hypothesis_id": str(item["hypothesis_id"]),
             "lane": item["lane"],
-            "upper_credit": item.get("upper_credit"),
-            "novelty_score": item.get("novelty_score"),
-            "pareto_rank": item.get("pareto_rank"),
             "selected": item.get("selected", False),
+            "discovery_metrics": _discovery_metrics(campaign, item["hypothesis_id"], generation),
         }
         for item in campaign.get("hypotheses", [])
         if int(item["generation"]) == generation
     ]
+
+
+def _discovery_metrics(campaign: dict[str, Any], hypothesis_id: Any, generation: int) -> dict[str, float]:
+    """Summarize only each implementation's discovery segment, not its selection fitness."""
+    trains = [
+        (item.get("validation_metrics") or {}).get("train") or {}
+        for item in campaign.get("implementations", [])
+        if str(item["hypothesis_id"]) == str(hypothesis_id) and int(item["generation"]) == generation
+    ]
+    result = {}
+    for key in ("sharpe", "total_return_pct", "max_drawdown_pct", "num_trades", "num_bars"):
+        values = [
+            float(train[key]) for train in trains
+            if isinstance(train.get(key), (int, float)) and not isinstance(train[key], bool)
+            and math.isfinite(float(train[key]))
+        ]
+        if values:
+            result[key] = statistics.median(values)
+    return result
 
 
 async def _ensure_forward_sandbox(

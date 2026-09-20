@@ -363,6 +363,27 @@ def test_generation_one_proposer_receives_frozen_source_run_feedback() -> None:
     assert _proposal_feedback(campaign, 0) == records
 
 
+def test_later_proposer_feedback_contains_discovery_not_validation_scores() -> None:
+    import json
+
+    campaign = {
+        "hypotheses": [{"hypothesis_id": "parent", "generation": 1, "lane": "event",
+                        "selected": True, "upper_credit": 999, "novelty_score": 888, "pareto_rank": 7}],
+        "implementations": [
+            {"hypothesis_id": "parent", "generation": 1, "validation_metrics": {
+                "train": {"sharpe": score, "num_trades": 4},
+                "holdout": {"sharpe": 777}, "decay_ratio": 666,
+            }} for score in (1, 2, 3)
+        ],
+    }
+    feedback = _proposal_feedback(campaign, 1)
+    assert feedback[0]["discovery_metrics"] == {"sharpe": 2, "num_trades": 4}
+    assert feedback[0]["selected"] is True
+    encoded = json.dumps(feedback)
+    for forbidden in ("999", "888", "777", "666", "upper_credit", "pareto_rank", "holdout"):
+        assert forbidden not in encoded
+
+
 @pytest.mark.asyncio
 async def test_capabilities_is_the_authoritative_e2_feature_gate(
     monkeypatch: pytest.MonkeyPatch,
@@ -503,7 +524,6 @@ async def test_create_campaign_freezes_source_results_for_generation_one(
         "verify_evolution_approval",
         lambda *_args, **_kwargs: None,
     )
-    monkeypatch.setattr(campaign_routes, "expand_implementations", lambda _spec: [])
     monkeypatch.setattr(campaign_routes, "_response", lambda row: row)
 
     result = await campaign_routes.create_campaign(

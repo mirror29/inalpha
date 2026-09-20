@@ -9,6 +9,8 @@ import statistics
 from collections import Counter
 from typing import Any
 
+from ..data.persistent_snapshot import discovery_dataset
+
 SOURCE_SIMULATION_FEEDBACK_VERSION = "source-simulation-feedback-v2"
 
 _DISCOVERY_METRICS = (
@@ -25,8 +27,27 @@ def build_source_simulation_feedback(
     candidate_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Build a bounded, source-free snapshot for the first event generation."""
-    seed = _report_metrics(run.get("seed_report_snapshot"))
-    baseline = _report_metrics(run.get("baseline_snapshot"))
+    return _build_feedback(run, candidate_rows, discovery_only=False)
+
+
+def build_loop_simulation_feedback(
+    run: dict[str, Any], candidate_rows: list[dict[str, Any]], frozen_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Use full discovery metrics only after proving the baseline never saw later bars."""
+    expected = discovery_dataset(frozen_snapshot).manifest.model_dump(mode="json")
+    if (
+        str(run["owner_account_id"]) != str(frozen_snapshot["owner_account_id"])
+        or run.get("dataset_manifest") != expected
+    ):
+        raise ValueError("baseline does not match the immutable discovery dataset")
+    return _build_feedback(run, candidate_rows, discovery_only=True)
+
+
+def _build_feedback(
+    run: dict[str, Any], candidate_rows: list[dict[str, Any]], *, discovery_only: bool,
+) -> dict[str, Any]:
+    seed = _report_metrics(run.get("seed_report_snapshot"), discovery_only=discovery_only)
+    baseline = _report_metrics(run.get("baseline_snapshot"), discovery_only=discovery_only)
     if not seed or not baseline:
         raise ValueError("completed source run is missing seed or baseline feedback")
 
@@ -36,7 +57,7 @@ def build_source_simulation_feedback(
     )
     successful = []
     for row in candidate_rows:
-        metrics = _report_metrics(row.get("evaluation_snapshot"))
+        metrics = _report_metrics(row.get("evaluation_snapshot"), discovery_only=discovery_only)
         score = _finite_number(metrics.get("sharpe"))
         if row.get("outcome") == "succeeded" and score is not None:
             successful.append((row, metrics, score))
@@ -50,7 +71,7 @@ def build_source_simulation_feedback(
         "rejected": len(candidate_rows) - outcome_counts.get("succeeded", 0),
         "outcomes": dict(sorted(outcome_counts.items())),
         "errors": dict(sorted(error_counts.items())),
-        "metric_scope": "source_train_only",
+        "metric_scope": "loop_discovery_only" if discovery_only else "source_train_only",
         "seed_discovery_score": seed_score,
         "baseline_discovery_score": baseline_score,
         "best_candidate_discovery_score": scores[0] if scores else None,
@@ -99,11 +120,13 @@ def build_source_simulation_feedback(
     return {**digest_payload, "feedback_sha256": feedback_sha256}
 
 
-def _report_metrics(snapshot: object) -> dict[str, Any]:
+def _report_metrics(snapshot: object, *, discovery_only: bool = False) -> dict[str, Any]:
     if not isinstance(snapshot, dict):
         return {}
     validation = snapshot.get("validation")
     train = validation.get("train") if isinstance(validation, dict) else None
+    if discovery_only:
+        train = snapshot
     if not isinstance(train, dict):
         return {}
     return {
@@ -121,5 +144,6 @@ def _finite_number(value: object) -> int | float | None:
 
 __all__ = [
     "SOURCE_SIMULATION_FEEDBACK_VERSION",
+    "build_loop_simulation_feedback",
     "build_source_simulation_feedback",
 ]

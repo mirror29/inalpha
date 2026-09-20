@@ -39,7 +39,7 @@ async def insert_campaign(
     event_snapshot_id: UUID,
     frozen_config: dict[str, Any],
     llm_snapshot: dict[str, Any],
-    llm_credential_grant: str,
+    llm_credential_grant: str | None,
     hypotheses: list[HypothesisSpec],
 ) -> dict[str, Any]:
     """Create one campaign and its generation-one hypotheses atomically."""
