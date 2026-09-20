@@ -13,7 +13,7 @@ from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 
 from inalpha_evolver.governor.seed import SEED_STRATEGY_CODE
-from inalpha_evolver.storage import loops, runs
+from inalpha_evolver.storage import loop_dispatch, loops, runs
 
 from .llm_snapshot_fixtures import llm_snapshot
 
@@ -25,8 +25,8 @@ def database_url():
     ).replace("postgresql+psycopg://", "postgresql://")
 
 
-@pytest_asyncio.fixture
-async def database():
+@pytest_asyncio.fixture(name="database")
+async def loop_database():
     async with await AsyncConnection.connect(database_url(), row_factory=dict_row) as conn:
         async with conn.transaction(force_rollback=True):
             yield conn
@@ -172,18 +172,38 @@ async def test_campaign_attaches_to_the_original_loop_once(database):
     args = await create_baseline(database, uuid4())
     original = await loops.ensure_for_e1_run(database, **args)
     campaign_id = await create_campaign(database, args)
-    linked = await loops.ensure_for_campaign(database, **args, campaign_id=campaign_id)
+    with pytest.raises(ConflictError):
+        await loops.ensure_for_campaign(database, **args, campaign_id=campaign_id)
+    worker = await loop_dispatch.claim_next(database, worker_id="worker", ttl_s=60)
+    await database.execute(
+        "UPDATE strategy_evo_runs SET status='completed' WHERE run_id=%s", (args["e1_run_id"],)
+    )
+    assert await loop_dispatch.complete_step(
+        database,
+        loop_id=original["loop_id"],
+        owner_account_id=args["owner_account_id"],
+        lease_token=worker["lease_token"],
+        step_key="baseline",
+        output_id=args["e1_run_id"],
+    )
+    linked = await loops.ensure_for_campaign(
+        database, **args, campaign_id=campaign_id, lease_token=worker["lease_token"]
+    )
     repeated = await loops.ensure_for_campaign(database, **args, campaign_id=campaign_id)
     assert linked["loop_id"] == original["loop_id"] == repeated["loop_id"]
     assert linked["campaign_id"] == campaign_id
-    assert repeated["state_version"] == linked["state_version"] == 1
+    assert repeated["state_version"] == linked["state_version"] == 2
     replacement = await create_campaign(database, args)
     with pytest.raises(ConflictError):
         await loops.ensure_for_campaign(database, **args, campaign_id=replacement)
     events = await loops.list_events(
         database, original["loop_id"], args["owner_account_id"], after_version=-1
     )
-    assert [row["event_type"] for row in events] == ["loop_created", "campaign_linked"]
+    assert [row["event_type"] for row in events] == [
+        "loop_created",
+        "step_completed",
+        "step_completed",
+    ]
 
 
 @pytest.mark.asyncio

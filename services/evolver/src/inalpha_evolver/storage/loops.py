@@ -9,6 +9,8 @@ from uuid import UUID, uuid4
 from inalpha_shared.errors import ConflictError, NotFoundError
 from psycopg import AsyncConnection
 
+from . import loop_dispatch
+
 _COLUMNS = """loop_id,owner_account_id,requested_by_sub,operation_id,target_kind,target_id,
 target_snapshot,status,e1_run_id,campaign_id,forward_sandbox_id,holdout_attempt_id,
 frozen_config,budget,failure_code,failure_message,state_version,created_at,updated_at,finished_at"""
@@ -126,6 +128,7 @@ async def ensure_for_campaign(
     campaign_id: UUID,
     frozen_config: dict[str, Any],
     budget: dict[str, Any],
+    lease_token: UUID | None = None,
 ) -> dict[str, Any]:
     """Create once or reuse the active loop for repeated target clicks/messages."""
     lock_key = f"{owner_account_id}:{target_kind}:{target_id}"
@@ -142,35 +145,18 @@ ORDER BY created_at DESC LIMIT 1""",
             if existing["campaign_id"] is None:
                 if existing["e1_run_id"] != e1_run_id:
                     raise ConflictError("loop baseline mismatch", code="LOOP_BASELINE_MISMATCH")
-                await cur.execute(
-                    f"""UPDATE evolution_loops SET campaign_id=%s,status='baseline_ready',
-state_version=state_version+1,updated_at=NOW()
-WHERE loop_id=%s AND owner_account_id=%s AND campaign_id IS NULL
-AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=%s
-AND c.owner_account_id=%s AND c.source_run_id IS NOT DISTINCT FROM %s)
-RETURNING {_COLUMNS}""",
-                    (
-                        campaign_id,
-                        existing["loop_id"],
-                        owner_account_id,
-                        campaign_id,
-                        owner_account_id,
-                        e1_run_id,
-                    ),
-                )
-                linked = await cur.fetchone()
-                if linked is None:
-                    raise ConflictError("loop campaign mismatch", code="LOOP_CAMPAIGN_MISMATCH")
-                await cur.execute(
-                    """INSERT INTO evolution_loop_events(loop_id,version,event_type,payload)
-VALUES(%s,%s,'campaign_linked',%s::jsonb)""",
-                    (
-                        linked["loop_id"],
-                        linked["state_version"],
-                        json.dumps({"campaign_id": str(campaign_id)}),
-                    ),
-                )
-                return dict(linked)
+                if lease_token is None or not await loop_dispatch.complete_step(
+                    conn,
+                    loop_id=existing["loop_id"],
+                    owner_account_id=owner_account_id,
+                    lease_token=lease_token,
+                    step_key="campaign",
+                    output_id=campaign_id,
+                ):
+                    raise ConflictError("loop lease lost", code="LOOP_LEASE_LOST")
+                linked = await get_loop(conn, existing["loop_id"], owner_account_id)
+                assert linked is not None
+                return linked
             if existing["campaign_id"] != campaign_id:
                 raise ConflictError(
                     "loop already has a campaign",
