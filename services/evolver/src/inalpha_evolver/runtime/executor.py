@@ -80,6 +80,7 @@ async def execute_frozen_run(
         validation_split=float(config.get("validation_split", 0.3)),
         trading_mode=config.get("trading_mode", "spot"),
         leverage=int(config.get("leverage", 1)),
+        params=config.get("params", {}),
     )
     async with _run_mutator(run, mutator, settings, loop_scope=loop_scope) as active_mutator:
         await execute_generation(run, mutator=active_mutator, evaluator=evaluator)

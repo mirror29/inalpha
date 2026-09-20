@@ -14,12 +14,13 @@ from .test_frozen_evaluator import _dataset
 
 SHORT_SOURCE = """
 class ShortProbe(Strategy):
-    def __init__(self, name, clock, msgbus, instrument_id, timeframe="1h"):
+    def __init__(self, name, clock, msgbus, instrument_id, timeframe="1h", trade_size=1.0):
         super().__init__(name, clock, msgbus)
         self.instrument = instrument_id
         self.timeframe = timeframe
         self.count = 0
         self.short = False
+        self.trade_size = trade_size
 
     def on_start(self):
         self.subscribe_bars(self.instrument, self.timeframe)
@@ -34,7 +35,7 @@ class ShortProbe(Strategy):
             self.submit_order(Order(
                 client_order_id=ClientOrderId("probe-" + str(self.count)),
                 instrument_id=self.instrument, side=side,
-                type=OrderType.MARKET, quantity=1.0,
+                type=OrderType.MARKET, quantity=self.trade_size,
             ))
 """
 
@@ -51,10 +52,12 @@ async def test_e1_executor_preserves_short_execution_mode(monkeypatch):
         return run_engine_worker(**kwargs)
 
     observed = []
+    fees = []
 
     async def generation(run, *, mutator, evaluator):
         result = await evaluator.evaluate(SHORT_SOURCE)
         observed.append((evaluator.trading_mode, evaluator.leverage, result.report["num_trades"]))
+        fees.append(result.report["total_fees"])
 
     monkeypatch.setattr(executor, "DataClient", context)
     monkeypatch.setattr(executor, "get_conn", context)
@@ -82,12 +85,43 @@ async def test_e1_executor_preserves_short_execution_mode(monkeypatch):
             "initial_cash": 10_000,
             "trading_mode": "perp",
             "leverage": 3,
+            "params": {"trade_size": 3},
         },
     }
     await executor.execute_run(run, mutator=object(), settings=settings)
     assert observed == [("perp", 3, 2)]
 
+    run["config"].pop("params")
+    await executor.execute_run(run, mutator=object(), settings=settings)
+    assert fees[0] == pytest.approx(fees[1] * 3)
+
     run["config"].pop("trading_mode")
     run["config"].pop("leverage")
     await executor.execute_run(run, mutator=object(), settings=settings)
     assert observed[-1] == ("spot", 1, 0)
+
+
+@pytest.mark.asyncio
+async def test_parameterized_e1_matches_paper_and_differs_from_default():
+    from inalpha_evolver.evaluator.frozen import FrozenDatasetEvaluator
+
+    async def runner(**kwargs):
+        return run_engine_worker(**kwargs)
+
+    dataset = _dataset()
+    evaluator = FrozenDatasetEvaluator(
+        dataset=dataset, runner=runner, trading_mode="perp", leverage=3,
+        params={"trade_size": 3.0},
+    )
+    actual = await evaluator.evaluate(SHORT_SOURCE)
+    expected = run_engine_worker(
+        bars=list(dataset.bars), instrument_id=dataset.bars[0].instrument_id,
+        timeframe="1h", strategy_id=None, candidate_code=SHORT_SOURCE,
+        params={"trade_size": 3.0}, initial_cash=10_000, fee_rate=0.001,
+        trading_mode="perp", leverage=3,
+    )
+    assert actual.report["total_fees"] == expected.total_fees
+    assert actual.report["final_equity"] == expected.final_equity
+    evaluator.params = {}
+    default = await evaluator.evaluate(SHORT_SOURCE)
+    assert default.report["total_fees"] != actual.report["total_fees"]

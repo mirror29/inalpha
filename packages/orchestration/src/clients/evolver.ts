@@ -15,6 +15,7 @@ export type EvolutionConfig = {
   validation_split?: number;
   trading_mode?: "spot" | "perp";
   leverage?: number;
+  params?: Record<string, unknown>;
 };
 
 export type EvolutionStartRequest = {
@@ -204,6 +205,7 @@ export function buildEvolutionStartRequest(options: {
       initial_cash: options.config.initial_cash ?? 10_000,
       fee_rate: options.config.fee_rate ?? 0.001,
       validation_split: options.config.validation_split ?? 0.3,
+      params: options.config.params ?? {},
       trading_mode: options.config.trading_mode ?? "spot",
       leverage: options.config.leverage ?? 1,
     },
@@ -214,7 +216,7 @@ export function buildEvolutionStartRequest(options: {
 /** 生成与 Python 端一致的审批请求摘要，覆盖所有会影响成本或结果的字段。 */
 export function evolutionRequestDigest(request: EvolutionStartRequest): string {
   const config = request.config;
-  const canonical = [
+  const canonical: unknown[] = [
     request.seed_strategy_id,
     numberText(request.budget),
     config.venue,
@@ -229,7 +231,20 @@ export function evolutionRequestDigest(request: EvolutionStartRequest): string {
     numberText(config.leverage),
     request.llm.config_digest,
   ];
+  if (Object.keys(config.params ?? {}).length) canonical.push(canonicalParams(config.params));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
+/** Canonicalize constructor parameters without depending on JSON number spelling or key order. */
+function canonicalParams(value: unknown): unknown {
+  if (Array.isArray(value)) return ["array", value.map(canonicalParams)];
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return ["object", Object.keys(record).sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
+      .map((key) => [key, canonicalParams(record[key])])];
+  }
+  if (typeof value === "number") return ["number", float64Hex(value)];
+  return value;
 }
 
 function numberText(value: number): string {

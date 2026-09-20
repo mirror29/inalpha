@@ -128,6 +128,7 @@ export const evolutionConfigSchema = z.object({
   initial_cash: z.number().min(100).default(10_000),
   fee_rate: z.number().min(0).max(0.1).default(0.001),
   validation_split: z.number().min(0).max(0.5).default(0.3),
+  params: z.record(z.string(), z.json()).default({}),
   trading_mode: z.enum(["spot", "perp"]).default("spot"),
   leverage: z.number().int().min(1).max(20).default(1),
 });

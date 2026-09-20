@@ -18,6 +18,7 @@ const frozenConfig = {
   fee_rate: 0.001,
   trading_mode: "perp",
   leverage: 3,
+  params: { trade_size: 3 },
 };
 
 beforeEach(() => {

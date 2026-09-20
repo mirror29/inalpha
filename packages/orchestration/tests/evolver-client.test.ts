@@ -417,6 +417,21 @@ describe("EvolverClient", () => {
     );
   });
 
+  it("binds nested strategy parameters using the Python-compatible numeric contract", () => {
+    const request = buildEvolutionStartRequest({
+      config: {
+        venue: "binance", symbol: "BTCUSDT", timeframe: "1h",
+        from_ts: "2026-07-13T12:00:00Z", as_of: "2026-08-12T12:00:00Z",
+        params: { trade_size: 3, nested: [true, null, 0.5] },
+      }, llmSnapshot: snapshot,
+    });
+    expect(evolutionRequestDigest(request)).toBe("a0fd1c7682bd74ed9e6a8466342c6a6fce3b1c110bf1060ac75c417228a34ab2");
+    request.config.params = { nested: [true, null, 0.5], trade_size: 3.0 };
+    expect(evolutionRequestDigest(request)).toBe("a0fd1c7682bd74ed9e6a8466342c6a6fce3b1c110bf1060ac75c417228a34ab2");
+    request.config.params.trade_size = 4;
+    expect(evolutionRequestDigest(request)).not.toBe("a0fd1c7682bd74ed9e6a8466342c6a6fce3b1c110bf1060ac75c417228a34ab2");
+  });
+
   it("retries a 502 once but does not retry other client errors", async () => {
     const retryable = vi
       .fn()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import bisect
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import Any
 
@@ -32,6 +32,7 @@ class FrozenDatasetEvaluator:
     validation_split: float = 0.3
     trading_mode: str = "spot"
     leverage: int = 1
+    params: dict[str, Any] = field(default_factory=dict)
     events: tuple[MarketEvent, ...] = ()
     event_execution_policy: EventExecutionPolicy | None = None
 
@@ -60,6 +61,7 @@ class FrozenDatasetEvaluator:
         instrument = InstrumentId(symbol=manifest.symbol, venue=manifest.venue)
         result = await evaluate_strategy_source(
             source_code=source_code,
+            params=self.params,
             bars=list(self.dataset.bars),
             instrument_id=instrument,
             timeframe=manifest.canonical_timeframe,

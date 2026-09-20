@@ -35,6 +35,7 @@ type EvolutionConfig = {
   fee_rate: number;
   trading_mode?: "spot" | "perp";
   leverage?: number;
+  params?: Record<string, unknown>;
 };
 
 export type EvolutionTargetResolution = {
@@ -129,6 +130,7 @@ async function resolveTargetRecord(
       const config = backtest
         ? normalizeEvolutionConfig(backtest.config)
         : evolutionConfigFromRunner(runner);
+      if (config && runner.params) config.params = runner.params;
       const blockers = config ? [] : ["paper_runner_missing_market_context"];
       return resolution({
         targetKind,
@@ -333,6 +335,8 @@ function normalizeEvolutionConfig(raw: Record<string, unknown>): EvolutionConfig
     fee_rate: finiteNumber(raw.fee_rate) ?? 0.001,
     trading_mode: raw.trading_mode === "perp" ? "perp" : "spot",
     leverage: finiteNumber(raw.leverage) ?? 1,
+    params: raw.params && typeof raw.params === "object" && !Array.isArray(raw.params)
+      ? raw.params as Record<string, unknown> : {},
   };
 }
 
@@ -364,6 +368,7 @@ function evolutionConfigFromRunner(runner: StrategyRunRecord): EvolutionConfig |
     fee_rate: 0.001,
     trading_mode: runner.trading_mode,
     leverage: runner.leverage,
+    params: runner.params ?? {},
   };
 }
 

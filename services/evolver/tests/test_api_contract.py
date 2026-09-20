@@ -79,6 +79,17 @@ def test_execution_config_is_bound_to_approval() -> None:
     assert len({spot_digest, perp_digest, approval_request_digest(request)}) == 3
 
 
+def test_strategy_params_are_preserved_and_bound_to_approval():
+    request = _request()
+    original = approval_request_digest(request)
+    request.config = EvolutionConfig.model_validate({
+        **request.config.model_dump(), "params": {"trade_size": 3, "nested": [True, None, 0.5]},
+    })
+    assert request.config.model_dump()["params"]["trade_size"] == 3
+    assert approval_request_digest(request) != original
+    assert approval_request_digest(request) == "a0fd1c7682bd74ed9e6a8466342c6a6fce3b1c110bf1060ac75c417228a34ab2"
+
+
 def test_approval_request_digest_matches_typescript_contract() -> None:
     assert (
         approval_request_digest(_request())

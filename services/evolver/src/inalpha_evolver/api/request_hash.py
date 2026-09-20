@@ -39,6 +39,8 @@ def approval_request_digest(request: StartRunRequest) -> str:
         _number_text(config.leverage),
         request.llm.config_digest,
     ]
+    if config.params:
+        canonical.append(_canonical_params(config.params))
     return hashlib.sha256(
         json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
@@ -46,6 +48,17 @@ def approval_request_digest(request: StartRunRequest) -> str:
 
 def _number_text(value: int) -> str:
     return str(value)
+
+
+def _canonical_params(value: Any) -> Any:
+    """Tag JSON containers and normalize numbers to the same IEEE-754 bytes as TypeScript."""
+    if isinstance(value, dict):
+        return ["object", [[key, _canonical_params(value[key])] for key in sorted(value)]]
+    if isinstance(value, list):
+        return ["array", [_canonical_params(item) for item in value]]
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return ["number", _float64_hex(value)]
+    return value
 
 
 def _float64_hex(value: float) -> str:

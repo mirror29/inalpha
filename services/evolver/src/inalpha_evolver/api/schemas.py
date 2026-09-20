@@ -12,7 +12,15 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 
 from ..data.datetime_policy import MAX_AS_OF_CLOCK_SKEW
@@ -31,6 +39,15 @@ class EvolutionConfig(BaseModel):
     validation_split: float = Field(default=0.3, ge=0, le=0.5)
     trading_mode: Literal["spot", "perp"] = "spot"
     leverage: int = Field(default=1, ge=1, le=20)
+    params: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @field_validator("params")
+    @classmethod
+    def validate_params(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """Bound strategy constructor input and reject non-JSON numeric values."""
+        if len(json.dumps(value, allow_nan=False).encode()) > 16_384:
+            raise ValueError("strategy params exceed 16 KiB")
+        return value
 
     @field_validator("from_ts", "as_of")
     @classmethod
