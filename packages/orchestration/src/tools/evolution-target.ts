@@ -233,7 +233,7 @@ export const evolverResolveTargetTool = createTool({
 把当前详情页里的实体解析为 owner-scoped 的可演化目标，并返回下一步及可直接传给 E1/E2 的冻结参数。
 何时用：用户在策略、模拟盘、回测、E1 run/E1 candidate 或 E2 campaign 详情页说“进化这个、继续进化、再发散”时，必须先用它解析页面给出的 target kind/id。
 何时不用：用户已明确给出完整 seed、市场和冻结时间窗，或只想查看行情/普通回测时不用。
-坑：page_context 只是提示，真实 owner/status/配置以本工具读取为准；next_action=blocked/wait_e1 时禁止猜参数或重复启动；本工具只解析，不产生 LLM 费用、不采纳、不启动 Runner、不下单。
+坑：page_context 只是提示，真实 owner/status/配置以本工具读取为准；next_action=start_e2 时必须在同一轮立即且只调用一次 run_event_campaign(start_input)，不能再次解析或提前回复；next_action=blocked/wait_e1 时禁止猜参数或重复启动。本工具只解析，不产生 LLM 费用、不采纳、不启动 Runner、不下单。
   `.trim(),
   inputSchema: z.object({
     targetKind: evolutionTargetKindSchema,

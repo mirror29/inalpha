@@ -9,6 +9,7 @@ import {
 
 function output(
   result?: { result: unknown; isError?: boolean },
+  toolName = "fixture.read",
 ): FullOutput {
   return {
     steps: [
@@ -17,7 +18,7 @@ function output(
           {
             payload: {
               toolCallId: "call-1",
-              toolName: "fixture.read",
+              toolName,
               args: { symbol: "AAPL" },
             },
           },
@@ -52,6 +53,20 @@ describe("agent eval trajectory", () => {
       attempted: true,
       executed: true,
       resultClass: "tool_error",
+    });
+  });
+
+  it("restores dotted fixture IDs after Mastra normalizes tool names", () => {
+    const trajectory = normalizeTrajectory(
+      output({ result: { ok: true } }, "fixture_read"),
+      [{ tool: "fixture.read", input: { symbol: "AAPL" }, status: "succeeded" }],
+      ["fixture.read"],
+    );
+
+    expect(trajectory[0]).toMatchObject({
+      tool: "fixture.read",
+      executed: true,
+      resultClass: "success",
     });
   });
 

@@ -7,6 +7,7 @@ import type { NormalizedToolCall, ToolExecutionEvent } from "./types.js";
 export function normalizeTrajectory(
   output: FullOutput,
   executions: readonly ToolExecutionEvent[],
+  knownToolIds: readonly string[] = executions.map((event) => event.tool),
 ): NormalizedToolCall[] {
   const results = new Map<string, { result: unknown; isError?: boolean }>();
   for (const step of output.steps) {
@@ -24,7 +25,8 @@ export function normalizeTrajectory(
     for (const chunk of step.toolCalls) {
       const payload = chunk.payload;
       const result = results.get(payload.toolCallId);
-      const executionKey = `${payload.toolName}:${stableStringify(payload.args ?? {})}`;
+      const toolName = restoreToolId(payload.toolName, knownToolIds);
+      const executionKey = `${toolName}:${stableStringify(payload.args ?? {})}`;
       const executionIndex = remainingExecutions.findIndex(
         (event) =>
           `${event.tool}:${stableStringify(event.input)}` === executionKey,
@@ -36,7 +38,7 @@ export function normalizeTrajectory(
       trajectory.push({
         index: trajectory.length,
         step: stepIndex,
-        tool: payload.toolName,
+        tool: toolName,
         input: sanitizeValue(payload.args ?? {}),
         result: sanitizeValue(result?.result),
         resultClass: classifyResult(
@@ -50,6 +52,13 @@ export function normalizeTrajectory(
     }
   }
   return trajectory;
+}
+
+/** Restore the declared dotted ID after Mastra converts dots to underscores. */
+function restoreToolId(normalized: string, knownToolIds: readonly string[]): string {
+  if (knownToolIds.includes(normalized)) return normalized;
+  const matches = knownToolIds.filter((toolId) => toolId.replaceAll(".", "_") === normalized);
+  return matches.length === 1 ? matches[0]! : normalized;
 }
 
 /** 根据 wrapper 的结构化错误字段归一化结果。 */

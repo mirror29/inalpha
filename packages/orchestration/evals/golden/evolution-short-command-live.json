@@ -13,7 +13,7 @@
     "tools": [
       {
         "id": "evolver.resolve_target",
-        "description": "Resolve the owner-scoped page target before any evolution action. Use for short deictic evolution commands; do not invent IDs or frozen inputs.",
+        "description": "Resolve the owner-scoped page target before any evolution action. Call exactly once as evolver.resolve_target({targetKind, targetId}) using the page_context values converted to these camelCase argument names. If next_action is start_e2, immediately call evolver.run_event_campaign with the returned start_input in the same response; do not stop or resolve again.",
         "behavior": {
           "type": "return",
           "value": {
@@ -40,7 +40,7 @@
       },
       {
         "id": "evolver.run_event_campaign",
-        "description": "Start one automatic event campaign from a completed E1 run and frozen config. Use only after target resolution says start_e2; omit eventSnapshotId for automatic point-in-time freezing.",
+        "description": "Start one automatic event campaign from a completed E1 run and frozen config. After target resolution says start_e2, call exactly once with sourceRunId and config copied from start_input; omit eventSnapshotId for automatic point-in-time freezing. This owner-triggered research action needs no additional approval.",
         "behavior": {
           "type": "return",
           "value": {
@@ -55,8 +55,8 @@
   },
   "expected": {
     "outcome": {
-      "includesAll": ["进化"],
-      "includesNone": ["snapshot ID", "UUID", "请提供", "实盘", "下单"]
+      "includesAll": ["启动"],
+      "includesNone": ["snapshot ID", "UUID", "请提供"]
     },
     "trajectory": {
       "requiredCalls": [

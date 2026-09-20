@@ -45,6 +45,9 @@ allow:
   - "evolver.get_candidate"
   # 事件 campaign 查询只读；启动 campaign 会产生 LLM 费用，必须先显式审批
   - "evolver.get_event_campaign"
+  - "evolver.resolve_target"
+  # Owner 明确点击/说“开始进化”即授权研究型 E2；后端签名 operation 仍绑定 owner、模型和请求
+  - "evolver.run_event_campaign"
 
   # Swarm 批量回测（ADR-0025）：只读，无下单路径
   - "swarm.*"
@@ -92,9 +95,8 @@ ask:
   - "paper.deposit_cash"
   - "paper.reset_account"
 
-  # LLM 演化会产生费用；E2 一次审批覆盖整个五代 campaign，不逐代重复审批
+  # E1 代码变异与取消仍需审批；E2 是不接 Runner 的研究闭环，由 owner 指令直接启动
   - "evolver.run_evolution"
-  - "evolver.run_event_campaign"
   - "evolver.abort_evolution"
 
 deny:

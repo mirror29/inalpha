@@ -26,6 +26,8 @@
  *   让 Mastra runtime 把它当 tool 报错处理（LLM 看到错误消息能下一轮决策）。
  * - 现阶段不接 permission engine，仅留 ``permissionResolver`` 参数。task #3 接入。
  */
+import { randomUUID } from "node:crypto";
+
 import {
   APPROVAL_OPERATION_ID_KEY,
   getRequestContextValue,
@@ -271,6 +273,23 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
             };
           }
           setRequestContextValue(ctx, APPROVAL_OPERATION_ID_KEY, operationId);
+        }
+
+        /**
+         * E2 是研究型自动闭环：owner 的明确启动指令不再额外弹审批，但仍需给
+         * Ed25519 grant 一个单次、重试稳定的 operation identity。实际 tool 会继续
+         * fail closed 校验 owner 与冻结 LLM snapshot；eval fixture 没有这些上下文时
+         * 不在 middleware 伪造身份。
+         */
+        if (
+          permDecision === "allow"
+          && toolName === "evolver.run_event_campaign"
+          && authSub
+          && sessionId
+          && getRequestContextValue<EvolutionLLMSnapshot>(ctx, USER_LLM_SNAPSHOT_KEY)
+          && !getRequestContextValue<string>(ctx, APPROVAL_OPERATION_ID_KEY)
+        ) {
+          setRequestContextValue(ctx, APPROVAL_OPERATION_ID_KEY, randomUUID());
         }
 
         // 3. execute

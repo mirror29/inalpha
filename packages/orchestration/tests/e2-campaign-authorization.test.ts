@@ -72,10 +72,33 @@ function makeApprovedTool(options?: {
 }
 
 describe("E2 campaign authorization", () => {
-  it("requires ask permission instead of the automatic allow path", () => {
+  it("allows the owner-triggered automatic E2 path while keeping reads allowed", () => {
     const engine = new PermissionEngine(DEFAULT_PERMISSIONS);
-    expect(engine.authorize("evolver.run_event_campaign", campaignInput).decision).toBe("ask");
+    expect(engine.authorize("evolver.run_event_campaign", campaignInput).decision).toBe("allow");
+    expect(engine.authorize("evolver.resolve_target", {}).decision).toBe("allow");
     expect(engine.authorize("evolver.get_event_campaign", {}).decision).toBe("allow");
+  });
+
+  it("mints one stable operation identity for an automatic E2 launch", async () => {
+    const execute = vi.fn(async (_input: unknown, ctx?: unknown) => ({
+      operationId: (ctx as ToolCtx).requestContext.get(APPROVAL_OPERATION_ID_KEY),
+    }));
+    const wrapped = withHooks(
+      { id: "evolver.run_event_campaign", execute },
+      {
+        runner: new HookRunner(),
+        permissionResolver: () => "allow",
+        getAuthSub: () => "user:alice",
+        getSessionId: () => "thread-e2",
+      },
+    );
+    const ctx = context();
+
+    const first = (await wrapped.execute!(campaignInput, ctx)) as { operationId: string };
+    const retry = (await wrapped.execute!(campaignInput, ctx)) as { operationId: string };
+
+    expect(first.operationId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(retry.operationId).toBe(first.operationId);
   });
 
   it("rejects direct campaign-context construction without a trusted approval operation", async () => {

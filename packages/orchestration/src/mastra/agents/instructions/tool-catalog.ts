@@ -165,7 +165,8 @@ export const TOOL_CATALOG = `
 - evolver.get_candidate —— 查单个候选源码、diff、审计与回测快照
 - evolver.abort_evolution —— 用户明确要求时取消 active run，保留已完成 slot
 - evolver.run_event_campaign —— 基于冻结事件事实与已完成 E1 反馈自动运行五代 8×3 共演化；
-  eventSnapshotId 可省略，系统按 as_of 自动冻结；不会自动采纳、启动 Runner 或下单
+  eventSnapshotId 可省略，系统按 as_of 自动冻结；用户明确启动后直接执行，不再追加一次审批；
+  不会自动采纳、启动 Runner 或下单
 - evolver.get_event_campaign —— 查 E2 代际、Forward、holdout、费用和失败状态
 
 **沙盒计算（D-9 spike，ADR-0020 第二道运行隔离）**：

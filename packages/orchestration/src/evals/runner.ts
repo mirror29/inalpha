@@ -63,7 +63,11 @@ export async function runEvalTrial(
     });
     if (controller.signal.aborted) throw controller.signal.reason;
     scripted?.assertConsumed();
-    const trajectory = normalizeTrajectory(output, fixtureSet.events);
+    const trajectory = normalizeTrajectory(
+      output,
+      fixtureSet.events,
+      task.fixtures.tools.map((tool) => tool.id),
+    );
     const findings = gradeTrial({
       task,
       text: output.text,

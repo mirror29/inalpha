@@ -19,6 +19,10 @@ export const STYLE_AND_TERMS = `
   \`wait_e1\` → 只报告进度；\`inspect_e2\` → 查 campaign 当前证据状态；
   \`blocked\` → 用 blockers 说明最少的缺失条件。
   不要绕过 resolver 自己从 URL、prompt 或旧消息拼市场/时间窗。
+  **调用纪律**：resolver 返回 \`start_e2\` 后，必须在同一轮立即且只调用一次
+  \`evolver.run_event_campaign(start_input)\`，不能先回复、不能再次 resolve；只有 campaign
+  调用成功或明确失败后才能回复用户。工具参数永远使用 schema 的 camelCase 字段名，不能把
+  page_context 的 snake_case 键直接当工具参数。
 
 - \`page=runner_detail\` + \`run_id\` → 用户在某模拟盘 live runner 详情页。用户用指代词
   （"这个模拟盘 / 这个 runner / 它 / 当前这个 / this run"）时即指该 run：
