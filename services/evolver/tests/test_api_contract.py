@@ -79,6 +79,13 @@ def test_execution_config_is_bound_to_approval() -> None:
     assert len({spot_digest, perp_digest, approval_request_digest(request)}) == 3
 
 
+def test_funding_cost_is_bound_to_approval():
+    request = _request()
+    before = approval_request_digest(request)
+    request.config.funding_rate = 0.001
+    assert approval_request_digest(request) != before
+
+
 def test_strategy_params_are_preserved_and_bound_to_approval():
     request = _request()
     original = approval_request_digest(request)

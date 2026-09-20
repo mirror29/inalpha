@@ -36,6 +36,7 @@ type EvolutionConfig = {
   trading_mode?: "spot" | "perp";
   leverage?: number;
   params?: Record<string, unknown>;
+  funding_rate?: number;
 };
 
 export type EvolutionTargetResolution = {
@@ -335,6 +336,7 @@ function normalizeEvolutionConfig(raw: Record<string, unknown>): EvolutionConfig
     fee_rate: finiteNumber(raw.fee_rate) ?? 0.001,
     trading_mode: raw.trading_mode === "perp" ? "perp" : "spot",
     leverage: finiteNumber(raw.leverage) ?? 1,
+    funding_rate: finiteNumber(raw.funding_rate) ?? 0,
     params: raw.params && typeof raw.params === "object" && !Array.isArray(raw.params)
       ? raw.params as Record<string, unknown> : {},
   };

@@ -151,3 +151,10 @@ def test_loop_request_rejects_different_markets_or_models():
     body["campaign"]["config"]["trading_mode"] = "spot"
     with pytest.raises(ValueError, match="configuration mismatch"):
         loop_start.StartEvolutionLoopRequest.model_validate(body)
+
+
+def test_loop_request_rejects_different_funding_costs():
+    body = make_request(uuid4()).model_dump(mode="json")
+    body["baseline"]["config"]["funding_rate"] = 0.001
+    with pytest.raises(ValueError, match="configuration mismatch: funding_rate"):
+        loop_start.StartEvolutionLoopRequest.model_validate(body)

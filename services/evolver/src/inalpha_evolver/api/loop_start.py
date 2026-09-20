@@ -62,6 +62,7 @@ class StartEvolutionLoopRequest(BaseModel):
             "as_of",
             "initial_cash",
             "fee_rate",
+            "funding_rate",
             "trading_mode",
             "leverage",
         ):

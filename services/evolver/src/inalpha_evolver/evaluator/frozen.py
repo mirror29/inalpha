@@ -32,6 +32,7 @@ class FrozenDatasetEvaluator:
     validation_split: float = 0.3
     trading_mode: str = "spot"
     leverage: int = 1
+    funding_rate: float = 0.0
     params: dict[str, Any] = field(default_factory=dict)
     events: tuple[MarketEvent, ...] = ()
     event_execution_policy: EventExecutionPolicy | None = None
@@ -74,6 +75,7 @@ class FrozenDatasetEvaluator:
             event_execution_policy=self.event_execution_policy,
             trading_mode=self.trading_mode,
             leverage=self.leverage,
+            funding_rate=self.funding_rate,
         )
         return EvaluationResult(
             report=result.snapshot.model_dump(mode="json"),

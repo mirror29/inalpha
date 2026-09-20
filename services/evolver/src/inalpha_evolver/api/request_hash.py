@@ -41,6 +41,8 @@ def approval_request_digest(request: StartRunRequest) -> str:
     ]
     if config.params:
         canonical.append(_canonical_params(config.params))
+    if config.funding_rate:
+        canonical.append(["funding_rate", _float64_hex(config.funding_rate)])
     return hashlib.sha256(
         json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()

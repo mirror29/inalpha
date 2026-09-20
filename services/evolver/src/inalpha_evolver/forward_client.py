@@ -60,6 +60,7 @@ async def create_forward_sandbox(
             "execution_model_version": frozen["execution_model_version"],
             "control_matcher_version": frozen["control_matcher_version"],
             "fee_rate": frozen["fee_rate"],
+            "funding_rate": frozen.get("funding_rate", 0),
             "initial_cash": frozen["initial_cash"],
             "trading_mode": frozen["trading_mode"],
             "leverage": frozen["leverage"],

@@ -125,3 +125,20 @@ async def test_parameterized_e1_matches_paper_and_differs_from_default():
     evaluator.params = {}
     default = await evaluator.evaluate(SHORT_SOURCE)
     assert default.report["total_fees"] != actual.report["total_fees"]
+
+
+@pytest.mark.asyncio
+async def test_frozen_perpetual_evaluation_accounts_for_funding():
+    from inalpha_evolver.evaluator.frozen import FrozenDatasetEvaluator
+
+    async def runner(**kwargs):
+        return run_engine_worker(**kwargs)
+
+    source = SHORT_SOURCE.replace("self.count == 3", "self.count == 20")
+    evaluator = FrozenDatasetEvaluator(
+        dataset=_dataset(), runner=runner, trading_mode="perp", funding_rate=0.001,
+    )
+    funded = await evaluator.evaluate(source)
+    evaluator.funding_rate = 0
+    unfunded = await evaluator.evaluate(source)
+    assert funded.report["final_equity"] > unfunded.report["final_equity"]

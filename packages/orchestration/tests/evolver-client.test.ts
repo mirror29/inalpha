@@ -430,6 +430,9 @@ describe("EvolverClient", () => {
     expect(evolutionRequestDigest(request)).toBe("a0fd1c7682bd74ed9e6a8466342c6a6fce3b1c110bf1060ac75c417228a34ab2");
     request.config.params.trade_size = 4;
     expect(evolutionRequestDigest(request)).not.toBe("a0fd1c7682bd74ed9e6a8466342c6a6fce3b1c110bf1060ac75c417228a34ab2");
+    const beforeFunding = evolutionRequestDigest(request);
+    request.config.funding_rate = 0.001;
+    expect(evolutionRequestDigest(request)).not.toBe(beforeFunding);
   });
 
   it("retries a 502 once but does not retry other client errors", async () => {

@@ -129,11 +129,13 @@ export const evolutionConfigSchema = z.object({
   fee_rate: z.number().min(0).max(0.1).default(0.001),
   validation_split: z.number().min(0).max(0.5).default(0.3),
   params: z.record(z.string(), z.json()).default({}),
+  funding_rate: z.number().min(-0.1).max(0.1).default(0),
   trading_mode: z.enum(["spot", "perp"]).default("spot"),
   leverage: z.number().int().min(1).max(20).default(1),
 });
 
 export const eventCampaignConfigSchema = z.object({
+  funding_rate: z.number().min(-0.1).max(0.1).default(0),
   venue: z.string().min(1),
   symbol: z.string().min(1),
   timeframe: z.enum(["15m", "1h", "4h"]),

@@ -16,6 +16,7 @@ export type EvolutionConfig = {
   trading_mode?: "spot" | "perp";
   leverage?: number;
   params?: Record<string, unknown>;
+  funding_rate?: number;
 };
 
 export type EvolutionStartRequest = {
@@ -54,6 +55,7 @@ export type EventCampaignRequest = {
     as_of: string;
     initial_cash: number;
     fee_rate: number;
+    funding_rate?: number;
     trading_mode: "spot" | "perp";
     leverage: number;
     discovery_ratio: 0.6;
@@ -142,6 +144,7 @@ export function buildEventCampaignRequest(options: {
       as_of: new Date(options.config.as_of).toISOString(),
       initial_cash: options.config.initial_cash ?? 10_000,
       fee_rate: options.config.fee_rate ?? 0.001,
+      funding_rate: options.config.funding_rate ?? 0,
       trading_mode: options.config.trading_mode ?? "perp",
       leverage: options.config.leverage ?? 1,
       random_seed: options.config.random_seed ?? 0,
@@ -160,7 +163,7 @@ export function buildEventCampaignRequest(options: {
 export function eventCampaignRequestDigest(request: EventCampaignRequest): string {
   const config = request.config;
   const hypothesesHash = createHash("sha256").update("[]").digest("hex");
-  const canonical = [
+  const canonical: unknown[] = [
     request.target_kind ?? "",
     request.target_id ?? "",
     request.event_snapshot_id,
@@ -185,6 +188,7 @@ export function eventCampaignRequestDigest(request: EventCampaignRequest): strin
     request.llm.config_digest,
     hypothesesHash,
   ];
+  if (config.funding_rate) canonical.push(["funding_rate", float64Hex(config.funding_rate)]);
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
@@ -206,6 +210,7 @@ export function buildEvolutionStartRequest(options: {
       fee_rate: options.config.fee_rate ?? 0.001,
       validation_split: options.config.validation_split ?? 0.3,
       params: options.config.params ?? {},
+      funding_rate: options.config.funding_rate ?? 0,
       trading_mode: options.config.trading_mode ?? "spot",
       leverage: options.config.leverage ?? 1,
     },
@@ -232,6 +237,7 @@ export function evolutionRequestDigest(request: EvolutionStartRequest): string {
     request.llm.config_digest,
   ];
   if (Object.keys(config.params ?? {}).length) canonical.push(canonicalParams(config.params));
+  if (config.funding_rate) canonical.push(["funding_rate", float64Hex(config.funding_rate)]);
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 

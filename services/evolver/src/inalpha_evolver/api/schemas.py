@@ -40,6 +40,7 @@ class EvolutionConfig(BaseModel):
     trading_mode: Literal["spot", "perp"] = "spot"
     leverage: int = Field(default=1, ge=1, le=20)
     params: dict[str, JsonValue] = Field(default_factory=dict)
+    funding_rate: float = Field(default=0, ge=-0.1, le=0.1)
 
     @field_validator("params")
     @classmethod
@@ -240,6 +241,8 @@ def campaign_request_digest(request: CreateCampaignRequest) -> str:
         request.llm.config_digest,
         hypotheses_hash,
     ]
+    if config.funding_rate:
+        canonical.append(["funding_rate", struct.pack(">d", config.funding_rate).hex()])
     encoded = json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
 
@@ -327,6 +330,7 @@ class CampaignConfig(BaseModel):
     fee_rate: float = Field(default=0.001, ge=0, le=0.1)
     trading_mode: Literal["spot", "perp"] = "perp"
     leverage: int = Field(default=1, ge=1, le=20)
+    funding_rate: float = Field(default=0, ge=-0.1, le=0.1)
     discovery_ratio: float = 0.6
     generation_validation_ratio: float = 0.2
     sealed_holdout_ratio: float = 0.2
