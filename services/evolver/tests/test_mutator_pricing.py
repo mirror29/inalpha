@@ -53,6 +53,21 @@ class _InvalidDiffClient(_PricedClient):
         )
 
 
+class _FullSourceClient(_PricedClient):
+    async def mutate(self, request):
+        self.max_tokens = request.max_tokens
+        return MutationResponse(
+            content="""```python
+class Strategy:
+    value = 2
+
+    def on_bar(self, bar):
+        return bar
+```""",
+            cache_metrics=CacheMetrics(input_tokens=1_000, output_tokens=200),
+        )
+
+
 @pytest.mark.asyncio
 async def test_mutator_uses_frozen_rates_and_returns_usage() -> None:
     client = _PricedClient()
@@ -101,6 +116,19 @@ async def test_diff_failure_keeps_frozen_cost_and_usage() -> None:
     assert error.value.llm_cost_usd == pytest.approx(0.004)
     assert error.value.input_tokens == 1_000
     assert error.value.output_tokens == 200
+
+
+@pytest.mark.asyncio
+async def test_full_source_response_is_converted_to_canonical_diff() -> None:
+    result = await Mutator(
+        llm_client=_FullSourceClient(),  # type: ignore[arg-type]
+        input_usd_per_million=2.0,
+        output_usd_per_million=10.0,
+    ).mutate(_SOURCE)
+
+    assert result.unified_diff is not None
+    assert result.unified_diff.startswith("--- a/strategy.py\n+++ b/strategy.py")
+    assert "value = 2" in result.new_source
 
 
 class _ConnectionContext:

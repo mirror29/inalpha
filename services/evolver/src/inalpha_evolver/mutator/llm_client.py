@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from difflib import unified_diff
 from hashlib import sha256
 
 from inalpha_shared_llm import LLMClient as SharedLLMClient  # type: ignore[import-untyped]
@@ -43,6 +44,30 @@ def _clean_llm_diff(content: str) -> str:
         text = text[:end]
 
     return text.strip()
+
+
+def _full_source_fallback(content: str) -> str | None:
+    """提取模型误返的完整 Python 文件，交给既有沙盒继续严格审计。"""
+    text = content.strip()
+    if "```python" in text:
+        text = text.split("```python", 1)[1].split("```", 1)[0].strip()
+    elif text.startswith("```"):
+        text = "\n".join(text.splitlines()[1:-1]).strip()
+    if not text.startswith("class ") or "def on_bar(" not in text:
+        return None
+    return text + ("\n" if content.endswith("\n") else "")
+
+
+def _source_diff(original: str, replacement: str) -> str:
+    """把完整源码转换为单文件 canonical unified diff，保留统一血缘格式。"""
+    return "".join(
+        unified_diff(
+            original.splitlines(keepends=True),
+            replacement.splitlines(keepends=True),
+            fromfile="a/strategy.py",
+            tofile="b/strategy.py",
+        )
+    ).strip()
 
 
 @dataclass(slots=True)
@@ -129,6 +154,12 @@ class Mutator:
         raw_diff = _clean_llm_diff(response.content)
         metrics = response.cache_metrics
         llm_cost_usd = self._cost_usd(metrics)
+
+        # 部分模型违反格式约束返回完整源码；转成 canonical diff 后走同一审计链。
+        if not raw_diff or not raw_diff.startswith("---"):
+            full_source = _full_source_fallback(response.content)
+            if full_source is not None and full_source != current_source:
+                raw_diff = _source_diff(current_source, full_source)
 
         # 空 diff = LLM 认为无需改动
         if not raw_diff or not raw_diff.startswith("---"):
