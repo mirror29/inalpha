@@ -6,6 +6,7 @@ import json
 from typing import Any
 from uuid import UUID, uuid4
 
+from inalpha_shared.errors import ConflictError, NotFoundError
 from psycopg import AsyncConnection
 
 _COLUMNS = """loop_id,owner_account_id,requested_by_sub,operation_id,target_kind,target_id,
@@ -31,6 +32,85 @@ _CAMPAIGN_STATUS = {
     "failed": "failed",
     "aborted": "failed",
 }
+
+
+async def ensure_for_e1_run(
+    conn: AsyncConnection,
+    *,
+    owner_account_id: UUID,
+    requested_by_sub: str,
+    operation_id: str,
+    target_kind: str,
+    target_id: str,
+    target_snapshot: dict[str, Any],
+    e1_run_id: UUID,
+    frozen_config: dict[str, Any],
+    budget: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist the workflow in the same transaction as its initial E1 run."""
+    async with conn.transaction():
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (f"{owner_account_id}:{target_kind}:{target_id}",),
+            )
+            await cur.execute(
+                "SELECT run_id FROM strategy_evo_runs WHERE run_id=%s AND owner_account_id=%s",
+                (e1_run_id, owner_account_id),
+            )
+            if await cur.fetchone() is None:
+                raise NotFoundError("source evolution run not found", code="SOURCE_RUN_NOT_FOUND")
+            await cur.execute(
+                f"SELECT {_COLUMNS} FROM evolution_loops WHERE owner_account_id=%s AND operation_id=%s",
+                (owner_account_id, operation_id),
+            )
+            existing = await cur.fetchone()
+            if existing is not None:
+                if (
+                    existing["target_kind"] != target_kind
+                    or existing["target_id"] != target_id
+                    or existing["e1_run_id"] != e1_run_id
+                    or existing["frozen_config"] != frozen_config
+                    or existing["budget"] != budget
+                ):
+                    raise ConflictError("loop operation reused", code="IDEMPOTENCY_KEY_REUSED")
+                return dict(existing)
+            active = await get_active_loop_for_target(
+                conn,
+                owner_account_id,
+                target_kind,
+                target_id,
+            )
+            if active is not None:
+                return active
+            await cur.execute(
+                f"""INSERT INTO evolution_loops(
+loop_id,owner_account_id,requested_by_sub,operation_id,target_kind,target_id,target_snapshot,
+status,e1_run_id,frozen_config,budget)
+VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,'target_resolved',%s,%s::jsonb,%s::jsonb)
+ON CONFLICT(owner_account_id,operation_id) DO NOTHING RETURNING {_COLUMNS}""",
+                (
+                    uuid4(),
+                    owner_account_id,
+                    requested_by_sub,
+                    operation_id,
+                    target_kind,
+                    target_id,
+                    json.dumps(target_snapshot),
+                    e1_run_id,
+                    json.dumps(frozen_config),
+                    json.dumps(budget),
+                ),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise ConflictError("loop operation reused", code="IDEMPOTENCY_KEY_REUSED")
+            await cur.execute(
+                """INSERT INTO evolution_loop_events(loop_id,version,event_type,payload)
+VALUES(%s,0,'loop_created',%s::jsonb)""",
+                (row["loop_id"], json.dumps({"e1_run_id": str(e1_run_id)})),
+            )
+            return dict(row)
 
 
 async def ensure_for_campaign(
@@ -59,6 +139,43 @@ ORDER BY created_at DESC LIMIT 1""",
         )
         existing = await cur.fetchone()
         if existing is not None:
+            if existing["campaign_id"] is None:
+                if existing["e1_run_id"] != e1_run_id:
+                    raise ConflictError("loop baseline mismatch", code="LOOP_BASELINE_MISMATCH")
+                await cur.execute(
+                    f"""UPDATE evolution_loops SET campaign_id=%s,status='baseline_ready',
+state_version=state_version+1,updated_at=NOW()
+WHERE loop_id=%s AND owner_account_id=%s AND campaign_id IS NULL
+AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=%s
+AND c.owner_account_id=%s AND c.source_run_id IS NOT DISTINCT FROM %s)
+RETURNING {_COLUMNS}""",
+                    (
+                        campaign_id,
+                        existing["loop_id"],
+                        owner_account_id,
+                        campaign_id,
+                        owner_account_id,
+                        e1_run_id,
+                    ),
+                )
+                linked = await cur.fetchone()
+                if linked is None:
+                    raise ConflictError("loop campaign mismatch", code="LOOP_CAMPAIGN_MISMATCH")
+                await cur.execute(
+                    """INSERT INTO evolution_loop_events(loop_id,version,event_type,payload)
+VALUES(%s,%s,'campaign_linked',%s::jsonb)""",
+                    (
+                        linked["loop_id"],
+                        linked["state_version"],
+                        json.dumps({"campaign_id": str(campaign_id)}),
+                    ),
+                )
+                return dict(linked)
+            if existing["campaign_id"] != campaign_id:
+                raise ConflictError(
+                    "loop already has a campaign",
+                    code="LOOP_CAMPAIGN_ALREADY_LINKED",
+                )
             return dict(existing)
         loop_id = uuid4()
         await cur.execute(
@@ -109,7 +226,7 @@ ORDER BY created_at DESC LIMIT 1""",
         row = await cur.fetchone()
     if row is None:
         return None
-    synced = await sync_from_campaign(conn, row["loop_id"])
+    synced = await sync_from_campaign(conn, row["loop_id"], owner_account_id)
     return synced if synced is not None and synced["status"] in _ACTIVE else None
 
 
@@ -129,30 +246,49 @@ WHERE campaign_id=%s AND owner_account_id=%s""",
     return None if row is None else await get_loop(conn, row["loop_id"], owner_account_id)
 
 
-async def sync_from_campaign(conn: AsyncConnection, loop_id: UUID) -> dict[str, Any] | None:
-    """Project campaign/Forward/holdout state into one monotonic loop version."""
+async def sync_from_campaign(
+    conn: AsyncConnection,
+    loop_id: UUID,
+    owner_account_id: UUID,
+) -> dict[str, Any] | None:
+    """Project E1/campaign progress only after verifying the loop owner's scope."""
     async with conn.transaction():
         async with conn.cursor() as cur:
             await cur.execute(
-                f"""SELECT l.{',l.'.join(item.strip() for item in _COLUMNS.split(','))},
+                f"""SELECT l.{",l.".join(item.strip() for item in _COLUMNS.split(","))},
 c.status AS campaign_status,c.forward_sandbox_id AS campaign_forward_sandbox_id,
 c.failure_code AS campaign_failure_code,
 c.failure_message AS campaign_failure_message,c.finished_at AS campaign_finished_at,
-h.attempt_id AS current_holdout_attempt_id
-FROM evolution_loops l JOIN evolution_campaigns c USING(campaign_id)
-LEFT JOIN evolution_holdout_attempts h USING(campaign_id)
-WHERE l.loop_id=%s FOR UPDATE OF l""",
-                (loop_id,),
+h.attempt_id AS current_holdout_attempt_id,
+r.status AS e1_status,r.failure_code AS e1_failure_code,
+r.failure_message AS e1_failure_message,r.finished_at AS e1_finished_at
+FROM evolution_loops l
+LEFT JOIN evolution_campaigns c ON c.campaign_id=l.campaign_id AND c.owner_account_id=l.owner_account_id
+LEFT JOIN strategy_evo_runs r ON r.run_id=l.e1_run_id AND r.owner_account_id=l.owner_account_id
+LEFT JOIN evolution_holdout_attempts h ON h.campaign_id=c.campaign_id
+WHERE l.loop_id=%s AND l.owner_account_id=%s FOR UPDATE OF l""",
+                (loop_id, owner_account_id),
             )
             joined = await cur.fetchone()
             if joined is None:
                 return None
-            next_status = _CAMPAIGN_STATUS[str(joined["campaign_status"])]
+            if joined["campaign_id"] is None:
+                next_status = {
+                    "completed": "baseline_ready",
+                    "failed": "failed",
+                    "aborted": "failed",
+                }.get(joined["e1_status"], "target_resolved")
+                joined["campaign_failure_code"] = joined["e1_failure_code"]
+                joined["campaign_failure_message"] = joined["e1_failure_message"]
+                joined["campaign_finished_at"] = joined["e1_finished_at"]
+            else:
+                next_status = _CAMPAIGN_STATUS[str(joined["campaign_status"])]
             changed = (
                 joined["status"] != next_status
                 or joined["forward_sandbox_id"] != joined["campaign_forward_sandbox_id"]
                 or joined["holdout_attempt_id"] != joined["current_holdout_attempt_id"]
                 or joined["failure_code"] != joined["campaign_failure_code"]
+                or joined["failure_message"] != joined["campaign_failure_message"]
             )
             if not changed:
                 return {key.strip(): joined[key.strip()] for key in _COLUMNS.split(",")}
@@ -191,10 +327,7 @@ async def get_loop(
     owner_account_id: UUID,
 ) -> dict[str, Any] | None:
     """Load one owner-scoped loop after synchronizing its durable dependencies."""
-    synced = await sync_from_campaign(conn, loop_id)
-    if synced is None or synced["owner_account_id"] != owner_account_id:
-        return None
-    return synced
+    return await sync_from_campaign(conn, loop_id, owner_account_id)
 
 
 async def list_loops(
@@ -237,6 +370,7 @@ ORDER BY e.version LIMIT %s""",
 
 __all__ = [
     "ensure_for_campaign",
+    "ensure_for_e1_run",
     "get_active_loop_for_target",
     "get_loop",
     "get_loop_by_campaign",
