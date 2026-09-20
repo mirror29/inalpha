@@ -20,6 +20,7 @@ from .config import PaperSettings
 from .data_client import DataClient
 from .evaluation_executor import KillableEngineRunner
 from .event_conversion import market_event_from_fact
+from .evolution_execution_policy import frozen_protection_kwargs
 from .execution.exchange import EventExecutionPolicy
 from .forward_evidence import decide_forward_status, event_reaction_metrics, independent_facts
 from .kernel.identifiers import InstrumentId
@@ -210,6 +211,7 @@ class EvolutionForwardManager:
             initial_cash=float(versions.get("initial_cash") or 10_000.0),
             fee_rate=float(versions.get("fee_rate", 0.001)),
             funding_rate=float(versions.get("funding_rate", 0)),
+            **frozen_protection_kwargs(versions),
             validation_split=0,
             trading_mode=str(versions.get("trading_mode") or "spot"),
             leverage=int(versions.get("leverage") or 1),

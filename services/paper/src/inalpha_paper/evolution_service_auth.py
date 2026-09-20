@@ -12,7 +12,7 @@ from inalpha_shared.config import Settings, get_settings
 from inalpha_shared.errors import UnauthorizedError
 from pydantic import BaseModel
 
-ForwardTokenPurpose = Literal["evolution_forward_create", "evolution_forward_read"]
+ForwardTokenPurpose = Literal["evolution_forward_create", "evolution_forward_read", "evolution_execution_policy_read"]
 
 
 class EvolutionServiceIdentity(BaseModel):

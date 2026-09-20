@@ -15,14 +15,25 @@ from inalpha_shared.db import DBConn
 from inalpha_shared.errors import ConflictError, NotFoundError
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..config import get_paper_settings
+from ..evolution_execution_policy import EvolutionExecutionPolicy
 from ..evolution_service_auth import (
     EvolutionServiceIdentity,
+    evolution_service_identity,
     require_forward_create,
     require_forward_read,
 )
 from ..storage import evolution_forward as store
 
 router = APIRouter(prefix="/internal/evolution-forward", tags=["evolution-forward"])
+
+
+@router.get("/execution-policy", response_model=EvolutionExecutionPolicy)
+async def execution_policy(
+    identity: Annotated[EvolutionServiceIdentity, Depends(evolution_service_identity("evolution_execution_policy_read"))],
+) -> EvolutionExecutionPolicy:
+    """Expose effective protection thresholds to authorized research launches only."""
+    return EvolutionExecutionPolicy.from_settings(get_paper_settings())
 
 
 class CreateForwardSandboxRequest(BaseModel):
