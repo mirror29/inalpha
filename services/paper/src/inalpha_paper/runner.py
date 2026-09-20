@@ -424,6 +424,9 @@ async def _persist_run(
         "event_snapshot_id": str(req.event_snapshot_id) if req.event_snapshot_id else None,
         "execution_model_version": req.execution_model_version,
         "fee_rate": req.fee_rate,
+        "trading_mode": req.trading_mode,
+        "leverage": req.leverage,
+        "funding_rate": req.funding_rate,
         "params": req.params,
         "candidate_id": str(req.candidate_id) if req.candidate_id else None,
     }

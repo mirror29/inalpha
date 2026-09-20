@@ -53,6 +53,29 @@ def _backtest_payload(research_id: UUID | None = None) -> dict[str, Any]:
 
 
 @respx.mock
+def test_persisted_backtest_retains_derivatives_execution_context(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    respx.get("http://data-mock.test/bars").mock(
+        return_value=Response(200, json=_bars_oscillating(100))
+    )
+    payload = {
+        **_backtest_payload(), "trading_mode": "perp", "leverage": 2,
+        "funding_rate": 0.0002,
+    }
+    response = client.post("/backtest", headers=auth_headers, json=payload)
+    assert response.status_code == 200, response.text
+    run_id = response.json()["run_id"]
+    assert run_id is not None
+    stored = client.get(f"/backtest_runs/{run_id}", headers=auth_headers)
+    assert stored.status_code == 200, stored.text
+    config = stored.json()["config"]
+    assert config["trading_mode"] == "perp"
+    assert config["leverage"] == 2
+    assert config["funding_rate"] == 0.0002
+
+
+@respx.mock
 def test_backtest_writes_run_id_and_params_hash(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
