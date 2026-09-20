@@ -127,6 +127,9 @@ async def get_forward_sandbox(
         response = await client.get(f"/internal/evolution-forward/sandboxes/{sandbox_id}")
     response.raise_for_status()
     payload = dict(response.json())
+    terminal = payload.get("status") in {"passed", "failed", "insufficient_evidence"}
+    if terminal and payload.get("finished_at") is None:
+        raise RuntimeError("Paper Forward terminal evidence is missing its finish time")
     if payload.get("finished_at") is not None:
         signed = json.dumps(
             [
