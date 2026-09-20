@@ -290,15 +290,30 @@ function normalizeEvolutionConfig(raw: Record<string, unknown>): EvolutionConfig
   if (!venue || !symbol || !timeframe || !fromTs || !asOf || !E1_TIMEFRAMES.has(timeframe)) {
     return null;
   }
+  const alignedFromTs = alignFixedBarBoundary(fromTs, timeframe);
   return {
     venue,
     symbol,
     timeframe,
-    from_ts: fromTs,
+    from_ts: alignedFromTs,
     as_of: asOf,
     initial_cash: finiteNumber(raw.initial_cash) ?? 10_000,
     fee_rate: finiteNumber(raw.fee_rate) ?? 0.001,
   };
+}
+
+/** Align fixed-duration dataset starts to the exchange's UTC bar grid. */
+function alignFixedBarBoundary(value: string, timeframe: string): string {
+  const match = /^(\d+)(m|h|d)$/.exec(timeframe);
+  if (!match) return value;
+  const amount = Number(match[1]);
+  const unitMs = match[2] === "m" ? 60_000 : match[2] === "h" ? 3_600_000 : 86_400_000;
+  const intervalMs = amount * unitMs;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || !Number.isSafeInteger(intervalMs) || intervalMs <= 0) {
+    return value;
+  }
+  return new Date(Math.floor(timestamp / intervalMs) * intervalMs).toISOString();
 }
 
 function evolutionConfigFromRunner(runner: StrategyRunRecord): EvolutionConfig | null {

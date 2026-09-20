@@ -112,6 +112,39 @@ describe("evolver.resolve_target", () => {
       blockers: ["strategy_candidate_rejected"],
     });
   });
+
+  it("aligns an inherited intraday window to the canonical bar grid", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.includes("strategy_candidates")
+        ? {
+            id: TARGET_ID,
+            status: "candidate",
+            last_backtest_run_id: BACKTEST_ID,
+            fitness: 0.8,
+          }
+        : {
+            run_id: BACKTEST_ID,
+            strategy_code: `candidate:${TARGET_ID}`,
+            config: {
+              ...frozenConfig,
+              timeframe: "4h",
+              from_ts: "2025-09-20T09:19:17.199Z",
+              as_of: "2026-09-20T09:19:17.199Z",
+            },
+            metrics: {},
+            status: "done",
+          },
+    ), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const result = await resolve("strategy_candidate", TARGET_ID);
+
+    expect(result.start_input).toMatchObject({
+      config: {
+        from_ts: "2025-09-20T08:00:00.000Z",
+        as_of: "2026-09-20T09:19:17.199Z",
+      },
+    });
+  });
 });
 
 async function resolve(targetKind: string, targetId: string) {
