@@ -34,6 +34,7 @@ import {
   BacktestTradesPanel,
 } from "./BacktestPanels";
 import { MetricsGrid } from "./MetricsGrid";
+import { EvolutionStartButton } from "@/components/evolution/EvolutionStartButton";
 
 const REFRESH_MS = 30_000;
 
@@ -95,11 +96,14 @@ export function CandidateDetailClient({ id }: { id: string }) {
               <div className="font-mono text-xs text-fg-muted">
                 {c.author} · {c.code_hash} · {fmtDateTime(c.created_at, locale)}
               </div>
-              <LiveStrip
-                asOf={data.asOf}
-                isValidating={isValidating}
-                isStaleFrame={Boolean(error)}
-              />
+              <div className="flex items-center gap-3">
+                <EvolutionStartButton />
+                <LiveStrip
+                  asOf={data.asOf}
+                  isValidating={isValidating}
+                  isStaleFrame={Boolean(error)}
+                />
+              </div>
             </div>
           </header>
 

@@ -25,6 +25,7 @@ import { RunStatusBadge } from "@/components/ui/StatusBadge";
 import { DecisionTimeline } from "./DecisionTimeline";
 import { RunnerChart } from "./RunnerChart";
 import { RunnerFactors } from "./RunnerFactors";
+import { EvolutionStartButton } from "@/components/evolution/EvolutionStartButton";
 
 const REFRESH_MS = 6000;
 
@@ -117,11 +118,14 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
                 </Link>
               </div>
             </div>
-            <LiveStrip
-              asOf={data.asOf}
-              isValidating={isValidating}
-              isStaleFrame={Boolean(error)}
-            />
+            <div className="flex items-center gap-3">
+              <EvolutionStartButton />
+              <LiveStrip
+                asOf={data.asOf}
+                isValidating={isValidating}
+                isStaleFrame={Boolean(error)}
+              />
+            </div>
           </header>
 
           {/* 当前模拟盘指标条(置于 K 线上方)。 */}

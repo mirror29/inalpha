@@ -740,6 +740,49 @@ export interface EvolutionCampaignDetailPayload {
   asOf: string;
 }
 
+export type EvolutionLoopStatus =
+  | "target_resolved"
+  | "baseline_ready"
+  | "campaign_running"
+  | "candidate_locked"
+  | "waiting_forward"
+  | "holdout_running"
+  | "adoption_ready"
+  | "rejected"
+  | "insufficient_evidence"
+  | "failed";
+
+export interface EvolutionLoop {
+  loop_id: string;
+  operation_id: string;
+  target_kind: string;
+  target_id: string;
+  target_snapshot: Record<string, unknown>;
+  status: EvolutionLoopStatus;
+  e1_run_id: string | null;
+  campaign_id: string | null;
+  forward_sandbox_id: string | null;
+  holdout_attempt_id: string | null;
+  frozen_config: Record<string, unknown>;
+  budget: Record<string, unknown>;
+  failure_code: string | null;
+  failure_message: string | null;
+  state_version: number;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+export interface EvolutionLoopPayload {
+  loops: EvolutionLoop[];
+  asOf: string;
+}
+
+export interface EvolutionLoopDetailPayload {
+  loop: EvolutionLoop;
+  asOf: string;
+}
+
 export interface EventDataCoverage {
   as_of: string;
   sources: Array<{
@@ -753,4 +796,7 @@ export interface EventDataCoverage {
   fact_count: number;
   retraction_count: number;
   latest_accepted_at: string | null;
+  extraction_pending_count: number;
+  extraction_leased_count: number;
+  extraction_dead_count: number;
 }

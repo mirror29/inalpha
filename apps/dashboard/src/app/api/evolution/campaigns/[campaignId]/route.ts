@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
-import { isEvolutionEnabled } from "@/lib/evolution-capability";
+import { getEventEvolutionCapability } from "@/lib/evolution-capability";
 import type { EvolutionCampaign, EvolutionCampaignDetailPayload } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -13,12 +13,15 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ campaignId: string }> },
 ) {
-  if (!isEvolutionEnabled()) return NextResponse.json({ error: "disabled" }, { status: 503 });
   const { campaignId } = await params;
   if (!UUID_RE.test(campaignId)) {
     return NextResponse.json({ error: "invalid campaign id" }, { status: 400 });
   }
   try {
+    const capability = await getEventEvolutionCapability();
+    if (!capability.event_evolution_enabled) {
+      return NextResponse.json({ error: capability.reason ?? "disabled" }, { status: 503 });
+    }
     const campaign = await backendFetch<EvolutionCampaign>(
       "evolver",
       `/api/v1/campaigns/${campaignId}`,
@@ -39,12 +42,15 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ campaignId: string }> },
 ) {
-  if (!isEvolutionEnabled()) return NextResponse.json({ error: "disabled" }, { status: 503 });
   const { campaignId } = await params;
   if (!UUID_RE.test(campaignId)) {
     return NextResponse.json({ error: "invalid campaign id" }, { status: 400 });
   }
   try {
+    const capability = await getEventEvolutionCapability();
+    if (!capability.event_evolution_enabled) {
+      return NextResponse.json({ error: capability.reason ?? "disabled" }, { status: 503 });
+    }
     const adoption = await backendFetch<Record<string, unknown>>(
       "evolver",
       `/api/v1/campaigns/${campaignId}/adopt`,

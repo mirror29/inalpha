@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/cn";
 import {
   buildPageContextEnvelope,
+  evolutionTargetFromPage,
   usePageContext,
 } from "@/lib/page-context";
 import { ChatErrorBanner } from "./ChatErrorBanner";
@@ -259,9 +260,9 @@ export function ChatThread({
 
   // 聚焦输入框由 ChatInput 内部按 open prop 驱动（Phase 3 拆分后 textarea 归 ChatInput 管）。
 
-  // Submit message
-  const submit = useCallback(async () => {
-    const text = draft.trim();
+  /** Send one user-visible prompt with the current page context attached. */
+  const submitText = useCallback(async (rawText: string) => {
+    const text = rawText.trim();
     if (!text || isLoading) return;
     const isFirst = messages.length === 0;
     setChatError(null);
@@ -276,7 +277,25 @@ export function ChatThread({
       }).catch(() => {});
     }
     void sendMessage({ id: crypto.randomUUID(), role: "user", content } as Parameters<typeof sendMessage>[0]);
-  }, [draft, isLoading, messages.length, contextAttached, page, threadId, sendMessage]);
+  }, [isLoading, messages.length, contextAttached, page, threadId, sendMessage]);
+
+  const submit = useCallback(() => {
+    void submitText(draft);
+  }, [draft, submitText]);
+
+  const evolutionTarget = contextAttached ? evolutionTargetFromPage(page) : null;
+  const submitEvolution = useCallback(() => {
+    void submitText(t("context.evolvePrompt"));
+  }, [submitText, t]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const prompt = (event as CustomEvent<{ prompt?: string }>).detail?.prompt;
+      if (prompt) void submitText(prompt);
+    };
+    window.addEventListener("inalpha:evolution-start", handler);
+    return () => window.removeEventListener("inalpha:evolution-start", handler);
+  }, [submitText]);
 
   // Resize handler
   const startResize = useCallback((e: ReactPointerEvent) => {
@@ -393,8 +412,10 @@ export function ChatThread({
         contextAttached={contextAttached}
         contextKind={page.kind}
         contextId={page.id}
+        suggestedActionLabel={evolutionTarget ? t("context.evolve") : undefined}
         onDraftChange={setDraft}
         onSubmit={submit}
+        onSuggestedAction={evolutionTarget ? submitEvolution : undefined}
         onStop={handleStop}
         onContextDismiss={() => setContextDismissed(true)}
       />

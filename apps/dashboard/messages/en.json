@@ -535,6 +535,8 @@
     "context": {
       "viewing": "Viewing",
       "dismiss": "Don't include this page",
+      "evolve": "Continue evolution",
+      "evolvePrompt": "Continue evolving this",
       "kind": {
         "runner_detail": "Paper run",
         "candidate_detail": "Strategy candidate",
@@ -544,9 +546,11 @@
         "risk": "Risk panel",
         "activity": "Agent log",
         "divination": "Divination",
+        "backtest_run_detail": "Backtest run",
         "evolution_list": "Strategy evolution",
         "evolution_run_detail": "Evolution run",
         "evolution_candidate_detail": "Evolution candidate",
+        "evolution_campaign_detail": "Event evolution campaign",
         "overview": "Overview"
       }
     }
@@ -647,7 +651,39 @@
     },
     "loadMore": "Load more",
     "loadingMore": "Loading…"
-    ,"campaign": {
+    ,"start": {
+      "label": "Start evolution",
+      "prompt": "Start evolution",
+      "hint": "Start an automatic evolution loop from the strategy or paper run on this page",
+      "checking": "Checking evolution capability"
+    }
+    ,"loop": {
+      "title": "Automatic Evolution Loops",
+      "empty": "No evolution loop yet. Say “start evolution” from a strategy, paper run, or E1 result.",
+      "target": "Target",
+      "status": "Current stage",
+      "campaign": "Campaign",
+      "forward": "Forward sandbox",
+      "holdout": "Sealed holdout",
+      "updated": "Updated",
+      "pending": "Pending",
+      "created": "Created",
+      "sealed": "Unconsumed",
+      "consumed": "Locked",
+      "states": {
+        "target_resolved": "Target resolved",
+        "baseline_ready": "Baseline ready",
+        "campaign_running": "Five-generation evolution",
+        "candidate_locked": "Champion locked",
+        "waiting_forward": "Forward observation",
+        "holdout_running": "Sealed holdout",
+        "adoption_ready": "Awaiting adoption",
+        "rejected": "Rejected",
+        "insufficient_evidence": "Insufficient evidence",
+        "failed": "Failed"
+      }
+    },
+    "campaign": {
       "title": "Event Campaigns",
       "empty": "No event campaign yet; E1 single-generation runs keep their existing semantics.",
       "id": "Campaign",
@@ -694,6 +730,9 @@
     "facts": "Normalized facts",
     "retractions": "Revisions / retractions",
     "lastAccepted": "Last accepted",
+    "extractionPending": "Pending extraction",
+    "extractionLeased": "Extracting",
+    "extractionDead": "Failed extraction",
     "sources": "Source coverage",
     "source": "Source",
     "count": "Events",

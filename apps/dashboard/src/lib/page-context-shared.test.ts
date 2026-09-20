@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPageContextEnvelope,
+  evolutionTargetFromPage,
   parsePageContext,
   stripPageContext,
 } from "./page-context-shared";
 
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const CANDIDATE_ID = "22222222-2222-4222-8222-222222222222";
+const CAMPAIGN_ID = "33333333-3333-4333-8333-333333333333";
 
 describe("evolution page context", () => {
   it("解析列表、运行详情与候选详情", () => {
@@ -35,6 +37,41 @@ describe("evolution page context", () => {
         pathname: `/evolution/${RUN_ID}`,
       }),
     ).toContain(`evolution_run_id=${RUN_ID}`);
+  });
+
+  it("解析回测和 E2 campaign 详情为统一演化目标", () => {
+    expect(parsePageContext(`/backtests/${RUN_ID}`)).toEqual({
+      kind: "backtest_run_detail",
+      id: RUN_ID,
+      pathname: `/backtests/${RUN_ID}`,
+    });
+    expect(parsePageContext(`/evolution/campaigns/${CAMPAIGN_ID}`)).toEqual({
+      kind: "evolution_campaign_detail",
+      id: CAMPAIGN_ID,
+      pathname: `/evolution/campaigns/${CAMPAIGN_ID}`,
+    });
+
+    const envelope = buildPageContextEnvelope({
+      kind: "evolution_campaign_detail",
+      id: CAMPAIGN_ID,
+      pathname: `/evolution/campaigns/${CAMPAIGN_ID}`,
+    });
+    expect(envelope).toContain("evolution_target_kind=e2_campaign");
+    expect(envelope).toContain(`evolution_target_id=${CAMPAIGN_ID}`);
+  });
+
+  it.each([
+    ["runner_detail", "paper_runner"],
+    ["candidate_detail", "strategy_candidate"],
+    ["backtest_run_detail", "backtest_run"],
+    ["evolution_run_detail", "e1_run"],
+    ["evolution_candidate_detail", "e1_candidate"],
+    ["evolution_campaign_detail", "e2_campaign"],
+  ] as const)("maps %s to %s", (kind, targetKind) => {
+    expect(evolutionTargetFromPage({ kind, id: RUN_ID, pathname: "/detail" })).toEqual({
+      kind: targetKind,
+      id: RUN_ID,
+    });
   });
 
   it("清除完整和被截断的上下文块", () => {

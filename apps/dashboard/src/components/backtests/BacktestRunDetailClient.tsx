@@ -15,6 +15,7 @@ import {
   BacktestTradesPanel,
 } from "@/components/lab/BacktestPanels";
 import { MetricsGrid } from "@/components/lab/MetricsGrid";
+import { EvolutionStartButton } from "@/components/evolution/EvolutionStartButton";
 
 /**
  * 单次回测详情页 —— 「Agent 活动」流点击回测事件的落地页。
@@ -69,9 +70,12 @@ export function BacktestRunDetailClient({ runId }: { runId: string }) {
       ) : (
         <>
           <header className="flex flex-col gap-2 border-b border-border-subtle pb-5">
-            <h1 className="font-display text-2xl text-fg lg:text-3xl">
-              {run.candidateDescription || run.strategyCode}
-            </h1>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h1 className="font-display text-2xl text-fg lg:text-3xl">
+                {run.candidateDescription || run.strategyCode}
+              </h1>
+              <EvolutionStartButton />
+            </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-fg-muted">
               <span className="uppercase tracking-wider">{run.status}</span>
               <span>{run.runId.slice(0, 8)}</span>

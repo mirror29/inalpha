@@ -16,10 +16,27 @@ export type PageKind =
   | "risk"
   | "activity"
   | "divination"
+  | "backtest_run_detail"
   | "evolution_list"
   | "evolution_run_detail"
   | "evolution_candidate_detail"
+  | "evolution_campaign_detail"
   | "overview";
+
+export type EvolutionTargetKind =
+  | "strategy_candidate"
+  | "paper_runner"
+  | "backtest_run"
+  | "e1_run"
+  | "e1_candidate"
+  | "e2_campaign";
+
+export interface EvolutionTargetHint {
+  /** Owner-scoped resolver 的目标种类；页面本身不承担授权。 */
+  kind: EvolutionTargetKind;
+  /** 页面携带的不可信实体提示，后端必须按当前 owner 重新读取。 */
+  id: string;
+}
 
 export interface PageContext {
   /** 页面类型(机器可读,英文,与 UI locale 解耦)。 */
@@ -62,7 +79,18 @@ export function parsePageContext(pathname: string): PageContext {
       return { kind: "activity", pathname };
     case "divination":
       return { kind: "divination", pathname };
+    case "backtests":
+      return second && UUID_RE.test(second)
+        ? { kind: "backtest_run_detail", id: second, pathname }
+        : { kind: "overview", pathname };
     case "evolution":
+      if (second === "campaigns" && segs[2] && UUID_RE.test(segs[2])) {
+        return {
+          kind: "evolution_campaign_detail",
+          id: segs[2],
+          pathname,
+        };
+      }
       if (second === "candidates" && segs[2] && UUID_RE.test(segs[2])) {
         return {
           kind: "evolution_candidate_detail",
@@ -92,8 +120,38 @@ export function buildPageContextEnvelope(ctx: PageContext): string {
     lines.push(`evolution_run_id=${ctx.id}`);
   if (ctx.kind === "evolution_candidate_detail" && ctx.id)
     lines.push(`evolution_candidate_id=${ctx.id}`);
+  if (ctx.kind === "backtest_run_detail" && ctx.id)
+    lines.push(`backtest_run_id=${ctx.id}`);
+  if (ctx.kind === "evolution_campaign_detail" && ctx.id)
+    lines.push(`evolution_campaign_id=${ctx.id}`);
+  const evolutionTarget = evolutionTargetFromPage(ctx);
+  if (evolutionTarget) {
+    lines.push(`evolution_target_kind=${evolutionTarget.kind}`);
+    lines.push(`evolution_target_id=${evolutionTarget.id}`);
+  }
   lines.push(`path=${ctx.pathname}`);
   return `<page_context>\n${lines.join("\n")}\n</page_context>\n\n`;
+}
+
+/** Collapse every evolvable detail page into the resolver's small target interface. */
+export function evolutionTargetFromPage(ctx: PageContext): EvolutionTargetHint | null {
+  if (!ctx.id) return null;
+  switch (ctx.kind) {
+    case "candidate_detail":
+      return { kind: "strategy_candidate", id: ctx.id };
+    case "runner_detail":
+      return { kind: "paper_runner", id: ctx.id };
+    case "backtest_run_detail":
+      return { kind: "backtest_run", id: ctx.id };
+    case "evolution_run_detail":
+      return { kind: "e1_run", id: ctx.id };
+    case "evolution_candidate_detail":
+      return { kind: "e1_candidate", id: ctx.id };
+    case "evolution_campaign_detail":
+      return { kind: "e2_campaign", id: ctx.id };
+    default:
+      return null;
+  }
 }
 
 /** 匹配消息开头的完整 page_context 块(含尾随空行),用于渲染时还原用户原话。 */

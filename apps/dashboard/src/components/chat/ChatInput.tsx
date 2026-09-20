@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, SendHorizontal, Square, X } from "lucide-react";
+import { MapPin, SendHorizontal, Sparkles, Square, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { type KeyboardEvent, useCallback, useEffect, useRef } from "react";
 
@@ -21,8 +21,10 @@ export function ChatInput({
   contextAttached,
   contextKind,
   contextId,
+  suggestedActionLabel,
   onDraftChange,
   onSubmit,
+  onSuggestedAction,
   onStop,
   onContextDismiss,
 }: {
@@ -32,8 +34,10 @@ export function ChatInput({
   contextAttached: boolean;
   contextKind: string;
   contextId?: string;
+  suggestedActionLabel?: string;
   onDraftChange: (v: string) => void;
   onSubmit: () => void;
+  onSuggestedAction?: () => void;
   onStop: () => void;
   onContextDismiss: () => void;
 }) {
@@ -58,25 +62,38 @@ export function ChatInput({
   return (
     <div className="border-t border-border-subtle p-3">
       {contextAttached && (
-        <div className="mb-2 flex min-w-0 items-center gap-1 rounded-full border border-border-subtle bg-bg/60 py-0.5 pl-2 pr-1 text-[11px] text-fg-muted">
-          <MapPin className="size-3 shrink-0 text-cyan" strokeWidth={2} />
-          <span className="truncate text-fg">
-            {t(`context.kind.${contextKind}`)}
-          </span>
-          {contextId && (
-            <span className="shrink-0 font-mono text-fg-muted/70 tabular-nums">
-              {contextId.slice(0, 8)}
+        <div className="mb-2 flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1 rounded-full border border-border-subtle bg-bg/60 py-0.5 pl-2 pr-1 text-[11px] text-fg-muted">
+            <MapPin className="size-3 shrink-0 text-cyan" strokeWidth={2} />
+            <span className="truncate text-fg">
+              {t(`context.kind.${contextKind}`)}
             </span>
+            {contextId && (
+              <span className="shrink-0 font-mono text-fg-muted/70 tabular-nums">
+                {contextId.slice(0, 8)}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onContextDismiss}
+              aria-label={t("context.dismiss")}
+              title={t("context.dismiss")}
+              className="shrink-0 rounded-full p-0.5 text-fg-muted/70 transition-colors hover:bg-bg-elev/60 hover:text-fg"
+            >
+              <X className="size-3" strokeWidth={2} />
+            </button>
+          </div>
+          {suggestedActionLabel && onSuggestedAction && (
+            <button
+              type="button"
+              onClick={onSuggestedAction}
+              disabled={isLoading}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-seal/30 bg-seal/10 px-2 py-1 font-mono text-[11px] text-seal transition-colors hover:bg-seal/20 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Sparkles className="size-3" strokeWidth={1.75} />
+              {suggestedActionLabel}
+            </button>
           )}
-          <button
-            type="button"
-            onClick={onContextDismiss}
-            aria-label={t("context.dismiss")}
-            title={t("context.dismiss")}
-            className="shrink-0 rounded-full p-0.5 text-fg-muted/70 transition-colors hover:bg-bg-elev/60 hover:text-fg"
-          >
-            <X className="size-3" strokeWidth={2} />
-          </button>
         </div>
       )}
       <div className="flex items-end gap-2">

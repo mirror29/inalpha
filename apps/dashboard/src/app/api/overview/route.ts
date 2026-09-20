@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { backendFetch, BackendError } from "@/lib/backend";
+import { backendFetch, BackendError, getInternalServiceToken } from "@/lib/backend";
 import type {
   AccountSnapshot,
   EventDataCoverage,
@@ -42,6 +42,7 @@ export async function GET() {
   // positions / orders / runs —— 任一失败降级为空,不整页挂。
   // orders 多取 1 条探测「是否还有更早的」(命中上限 → 截断提示,不静默)。
   const ORDERS_SHOWN = 20;
+  const eventCoverageToken = await getInternalServiceToken("data", "event_import");
   const [positionsRes, ordersRes, runsRes, candidatesRes, campaignsRes, coverageRes] =
     await Promise.allSettled([
       backendFetch<PositionRecord[]>("paper", "/positions"),
@@ -60,7 +61,10 @@ export async function GET() {
         query: { limit: 50 },
         timeoutMs: 3_000,
       }),
-      backendFetch<EventDataCoverage>("data", "/events/coverage", { timeoutMs: 3_000 }),
+      backendFetch<EventDataCoverage>("data", "/events/coverage", {
+        timeoutMs: 3_000,
+        authToken: eventCoverageToken,
+      }),
     ]);
 
   const positions = settledOr(positionsRes, []);

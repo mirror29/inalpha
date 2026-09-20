@@ -117,6 +117,8 @@ interface FetchOptions {
   timeoutMs?: number;
   /** 是否要鉴权,默认 true。 */
   auth?: boolean;
+  /** Explicit short-lived internal token for endpoints that reject owner JWTs. */
+  authToken?: string;
   /** HTTP 方法,默认 GET。 */
   method?: "GET" | "POST";
   /** POST body(对象会 JSON 序列化)。 */
@@ -132,7 +134,7 @@ export async function backendFetch<T>(
   path: string,
   opts: FetchOptions = {},
 ): Promise<T> {
-  const { query, timeoutMs = 10_000, auth = true, method = "GET", body } = opts;
+  const { query, timeoutMs = 10_000, auth = true, authToken, method = "GET", body } = opts;
   const url = new URL(path, BACKENDS[backend]);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -141,7 +143,7 @@ export async function backendFetch<T>(
   }
 
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (auth) headers.Authorization = `Bearer ${await getServiceToken()}`;
+  if (auth) headers.Authorization = `Bearer ${authToken ?? await getServiceToken()}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
   const controller = new AbortController();
@@ -179,4 +181,23 @@ export async function backendFetch<T>(
   }
 
   return (await res.json()) as T;
+}
+
+/** Mint a short-lived purpose-bound token for a named internal service boundary. */
+export async function getInternalServiceToken(
+  audience: BackendName,
+  purpose: string,
+): Promise<string> {
+  const { sub } = await resolveIdentity();
+  const nowSec = Math.floor(Date.now() / 1000);
+  return await new SignJWT({
+    token_use: "service",
+    service_audience: audience,
+    token_purpose: purpose,
+  })
+    .setProtectedHeader({ alg: ALG })
+    .setSubject(sub)
+    .setIssuedAt(nowSec)
+    .setExpirationTime(nowSec + 300)
+    .sign(getSecret());
 }

@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
 import { getEventEvolutionCapability } from "@/lib/evolution-capability";
-import type { EvolutionCampaign, EvolutionCampaignPayload } from "@/lib/types";
+import type { EvolutionLoop, EvolutionLoopPayload } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-/** Return the owner-scoped event campaign projection without candidate source blobs. */
+/** Return the compact owner-scoped workflow projection used by the evolution workspace. */
 export async function GET() {
   try {
     const capability = await getEventEvolutionCapability();
@@ -16,13 +16,13 @@ export async function GET() {
         { status: 503 },
       );
     }
-    const response = await backendFetch<{ items: EvolutionCampaign[] }>(
+    const response = await backendFetch<{ items: EvolutionLoop[] }>(
       "evolver",
-      "/api/v1/campaigns",
+      "/api/v1/evolution-loops",
       { query: { limit: 50 }, timeoutMs: 5_000 },
     );
-    const payload: EvolutionCampaignPayload = {
-      campaigns: response.items,
+    const payload: EvolutionLoopPayload = {
+      loops: response.items,
       asOf: new Date().toISOString(),
     };
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });

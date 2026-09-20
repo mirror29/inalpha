@@ -535,6 +535,8 @@
     "context": {
       "viewing": "正在看",
       "dismiss": "不带本页上下文",
+      "evolve": "继续进化",
+      "evolvePrompt": "继续进化这个",
       "kind": {
         "runner_detail": "模拟盘",
         "candidate_detail": "策略候选",
@@ -544,9 +546,11 @@
         "risk": "风控面板",
         "activity": "Agent 日志",
         "divination": "占卜台",
+        "backtest_run_detail": "回测运行",
         "evolution_list": "策略演化",
         "evolution_run_detail": "演化运行",
         "evolution_candidate_detail": "演化候选",
+        "evolution_campaign_detail": "事件演化 Campaign",
         "overview": "总览"
       }
     }
@@ -647,7 +651,39 @@
     },
     "loadMore": "加载更多",
     "loadingMore": "正在加载…"
-    ,"campaign": {
+    ,"start": {
+      "label": "开始进化",
+      "prompt": "开始进化",
+      "hint": "基于当前页面的策略或模拟盘启动自动演化闭环",
+      "checking": "正在检查演化能力"
+    }
+    ,"loop": {
+      "title": "自动演化闭环",
+      "empty": "暂无演化闭环。可在策略、模拟盘或 E1 结果页说一句“开始进化”。",
+      "target": "演化目标",
+      "status": "当前阶段",
+      "campaign": "Campaign",
+      "forward": "Forward 沙盒",
+      "holdout": "封存测试",
+      "updated": "更新",
+      "pending": "待创建",
+      "created": "已创建",
+      "sealed": "未消费",
+      "consumed": "已锁定",
+      "states": {
+        "target_resolved": "已解析目标",
+        "baseline_ready": "基线已就绪",
+        "campaign_running": "五代演化中",
+        "candidate_locked": "冠军已锁定",
+        "waiting_forward": "Forward 观察中",
+        "holdout_running": "封存测试中",
+        "adoption_ready": "等待人工采用",
+        "rejected": "未通过",
+        "insufficient_evidence": "证据不足",
+        "failed": "失败"
+      }
+    },
+    "campaign": {
       "title": "事件 Campaign",
       "empty": "暂无事件演化 Campaign；E1 单代演化仍保留原语义。",
       "id": "Campaign",
@@ -694,6 +730,9 @@
     "facts": "规范事实",
     "retractions": "修订 / 撤回",
     "lastAccepted": "最后接收",
+    "extractionPending": "待抽取",
+    "extractionLeased": "抽取中",
+    "extractionDead": "抽取失败",
     "sources": "来源覆盖",
     "source": "来源",
     "count": "事件数",

@@ -29,6 +29,9 @@ export function DataHealthClient() {
     [t("facts"), data.fact_count],
     [t("retractions"), data.retraction_count],
     [t("lastAccepted"), data.latest_accepted_at ? fmtRelative(data.latest_accepted_at, Date.now(), locale) : "—"],
+    [t("extractionPending"), data.extraction_pending_count],
+    [t("extractionLeased"), data.extraction_leased_count],
+    [t("extractionDead"), data.extraction_dead_count],
   ] as const;
   return <div className="flex flex-col gap-6"><PageHeader title={t("title")} subtitle={t("subtitle")} right={<LiveStrip asOf={data.as_of} isValidating={isValidating} isStaleFrame={Boolean(error)} />} /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{cards.map(([label, value]) => <div key={label} className="rounded-xl border border-border-subtle bg-bg-elev/30 p-4"><div className="font-mono text-[10px] uppercase tracking-wider text-fg-muted">{label}</div><div className="mt-2 font-mono text-2xl text-fg">{value}</div></div>)}</div><Panel title={t("sources")}>{data.sources.length === 0 ? <TableEmpty>{t("empty")}</TableEmpty> : <div className="overflow-x-auto"><table className="w-full"><thead><TableHeadRow><Th>{t("source")}</Th><Th right>{t("count")}</Th><Th right>{t("versions")}</Th><Th>{t("latest")}</Th></TableHeadRow></thead><tbody>{data.sources.map((source) => <tr key={source.source} className="border-t border-border-subtle/60"><Td mono>{source.source}</Td><Td right mono>{source.raw_event_count}</Td><Td right mono muted>{source.max_version}</Td><Td mono muted>{source.latest_accepted_at ? fmtRelative(source.latest_accepted_at, Date.now(), locale) : "—"}</Td></tr>)}</tbody></table></div>}</Panel></div>;
 }

@@ -144,6 +144,12 @@ export function ConsoleChat() {
     return () => window.removeEventListener("inalpha:divination-consult", handler);
   }, []);
 
+  useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener("inalpha:evolution-start", handler);
+    return () => window.removeEventListener("inalpha:evolution-start", handler);
+  }, []);
+
   if (threadId === null) return null;
 
   return (

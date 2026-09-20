@@ -19,10 +19,16 @@ import { parsePageContext, type PageContext } from "./page-context-shared";
 export {
   PAGE_CONTEXT_RE,
   buildPageContextEnvelope,
+  evolutionTargetFromPage,
   parsePageContext,
   stripPageContext,
 } from "./page-context-shared";
-export type { PageContext, PageKind } from "./page-context-shared";
+export type {
+  EvolutionTargetHint,
+  EvolutionTargetKind,
+  PageContext,
+  PageKind,
+} from "./page-context-shared";
 
 /** locale 感知的当前页面上下文。 */
 export function usePageContext(): PageContext {
