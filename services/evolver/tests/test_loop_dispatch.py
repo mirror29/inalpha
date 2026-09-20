@@ -169,3 +169,30 @@ async def test_competing_connections_only_claim_one_worker_and_restart_respects_
         finally:
             await setup.execute("DELETE FROM evolution_loops WHERE owner_account_id=%s", (owner,))
             await setup.execute("DELETE FROM strategy_evo_runs WHERE owner_account_id=%s", (owner,))
+
+
+@pytest.mark.asyncio
+async def test_late_baseline_cannot_resurrect_a_terminal_loop(database):
+    from inalpha_evolver.storage import loop_dispatch
+
+    args = await create_baseline(database, uuid4())
+    loop = await loops.ensure_for_e1_run(database, **args)
+    worker = await loop_dispatch.claim_next(database, worker_id="worker", ttl_s=60)
+    await database.execute(
+        "UPDATE evolution_loops SET status='failed',failure_code='BUDGET_EXHAUSTED' WHERE loop_id=%s",
+        (loop["loop_id"],),
+    )
+    await database.execute(
+        "UPDATE strategy_evo_runs SET status='completed' WHERE run_id=%s", (args["e1_run_id"],)
+    )
+    assert not await loop_dispatch.complete_step(
+        database,
+        loop_id=loop["loop_id"],
+        owner_account_id=args["owner_account_id"],
+        lease_token=worker["lease_token"],
+        step_key="baseline",
+        output_id=args["e1_run_id"],
+    )
+    result = await loops.get_loop(database, loop["loop_id"], args["owner_account_id"])
+    assert result["status"] == "failed"
+    assert result["failure_code"] == "BUDGET_EXHAUSTED"

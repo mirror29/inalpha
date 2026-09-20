@@ -96,6 +96,7 @@ async def complete_step(
             await cur.execute(
                 """SELECT * FROM evolution_loops WHERE loop_id=%s AND owner_account_id=%s
 AND lease_token=%s AND lease_expires_at>=clock_timestamp()
+AND status IN ('target_resolved','baseline_ready')
 FOR UPDATE""",
                 (loop_id, owner_account_id, lease_token),
             )

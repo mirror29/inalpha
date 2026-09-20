@@ -258,6 +258,8 @@ WHERE l.loop_id=%s AND l.owner_account_id=%s FOR UPDATE OF l""",
             joined = await cur.fetchone()
             if joined is None:
                 return None
+            if joined["campaign_id"] is None and joined["status"] not in _ACTIVE:
+                return {key.strip(): joined[key.strip()] for key in _COLUMNS.split(",")}
             if joined["campaign_id"] is None:
                 next_status = {
                     "completed": "baseline_ready",
