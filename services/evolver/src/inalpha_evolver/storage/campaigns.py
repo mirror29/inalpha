@@ -314,7 +314,6 @@ AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=h.campaign_id
         )
         if cur.rowcount == 0:
             await assert_active_lease(conn, campaign_id, lease_token)
-            return
     await insert_hypotheses(
         conn,
         campaign_id,
