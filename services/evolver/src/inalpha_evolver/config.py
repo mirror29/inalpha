@@ -74,6 +74,10 @@ class EvolverSettings(BaseSettings):
         default="http://127.0.0.1:8001",
         alias="DATA_SERVICE_URL",
     )
+    paper_service_url: str = Field(
+        default="http://127.0.0.1:8002",
+        alias="PAPER_SERVICE_URL",
+    )
     evolver_data_timeout_s: int = Field(
         default=60,
         alias="EVOLVER_DATA_TIMEOUT_S",
@@ -122,6 +126,13 @@ class EvolverSettings(BaseSettings):
         le=8,
         alias="CAMPAIGN_MAX_CONCURRENT",
         description="单个 Evolver 进程同时执行的 campaign 上限。",
+    )
+    candidate_evaluation_concurrency: int = Field(
+        default=2,
+        ge=1,
+        le=4,
+        alias="CANDIDATE_EVALUATION_CONCURRENCY",
+        description="Per-campaign deterministic candidate evaluation concurrency.",
     )
 
     # ---- LLM ----

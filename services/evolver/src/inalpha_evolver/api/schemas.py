@@ -169,10 +169,14 @@ def campaign_request_digest(request: CreateCampaignRequest) -> str:
         ).encode()
     ).hexdigest()
     canonical = [
+        request.target_kind or "",
+        request.target_id or "",
         str(request.event_snapshot_id),
         str(request.source_run_id or ""),
         config.venue,
         config.symbol,
+        config.asset_id,
+        config.event_asset_code,
         config.timeframe,
         str(int(config.from_ts.timestamp() * 1_000)),
         str(int(config.as_of.timestamp() * 1_000)),
@@ -267,6 +271,8 @@ class CampaignConfig(BaseModel):
 
     venue: str = Field(default="binance", min_length=1, max_length=40)
     symbol: str = Field(default="BTC/USDT", min_length=1, max_length=80)
+    asset_id: str = Field(min_length=7, max_length=160, pattern=r"^asset:[A-Z0-9._:-]+$")
+    event_asset_code: str = Field(min_length=1, max_length=120)
     timeframe: Literal["15m", "1h", "4h"] = "1h"
     from_ts: datetime
     as_of: datetime
@@ -308,6 +314,15 @@ class CreateCampaignRequest(BaseModel):
 
     event_snapshot_id: UUID
     source_run_id: UUID | None = None
+    target_kind: Literal[
+        "strategy_candidate",
+        "paper_runner",
+        "backtest_run",
+        "e1_run",
+        "e1_candidate",
+        "e2_campaign",
+    ] | None = None
+    target_id: str | None = Field(default=None, min_length=1, max_length=200)
     config: CampaignConfig
     llm: EvolutionLLMSnapshot
     hypotheses: list[HypothesisSpec] = Field(default_factory=list, max_length=8)
@@ -317,6 +332,8 @@ class CreateCampaignRequest(BaseModel):
         ids = [item.hypothesis_id for item in self.hypotheses]
         if len(ids) != len(set(ids)):
             raise ValueError("hypothesis_id values must be unique")
+        if (self.target_kind is None) != (self.target_id is None):
+            raise ValueError("target_kind and target_id must be provided together")
         return self
 
 
@@ -375,12 +392,14 @@ class CampaignResponse(BaseModel):
     implementations_per_hypothesis: int
     max_generations: int
     event_snapshot_id: UUID
+    data_snapshot_id: UUID | None = None
     frozen_config: dict[str, Any]
     llm_snapshot: EvolutionLLMSnapshot
     llm_config_digest: str
     llm_cost_usd: float
     locked_candidate_id: UUID | None = None
     holdout_consumed_at: datetime | None = None
+    forward_sandbox_id: UUID | None = None
     forward_started_at: datetime | None = None
     forward_deadline_at: datetime | None = None
     forward_event_count: int = 0
@@ -400,37 +419,19 @@ class CampaignListResponse(BaseModel):
     items: list[CampaignResponse]
 
 
-class LockChampionRequest(BaseModel):
-    candidate_id: UUID
+class EvolutionCapabilitiesResponse(BaseModel):
+    """Authoritative feature gate and frozen E2 operating limits."""
 
-
-class ForwardEvidenceRequest(BaseModel):
-    """Aggregate pre-registered evidence; raw event text is not accepted."""
-
-    event_count: int = Field(ge=0)
-    net_return_pct: float
-    parent_excess_return_pct: float
-    control_excess_return_pct: float
-    positive_event_count: int = Field(ge=0)
-    risk_breaches: int = Field(default=0, ge=0)
-    data_quality_warnings: list[str] = Field(default_factory=list, max_length=100)
-
-    @model_validator(mode="after")
-    def validate_counts(self) -> ForwardEvidenceRequest:
-        if self.positive_event_count > self.event_count:
-            raise ValueError("positive_event_count cannot exceed event_count")
-        return self
-
-    def passed(self) -> bool:
-        return bool(
-            self.net_return_pct > 0
-            and self.parent_excess_return_pct > 0
-            and self.control_excess_return_pct > 0
-            and self.event_count >= 3
-            and self.positive_event_count * 3 >= self.event_count * 2
-            and self.risk_breaches == 0
-            and not self.data_quality_warnings
-        )
+    event_evolution_enabled: bool
+    reason: str | None = None
+    max_generations: Literal[5] = 5
+    hypotheses_per_generation: Literal[8] = 8
+    implementations_per_hypothesis: Literal[3] = 3
+    candidate_concurrency: int = Field(ge=1, le=4)
+    supported_timeframes: list[Literal["15m", "1h", "4h"]]
+    automatic_stage_approval: bool = True
+    automatic_promotion: bool = False
+    runner_eligible: bool = False
 
 
 class AdoptionResponse(BaseModel):
@@ -453,3 +454,44 @@ class AdoptionSummaryResponse(AdoptionResponse):
 
 class AdoptionListResponse(BaseModel):
     items: list[AdoptionSummaryResponse]
+
+
+class EvolutionLoopResponse(BaseModel):
+    """Compact durable workflow projection; heavy campaign details remain lazy."""
+
+    loop_id: UUID
+    owner_account_id: UUID
+    requested_by_sub: str
+    operation_id: str
+    target_kind: str
+    target_id: str
+    target_snapshot: dict[str, Any]
+    status: str
+    e1_run_id: UUID | None = None
+    campaign_id: UUID | None = None
+    forward_sandbox_id: UUID | None = None
+    holdout_attempt_id: UUID | None = None
+    frozen_config: dict[str, Any]
+    budget: dict[str, Any]
+    failure_code: str | None = None
+    failure_message: str | None = None
+    state_version: int
+    created_at: datetime
+    updated_at: datetime
+    finished_at: datetime | None = None
+
+
+class EvolutionLoopListResponse(BaseModel):
+    items: list[EvolutionLoopResponse]
+
+
+class EvolutionLoopEventResponse(BaseModel):
+    loop_id: UUID
+    version: int
+    event_type: str
+    payload: dict[str, Any]
+    created_at: datetime
+
+
+class EvolutionLoopEventListResponse(BaseModel):
+    items: list[EvolutionLoopEventResponse]

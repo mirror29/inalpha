@@ -166,13 +166,14 @@ def block_bootstrap_p_value(
     block_size: int = 3,
     samples: int = 2_000,
     seed: int = 0,
+    minimum_samples: int = 8,
 ) -> float:
     """Estimate one-sided P(mean<=0) while preserving short event clusters."""
     values = list(effects)
-    if not values:
+    if block_size < 1 or samples < 100 or minimum_samples < 2:
+        raise ValueError("block_size must be positive, samples >= 100, and minimum_samples >= 2")
+    if len(values) < minimum_samples:
         return 1.0
-    if block_size < 1 or samples < 100:
-        raise ValueError("block_size must be positive and samples >= 100")
     blocks = [values[index : index + block_size] for index in range(0, len(values), block_size)]
     rng = random.Random(seed)
     non_positive = 0
@@ -183,6 +184,20 @@ def block_bootstrap_p_value(
         if statistics.mean(sample[: len(values)]) <= 0:
             non_positive += 1
     return (non_positive + 1) / (samples + 1)
+
+
+def passes_generation_evidence_gate(
+    *,
+    event_count: int,
+    matched_control_count: int,
+    minimum_matched_pairs: int = 8,
+    minimum_match_ratio: float = 0.70,
+) -> bool:
+    """Require versioned minimum matched evidence before a candidate may pass FDR."""
+    if event_count < 1 or minimum_matched_pairs < 1:
+        return False
+    match_ratio = matched_control_count / event_count
+    return matched_control_count >= minimum_matched_pairs and match_ratio >= minimum_match_ratio
 
 
 def _dominates(left: HypothesisScore, right: HypothesisScore) -> bool:

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import httpx
 from inalpha_shared import get_logger
 from inalpha_shared.db import get_conn
 
@@ -105,6 +106,15 @@ class CampaignManager:
                         "EVOLUTION_DATA_FRESHNESS_FAILED",
                         "EVOLUTION_DATA_UNREACHABLE",
                     }
+                ) or isinstance(failure, (httpx.TimeoutException, httpx.NetworkError)) or (
+                    isinstance(failure, httpx.HTTPStatusError)
+                    and failure.response.status_code >= 500
+                )
+                retry_status = (
+                    str(campaign["status"])
+                    if campaign.get("status")
+                    in {"candidate_locked", "waiting_forward", "holdout_ready"}
+                    else "draft"
                 )
                 _logger.exception(
                     "campaign_execution_failed",
@@ -119,8 +129,13 @@ class CampaignManager:
                         conn,
                         campaign["campaign_id"],
                         campaign["owner_account_id"],
-                        from_statuses=("replaying",),
-                        to_status="draft" if retryable else "failed",
+                        from_statuses=(
+                            "replaying",
+                            "candidate_locked",
+                            "waiting_forward",
+                            "holdout_ready",
+                        ),
+                        to_status=retry_status if retryable else "failed",
                         values={
                             "failure_code": failure_code,
                             "failure_message": failure_message[:1000],
@@ -129,6 +144,7 @@ class CampaignManager:
                             "lease_token": None,
                             "lease_expires_at": None,
                         },
+                        lease_token=campaign["lease_token"],
                     )
 
     async def _heartbeat(

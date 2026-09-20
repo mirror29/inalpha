@@ -20,7 +20,37 @@ class CompiledHypothesis:
 
 
 def expand_implementations(spec: HypothesisSpec) -> list[HypothesisSpec]:
-    """Expand one strong-event hypothesis into direct/confirmed/hybrid ablation arms."""
+    """Expand event ablations or three deterministic non-event risk profiles."""
+    if spec.lane in {"factor", "regime", "execution_risk"}:
+        conservative = spec.model_copy(
+            deep=True,
+            update={
+                "confirmation": spec.confirmation.model_copy(
+                    update={
+                        "min_price_change_pct": spec.confirmation.min_price_change_pct * 1.5,
+                        "min_volume_ratio": spec.confirmation.min_volume_ratio * 1.25,
+                    }
+                ),
+                "risk": spec.risk.model_copy(
+                    update={"position_pct": max(0.01, spec.risk.position_pct * 0.5)}
+                ),
+            },
+        )
+        aggressive = spec.model_copy(
+            deep=True,
+            update={
+                "confirmation": spec.confirmation.model_copy(
+                    update={
+                        "min_price_change_pct": spec.confirmation.min_price_change_pct * 0.5,
+                        "min_volume_ratio": max(0.1, spec.confirmation.min_volume_ratio * 0.75),
+                    }
+                ),
+                "risk": spec.risk.model_copy(
+                    update={"position_pct": min(0.25, spec.risk.position_pct * 1.5)}
+                ),
+            },
+        )
+        return [spec.model_copy(deep=True), conservative, aggressive]
     direct_allowed = set(spec.event_types) <= {"listing", "delisting", "exploit", "chain_halt"}
     modes = (
         ["direct", "confirmed", "hybrid"]
@@ -53,8 +83,12 @@ def compile_hypothesis(spec: HypothesisSpec) -> CompiledHypothesis:
     class_name = f"EventHypothesis_{class_suffix}"
     event_types = repr(tuple(spec.event_types))
     assets = repr(tuple(spec.assets))
+    asset_ids = repr(tuple(spec.asset_ids))
+    scoped_asset_id = repr(spec.asset_ids[0] if len(spec.asset_ids) == 1 else "")
     direction = repr(spec.direction)
     trigger_mode = repr(spec.trigger_mode)
+    lane = repr(spec.lane)
+    regimes = repr(tuple(spec.applicable_regimes))
     source = f"""class {class_name}(Strategy):
     def __init__(self, name, clock, msgbus, instrument_id, timeframe="1h", initial_cash=10000.0, position_pct={spec.risk.position_pct!r}):
         super().__init__(name, clock, msgbus)
@@ -65,8 +99,12 @@ def compile_hypothesis(spec: HypothesisSpec) -> CompiledHypothesis:
         self._asset = str(instrument_id.symbol).split("/")[0].upper()
         self._event_types = {event_types}
         self._assets = {assets}
+        self._asset_ids = {asset_ids}
+        self._asset_id = {scoped_asset_id}
         self._direction = {direction}
         self._trigger_mode = {trigger_mode}
+        self._lane = {lane}
+        self._regimes = {regimes}
         self._closes = deque(maxlen={spec.confirmation.lookback_bars})
         self._volumes = deque(maxlen={spec.confirmation.lookback_bars})
         self._last_bar = None
@@ -86,6 +124,10 @@ def compile_hypothesis(spec: HypothesisSpec) -> CompiledHypothesis:
         if self._assets and self._asset not in self._assets:
             return
         if event.assets and self._asset not in event.assets:
+            return
+        if self._asset_ids and self._asset_id not in self._asset_ids:
+            return
+        if event.asset_ids and self._asset_id not in event.asset_ids:
             return
         if event.severity < {spec.risk.min_severity!r} or event.confidence < {spec.risk.min_confidence!r}:
             return
@@ -114,6 +156,10 @@ def compile_hypothesis(spec: HypothesisSpec) -> CompiledHypothesis:
                 adverse = -adverse
             if adverse <= -{spec.invalidation.max_adverse_pct!r} or self._holding_age >= {spec.invalidation.holding_bars}:
                 self._exit()
+        if self._lane in ("factor", "regime"):
+            if self._position_qty == 0.0 and self._bar_signal(bar, previous_close, average_volume):
+                self._enter(bar, 1.0)
+            return
         if self._pending_event is None:
             return
         self._pending_age += 1
@@ -131,11 +177,43 @@ def compile_hypothesis(spec: HypothesisSpec) -> CompiledHypothesis:
         if self._direction == "short":
             change = -change
         confirmed = change >= {spec.confirmation.min_price_change_pct!r} and bar.volume / average_volume >= {spec.confirmation.min_volume_ratio!r}
+        if self._lane == "event_regime":
+            confirmed = confirmed and self._regime_signal(bar)
         if not confirmed:
             return
         fraction = 1.0 - {spec.risk.hybrid_initial_fraction!r} if self._trigger_mode == "hybrid" and self._initial_sent else 1.0
         self._enter(bar, fraction)
         self._pending_event = None
+
+    def _bar_signal(self, bar, previous_close, average_volume):
+        if previous_close is None or average_volume is None or previous_close <= 0 or average_volume <= 0:
+            return False
+        if len(self._closes) < {spec.confirmation.lookback_bars}:
+            return False
+        if self._lane == "factor":
+            anchor = self._closes[0]
+            if anchor <= 0:
+                return False
+            change = ((bar.close / anchor) - 1.0) * 100.0
+            if self._direction == "short":
+                change = -change
+            return change >= {spec.confirmation.min_price_change_pct!r} and bar.volume / average_volume >= {spec.confirmation.min_volume_ratio!r}
+        return self._regime_signal(bar)
+
+    def _regime_signal(self, bar):
+        if len(self._closes) < {spec.confirmation.lookback_bars}:
+            return False
+        fast = sum(list(self._closes)[-3:]) / 3.0
+        slow = sum(self._closes) / len(self._closes)
+        trend = ((fast / slow) - 1.0) * 100.0 if slow > 0 else 0.0
+        if self._direction == "short":
+            trend = -trend
+        volumes = list(self._volumes)
+        average_volume = sum(volumes) / len(volumes) if volumes else 0.0
+        high_volume = average_volume > 0 and bar.volume / average_volume >= {spec.confirmation.min_volume_ratio!r}
+        if "high_volume" in self._regimes and not high_volume:
+            return False
+        return trend >= {spec.confirmation.min_price_change_pct!r}
 
     def on_position_opened(self, event):
         self._position_qty = float(event.quantity)

@@ -84,6 +84,7 @@ class HypothesisSpec(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list, max_length=64)
     event_types: list[str] = Field(default_factory=list, min_length=1, max_length=8)
     assets: list[str] = Field(default_factory=list, max_length=32)
+    asset_ids: list[str] = Field(default_factory=list, max_length=32)
     applicable_regimes: list[str] = Field(default_factory=list, max_length=16)
     direction: Direction
     trigger_mode: TriggerMode
@@ -107,6 +108,11 @@ class HypothesisSpec(BaseModel):
     def normalize_assets(cls, value: list[str]) -> list[str]:
         return sorted({item.strip().upper() for item in value if item.strip()})
 
+    @field_validator("asset_ids", mode="after")
+    @classmethod
+    def normalize_asset_ids(cls, value: list[str]) -> list[str]:
+        return sorted({item.strip() for item in value if item.strip()})
+
     @field_validator("evidence_ids", "applicable_regimes", mode="after")
     @classmethod
     def dedupe_strings(cls, value: list[str]) -> list[str]:
@@ -118,6 +124,8 @@ class HypothesisSpec(BaseModel):
             raise ValueError("direct trigger is restricted to listing/delisting/exploit/chain_halt")
         if self.lane == "restart" and self.lineage_kind != "restart":
             raise ValueError("restart lane requires lineage_kind='restart'")
+        if self.lane == "execution_risk" and not self.parent_ids:
+            raise ValueError("execution_risk lane requires a signal-producing parent hypothesis")
         return self
 
 

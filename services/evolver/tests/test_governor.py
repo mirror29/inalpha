@@ -7,8 +7,12 @@
 """
 from __future__ import annotations
 
-import pytest
+from uuid import uuid4
 
+import pytest
+from inalpha_shared.errors import NotFoundError
+
+from inalpha_evolver.governor import seed_resolver
 from inalpha_evolver.governor.hint_generator import HintGenerator
 from inalpha_evolver.governor.loop import run_one_generation
 from inalpha_evolver.governor.seed import SEED_STRATEGY_CODE
@@ -62,3 +66,82 @@ def test_seed_strategy_code_not_empty() -> None:
     """种子策略源码不为空。"""
     assert len(SEED_STRATEGY_CODE) > 50
     assert "SMACrossStrategy" in SEED_STRATEGY_CODE
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["candidate", "promoted"])
+async def test_owner_draft_and_promoted_candidates_can_seed_research(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    candidate_id = uuid4()
+    owner_id = uuid4()
+
+    async def get_owned_candidate(*_args: object) -> dict[str, object]:
+        return {"status": status, "code": SEED_STRATEGY_CODE}
+
+    monkeypatch.setattr(seed_resolver, "get_owned_candidate", get_owned_candidate)
+    resolved = await seed_resolver.resolve_seed(
+        object(),  # type: ignore[arg-type]
+        f"candidate:{candidate_id}",
+        owner_id,
+    )
+
+    assert resolved.reference == f"candidate:{candidate_id}"
+    assert resolved.source_code == SEED_STRATEGY_CODE
+
+
+@pytest.mark.asyncio
+async def test_rejected_candidate_cannot_seed_research(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate_id = uuid4()
+
+    async def get_owned_candidate(*_args: object) -> dict[str, object]:
+        return {"status": "rejected", "code": SEED_STRATEGY_CODE}
+
+    monkeypatch.setattr(seed_resolver, "get_owned_candidate", get_owned_candidate)
+    with pytest.raises(NotFoundError):
+        await seed_resolver.resolve_seed(
+            object(),  # type: ignore[arg-type]
+            f"candidate:{candidate_id}",
+            uuid4(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_successful_evolution_candidate_can_seed_next_research_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate_id = uuid4()
+    owner_id = uuid4()
+
+    async def get_candidate(*_args: object) -> dict[str, object]:
+        return {"outcome": "succeeded", "source_code": SEED_STRATEGY_CODE}
+
+    monkeypatch.setattr(seed_resolver.evolution_candidates, "get_candidate", get_candidate)
+    reference = f"evolution_candidate:{candidate_id}"
+    resolved = await seed_resolver.resolve_seed(
+        object(),  # type: ignore[arg-type]
+        reference,
+        owner_id,
+    )
+
+    assert resolved.reference == reference
+    assert resolved.source_code == SEED_STRATEGY_CODE
+
+
+@pytest.mark.asyncio
+async def test_failed_or_foreign_evolution_candidate_cannot_seed_research(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def get_candidate(*_args: object) -> dict[str, object] | None:
+        return None
+
+    monkeypatch.setattr(seed_resolver.evolution_candidates, "get_candidate", get_candidate)
+    with pytest.raises(NotFoundError):
+        await seed_resolver.resolve_seed(
+            object(),  # type: ignore[arg-type]
+            f"evolution_candidate:{uuid4()}",
+            uuid4(),
+        )

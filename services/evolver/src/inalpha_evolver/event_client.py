@@ -20,12 +20,15 @@ async def fetch_event_snapshot(
     settings: EvolverSettings,
 ) -> dict[str, Any]:
     """Resolve and freeze Data-owned snapshot metadata without direct table access."""
+    now = int(time.time())
     token = jwt.encode(
         {
             "sub": str(owner_account_id),
             "token_use": "service",
             "service_audience": "data",
-            "exp": int(time.time()) + min(settings.service_token_ttl_s, 300),
+            "token_purpose": "event_snapshot_read",
+            "iat": now,
+            "exp": now + min(settings.service_token_ttl_s, 300),
         },
         settings.jwt_secret,
         algorithm=settings.jwt_algorithm,

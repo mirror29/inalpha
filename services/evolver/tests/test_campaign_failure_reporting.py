@@ -26,6 +26,8 @@ async def test_campaign_validates_data_before_redeeming_llm_grant(monkeypatch) -
         "frozen_config": {
             "venue": "binance",
             "symbol": "BTC/USDT:USDT",
+            "asset_id": "asset:BTC",
+            "event_asset_code": "BTC",
             "timeframe": "4h",
             "from_ts": datetime.now(UTC) - timedelta(days=30),
             "as_of": datetime.now(UTC) - timedelta(hours=1),
@@ -43,8 +45,17 @@ async def test_campaign_validates_data_before_redeeming_llm_grant(monkeypatch) -
         nonlocal redeemed
         redeemed = True
 
+    @asynccontextmanager
+    async def fake_conn() -> AsyncIterator[object]:
+        yield object()
+
+    async def no_snapshot(*args: Any, **kwargs: Any) -> None:
+        return None
+
     monkeypatch.setattr(campaign_runtime.FrozenBarsLoader, "load", fail_load)
     monkeypatch.setattr(campaign_runtime, "build_owner_mutator", build_mutator)
+    monkeypatch.setattr(campaign_runtime, "get_conn", fake_conn)
+    monkeypatch.setattr(campaign_runtime, "get_campaign_data_snapshot", no_snapshot)
 
     with pytest.raises(ValidationError, match="market data upstream unavailable"):
         await campaign_runtime.execute_campaign(campaign, EvolverSettings())

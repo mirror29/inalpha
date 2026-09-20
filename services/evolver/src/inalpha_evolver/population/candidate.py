@@ -56,3 +56,7 @@ class EvaluationResult:
     data_epoch: int
     """回测数据的时间戳（UNIX ms，用于过拟合检测）。"""
     overfitting_risk: str = "high"
+    behavior: dict | None = None
+    """Deterministic signal/trade/holding fingerprint; never contains source or raw events."""
+    execution_event_metrics: dict | None = None
+    """Aggregate event outcomes measured on the cost-bearing equity and fill paths."""

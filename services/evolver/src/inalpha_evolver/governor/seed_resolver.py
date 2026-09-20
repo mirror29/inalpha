@@ -10,6 +10,7 @@ from inalpha_paper.strategy_preparation import prepare_strategy_source
 from inalpha_shared.errors import NotFoundError
 from psycopg import AsyncConnection
 
+from ..storage import candidates as evolution_candidates
 from .seed import SEED_STRATEGY_CODE
 
 
@@ -33,9 +34,24 @@ async def resolve_seed(
         except ValueError as exc:
             raise _not_found(reference) from exc
         row = await get_owned_candidate(conn, candidate_id, owner_account_id)
-        if row is None or row.get("status") != "promoted":
+        # Promotion is a trading-lifecycle gate, not a research gate. Owner drafts may be
+        # evolved after the same source audit; rejected and foreign candidates stay hidden.
+        if row is None or row.get("status") not in {"candidate", "promoted"}:
             raise _not_found(reference)
         source = row["code"]
+    elif reference.startswith("evolution_candidate:"):
+        try:
+            candidate_id = UUID(reference.removeprefix("evolution_candidate:"))
+        except ValueError as exc:
+            raise _not_found(reference) from exc
+        row = await evolution_candidates.get_candidate(conn, candidate_id, owner_account_id)
+        if (
+            row is None
+            or row.get("outcome") != "succeeded"
+            or not isinstance(row.get("source_code"), str)
+        ):
+            raise _not_found(reference)
+        source = row["source_code"]
     else:
         raise _not_found(reference)
     prepare_strategy_source(source)

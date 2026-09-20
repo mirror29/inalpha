@@ -17,13 +17,12 @@ _SYSTEM_PROMPT = """You are Inalpha's crypto strategy-hypothesis proposer.
 Return only a JSON array of exactly four objects. Propose falsifiable event reaction mechanisms,
 not prose strategies and never executable code. You may use only supplied frozen evidence IDs and
 aggregate simulation feedback. Never infer publication time, unseen news, or future outcomes.
-Each object may set: thesis,event_types,assets,applicable_regimes,direction,trigger_mode,
+Each object may set: thesis,event_types,applicable_regimes,direction,trigger_mode,
 confirmation,invalidation,risk,counterfactual. Preserve diversity and avoid semantic duplicates."""
 
 _ALLOWED_FIELDS = {
     "thesis",
     "event_types",
-    "assets",
     "applicable_regimes",
     "direction",
     "trigger_mode",
@@ -49,6 +48,7 @@ async def propose_generation(
     generation: int,
     scaffolds: list[HypothesisSpec],
     feedback: list[dict[str, Any]],
+    frozen_facts: list[dict[str, Any]],
 ) -> ProposalResult:
     """Run exactly two proposer calls of four slots, falling back per invalid call."""
     if len(scaffolds) != 8:
@@ -59,6 +59,7 @@ async def propose_generation(
             generation=generation,
             scaffolds=scaffolds[index : index + 4],
             feedback=feedback,
+            frozen_facts=frozen_facts,
         )
         for index in (0, 4)
     ]
@@ -85,12 +86,20 @@ async def _propose_four(
     generation: int,
     scaffolds: list[HypothesisSpec],
     feedback: list[dict[str, Any]],
+    frozen_facts: list[dict[str, Any]],
 ) -> tuple[list[HypothesisSpec], float, bool]:
+    evidence_ids = {evidence.split(":", 1)[0] for item in scaffolds for evidence in item.evidence_ids}
+    projected_facts = [
+        _project_fact(item)
+        for item in frozen_facts
+        if str(item.get("fact_id") or "") in evidence_ids
+    ][:64]
     prompt = json.dumps(
         {
             "generation": generation,
             "slots": [item.model_dump(mode="json") for item in scaffolds],
             "aggregate_feedback": feedback,
+            "frozen_event_facts": projected_facts,
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -120,6 +129,8 @@ async def _propose_four(
                 {
                     "hypothesis_id": str(uuid4()),
                     "evidence_ids": scaffold.evidence_ids,
+                    "assets": scaffold.assets,
+                    "asset_ids": scaffold.asset_ids,
                     "lane": scaffold.lane,
                     "lineage_kind": scaffold.lineage_kind,
                     "parent_ids": scaffold.parent_ids,
@@ -133,6 +144,27 @@ async def _propose_four(
     except (ValueError, TypeError, json.JSONDecodeError):
         return scaffolds, cost, True
     return proposals, cost, False
+
+
+def _project_fact(fact: dict[str, Any]) -> dict[str, Any]:
+    """Expose only typed fact fields; raw titles, actions, actors, and text never cross."""
+    return {
+        key: fact[key]
+        for key in (
+            "fact_id",
+            "event_type",
+            "assets",
+            "asset_ids",
+            "severity",
+            "confidence",
+            "effective_at",
+            "available_at",
+            "extractor_version",
+            "policy_version",
+            "retracted",
+        )
+        if key in fact
+    }
 
 
 def _parse_json_array(content: str) -> list[Any]:

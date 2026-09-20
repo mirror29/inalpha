@@ -47,6 +47,9 @@ def evaluate_event_reactions(
     bars: list[Bar],
     events: list[MarketEvent],
     asset: str,
+    event_types: tuple[str, ...],
+    min_severity: float,
+    min_confidence: float,
     direction: str,
     holding_bars: int,
     exclusion_bars: int,
@@ -58,9 +61,15 @@ def evaluate_event_reactions(
         return _empty(len(events))
     times = [bar.bar_known_at for bar in bars]
     event_indices: list[int] = []
-    for event in _independent_events(events, asset):
-        if event.assets and asset.upper() not in event.assets:
-            continue
+    scoped_events = [
+        event
+        for event in events
+        if event.event_type in event_types
+        and (not event.assets or asset.upper() in event.assets)
+        and event.severity >= min_severity
+        and event.confidence >= min_confidence
+    ]
+    for event in _independent_events(scoped_events, asset):
         index = bisect.bisect_left(times, event.available_at)
         if 1 <= index < len(bars) - holding_bars:
             event_indices.append(index)

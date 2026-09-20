@@ -7,7 +7,11 @@ from typing import Any
 from .models import HypothesisSpec
 
 
-def seed_generation_one(snapshot: dict[str, Any], asset: str) -> list[HypothesisSpec]:
+def seed_generation_one(
+    snapshot: dict[str, Any],
+    asset: str,
+    asset_id: str,
+) -> list[HypothesisSpec]:
     """Create eight diverse, falsifiable slots grounded only in frozen fact IDs."""
     facts = [item for item in snapshot.get("facts", []) if isinstance(item, dict)]
     by_type: dict[str, list[dict[str, Any]]] = {}
@@ -36,6 +40,7 @@ def seed_generation_one(snapshot: dict[str, Any], asset: str) -> list[Hypothesis
                 evidence_ids=_evidence_ids(facts_for_type),
                 event_types=[event_type],
                 assets=[asset],
+                asset_ids=[asset_id],
                 direction=direction,
                 trigger_mode=(
                     "direct"
@@ -53,6 +58,7 @@ def seed_generation_one(snapshot: dict[str, Any], asset: str) -> list[Hypothesis
                 evidence_ids=_evidence_ids(facts),
                 event_types=[event_types[0]],
                 assets=[asset],
+                asset_ids=[asset_id],
                 applicable_regimes=["high_volume", "high_volatility"],
                 direction=seeds[0].direction,
                 trigger_mode="hybrid",
@@ -62,15 +68,19 @@ def seed_generation_one(snapshot: dict[str, Any], asset: str) -> list[Hypothesis
                 thesis="少量动量和成交量确认因子可作为事件后的证伪条件，而不是独立产生方向。",
                 event_types=["other"],
                 assets=[asset],
+                asset_ids=[asset_id],
                 direction="long",
                 trigger_mode="confirmed",
             ),
             HypothesisSpec(
                 lane="execution_risk",
                 thesis="降低事件期仓位并缩短持有期可能在保留异常收益的同时减少不利滑点与回撤。",
-                event_types=["other"],
+                parent_ids=[seeds[0].hypothesis_id],
+                evidence_ids=seeds[0].evidence_ids,
+                event_types=seeds[0].event_types,
                 assets=[asset],
-                direction="long",
+                asset_ids=[asset_id],
+                direction=seeds[0].direction,
                 trigger_mode="confirmed",
                 risk={"position_pct": 0.05},
                 invalidation={"ttl_bars": 4, "holding_bars": 6, "max_adverse_pct": 2.0},
@@ -80,6 +90,7 @@ def seed_generation_one(snapshot: dict[str, Any], asset: str) -> list[Hypothesis
                 thesis="市场状态迁移本身可形成方向，但必须通过封闭验证集证明不依赖单一事件类别。",
                 event_types=["other"],
                 assets=[asset],
+                asset_ids=[asset_id],
                 applicable_regimes=["trend_transition"],
                 direction="long",
                 trigger_mode="confirmed",
@@ -91,6 +102,7 @@ def seed_generation_one(snapshot: dict[str, Any], asset: str) -> list[Hypothesis
                 evidence_ids=_evidence_ids(facts),
                 event_types=["exploit"],
                 assets=[asset],
+                asset_ids=[asset_id],
                 direction="long",
                 trigger_mode="confirmed",
             ),

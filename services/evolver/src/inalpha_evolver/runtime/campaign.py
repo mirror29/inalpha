@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+import httpx
 import jwt
 from inalpha_paper.data_client import DataClient
 from inalpha_paper.evaluation_executor import KillableEngineRunner
@@ -18,8 +20,14 @@ from inalpha_shared.db import get_conn
 from ..api.schemas import CampaignConfig
 from ..config import EvolverSettings
 from ..data import FrozenBarsLoader, FrozenDataset
+from ..data.persistent_snapshot import (
+    decode_frozen_dataset,
+    get_campaign_data_snapshot,
+    persist_campaign_data_snapshot,
+)
 from ..evaluator.event_study import evaluate_event_reactions
 from ..evaluator.frozen import FrozenDatasetEvaluator
+from ..forward_client import create_forward_sandbox, get_forward_sandbox
 from ..hypothesis.compiler import compile_hypothesis, expand_implementations
 from ..hypothesis.models import HypothesisSpec
 from ..hypothesis.proposer import propose_generation
@@ -30,6 +38,7 @@ from ..hypothesis.selection import (
     block_bootstrap_p_value,
     credit_hypothesis,
     pareto_ranks,
+    passes_generation_evidence_gate,
     plan_next_generation,
 )
 from ..mutator import Mutator
@@ -39,6 +48,15 @@ from ..storage import campaigns as store
 
 async def execute_campaign(campaign: dict[str, Any], settings: EvolverSettings) -> None:
     """Run remaining generations, then lock one champion for isolated forward evidence."""
+    if campaign.get("status") == "candidate_locked":
+        await _ensure_forward_sandbox(campaign, settings)
+        return
+    if campaign.get("status") == "waiting_forward":
+        await _reconcile_forward_sandbox(campaign, settings)
+        return
+    if campaign.get("status") == "holdout_ready":
+        await _execute_sealed_holdout(campaign, settings)
+        return
     config = _campaign_config(campaign)
     dataset, snapshot = await _load_frozen_inputs(campaign, config, settings)
     mutator = await build_owner_mutator(campaign, settings)
@@ -70,19 +88,17 @@ async def evaluate_sealed_holdout(
             if key in campaign["frozen_config"]
         }
     )
+    async with get_conn() as conn:
+        frozen_row = await get_campaign_data_snapshot(conn, campaign["campaign_id"])
+    if frozen_row is None:
+        raise RuntimeError("sealed holdout requires the campaign's immutable data snapshot")
+    dataset = decode_frozen_dataset(frozen_row)
     token = _service_token(campaign["owner_account_id"], settings)
     async with DataClient(
         settings.data_service_url,
         token,
         timeout=settings.evolver_data_timeout_s,
     ) as client:
-        dataset = await FrozenBarsLoader(client).load(
-            venue=config.venue,
-            symbol=config.symbol,
-            timeframe=config.timeframe,
-            from_ts=config.from_ts,
-            as_of=config.as_of,
-        )
         snapshot = await client.get_event_snapshot(str(campaign["event_snapshot_id"]))
     if len(dataset.bars) < 5:
         raise RuntimeError("sealed holdout requires at least five frozen bars")
@@ -111,7 +127,10 @@ async def evaluate_sealed_holdout(
     event_study = evaluate_event_reactions(
         bars=holdout_bars,
         events=holdout_events,
-        asset=_base_asset(config.symbol),
+        asset=config.event_asset_code,
+        event_types=tuple(hypothesis.event_types),
+        min_severity=hypothesis.risk.min_severity,
+        min_confidence=hypothesis.risk.min_confidence,
         direction=hypothesis.direction,
         holding_bars=hypothesis.invalidation.holding_bars,
         exclusion_bars=hypothesis.counterfactual.exclusion_bars,
@@ -120,7 +139,7 @@ async def evaluate_sealed_holdout(
     )
     sharpe = holdout.get("sharpe")
     total_return = float(holdout.get("total_return_pct") or 0.0)
-    max_drawdown = float(holdout.get("max_drawdown_pct") or 100.0)
+    max_drawdown = _metric_float(holdout.get("max_drawdown_pct"), default=100.0)
     passed = bool(
         isinstance(sharpe, (int, float))
         and sharpe > 0
@@ -161,6 +180,7 @@ async def _execute_campaign(
     snapshot: dict[str, Any],
 ) -> None:
     """Execute one credential-bound campaign while keeping the key process-local."""
+    lease_token = UUID(str(campaign["lease_token"]))
     all_events = tuple(market_event_from_fact(item) for item in snapshot["facts"])
     search_dataset, validation_bars = _search_dataset(dataset)
     search_events = tuple(
@@ -192,6 +212,8 @@ async def _execute_campaign(
             )
         if current is None or current["status"] != "replaying":
             return
+        if current.get("lease_token") != lease_token:
+            raise RuntimeError("campaign lease fencing token was lost")
         hypotheses = [
             HypothesisSpec.model_validate(row["spec"])
             for row in current["hypotheses"]
@@ -208,6 +230,9 @@ async def _execute_campaign(
                 generation=generation,
                 scaffolds=hypotheses,
                 feedback=_proposal_feedback(current, generation - 1),
+                frozen_facts=[
+                    item for item in snapshot.get("facts", []) if isinstance(item, dict)
+                ],
             )
             hypotheses = list(proposed.hypotheses)
             async with get_conn() as conn:
@@ -217,8 +242,14 @@ async def _execute_campaign(
                         campaign["campaign_id"],
                         generation,
                         hypotheses,
+                        lease_token,
                     )
-                    await store.add_llm_cost(conn, campaign["campaign_id"], proposed.cost_usd)
+                    await store.add_llm_cost(
+                        conn,
+                        campaign["campaign_id"],
+                        proposed.cost_usd,
+                        lease_token,
+                    )
         scores = await _evaluate_generation(
             campaign=current,
             generation=generation,
@@ -226,8 +257,10 @@ async def _execute_campaign(
             evaluator=evaluator,
             validation_bars=list(validation_bars),
             validation_events=list(search_events),
-            asset=config.symbol.split("/")[0],
+            asset=config.event_asset_code,
             seed=config.random_seed + generation,
+            max_concurrent=settings.candidate_evaluation_concurrency,
+            lease_token=lease_token,
         )
         if generation == int(campaign["max_generations"]):
             async with get_conn() as conn:
@@ -240,20 +273,24 @@ async def _execute_campaign(
                         campaign["campaign_id"],
                         campaign["owner_account_id"],
                         from_statuses=("replaying",),
-                        to_status="rejected",
+                        to_status="insufficient_evidence",
                         values={
-                            "failure_code": "NO_FDR_CHAMPION",
+                            "failure_code": "INSUFFICIENT_FDR_EVIDENCE",
                             "failure_message": "generation five produced no FDR-passing implementation",
                             "finished_at": datetime.now(UTC),
                         },
+                        lease_token=lease_token,
                     )
                     return
-                await store.lock_champion(
+                locked = await store.lock_champion(
                     conn,
                     campaign["campaign_id"],
                     campaign["owner_account_id"],
-                    champion["implementation_id"],
+                    lease_token,
                 )
+            if locked is None:
+                raise RuntimeError("campaign champion locking lost compare-and-swap")
+            await _ensure_forward_sandbox(locked, settings)
             return
         next_generation = generation + 1
         next_hypotheses = _next_hypotheses(
@@ -264,13 +301,18 @@ async def _execute_campaign(
         async with get_conn() as conn:
             async with conn.transaction():
                 await store.insert_hypotheses(
-                    conn, campaign["campaign_id"], next_generation, next_hypotheses
+                    conn,
+                    campaign["campaign_id"],
+                    next_generation,
+                    next_hypotheses,
+                    lease_token=lease_token,
                 )
                 advanced = await store.advance_generation(
                     conn,
                     campaign["campaign_id"],
                     current_generation=generation,
                     next_generation=next_generation,
+                    lease_token=lease_token,
                 )
         if not advanced:
             raise RuntimeError("campaign generation advance lost compare-and-swap")
@@ -280,7 +322,18 @@ async def _execute_campaign(
 def _proposal_feedback(campaign: dict[str, Any], generation: int) -> list[dict[str, Any]]:
     """Expose only aggregate selection evidence, never bars, trades, or holdout rows."""
     if generation < 1:
-        return []
+        frozen_config = campaign.get("frozen_config")
+        source_feedback = (
+            frozen_config.get("source_simulation_feedback")
+            if isinstance(frozen_config, dict)
+            else None
+        )
+        records = source_feedback.get("records") if isinstance(source_feedback, dict) else None
+        return (
+            [dict(item) for item in records if isinstance(item, dict)]
+            if isinstance(records, list)
+            else []
+        )
     return [
         {
             "hypothesis_id": str(item["hypothesis_id"]),
@@ -295,6 +348,120 @@ def _proposal_feedback(campaign: dict[str, Any], generation: int) -> list[dict[s
     ]
 
 
+async def _ensure_forward_sandbox(
+    campaign: dict[str, Any],
+    settings: EvolverSettings,
+) -> None:
+    """Retry the idempotent Paper handoff until the same sandbox is durably linked."""
+    async with get_conn() as conn:
+        current = await store.get_campaign(
+            conn,
+            campaign["campaign_id"],
+            campaign["owner_account_id"],
+        )
+    if current is None or current["status"] != "candidate_locked":
+        return
+    lease_token = UUID(str(campaign["lease_token"]))
+    if current.get("lease_token") != lease_token:
+        raise RuntimeError("campaign lease fencing token was lost")
+    sandbox = await create_forward_sandbox(current, settings)
+    async with get_conn() as conn:
+        linked = await store.start_forward_sandbox(
+            conn,
+            current["campaign_id"],
+            current["owner_account_id"],
+            lease_token=lease_token,
+            sandbox_id=UUID(str(sandbox["sandbox_id"])),
+        )
+    if linked is None:
+        raise RuntimeError("Paper Forward sandbox linking lost compare-and-swap")
+
+
+async def _reconcile_forward_sandbox(
+    campaign: dict[str, Any],
+    settings: EvolverSettings,
+) -> None:
+    """Copy only signed Paper evidence into the campaign state machine."""
+    evidence = await get_forward_sandbox(campaign, settings)
+    async with get_conn() as conn:
+        updated = await store.record_paper_forward(
+            conn,
+            campaign["campaign_id"],
+            campaign["owner_account_id"],
+            lease_token=UUID(str(campaign["lease_token"])),
+            evidence=evidence,
+        )
+    if updated is None:
+        raise RuntimeError("Paper Forward reconciliation lost compare-and-swap")
+
+
+async def _execute_sealed_holdout(
+    campaign: dict[str, Any],
+    settings: EvolverSettings,
+) -> None:
+    """Automatically consume and evaluate the pre-committed champion exactly once."""
+    owner = campaign["owner_account_id"]
+    campaign_token = UUID(str(campaign["lease_token"]))
+    async with get_conn() as conn:
+        attempt = await store.reserve_holdout_attempt(
+            conn,
+            campaign["campaign_id"],
+            owner,
+            campaign_token,
+        )
+        if attempt is None or attempt["status"] in {"succeeded", "failed"}:
+            return
+        claimed = await store.claim_holdout_attempt(
+            conn,
+            attempt["attempt_id"],
+            owner,
+            ttl_s=max(60, settings.evolver_job_timeout_s + 30),
+        )
+        if claimed is None:
+            return
+        implementation = await store.holdout_attempt_input(
+            conn,
+            claimed["attempt_id"],
+            owner,
+            claimed["fencing_token"],
+        )
+    if implementation is None:
+        raise RuntimeError("sealed holdout attempt lost its fencing token")
+    try:
+        passed, evidence = await evaluate_sealed_holdout(
+            campaign,
+            source_code=implementation["source_code"],
+            hypothesis=HypothesisSpec.model_validate(implementation["spec"]),
+            settings=settings,
+        )
+    except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError):
+        async with get_conn() as conn:
+            await store.release_holdout_attempt(
+                conn,
+                claimed["attempt_id"],
+                owner,
+                claimed["fencing_token"],
+            )
+        raise
+    except Exception as exc:
+        passed = False
+        evidence = {
+            "error_code": str(getattr(exc, "code", "SEALED_HOLDOUT_FAILED")),
+            "error_message": str(exc)[:1000],
+        }
+    async with get_conn() as conn:
+        finalized = await store.finalize_holdout_attempt(
+            conn,
+            claimed["attempt_id"],
+            owner,
+            fencing_token=claimed["fencing_token"],
+            passed=passed,
+            evidence=evidence,
+        )
+    if finalized is None:
+        raise RuntimeError("sealed holdout finalization lost compare-and-swap")
+
+
 async def _evaluate_generation(
     *,
     campaign: dict[str, Any],
@@ -305,8 +472,11 @@ async def _evaluate_generation(
     validation_events: list[Any],
     asset: str,
     seed: int,
+    max_concurrent: int,
+    lease_token: UUID,
 ) -> list[HypothesisScore]:
     implementation_rows: list[tuple[dict[str, Any], HypothesisSpec, dict[str, Any]]] = []
+    pending: list[tuple[dict[str, Any], HypothesisSpec, str]] = []
     for hypothesis in hypotheses:
         for implementation_index, implementation_spec in enumerate(
             expand_implementations(hypothesis)
@@ -323,6 +493,7 @@ async def _evaluate_generation(
                     ),
                     source_code=compiled.source_code,
                     source_hash=compiled.source_hash,
+                    lease_token=lease_token,
                 )
                 cached = await store.find_cached_implementation(
                     conn, campaign["campaign_id"], compiled.source_hash
@@ -344,17 +515,44 @@ async def _evaluate_generation(
                 } | {"outcome": "succeeded"}
                 async with get_conn() as conn:
                     updated = await store.update_implementation(
-                        conn, row["implementation_id"], values=values
+                        conn,
+                        row["implementation_id"],
+                        campaign_id=campaign["campaign_id"],
+                        lease_token=lease_token,
+                        values=values,
                     )
                 assert updated is not None
                 implementation_rows.append((updated, implementation_spec, updated))
                 continue
+
+            pending.append((row, implementation_spec, compiled.source_code))
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def evaluate_one(
+        row: dict[str, Any],
+        implementation_spec: HypothesisSpec,
+        source_code: str,
+    ) -> tuple[dict[str, Any], HypothesisSpec, dict[str, Any]]:
+        async with semaphore:
             try:
-                result = await evaluator.evaluate(compiled.source_code)
+                result = await evaluator.evaluate(
+                    source_code,
+                    event_scope={
+                        "asset": asset,
+                        "event_types": implementation_spec.event_types,
+                        "min_severity": implementation_spec.risk.min_severity,
+                        "min_confidence": implementation_spec.risk.min_confidence,
+                        "holding_bars": implementation_spec.invalidation.holding_bars,
+                    },
+                )
                 event_study = evaluate_event_reactions(
                     bars=validation_bars,
                     events=validation_events,
                     asset=asset,
+                    event_types=tuple(implementation_spec.event_types),
+                    min_severity=implementation_spec.risk.min_severity,
+                    min_confidence=implementation_spec.risk.min_confidence,
                     direction=implementation_spec.direction,
                     holding_bars=implementation_spec.invalidation.holding_bars,
                     exclusion_bars=implementation_spec.counterfactual.exclusion_bars,
@@ -365,22 +563,43 @@ async def _evaluate_generation(
                 holdout = validation.get("holdout") or {}
                 holdout_sharpe = float(holdout.get("sharpe") or 0.0)
                 holdout_return = float(holdout.get("total_return_pct") or 0.0)
-                holdout_drawdown = float(holdout.get("max_drawdown_pct") or 100.0)
+                holdout_drawdown = _metric_float(
+                    holdout.get("max_drawdown_pct"),
+                    default=100.0,
+                )
                 selection_fitness = (
                     holdout_sharpe
                     + 0.02 * holdout_return
                     - max(0.0, holdout_drawdown - 20.0) / 20.0
                 )
-                evidence_quality = min(1.0, event_study.event_count / 10.0) * (
-                    sum(event.confidence for event in validation_events)
-                    / max(1, len(validation_events))
+                execution_events = result.execution_event_metrics or {}
+                event_metrics = {
+                    **event_study.as_dict(),
+                    **execution_events,
+                    "scope_event_count": event_study.event_count,
+                }
+                if execution_events:
+                    event_metrics["event_advantage_pct"] = float(
+                        execution_events.get("mean_post_cost_return_pct") or 0.0
+                    ) - float(event_study.mean_control_return_pct)
+                match_ratio = event_study.matched_control_count / max(
+                    1, event_study.event_count
+                )
+                match_ratio = min(1.0, match_ratio)
+                evidence_quality = (
+                    min(1.0, event_study.matched_control_count / 8.0) * match_ratio
+                    if match_ratio >= 0.70
+                    else 0.0
                 )
                 novelty = _spec_novelty(implementation_spec, hypotheses)
                 values = {
                     "outcome": "succeeded",
                     "fitness": selection_fitness,
-                    "validation_metrics": validation,
-                    "event_metrics": event_study.as_dict(),
+                    "validation_metrics": {
+                        **validation,
+                        "behavior_fingerprint": result.behavior,
+                    },
+                    "event_metrics": event_metrics,
                     "evidence_quality": evidence_quality,
                     "novelty_score": novelty,
                 }
@@ -392,12 +611,35 @@ async def _evaluate_generation(
                 }
             async with get_conn() as conn:
                 updated = await store.update_implementation(
-                    conn, row["implementation_id"], values=values
+                    conn,
+                    row["implementation_id"],
+                    campaign_id=campaign["campaign_id"],
+                    lease_token=lease_token,
+                    values=values,
                 )
             assert updated is not None
-            implementation_rows.append((updated, implementation_spec, updated))
+            return updated, implementation_spec, updated
+
+    if pending:
+        implementation_rows.extend(
+            await asyncio.gather(
+                *(evaluate_one(row, spec, source) for row, spec, source in pending)
+            )
+        )
+    implementation_rows.sort(key=lambda item: str(item[0]["implementation_id"]))
 
     succeeded = [item for item in implementation_rows if item[0]["outcome"] == "succeeded"]
+    _apply_behavior_novelty(succeeded, hypotheses)
+    for row, _spec, _ in succeeded:
+        async with get_conn() as conn:
+            updated = await store.update_implementation(
+                conn,
+                row["implementation_id"],
+                campaign_id=campaign["campaign_id"],
+                lease_token=lease_token,
+                values={"novelty_score": row["novelty_score"]},
+            )
+        assert updated is not None
     p_values = [
         block_bootstrap_p_value(
             (item[0].get("event_metrics") or {}).get("event_effects") or (),
@@ -407,9 +649,18 @@ async def _evaluate_generation(
     ]
     fdr_passes = benjamini_hochberg(p_values, q=0.10)
     for (row, _spec, _), fdr_pass in zip(succeeded, fdr_passes, strict=True):
+        event_metrics = row.get("event_metrics") or {}
+        evidence_pass = passes_generation_evidence_gate(
+            event_count=int(event_metrics.get("scope_event_count") or 0),
+            matched_control_count=int(event_metrics.get("matched_control_count") or 0),
+        )
         async with get_conn() as conn:
             await store.update_implementation(
-                conn, row["implementation_id"], values={"fdr_pass": fdr_pass}
+                conn,
+                row["implementation_id"],
+                campaign_id=campaign["campaign_id"],
+                lease_token=lease_token,
+                values={"fdr_pass": fdr_pass and evidence_pass},
             )
 
     by_hypothesis: dict[UUID, list[ImplementationScore]] = {}
@@ -421,8 +672,9 @@ async def _evaluate_generation(
         by_hypothesis.setdefault(implementation_spec.hypothesis_id, []).append(
             ImplementationScore(
                 fitness=float(row["fitness"]),
-                max_drawdown_pct=float(
-                    (validation.get("holdout") or {}).get("max_drawdown_pct") or 100
+                max_drawdown_pct=_metric_float(
+                    (validation.get("holdout") or {}).get("max_drawdown_pct"),
+                    default=100.0,
                 ),
                 event_advantage=float(event_metrics.get("event_advantage_pct") or 0),
                 stability=max(0.0, min(1.0, float(decay or 0))),
@@ -465,7 +717,13 @@ async def _evaluate_generation(
         for item in hypothesis_scores
     ]
     async with get_conn() as conn:
-        await store.update_hypothesis_scores(conn, campaign["campaign_id"], generation, score_rows)
+        await store.update_hypothesis_scores(
+            conn,
+            campaign["campaign_id"],
+            generation,
+            score_rows,
+            lease_token,
+        )
     return hypothesis_scores
 
 
@@ -481,7 +739,7 @@ def _next_hypotheses(
         return [
             _mutate(parent, index, lineage_kind="elite" if index < 2 else "mutation")
             if index < 7
-            else _restart(seed)
+            else _restart(seed, scope=parent)
             for index in range(8)
         ]
     plan = plan_next_generation(scores, seed=seed)
@@ -499,7 +757,7 @@ def _next_hypotheses(
             by_id[plan.crossover_parents[1]],
         )
     )
-    out.append(_restart(seed))
+    out.append(_restart(seed, scope=current[0]))
     return out
 
 
@@ -513,9 +771,7 @@ def _clone(
     payload = parent.model_dump(mode="json")
     payload.update(updates or {})
     if payload["lane"] == "restart" and lineage_kind != "restart":
-        payload["lane"] = (
-            "event_regime" if payload.get("applicable_regimes") else "event"
-        )
+        payload["lane"] = "event_regime" if payload.get("applicable_regimes") else "event"
     payload.update(
         {
             "hypothesis_id": str(uuid4()),
@@ -574,6 +830,7 @@ def _crossover(left: HypothesisSpec, right: HypothesisSpec) -> HypothesisSpec:
             "thesis": f"交叉验证两个不同机制：{left.thesis[:500]}；{right.thesis[:500]}",
             "event_types": event_types,
             "assets": sorted(set(left.assets) | set(right.assets)),
+            "asset_ids": sorted(set(left.asset_ids) | set(right.asset_ids)),
             "evidence_ids": list(dict.fromkeys([*left.evidence_ids, *right.evidence_ids]))[:64],
             "trigger_mode": left.trigger_mode if direct_allowed else "confirmed",
             "risk": left.risk.model_copy(
@@ -584,7 +841,7 @@ def _crossover(left: HypothesisSpec, right: HypothesisSpec) -> HypothesisSpec:
     return HypothesisSpec.model_validate(payload)
 
 
-def _restart(seed: int) -> HypothesisSpec:
+def _restart(seed: int, *, scope: HypothesisSpec) -> HypothesisSpec:
     templates = [
         ("listing", "long", "confirmed", "新上市事件在成交量确认后可能出现延迟价格发现。"),
         ("exploit", "short", "hybrid", "安全漏洞冲击可能先扩散后反转，分段确认能降低追空风险。"),
@@ -597,6 +854,8 @@ def _restart(seed: int) -> HypothesisSpec:
         lineage_kind="restart",
         thesis=thesis,
         event_types=[event_type],
+        assets=scope.assets,
+        asset_ids=scope.asset_ids,
         direction=direction,  # type: ignore[arg-type]
         trigger_mode=mode,  # type: ignore[arg-type]
     )
@@ -613,6 +872,42 @@ def _spec_novelty(spec: HypothesisSpec, population: list[HypothesisSpec]) -> flo
         similarity = len(tokens & other_tokens) / len(union) if union else 1.0
         distances.append(1.0 - similarity)
     return sum(distances) / len(distances) if distances else 1.0
+
+
+def _apply_behavior_novelty(
+    rows: list[tuple[dict[str, Any], HypothesisSpec, dict[str, Any]]],
+    population: list[HypothesisSpec],
+) -> None:
+    """Blend semantic, signal, trade and holding distances before Pareto selection."""
+    for row, spec, _ in rows:
+        fingerprint = (row.get("validation_metrics") or {}).get("behavior_fingerprint") or {}
+        distances: list[float] = []
+        for other, _other_spec, _ in rows:
+            if other["implementation_id"] == row["implementation_id"]:
+                continue
+            other_fingerprint = (
+                (other.get("validation_metrics") or {}).get("behavior_fingerprint") or {}
+            )
+            signal = _vector_distance(fingerprint.get("signal"), other_fingerprint.get("signal"))
+            trade = _vector_distance(fingerprint.get("trade"), other_fingerprint.get("trade"))
+            holding = _vector_distance(
+                fingerprint.get("holding"), other_fingerprint.get("holding")
+            )
+            distances.append(0.4 * signal + 0.3 * trade + 0.3 * holding)
+        behavior = sum(distances) / len(distances) if distances else 1.0
+        row["novelty_score"] = 0.4 * _spec_novelty(spec, population) + 0.6 * behavior
+
+
+def _vector_distance(left: object, right: object) -> float:
+    """Return normalized L1 distance for same-schema bounded behavior vectors."""
+    if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+        return 1.0
+    if not left:
+        return 0.0
+    return min(
+        1.0,
+        sum(abs(float(a) - float(b)) for a, b in zip(left, right, strict=True)) / len(left),
+    )
 
 
 def _spec_tokens(spec: HypothesisSpec) -> set[str]:
@@ -660,20 +955,33 @@ async def _load_frozen_inputs(
     config: CampaignConfig,
     settings: EvolverSettings,
 ) -> tuple[FrozenDataset, dict[str, Any]]:
-    """Validate frozen market and event inputs before redeeming the owner LLM grant."""
+    """Create bars once, then reuse their immutable payload on every restart."""
+    async with get_conn() as conn:
+        persisted = await get_campaign_data_snapshot(conn, campaign["campaign_id"])
     token = _service_token(campaign["owner_account_id"], settings)
     async with DataClient(
         settings.data_service_url,
         token,
         timeout=settings.evolver_data_timeout_s,
     ) as client:
-        dataset = await FrozenBarsLoader(client).load(
-            venue=config.venue,
-            symbol=config.symbol,
-            timeframe=config.timeframe,
-            from_ts=config.from_ts,
-            as_of=config.as_of,
-        )
+        if persisted is None:
+            loaded = await FrozenBarsLoader(client).load(
+                venue=config.venue,
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                from_ts=config.from_ts,
+                as_of=config.as_of,
+            )
+            async with get_conn() as conn:
+                async with conn.transaction():
+                    persisted = await persist_campaign_data_snapshot(
+                        conn,
+                        campaign_id=campaign["campaign_id"],
+                        owner_account_id=campaign["owner_account_id"],
+                        lease_token=UUID(str(campaign["lease_token"])),
+                        dataset=loaded,
+                    )
+        dataset = decode_frozen_dataset(persisted)
         snapshot = await client.get_event_snapshot(str(campaign["event_snapshot_id"]))
     return dataset, snapshot
 
@@ -684,35 +992,33 @@ def _implementation_profile(
     index: int,
 ) -> str:
     """Keep three unique ablation identities even when direct mode is prohibited."""
-    if set(parent.event_types) <= {"listing", "delisting", "exploit", "chain_halt"}:
+    if parent.lane in {"event", "event_regime", "restart"} and set(
+        parent.event_types
+    ) <= {"listing", "delisting", "exploit", "chain_halt"}:
         return implementation.trigger_mode
     return ("canonical", "conservative", "aggressive")[index]
 
 
+def _metric_float(value: object, *, default: float) -> float:
+    """Preserve valid zero-valued metrics while defaulting only missing values."""
+    return default if value is None else float(value)
+
+
 def _service_token(account_id: UUID, settings: EvolverSettings) -> str:
+    now = int(time.time())
     return jwt.encode(
         {
             "sub": str(account_id),
             "token_use": "service",
             "service_audience": "data",
-            "token_purpose": "event_campaign_snapshot",
+            "token_purpose": "event_snapshot_read",
             "owner_account_id": str(account_id),
-            "exp": int(time.time()) + settings.service_token_ttl_s,
+            "iat": now,
+            "exp": now + min(settings.service_token_ttl_s, 300),
         },
         settings.jwt_secret,
         algorithm=settings.jwt_algorithm,
     )
-
-
-def _base_asset(symbol: str) -> str:
-    """Normalize common slash and quote-suffixed crypto symbols for event matching."""
-    normalized = symbol.upper().replace("-", "/")
-    if "/" in normalized:
-        return normalized.split("/", 1)[0]
-    for quote in ("USDT", "USDC", "USD", "BTC", "ETH"):
-        if normalized.endswith(quote) and len(normalized) > len(quote):
-            return normalized[: -len(quote)]
-    return normalized
 
 
 __all__ = ["evaluate_sealed_holdout", "execute_campaign"]

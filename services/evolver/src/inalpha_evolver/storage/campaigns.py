@@ -14,9 +14,9 @@ from ..hypothesis.compiler import canonical_spec_hash
 from ..hypothesis.models import HypothesisSpec
 
 _CAMPAIGN_COLUMNS = """campaign_id,owner_account_id,source_run_id,status,active_generation,
-hypothesis_budget,implementations_per_hypothesis,max_generations,event_snapshot_id,frozen_config,
+hypothesis_budget,implementations_per_hypothesis,max_generations,event_snapshot_id,data_snapshot_id,frozen_config,
 llm_snapshot,llm_config_digest,llm_credential_grant,llm_cost_usd,
-locked_candidate_id,holdout_consumed_at,forward_started_at,forward_deadline_at,
+locked_candidate_id,holdout_consumed_at,forward_sandbox_id,forward_started_at,forward_deadline_at,
 forward_event_count,forward_metrics,failure_code,failure_message,lease_owner,lease_token,
 lease_expires_at,state_version,created_at,updated_at,finished_at"""
 _HYPOTHESIS_COLUMNS = """hypothesis_id,campaign_id,generation,slot,lineage_kind,lane,parent_ids,
@@ -24,6 +24,8 @@ spec,spec_hash,upper_credit,novelty_score,pareto_rank,selected,created_at"""
 _IMPLEMENTATION_COLUMNS = """implementation_id,campaign_id,hypothesis_id,generation,profile,
 source_code,source_hash,outcome,fitness,validation_metrics,event_metrics,evidence_quality,
 novelty_score,fdr_pass,error_code,error_message,created_at,updated_at"""
+_HOLDOUT_ATTEMPT_COLUMNS = """attempt_id,campaign_id,owner_account_id,candidate_id,status,
+fencing_token,lease_expires_at,passed,evidence,started_at,finished_at,created_at,updated_at"""
 
 
 async def insert_campaign(
@@ -155,19 +157,32 @@ async def insert_implementation(
     profile: str,
     source_code: str,
     source_hash: str,
+    lease_token: UUID,
 ) -> dict[str, Any]:
     """Insert one deterministic lower-level implementation idempotently."""
     async with conn.cursor() as cur:
         await cur.execute(
             f"""INSERT INTO evolution_implementations(
 implementation_id,campaign_id,hypothesis_id,generation,profile,source_code,source_hash)
-VALUES(%s,%s,%s,%s,%s,%s,%s)
+SELECT %s,%s,%s,%s,%s,%s,%s FROM evolution_campaigns c
+WHERE c.campaign_id=%s AND c.lease_token=%s AND c.lease_expires_at>=NOW()
 ON CONFLICT(hypothesis_id,profile) DO UPDATE SET updated_at=NOW()
 RETURNING {_IMPLEMENTATION_COLUMNS}""",
-            (uuid4(), campaign_id, hypothesis_id, generation, profile, source_code, source_hash),
+            (
+                uuid4(),
+                campaign_id,
+                hypothesis_id,
+                generation,
+                profile,
+                source_code,
+                source_hash,
+                campaign_id,
+                lease_token,
+            ),
         )
         row = await cur.fetchone()
-    assert row is not None
+    if row is None:
+        raise RuntimeError("campaign lease fencing token was lost")
     return dict(row)
 
 
@@ -175,17 +190,22 @@ async def update_implementation(
     conn: AsyncConnection,
     implementation_id: UUID,
     *,
+    campaign_id: UUID,
+    lease_token: UUID,
     values: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Persist evaluation evidence without changing source identity."""
     updates = {**values, "updated_at": datetime.now(UTC)}
     assignments = ",".join(f"{key}=%s" for key in updates)
     params = [json.dumps(value) if isinstance(value, dict) else value for value in updates.values()]
-    params.append(implementation_id)
+    params.extend([implementation_id, campaign_id, campaign_id, lease_token])
     async with conn.cursor() as cur:
         await cur.execute(
             f"""UPDATE evolution_implementations SET {assignments}
-WHERE implementation_id=%s RETURNING {_IMPLEMENTATION_COLUMNS}""",
+WHERE implementation_id=%s AND campaign_id=%s
+AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=%s
+ AND c.lease_token=%s AND c.lease_expires_at>=NOW())
+RETURNING {_IMPLEMENTATION_COLUMNS}""",
             params,
         )
         row = await cur.fetchone()
@@ -229,13 +249,16 @@ async def update_hypothesis_scores(
     campaign_id: UUID,
     generation: int,
     scores: list[dict[str, Any]],
+    lease_token: UUID,
 ) -> None:
     """Persist upper credit, novelty, rank, and selection flags."""
     async with conn.cursor() as cur:
         for score in scores:
             await cur.execute(
                 """UPDATE evolution_hypotheses SET upper_credit=%s,novelty_score=%s,
-pareto_rank=%s,selected=%s WHERE campaign_id=%s AND generation=%s AND hypothesis_id=%s""",
+pareto_rank=%s,selected=%s WHERE campaign_id=%s AND generation=%s AND hypothesis_id=%s
+AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=%s
+ AND c.lease_token=%s AND c.lease_expires_at>=NOW())""",
                 (
                     score["upper_credit"],
                     score["novelty_score"],
@@ -244,14 +267,19 @@ pareto_rank=%s,selected=%s WHERE campaign_id=%s AND generation=%s AND hypothesis
                     campaign_id,
                     generation,
                     score["hypothesis_id"],
+                    campaign_id,
+                    lease_token,
                 ),
             )
+            if cur.rowcount != 1:
+                raise RuntimeError("campaign lease fencing token was lost")
 
 
 async def add_llm_cost(
     conn: AsyncConnection,
     campaign_id: UUID,
     amount_usd: float,
+    lease_token: UUID,
 ) -> None:
     """Atomically append measured proposer cost without storing prompts or credentials."""
     if amount_usd < 0:
@@ -259,9 +287,12 @@ async def add_llm_cost(
     async with conn.cursor() as cur:
         await cur.execute(
             """UPDATE evolution_campaigns SET llm_cost_usd=llm_cost_usd+%s,
-state_version=state_version+1,updated_at=NOW() WHERE campaign_id=%s""",
-            (amount_usd, campaign_id),
+state_version=state_version+1,updated_at=NOW() WHERE campaign_id=%s
+AND lease_token=%s AND lease_expires_at>=NOW()""",
+            (amount_usd, campaign_id, lease_token),
         )
+        if cur.rowcount != 1:
+            raise RuntimeError("campaign lease fencing token was lost")
 
 
 async def replace_generation_hypotheses(
@@ -269,18 +300,28 @@ async def replace_generation_hypotheses(
     campaign_id: UUID,
     generation: int,
     hypotheses: list[HypothesisSpec],
+    lease_token: UUID,
 ) -> None:
     """Replace an unevaluated scaffold with two-call Agent proposals atomically."""
     async with conn.cursor() as cur:
         await cur.execute(
             """DELETE FROM evolution_hypotheses h WHERE h.campaign_id=%s AND h.generation=%s
 AND NOT EXISTS(SELECT 1 FROM evolution_implementations i
- WHERE i.campaign_id=h.campaign_id AND i.generation=h.generation)""",
-            (campaign_id, generation),
+ WHERE i.campaign_id=h.campaign_id AND i.generation=h.generation)
+AND EXISTS(SELECT 1 FROM evolution_campaigns c WHERE c.campaign_id=h.campaign_id
+ AND c.lease_token=%s AND c.lease_expires_at>=NOW())""",
+            (campaign_id, generation, lease_token),
         )
         if cur.rowcount == 0:
+            await assert_active_lease(conn, campaign_id, lease_token)
             return
-    await insert_hypotheses(conn, campaign_id, generation, hypotheses)
+    await insert_hypotheses(
+        conn,
+        campaign_id,
+        generation,
+        hypotheses,
+        lease_token=lease_token,
+    )
 
 
 async def insert_hypotheses(
@@ -288,6 +329,8 @@ async def insert_hypotheses(
     campaign_id: UUID,
     generation: int,
     hypotheses: list[HypothesisSpec],
+    *,
+    lease_token: UUID,
 ) -> None:
     """Append exactly one immutable next generation."""
     async with conn.cursor() as cur:
@@ -295,7 +338,8 @@ async def insert_hypotheses(
             await cur.execute(
                 f"""INSERT INTO evolution_hypotheses(
 hypothesis_id,campaign_id,generation,slot,lineage_kind,lane,parent_ids,spec,spec_hash)
-VALUES(%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+SELECT %s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s FROM evolution_campaigns c
+WHERE c.campaign_id=%s AND c.lease_token=%s AND c.lease_expires_at>=NOW()
 ON CONFLICT(campaign_id,generation,slot) DO NOTHING
 RETURNING {_HYPOTHESIS_COLUMNS}""",
                 (
@@ -308,8 +352,12 @@ RETURNING {_HYPOTHESIS_COLUMNS}""",
                     spec.parent_ids,
                     spec.model_dump_json(),
                     canonical_spec_hash(spec),
+                    campaign_id,
+                    lease_token,
                 ),
             )
+            if cur.rowcount == 0:
+                await assert_active_lease(conn, campaign_id, lease_token)
 
 
 async def advance_generation(
@@ -318,15 +366,23 @@ async def advance_generation(
     *,
     current_generation: int,
     next_generation: int,
+    lease_token: UUID,
 ) -> bool:
     """Advance only once after every implementation in the current generation is terminal."""
     async with conn.cursor() as cur:
         await cur.execute(
             """UPDATE evolution_campaigns c SET active_generation=%s,state_version=state_version+1,
 updated_at=NOW() WHERE campaign_id=%s AND status='replaying' AND active_generation=%s
+AND lease_token=%s AND lease_expires_at>=NOW()
 AND NOT EXISTS(SELECT 1 FROM evolution_implementations i WHERE i.campaign_id=c.campaign_id
 AND i.generation=%s AND i.outcome='pending')""",
-            (next_generation, campaign_id, current_generation, current_generation),
+            (
+                next_generation,
+                campaign_id,
+                current_generation,
+                lease_token,
+                current_generation,
+            ),
         )
         return cur.rowcount == 1
 
@@ -356,6 +412,7 @@ async def transition(
     from_statuses: tuple[str, ...],
     to_status: str,
     values: dict[str, Any] | None = None,
+    lease_token: UUID | None = None,
 ) -> dict[str, Any] | None:
     """Compare-and-swap campaign state and increment its projection version."""
     updates = dict(values or {})
@@ -364,11 +421,17 @@ async def transition(
     updates.update({"status": to_status, "updated_at": datetime.now(UTC)})
     assignments = ",".join(f"{key}=%s" for key in updates)
     params = [json.dumps(value) if isinstance(value, dict) else value for value in updates.values()]
+    fence = ""
+    if lease_token is not None:
+        fence = " AND lease_token=%s AND lease_expires_at>=NOW()"
     params.extend([campaign_id, owner_account_id, list(from_statuses)])
+    if lease_token is not None:
+        params.append(lease_token)
     async with conn.cursor() as cur:
         await cur.execute(
             f"""UPDATE evolution_campaigns SET {assignments},state_version=state_version+1
 WHERE campaign_id=%s AND owner_account_id=%s AND status=ANY(%s)
+{fence}
 RETURNING {_CAMPAIGN_COLUMNS}""",
             params,
         )
@@ -404,14 +467,15 @@ async def claim_next_campaign(
     worker_id: str,
     ttl_s: int = 60,
 ) -> dict[str, Any] | None:
-    """Claim one replaying campaign with SKIP LOCKED and a fresh fencing token."""
+    """Claim one active campaign step with SKIP LOCKED and a fresh fencing token."""
     now = datetime.now(UTC)
     token = uuid4()
     async with conn.transaction():
         async with conn.cursor() as cur:
             await cur.execute(
                 """SELECT campaign_id FROM evolution_campaigns
-WHERE status='replaying' AND (lease_expires_at IS NULL OR lease_expires_at<NOW())
+WHERE status IN ('replaying','candidate_locked','waiting_forward','holdout_ready')
+AND (lease_expires_at IS NULL OR lease_expires_at<NOW())
 ORDER BY updated_at,campaign_id FOR UPDATE SKIP LOCKED LIMIT 1"""
             )
             picked = await cur.fetchone()
@@ -451,39 +515,95 @@ WHERE campaign_id=%s AND lease_owner=%s AND lease_token=%s AND lease_expires_at>
         return cur.rowcount == 1
 
 
+async def assert_active_lease(
+    conn: AsyncConnection,
+    campaign_id: UUID,
+    lease_token: UUID,
+) -> None:
+    """Fail a worker step after its campaign fencing token expires or is replaced."""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """SELECT 1 FROM evolution_campaigns
+WHERE campaign_id=%s AND lease_token=%s AND lease_expires_at>=NOW()""",
+            (campaign_id, lease_token),
+        )
+        if await cur.fetchone() is None:
+            raise RuntimeError("campaign lease fencing token was lost")
+
+
 async def lock_champion(
     conn: AsyncConnection,
     campaign_id: UUID,
     owner_account_id: UUID,
-    candidate_id: UUID,
+    lease_token: UUID,
 ) -> dict[str, Any] | None:
-    """Irreversibly lock one champion and start its 30-90 day forward window."""
+    """Irreversibly lock the deterministic best FDR candidate selected by the server."""
     now = datetime.now(UTC)
     async with conn.cursor() as cur:
         await cur.execute(
-            f"""UPDATE evolution_campaigns SET status='waiting_forward',locked_candidate_id=%s,
-forward_started_at=%s,forward_deadline_at=%s,active_generation=max_generations,
+            f"""WITH champion AS (
+  SELECT implementation_id FROM evolution_implementations
+  WHERE campaign_id=%s AND generation=(
+    SELECT max_generations FROM evolution_campaigns WHERE campaign_id=%s
+  ) AND outcome='succeeded' AND fdr_pass IS TRUE
+  ORDER BY fitness DESC,novelty_score DESC,implementation_id LIMIT 1
+)
+UPDATE evolution_campaigns SET status='candidate_locked',
+locked_candidate_id=(SELECT implementation_id FROM champion),
+active_generation=max_generations,
 llm_credential_grant=NULL,
 state_version=state_version+1,updated_at=%s
 WHERE campaign_id=%s AND owner_account_id=%s AND status='replaying'
+AND lease_token=%s AND lease_expires_at>=NOW()
 AND active_generation=max_generations AND locked_candidate_id IS NULL
-AND EXISTS(SELECT 1 FROM evolution_implementations i
- WHERE i.implementation_id=%s AND i.campaign_id=evolution_campaigns.campaign_id
- AND i.generation=evolution_campaigns.max_generations AND i.outcome='succeeded'
- AND i.fdr_pass IS TRUE)
+AND EXISTS(SELECT 1 FROM champion)
 RETURNING {_CAMPAIGN_COLUMNS}""",
             (
-                candidate_id,
+                campaign_id,
+                campaign_id,
+                now,
+                campaign_id,
+                owner_account_id,
+                lease_token,
+            ),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def start_forward_sandbox(
+    conn: AsyncConnection,
+    campaign_id: UUID,
+    owner_account_id: UUID,
+    *,
+    lease_token: UUID,
+    sandbox_id: UUID,
+) -> dict[str, Any] | None:
+    """Advance only after Paper durably accepts the locked champion sandbox."""
+    now = datetime.now(UTC)
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""UPDATE evolution_campaigns SET status='waiting_forward',forward_sandbox_id=%s,
+forward_started_at=%s,forward_deadline_at=%s,state_version=state_version+1,updated_at=%s
+WHERE campaign_id=%s AND owner_account_id=%s AND status='candidate_locked'
+AND locked_candidate_id IS NOT NULL AND lease_token=%s AND lease_expires_at>=NOW()
+AND EXISTS(SELECT 1 FROM paper_evolution_forward_sandboxes s
+ WHERE s.sandbox_id=%s AND s.campaign_id=evolution_campaigns.campaign_id
+ AND s.candidate_id=evolution_campaigns.locked_candidate_id)
+RETURNING {_CAMPAIGN_COLUMNS}""",
+            (
+                sandbox_id,
                 now,
                 now + timedelta(days=90),
                 now,
                 campaign_id,
                 owner_account_id,
-                candidate_id,
+                lease_token,
+                sandbox_id,
             ),
         )
         row = await cur.fetchone()
-    return dict(row) if row else None
+    return dict(row) if row is not None else None
 
 
 async def record_forward(
@@ -537,6 +657,57 @@ RETURNING {_CAMPAIGN_COLUMNS}""",
     return dict(row) if row else None
 
 
+async def record_paper_forward(
+    conn: AsyncConnection,
+    campaign_id: UUID,
+    owner_account_id: UUID,
+    *,
+    lease_token: UUID,
+    evidence: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Accept only evidence tied to the persisted Paper sandbox and locked candidate."""
+    sandbox_id = UUID(str(evidence["sandbox_id"]))
+    candidate_id = UUID(str(evidence["candidate_id"]))
+    paper_status = str(evidence["status"])
+    status_map = {
+        "observing": "waiting_forward",
+        "passed": "holdout_ready",
+        "failed": "rejected",
+        "insufficient_evidence": "insufficient_evidence",
+    }
+    if paper_status not in status_map:
+        raise ValueError("unsupported Paper Forward status")
+    campaign_finished = paper_status in {"failed", "insufficient_evidence"}
+    now = datetime.now(UTC)
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""UPDATE evolution_campaigns SET status=%s,forward_event_count=%s,
+forward_metrics=%s::jsonb,finished_at=%s,state_version=state_version+1,updated_at=%s
+WHERE campaign_id=%s AND owner_account_id=%s AND status='waiting_forward'
+AND forward_sandbox_id=%s AND locked_candidate_id=%s
+AND lease_token=%s AND lease_expires_at>=NOW()
+AND EXISTS(SELECT 1 FROM paper_evolution_forward_sandboxes s
+ WHERE s.sandbox_id=%s AND s.campaign_id=evolution_campaigns.campaign_id
+ AND s.candidate_id=evolution_campaigns.locked_candidate_id)
+RETURNING {_CAMPAIGN_COLUMNS}""",
+            (
+                status_map[paper_status],
+                int(evidence.get("event_count") or 0),
+                json.dumps({"paper_forward": evidence}),
+                now if campaign_finished else None,
+                now,
+                campaign_id,
+                owner_account_id,
+                sandbox_id,
+                candidate_id,
+                lease_token,
+                sandbox_id,
+            ),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row is not None else None
+
+
 async def reserve_holdout(
     conn: AsyncConnection,
     campaign_id: UUID,
@@ -555,6 +726,185 @@ RETURNING {_CAMPAIGN_COLUMNS}""",
         )
         row = await cur.fetchone()
     return dict(row) if row else None
+
+
+async def reserve_holdout_attempt(
+    conn: AsyncConnection,
+    campaign_id: UUID,
+    owner_account_id: UUID,
+    lease_token: UUID,
+) -> dict[str, Any] | None:
+    """Reserve the campaign's only holdout attempt under the campaign fencing token."""
+    now = datetime.now(UTC)
+    attempt_id = uuid4()
+    async with conn.transaction():
+        async with conn.cursor() as cur:
+            await cur.execute(
+                f"""INSERT INTO evolution_holdout_attempts(
+attempt_id,campaign_id,owner_account_id,candidate_id)
+SELECT %s,c.campaign_id,c.owner_account_id,c.locked_candidate_id
+FROM evolution_campaigns c
+WHERE c.campaign_id=%s AND c.owner_account_id=%s AND c.status='holdout_ready'
+AND c.locked_candidate_id IS NOT NULL AND c.holdout_consumed_at IS NULL
+AND c.lease_token=%s AND c.lease_expires_at>=NOW()
+ON CONFLICT(campaign_id) DO NOTHING
+RETURNING {_HOLDOUT_ATTEMPT_COLUMNS}""",
+                (attempt_id, campaign_id, owner_account_id, lease_token),
+            )
+            attempt = await cur.fetchone()
+            if attempt is not None:
+                await cur.execute(
+                    """UPDATE evolution_campaigns SET holdout_consumed_at=%s,
+state_version=state_version+1,updated_at=%s
+WHERE campaign_id=%s AND owner_account_id=%s AND status='holdout_ready'
+AND locked_candidate_id=%s AND holdout_consumed_at IS NULL""",
+                    (
+                        now,
+                        now,
+                        campaign_id,
+                        owner_account_id,
+                        attempt["candidate_id"],
+                    ),
+                )
+                if cur.rowcount != 1:
+                    raise RuntimeError("holdout reservation lost compare-and-swap")
+                return dict(attempt)
+            await cur.execute(
+                f"""SELECT {_HOLDOUT_ATTEMPT_COLUMNS} FROM evolution_holdout_attempts
+WHERE campaign_id=%s AND owner_account_id=%s""",
+                (campaign_id, owner_account_id),
+            )
+            existing = await cur.fetchone()
+    return dict(existing) if existing is not None else None
+
+
+async def release_holdout_attempt(
+    conn: AsyncConnection,
+    attempt_id: UUID,
+    owner_account_id: UUID,
+    fencing_token: UUID,
+) -> bool:
+    """Release a transiently failed execution while preserving the same attempt identity."""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """UPDATE evolution_holdout_attempts SET status='reserved',fencing_token=NULL,
+lease_expires_at=NULL,updated_at=NOW()
+WHERE attempt_id=%s AND owner_account_id=%s AND status='running'
+AND fencing_token=%s AND lease_expires_at>=NOW()""",
+            (attempt_id, owner_account_id, fencing_token),
+        )
+        return cur.rowcount == 1
+
+
+async def claim_holdout_attempt(
+    conn: AsyncConnection,
+    attempt_id: UUID,
+    owner_account_id: UUID,
+    *,
+    ttl_s: int,
+) -> dict[str, Any] | None:
+    """Claim or resume the same attempt after its prior execution lease expires."""
+    now = datetime.now(UTC)
+    token = uuid4()
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""UPDATE evolution_holdout_attempts SET status='running',fencing_token=%s,
+lease_expires_at=%s,started_at=COALESCE(started_at,%s),updated_at=%s
+WHERE attempt_id=%s AND owner_account_id=%s
+AND (status='reserved' OR (status='running' AND lease_expires_at<%s))
+RETURNING {_HOLDOUT_ATTEMPT_COLUMNS}""",
+            (
+                token,
+                now + timedelta(seconds=ttl_s),
+                now,
+                now,
+                attempt_id,
+                owner_account_id,
+                now,
+            ),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row is not None else None
+
+
+async def holdout_attempt_input(
+    conn: AsyncConnection,
+    attempt_id: UUID,
+    owner_account_id: UUID,
+    fencing_token: UUID,
+) -> dict[str, Any] | None:
+    """Load the pre-committed candidate only for the active attempt fencing token."""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """SELECT a.attempt_id,a.campaign_id,a.candidate_id,a.fencing_token,
+i.source_code,i.source_hash,h.spec
+FROM evolution_holdout_attempts a
+JOIN evolution_implementations i ON i.implementation_id=a.candidate_id
+ AND i.campaign_id=a.campaign_id
+JOIN evolution_hypotheses h ON h.hypothesis_id=i.hypothesis_id
+WHERE a.attempt_id=%s AND a.owner_account_id=%s AND a.status='running'
+AND a.fencing_token=%s AND a.lease_expires_at>=NOW()""",
+            (attempt_id, owner_account_id, fencing_token),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row is not None else None
+
+
+async def finalize_holdout_attempt(
+    conn: AsyncConnection,
+    attempt_id: UUID,
+    owner_account_id: UUID,
+    *,
+    fencing_token: UUID,
+    passed: bool,
+    evidence: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Commit terminal evidence once, fenced to the currently running attempt."""
+    now = datetime.now(UTC)
+    async with conn.transaction():
+        async with conn.cursor() as cur:
+            await cur.execute(
+                f"""UPDATE evolution_holdout_attempts SET status=%s,passed=%s,evidence=%s::jsonb,
+finished_at=%s,lease_expires_at=NULL,updated_at=%s
+WHERE attempt_id=%s AND owner_account_id=%s AND status='running'
+AND fencing_token=%s AND lease_expires_at>=NOW()
+RETURNING {_HOLDOUT_ATTEMPT_COLUMNS}""",
+                (
+                    "succeeded" if passed else "failed",
+                    passed,
+                    json.dumps(evidence),
+                    now,
+                    now,
+                    attempt_id,
+                    owner_account_id,
+                    fencing_token,
+                ),
+            )
+            attempt = await cur.fetchone()
+            if attempt is None:
+                return None
+            metrics = {"sealed_holdout": evidence, "holdout_passed": passed}
+            await cur.execute(
+                f"""UPDATE evolution_campaigns SET status=%s,
+forward_metrics=COALESCE(forward_metrics,'{{}}'::jsonb)||%s::jsonb,finished_at=%s,
+state_version=state_version+1,updated_at=%s
+WHERE campaign_id=%s AND owner_account_id=%s AND status='holdout_ready'
+AND locked_candidate_id=%s AND holdout_consumed_at IS NOT NULL
+RETURNING {_CAMPAIGN_COLUMNS}""",
+                (
+                    "graduated" if passed else "rejected",
+                    json.dumps(metrics),
+                    now,
+                    now,
+                    attempt["campaign_id"],
+                    owner_account_id,
+                    attempt["candidate_id"],
+                ),
+            )
+            campaign = await cur.fetchone()
+            if campaign is None:
+                raise RuntimeError("holdout finalization lost campaign compare-and-swap")
+    return dict(campaign)
 
 
 async def finalize_holdout(
@@ -687,11 +1037,15 @@ __all__ = [
     "add_llm_cost",
     "adopt_graduated",
     "advance_generation",
+    "assert_active_lease",
     "best_implementation",
+    "claim_holdout_attempt",
     "claim_next_campaign",
     "finalize_holdout",
+    "finalize_holdout_attempt",
     "find_cached_implementation",
     "get_campaign",
+    "holdout_attempt_input",
     "insert_campaign",
     "insert_hypotheses",
     "insert_implementation",
@@ -701,9 +1055,13 @@ __all__ = [
     "lock_champion",
     "locked_implementation",
     "record_forward",
+    "record_paper_forward",
+    "release_holdout_attempt",
     "renew_lease",
     "replace_generation_hypotheses",
     "reserve_holdout",
+    "reserve_holdout_attempt",
+    "start_forward_sandbox",
     "transition",
     "update_hypothesis_scores",
     "update_implementation",
