@@ -12,6 +12,7 @@ from inalpha_evolver.data.manifest import BackfillSnapshot, DatasetManifest, Fro
 from inalpha_evolver.data.persistent_snapshot import (
     CANONICAL_VERSION,
     decode_frozen_dataset,
+    discovery_dataset,
     encode_frozen_dataset,
 )
 
@@ -102,3 +103,21 @@ def test_dataset_snapshot_fails_closed_on_payload_or_split_drift() -> None:
         decode_frozen_dataset(base | {"content_sha256": "0" * 64})
     with pytest.raises(RuntimeError, match="split boundary"):
         decode_frozen_dataset(base | {"validation_end": 9})
+
+
+def test_discovery_view_excludes_later_bars_and_future_manifest_metadata() -> None:
+    payload, digest = encode_frozen_dataset(_dataset())
+    row = {
+        "compressed_payload": payload, "content_sha256": digest, "bar_count": 10,
+        "discovery_end": 6, "validation_end": 8, "venue": "binance",
+        "symbol": "BTC/USDT", "timeframe": "1h",
+    }
+    discovery = discovery_dataset(row)
+    assert len(discovery.bars) == discovery.manifest.bar_count == 6
+    assert discovery.bars[-1].close == 105.5
+    assert discovery.manifest.requested_as_of == datetime(2026, 1, 1, 6, tzinfo=UTC)
+    assert discovery.manifest.latest_bar_ts == datetime(2026, 1, 1, 5, tzinfo=UTC)
+    assert discovery.manifest.backfill.bars_fetched == 6
+    assert discovery.manifest.backfill.to_ts == discovery.manifest.requested_as_of
+    assert discovery.manifest.content_sha256 != _dataset().manifest.content_sha256
+    assert decode_frozen_dataset(row) == _dataset()
