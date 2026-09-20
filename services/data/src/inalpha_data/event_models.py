@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .asset_identity import asset_id_from_event_code
+
 EventType = Literal[
     "listing",
     "delisting",
@@ -130,6 +132,7 @@ class EventFactWriteRequest(BaseModel):
     fact_key: str = Field(min_length=1, max_length=240)
     event_type: EventType
     assets: list[str] = Field(default_factory=list, max_length=64)
+    asset_ids: list[str] = Field(default_factory=list, max_length=64)
     actor: str | None = Field(default=None, max_length=500)
     action: str = Field(min_length=1, max_length=2_000)
     severity: float = Field(ge=0, le=1)
@@ -153,6 +156,15 @@ class EventFactWriteRequest(BaseModel):
     def normalize_assets(cls, value: list[str]) -> list[str]:
         return sorted({item.strip().upper() for item in value if item.strip()})
 
+    @model_validator(mode="after")
+    def populate_asset_ids(self) -> EventFactWriteRequest:
+        expected = {asset_id_from_event_code(item) for item in self.assets}
+        supplied = {item.strip() for item in self.asset_ids if item.strip()}
+        if supplied and supplied != expected:
+            raise ValueError("asset_ids must match Data's authoritative event-code mapping")
+        self.asset_ids = sorted(expected)
+        return self
+
 
 class EventFactRecord(BaseModel):
     """One point-in-time normalized event fact version."""
@@ -164,6 +176,7 @@ class EventFactRecord(BaseModel):
     fact_hash: str
     event_type: EventType
     assets: list[str]
+    asset_ids: list[str]
     actor: str | None
     action: str
     severity: float
@@ -185,6 +198,13 @@ class EventFactWriteResponse(BaseModel):
     created: bool
 
 
+class EventFactListResponse(BaseModel):
+    """Latest visible fact versions for a bounded point-in-time consumer window."""
+
+    cutoff: datetime
+    facts: list[EventFactRecord]
+
+
 class EventSnapshotRequest(BaseModel):
     """Freeze all latest visible fact versions at one point in time."""
 
@@ -194,6 +214,7 @@ class EventSnapshotRequest(BaseModel):
     policy_version: str = Field(min_length=1, max_length=120)
     event_types: list[EventType] = Field(default_factory=list)
     assets: list[str] = Field(default_factory=list, max_length=64)
+    asset_ids: list[str] = Field(default_factory=list, max_length=64)
 
     @field_validator("cutoff", mode="after")
     @classmethod
@@ -212,6 +233,15 @@ class EventSnapshotRequest(BaseModel):
     def normalize_assets(cls, value: list[str]) -> list[str]:
         return sorted({item.strip().upper() for item in value if item.strip()})
 
+    @model_validator(mode="after")
+    def populate_asset_ids(self) -> EventSnapshotRequest:
+        expected = {asset_id_from_event_code(item) for item in self.assets}
+        supplied = {item.strip() for item in self.asset_ids if item.strip()}
+        if supplied and self.assets and supplied != expected:
+            raise ValueError("snapshot assets and asset_ids refer to different identities")
+        self.asset_ids = sorted(supplied or expected)
+        return self
+
 
 class EventSnapshotRecord(BaseModel):
     """Immutable event set used by research and backtests."""
@@ -224,6 +254,7 @@ class EventSnapshotRecord(BaseModel):
     coverage: dict[str, Any]
     event_types: list[EventType]
     assets: list[str]
+    asset_ids: list[str]
     fact_count: int
     created_at: datetime
     facts: list[EventFactRecord] = Field(default_factory=list)
@@ -238,6 +269,53 @@ class EventCoverageResponse(BaseModel):
     fact_count: int
     retraction_count: int
     latest_accepted_at: datetime | None
+    extraction_pending_count: int
+    extraction_leased_count: int
+    extraction_dead_count: int
+
+
+class ExtractionJobClaimRequest(BaseModel):
+    """Bounded lease request used by the platform Research worker."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    worker_id: str = Field(min_length=1, max_length=200)
+    limit: int = Field(default=20, ge=1, le=100)
+    lease_seconds: int = Field(default=60, ge=15, le=300)
+
+
+class ExtractionJobRecord(BaseModel):
+    """Fenced extraction lease plus its immutable raw-event input."""
+
+    job_id: UUID
+    raw_event_id: UUID
+    extractor_version: str
+    status: Literal["pending", "leased", "completed", "dead"]
+    attempt_count: int
+    lease_owner: str | None
+    lease_token: UUID | None
+    lease_expires_at: datetime | None
+    next_attempt_at: datetime
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+    raw_event: RawEventRecord | None = None
+
+
+class ExtractionJobClaimResponse(BaseModel):
+    """Jobs atomically leased by one worker claim."""
+
+    jobs: list[ExtractionJobRecord]
+
+
+class ExtractionJobCompleteRequest(BaseModel):
+    """Fenced completion or retry request for one extraction job."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lease_token: UUID
+    succeeded: bool
+    error: str | None = Field(default=None, max_length=2_000)
 
 
 class CoinMarketCalImportRequest(BaseModel):

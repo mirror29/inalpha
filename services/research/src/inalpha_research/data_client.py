@@ -74,6 +74,60 @@ class DataClient:
             raise DataServiceError("event fact response must be an object")
         return result
 
+    async def claim_extraction_jobs(
+        self,
+        *,
+        worker_id: str,
+        limit: int,
+        lease_seconds: int,
+    ) -> list[dict[str, Any]]:
+        """Lease durable event extraction work from Data."""
+        response = await self._client.post(
+            "/events/extraction-jobs/claim",
+            json={
+                "worker_id": worker_id,
+                "limit": limit,
+                "lease_seconds": lease_seconds,
+            },
+        )
+        if response.status_code >= 400:
+            raise DataServiceError(
+                f"event extraction claim failed with upstream {response.status_code}",
+                code="EVENT_EXTRACTION_CLAIM_FAILED",
+            )
+        payload = response.json()
+        jobs = payload.get("jobs") if isinstance(payload, dict) else None
+        if not isinstance(jobs, list):
+            raise DataServiceError("event extraction claim response must contain jobs")
+        return [job for job in jobs if isinstance(job, dict)]
+
+    async def complete_extraction_job(
+        self,
+        *,
+        job_id: str,
+        lease_token: str,
+        succeeded: bool,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        """Complete or release one extraction lease using its fencing token."""
+        response = await self._client.post(
+            f"/events/extraction-jobs/{job_id}/complete",
+            json={
+                "lease_token": lease_token,
+                "succeeded": succeeded,
+                "error": error,
+            },
+        )
+        if response.status_code >= 400:
+            raise DataServiceError(
+                f"event extraction completion failed with upstream {response.status_code}",
+                code="EVENT_EXTRACTION_COMPLETE_FAILED",
+            )
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise DataServiceError("event extraction completion response must be an object")
+        return payload
+
     async def get_bars(
         self,
         *,

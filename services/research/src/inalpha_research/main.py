@@ -5,8 +5,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI
 from inalpha_shared import (
@@ -18,6 +21,7 @@ from inalpha_shared import (
 from . import __version__
 from .api import deep_dive, event_facts, health
 from .config import get_research_settings
+from .event_worker import run_extraction_worker
 
 _settings = get_research_settings()
 configure_logging(level=_settings.log_level, service_name=_settings.service_name)
@@ -25,8 +29,21 @@ configure_logging(level=_settings.log_level, service_name=_settings.service_name
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """D-8b 不连 DB。D-9+ 加 LLM 调用统计 / 缓存时再起 lifespan 资源。"""
-    yield
+    """Start the optional durable event-extraction worker without owning Data state."""
+    stop = asyncio.Event()
+    task: asyncio.Task[None] | None = None
+    if _settings.event_extraction_enabled:
+        worker_id = f"research:{socket.gethostname()}:{uuid4().hex[:12]}"
+        task = asyncio.create_task(
+            run_extraction_worker(_settings, stop, worker_id=worker_id),
+            name="event-extraction-worker",
+        )
+    try:
+        yield
+    finally:
+        stop.set()
+        if task is not None:
+            await task
 
 
 app = FastAPI(

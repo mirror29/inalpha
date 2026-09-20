@@ -31,6 +31,30 @@ class ResearchSettings(BaseSettings):
 
     research_service_port: int = Field(default=8003, alias="RESEARCH_SERVICE_PORT")
 
+    event_extraction_enabled: bool = Field(
+        default=False,
+        alias="EVENT_EXTRACTION_ENABLED",
+        description="Run the durable tenant-neutral RawEvent extraction worker.",
+    )
+    event_extraction_poll_seconds: float = Field(
+        default=2.0,
+        ge=0.2,
+        le=60.0,
+        alias="EVENT_EXTRACTION_POLL_SECONDS",
+    )
+    event_extraction_batch_size: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        alias="EVENT_EXTRACTION_BATCH_SIZE",
+    )
+    event_extraction_lease_seconds: int = Field(
+        default=60,
+        ge=15,
+        le=300,
+        alias="EVENT_EXTRACTION_LEASE_SECONDS",
+    )
+
     # ─── LLM ─────────────────────────────────────────────────────────
     llm_provider: str = Field(
         default="deepseek",

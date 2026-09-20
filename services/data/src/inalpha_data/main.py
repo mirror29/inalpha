@@ -19,6 +19,7 @@ from inalpha_shared import (
 
 from . import __version__
 from .api import (
+    assets,
     backfill,
     bars,
     constituents,
@@ -141,6 +142,7 @@ install_request_logging(app)
 install_error_handler(app)
 
 app.include_router(health.router)
+app.include_router(assets.router)
 app.include_router(bars.router)
 app.include_router(backfill.router)
 app.include_router(ticker.router)

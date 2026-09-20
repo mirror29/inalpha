@@ -2,27 +2,41 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
-from inalpha_shared.errors import InalphaError, ValidationError
+from inalpha_shared.errors import ConflictError, InalphaError, ValidationError
 
 from ..connectors.coinmarketcal import get_connector
 from ..event_models import (
     CoinMarketCalImportRequest,
     EventCoverageResponse,
+    EventFactListResponse,
     EventFactRecord,
     EventFactWriteRequest,
     EventFactWriteResponse,
     EventImportResponse,
     EventSnapshotRecord,
     EventSnapshotRequest,
+    ExtractionJobClaimRequest,
+    ExtractionJobClaimResponse,
+    ExtractionJobCompleteRequest,
+    ExtractionJobRecord,
     RawEventIngestRequest,
     RawEventIngestResponse,
     RawEventRecord,
+)
+from ..service_auth import (
+    DataServiceIdentity,
+    require_event_extract,
+    require_event_import,
+    require_event_ingest,
+    require_snapshot_create,
+    require_snapshot_read,
 )
 from ..storage import events as store
 
@@ -47,7 +61,7 @@ class EventProviderUnavailableError(InalphaError):
 async def ingest_raw_event(
     request: RawEventIngestRequest,
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    _identity: Annotated[DataServiceIdentity, Depends(require_event_ingest)],
 ) -> RawEventIngestResponse:
     """Append one raw event version; identical retries return the existing version."""
     row, created = await store.ingest_raw_event(db, request)
@@ -58,7 +72,7 @@ async def ingest_raw_event(
 async def write_event_fact(
     request: EventFactWriteRequest,
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    _identity: Annotated[DataServiceIdentity, Depends(require_event_extract)],
 ) -> EventFactWriteResponse:
     """Append one fact version without exposing its source content downstream."""
     try:
@@ -76,11 +90,32 @@ async def write_event_fact(
     return EventFactWriteResponse(fact=EventFactRecord(**row), created=created)
 
 
+@router.get("/facts/visible", response_model=EventFactListResponse)
+async def list_visible_event_facts(
+    cutoff: datetime,
+    available_after: datetime,
+    asset_id: str,
+    db: DBConn,
+    _identity: Annotated[DataServiceIdentity, Depends(require_snapshot_read)],
+) -> EventFactListResponse:
+    """Expose only normalized latest facts known in the requested point-in-time window."""
+    facts = await store.list_visible_facts(
+        db,
+        cutoff=cutoff,
+        available_after=available_after,
+        asset_id=asset_id,
+    )
+    return EventFactListResponse(
+        cutoff=cutoff,
+        facts=[EventFactRecord(**row) for row in facts],
+    )
+
+
 @router.get("/raw/{event_id}", response_model=RawEventRecord)
 async def get_raw_event(
     event_id: UUID,
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    _identity: Annotated[DataServiceIdentity, Depends(require_event_extract)],
 ) -> RawEventRecord:
     """Expose raw evidence only to authenticated platform extraction services."""
     row = await store.get_raw_event(db, event_id)
@@ -96,7 +131,7 @@ async def get_raw_event(
 async def create_event_snapshot(
     request: EventSnapshotRequest,
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    _identity: Annotated[DataServiceIdentity, Depends(require_snapshot_create)],
 ) -> EventSnapshotRecord:
     """Freeze latest visible event facts at ``cutoff`` with deterministic ordering."""
     snapshot, facts = await store.create_snapshot(db, request)
@@ -110,7 +145,7 @@ async def create_event_snapshot(
 async def get_event_snapshot(
     snapshot_id: UUID,
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    _identity: Annotated[DataServiceIdentity, Depends(require_snapshot_read)],
 ) -> EventSnapshotRecord:
     """Load a frozen snapshot; facts preserve their original stable ordinal."""
     result = await store.get_snapshot(db, snapshot_id)
@@ -129,7 +164,7 @@ async def get_event_snapshot(
 @router.get("/coverage", response_model=EventCoverageResponse)
 async def get_event_coverage(
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    _identity: Annotated[DataServiceIdentity, Depends(require_event_import)],
 ) -> EventCoverageResponse:
     """Return source freshness, versions, and retractions for operational monitoring."""
     return EventCoverageResponse(**await store.coverage(db))
@@ -171,6 +206,46 @@ async def import_coinmarketcal(
         unchanged=unchanged,
         failed=failed,
     )
+
+
+@router.post("/extraction-jobs/claim", response_model=ExtractionJobClaimResponse)
+async def claim_extraction_jobs(
+    request: ExtractionJobClaimRequest,
+    db: DBConn,
+    _identity: Annotated[DataServiceIdentity, Depends(require_event_extract)],
+) -> ExtractionJobClaimResponse:
+    """Lease raw events for tenant-neutral Research extraction."""
+    async with db.transaction():
+        rows = await store.claim_extraction_jobs(
+            db,
+            worker_id=request.worker_id,
+            limit=request.limit,
+            lease_seconds=request.lease_seconds,
+        )
+    return ExtractionJobClaimResponse(jobs=[ExtractionJobRecord(**row) for row in rows])
+
+
+@router.post("/extraction-jobs/{job_id}/complete", response_model=ExtractionJobRecord)
+async def complete_extraction_job(
+    job_id: UUID,
+    request: ExtractionJobCompleteRequest,
+    db: DBConn,
+    _identity: Annotated[DataServiceIdentity, Depends(require_event_extract)],
+) -> ExtractionJobRecord:
+    """Complete a lease only while its fencing token remains current."""
+    row = await store.complete_extraction_job(
+        db,
+        job_id=job_id,
+        lease_token=request.lease_token,
+        succeeded=request.succeeded,
+        error=request.error,
+    )
+    if row is None:
+        raise ConflictError(
+            "event extraction lease is stale or expired",
+            code="EVENT_EXTRACTION_LEASE_LOST",
+        )
+    return ExtractionJobRecord(**row)
 
 
 __all__ = ["router"]
