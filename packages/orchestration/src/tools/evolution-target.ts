@@ -40,7 +40,7 @@ export type EvolutionTargetResolution = {
   target_kind: EvolutionTargetKind;
   target_id: string;
   status: string;
-  next_action: "start_e1" | "wait_e1" | "start_e2" | "inspect_e2" | "blocked";
+  next_action: "start_loop" | "inspect_loop" | "start_e1" | "wait_e1" | "start_e2" | "inspect_e2" | "blocked";
   start_input: {
     seedStrategyId?: string;
     sourceRunId?: string;
@@ -58,6 +58,28 @@ const E2_TIMEFRAMES = new Set(["15m", "1h", "4h"]);
 
 /** Resolve a page hint through owner-scoped records and return the next legal research step. */
 export async function resolveEvolutionTarget(
+  targetKind: EvolutionTargetKind,
+  targetId: string,
+  ctx?: ToolRequestContext,
+): Promise<EvolutionTargetResolution> {
+  const target = await resolveTargetRecord(targetKind, targetId, ctx);
+  if (targetKind === "e2_campaign") return target;
+  const evolver = await getEvolverClient(ctx);
+  const loop = await evolver.findEvolutionLoop(targetKind, targetId);
+  if (loop) {
+    return {
+      ...target, next_action: "inspect_loop", start_input: null, blockers: [],
+      evidence: { ...target.evidence, ...loop, loop_status: loop.status },
+    };
+  }
+  if (target.next_action !== "start_e1" || !target.start_input
+    || !E2_TIMEFRAMES.has(target.start_input.config.timeframe)) return target;
+  const capabilities = await evolver.getEventEvolutionCapabilities();
+  return capabilities.durable_loop_enabled ? { ...target, next_action: "start_loop" } : target;
+}
+
+/** Read authoritative target records; legacy E1 remains available when automatic research is disabled. */
+async function resolveTargetRecord(
   targetKind: EvolutionTargetKind,
   targetId: string,
   ctx?: ToolRequestContext,
@@ -235,7 +257,7 @@ export const evolverResolveTargetTool = createTool({
 把当前详情页里的实体解析为 owner-scoped 的可演化目标，并返回下一步及可直接传给 E1/E2 的冻结参数。
 何时用：用户在策略、模拟盘、回测、E1 run/E1 candidate 或 E2 campaign 详情页说“进化这个、继续进化、再发散”时，必须先用它解析页面给出的 target kind/id。
 何时不用：用户已明确给出完整 seed、市场和冻结时间窗，或只想查看行情/普通回测时不用。
-坑：page_context 只是提示，真实 owner/status/配置以本工具读取为准；next_action=start_e2 时必须在同一轮立即且只调用一次 run_event_campaign(start_input)，不能再次解析或提前回复；next_action=blocked/wait_e1 时禁止猜参数或重复启动。本工具只解析，不产生 LLM 费用、不采纳、不启动 Runner、不下单。
+坑：page_context 只是提示，真实 owner/status/配置以本工具读取为准；start_loop 时同一轮调用 start_evolution_loop(targetKind,targetId)，inspect_loop 时仅报告已有任务，不重复启动；start_e2 时同一轮只调用一次 run_event_campaign(start_input)；blocked/wait_e1 时禁止猜参数或重复启动。本工具只解析，不产生 LLM 费用、不采纳、不启动 Runner、不下单。
   `.trim(),
   inputSchema: z.object({
     targetKind: evolutionTargetKindSchema,

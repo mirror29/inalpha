@@ -25,12 +25,13 @@ export const evolverStartLoopTool = createTool({
   execute: async (input, ctx) => {
     const rc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getEvolverClient(rc);
+    const target = await resolveEvolutionTarget(input.targetKind, input.targetId, rc);
+    if (target.next_action === "inspect_loop") return target.evidence;
     const capabilities = await client.getEventEvolutionCapabilities();
     if (!capabilities.durable_loop_enabled) {
       throw new Error(`DURABLE_LOOP_UNAVAILABLE: ${capabilities.durable_loop_reason ?? "automatic loop is not enabled"}`);
     }
-    const target = await resolveEvolutionTarget(input.targetKind, input.targetId, rc);
-    if (target.next_action !== "start_e1" || !target.start_input?.seedStrategyId) {
+    if (target.next_action !== "start_loop" || !target.start_input?.seedStrategyId) {
       throw new Error(`EVOLUTION_TARGET_BLOCKED: ${target.blockers.join("; ") || target.next_action}`);
     }
     const config = eventCampaignConfigSchema.parse(target.start_input.config);

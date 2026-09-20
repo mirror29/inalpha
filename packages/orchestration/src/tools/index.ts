@@ -113,6 +113,7 @@ import { evolverResolveTargetTool } from "./evolution-target.js";
 import { evolverStartLoopTool } from "./evolution-loop.js";
 
 export {
+  evolverStartLoopTool,
   approveTradePlanTool,
   createTradePlanTool,
   dataBackfillBarsTool,

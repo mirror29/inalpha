@@ -300,6 +300,13 @@ export class EvolverClient {
     this.http = new HttpClient(options);
   }
 
+  /** Resolve a target to an owned workflow without creating or charging anything. */
+  async findEvolutionLoop(targetKind: string, targetId: string): Promise<EvolutionLoopResult | null> {
+    return await this.http.get<EvolutionLoopResult | null>("/api/v1/evolution-loops/for-target", {
+      target_kind: targetKind, target_id: targetId,
+    });
+  }
+
   /** Start the baseline and its automatic continuation with one bounded authorization. */
   async startEvolutionLoop(options: {
     request: EvolutionLoopStartRequest;

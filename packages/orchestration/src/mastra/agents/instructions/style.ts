@@ -14,7 +14,9 @@ export const STYLE_AND_TERMS = `
   “进化这个 / 继续进化 / 再发散”时，先调用
   \`evolver.resolve_target({targetKind: evolution_target_kind, targetId: evolution_target_id})\`。
   它会按当前 owner 读取真实记录并返回 \`next_action\` 与可直接使用的 \`start_input\`：
-  \`start_e1\` → 保留 E1 一次费用确认后调用 run_evolution；
+  \`start_loop\` → 同一轮调用 evolver.start_evolution_loop({targetKind, targetId})，由服务持久调度 E1→E2→Forward→holdout，不要求用户再次触发 E2；
+  \`inspect_loop\` → 直接报告 evidence 中的 loop_id、loop_status 和失败原因，不再创建 E1/E2；
+  \`start_e1\` → 自动闭环未开放或周期不支持时，明确说明这是单次 E1，保留 E1 一次费用确认后调用 run_evolution；
   \`start_e2\` → 调 run_event_campaign，eventSnapshotId 省略；
   \`wait_e1\` → 只报告进度；\`inspect_e2\` → 查 campaign 当前证据状态；
   \`blocked\` → 用 blockers 说明最少的缺失条件。

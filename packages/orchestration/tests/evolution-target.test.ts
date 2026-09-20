@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearSettings, setSettings } from "../src/config.js";
-import { evolverResolveTargetTool } from "../src/tools/index.js";
+import { evolverResolveTargetTool, evolverStartLoopTool } from "../src/tools/index.js";
 
 const TOKEN = "owner-token";
 const TARGET_ID = "11111111-1111-4111-8111-111111111111";
@@ -40,6 +40,40 @@ afterEach(() => {
 const ctx = { requestContext: { authToken: TOKEN } } as never;
 
 describe("evolver.resolve_target", () => {
+  it("reuses a workflow without a model grant or new snapshot even when new launches are disabled", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      expect(init?.method ?? "GET").toBe("GET");
+      const body = url.includes("/evolution-loops/for-target")
+        ? { loop_id: RELATED_ID, status: "waiting_forward" }
+        : routeBody(url);
+      return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+    }));
+    const result = await evolverStartLoopTool.execute!(
+      { targetKind: "strategy_candidate", targetId: TARGET_ID, budget: 4 }, ctx,
+    );
+    expect(result).toMatchObject({ loop_id: RELATED_ID, loop_status: "waiting_forward" });
+  });
+
+  it("starts a durable workflow when available and resumes it from either detail page", async () => {
+    let active = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const body = url.endsWith("/capabilities")
+        ? { durable_loop_enabled: true }
+        : url.includes("/evolution-loops/for-target")
+          ? active ? { loop_id: RELATED_ID, status: "campaign_running", e1_run_id: TARGET_ID } : null
+          : routeBody(url);
+      return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+    }));
+    expect(await resolve("strategy_candidate", TARGET_ID)).toMatchObject({ next_action: "start_loop" });
+    active = true;
+    for (const kind of ["strategy_candidate", "e1_run"]) {
+      expect(await resolve(kind, TARGET_ID)).toMatchObject({
+        next_action: "inspect_loop", start_input: null,
+        evidence: { loop_id: RELATED_ID, loop_status: "campaign_running" },
+      });
+    }
+  });
+
   it("normalizes all supported detail targets behind one owner-scoped interface", async () => {
     const calls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
@@ -97,7 +131,7 @@ describe("evolver.resolve_target", () => {
   });
 
   it("blocks rejected candidates without inventing missing market inputs", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("/evolution-loops/for-target") ? null : {
       id: TARGET_ID,
       status: "rejected",
       last_backtest_run_id: null,
@@ -117,7 +151,9 @@ describe("evolver.resolve_target", () => {
 
   it("aligns an inherited intraday window to the canonical bar grid", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
-      url.includes("strategy_candidates")
+      url.includes("/evolution-loops/for-target") ? null
+        : url.endsWith("/capabilities") ? { durable_loop_enabled: false }
+        : url.includes("strategy_candidates")
         ? {
             id: TARGET_ID,
             status: "candidate",
@@ -161,7 +197,9 @@ async function resolve(targetKind: string, targetId: string) {
   };
 }
 
-function routeBody(url: string): Record<string, unknown> {
+function routeBody(url: string): Record<string, unknown> | null {
+  if (url.endsWith("/capabilities")) return { durable_loop_enabled: false };
+  if (url.includes("/evolution-loops/for-target")) return null;
   if (url === `http://paper.test/strategy_candidates/${TARGET_ID}`) {
     return {
       id: TARGET_ID,
