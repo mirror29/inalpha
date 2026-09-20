@@ -7,7 +7,7 @@ from typing import Any
 
 from .kernel.clock import datetime_to_ns
 from .kernel.identifiers import InstrumentId
-from .market_evaluation import fixed_timeframe_seconds
+from .market_evaluation import canonical_timeframe, fixed_timeframe_seconds
 from .model.data import Bar
 
 
@@ -23,11 +23,18 @@ def bar_from_dict(
     )
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=UTC)
+    else:
+        timestamp = timestamp.astimezone(UTC)
     ts_open_ns = datetime_to_ns(timestamp)
     timeframe_seconds = fixed_timeframe_seconds(timeframe)
-    if timeframe_seconds is None:
-        raise ValueError(f"timeframe {timeframe!r} has no fixed bar-known offset")
-    ts_known_ns = ts_open_ns + timeframe_seconds * 1_000_000_000
+    if timeframe_seconds is None and canonical_timeframe(timeframe) == "1M":
+        next_year = timestamp.year + (1 if timestamp.month == 12 else 0)
+        next_month = 1 if timestamp.month == 12 else timestamp.month + 1
+        ts_known_ns = datetime_to_ns(datetime(next_year, next_month, 1, tzinfo=UTC))
+    elif timeframe_seconds is not None:
+        ts_known_ns = ts_open_ns + timeframe_seconds * 1_000_000_000
+    else:  # pragma: no cover - guarded by ``fixed_timeframe_seconds`` validation
+        raise ValueError(f"timeframe {timeframe!r} has no bar-known offset")
     return Bar(
         instrument_id=instrument_id,
         timeframe=timeframe,

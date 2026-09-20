@@ -107,6 +107,20 @@ class PaperSettings(BaseSettings):
         le=3600,
         description="live runner 自签 service JWT 的有效期（秒），调 data /bars 用。",
     )
+    evolution_forward_poll_interval_s: int = Field(
+        default=60,
+        alias="EVOLUTION_FORWARD_POLL_INTERVAL_S",
+        ge=1,
+        le=3600,
+        description="Paper 隔离 Forward sandbox 的持久化观测轮询周期。",
+    )
+    evolution_forward_max_concurrent: int = Field(
+        default=2,
+        alias="EVOLUTION_FORWARD_MAX_CONCURRENT",
+        ge=1,
+        le=4,
+        description="并行回放 Forward sandbox 的上限；不占普通 Runner 账户资源。",
+    )
     live_warmup_bars: int = Field(
         default=200,
         alias="INALPHA_LIVE_WARMUP_BARS",

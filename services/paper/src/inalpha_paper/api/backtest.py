@@ -203,10 +203,14 @@ async def get_backtest_runs(
 async def get_backtest_run(
     run_id: UUID,
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ) -> BacktestRunSummary:
     """单条回测记录 —— 控制台「回测详情页」用(活动流点击回测事件落地)。"""
-    r = await backtest_runs_store.get_by_id(db, run_id)
+    r = await backtest_runs_store.get_by_id(
+        db,
+        run_id,
+        account_id=str(account_id_from_user(user)),
+    )
     if r is None:
         raise HTTPException(status_code=404, detail="backtest run not found")
     return BacktestRunSummary(
@@ -229,7 +233,7 @@ async def get_backtest_run(
 async def get_backtest_run_trades(
     run_id: UUID,
     db: DBConn,
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=2000)] = 500,
 ) -> list[BacktestTradeRecord]:
     """一次回测的**逐笔成交**（含每笔实现盈亏），按成交先后（seq）排序。
@@ -237,6 +241,13 @@ async def get_backtest_run_trades(
     用途：策略详情页 ``/lab/[id]`` 展示该候选最近一次回测的逐笔买卖 + 盈亏复盘。
     run 不存在 / 无成交时返回空数组（不报错）。
     """
+    owned_run = await backtest_runs_store.get_by_id(
+        db,
+        run_id,
+        account_id=str(account_id_from_user(user)),
+    )
+    if owned_run is None:
+        return []
     rows = await backtest_trades_store.list_by_run(db, run_id, limit=limit)
     return [
         BacktestTradeRecord(

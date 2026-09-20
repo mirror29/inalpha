@@ -17,6 +17,7 @@ def market_event_from_fact(value: dict[str, Any]) -> MarketEvent:
         event_id=str(value["fact_id"]),
         event_type=str(value["event_type"]),
         assets=tuple(str(item).upper() for item in value.get("assets") or []),
+        asset_ids=tuple(str(item) for item in value.get("asset_ids") or []),
         action=str(value.get("action") or ""),
         severity=float(value.get("severity") or 0),
         confidence=float(value.get("confidence") or 0),

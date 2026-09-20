@@ -143,17 +143,19 @@ async def list_by_strategy(
 async def get_by_id(
     conn: AsyncConnection,
     run_id: UUID,
+    *,
+    account_id: str,
 ) -> dict[str, Any] | None:
-    """按 run_id 查单行；查不到返 None。"""
+    """按 run_id + account_id 查本人单行；查不到返 None。"""
     async with conn.cursor() as cur:
         await cur.execute(
             """
             SELECT id, strategy_code, config, metrics, params_hash,
                    research_id, strategy_hint, created_at, status
             FROM backtest_runs
-            WHERE id = %s
+            WHERE id = %s AND account_id = %s
             """,
-            (str(run_id),),
+            (str(run_id), account_id),
         )
         row = await cur.fetchone()
     return _row_to_dict(row) if row else None

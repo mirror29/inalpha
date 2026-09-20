@@ -25,6 +25,7 @@ from .api import (
     archetypes,
     auth,
     backtest,
+    evolution_forward,
     health,
     orders,
     risk,
@@ -36,6 +37,7 @@ from .api import (
 from .config import get_paper_settings
 from .engine.pool import init_pool as init_backtest_pool
 from .engine.pool import shutdown_pool as shutdown_backtest_pool
+from .evolution_forward_manager import EvolutionForwardManager
 from .execution.risk_guard_factory import RiskGuardFactory
 from .execution.risk_rules import load_risk_rules_config
 from .execution.risk_rules.market_calendar import RoutingCalendar
@@ -137,6 +139,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         risk_guard_factory=app.state.risk_guard_factory,
         settings=_settings,
     )
+    app.state.evolution_forward_manager = EvolutionForwardManager(_settings)
+    app.state.evolution_forward_manager.start()
     # D-12 因子衰减巡检（ADR-0047）：独立 task，失败只跳过本轮、绝不影响交易循环
     app.state.factor_patrol = FactorPatrol(settings=_settings)
     app.state.factor_patrol.start()
@@ -160,6 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await app.state.evolution_forward_manager.close()
         await app.state.factor_patrol.stop()
         await app.state.live_runner_manager.stop_all()
         shutdown_backtest_pool()
@@ -178,6 +183,7 @@ install_error_handler(app)
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(backtest.router)
+app.include_router(evolution_forward.router)
 app.include_router(archetypes.router)
 app.include_router(orders.router)
 app.include_router(risk.router)

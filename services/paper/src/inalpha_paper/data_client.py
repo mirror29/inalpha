@@ -342,6 +342,40 @@ class DataClient:
             )
         return result
 
+    async def get_visible_event_facts(
+        self,
+        *,
+        asset_id: str,
+        available_after: datetime,
+        cutoff: datetime,
+    ) -> list[dict[str, Any]]:
+        """Read normalized PIT facts only; raw source strings never cross this boundary."""
+        try:
+            response = await self._client.get(
+                "/events/facts/visible",
+                params={
+                    "asset_id": asset_id,
+                    "available_after": available_after.isoformat(),
+                    "cutoff": cutoff.isoformat(),
+                },
+            )
+        except httpx.RequestError as exc:
+            raise DataServiceError(
+                f"failed to reach visible event facts: {exc}",
+                code="DATA_SERVICE_UNREACHABLE",
+            ) from exc
+        if response.status_code >= 400:
+            raise DataServiceError(
+                f"data-service visible facts {response.status_code}",
+                code="EVENT_FACTS_UNAVAILABLE",
+                details={"upstream_status": response.status_code},
+            )
+        payload = response.json()
+        facts = payload.get("facts") if isinstance(payload, dict) else None
+        if not isinstance(facts, list):
+            raise DataServiceError("unexpected visible facts response shape")
+        return [dict(item) for item in facts if isinstance(item, dict)]
+
     async def backfill_bars(
         self,
         *,

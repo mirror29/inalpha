@@ -18,6 +18,7 @@ class MarketEvent:
     confidence: float
     effective_at: int
     available_at: int
+    asset_ids: tuple[str, ...] = ()
     evidence_ids: tuple[str, ...] = ()
     policy_version: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
