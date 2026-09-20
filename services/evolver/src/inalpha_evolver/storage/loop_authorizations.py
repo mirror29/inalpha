@@ -14,6 +14,20 @@ class LoopBudgetExhausted(LoopControlError):
     code = "LOOP_BUDGET_EXHAUSTED"
 
 
+async def budget_summary(
+    conn: AsyncConnection, loop_id: UUID, owner_account_id: UUID,
+) -> dict[str, Any] | None:
+    """Expose only cost totals; absent legacy authority is unknown, not zero spend."""
+    cursor = await conn.execute(
+        """SELECT max_cost_usd,spent_usd,reserved_usd,
+GREATEST(0,max_cost_usd-spent_usd-reserved_usd) AS available_usd
+FROM evolution_loop_authorizations WHERE loop_id=%s AND owner_account_id=%s""",
+        (loop_id, owner_account_id),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row is not None else None
+
+
 class LoopAuthorizationUnavailable(LoopControlError):
     code = "LOOP_AUTHORIZATION_UNAVAILABLE"
 

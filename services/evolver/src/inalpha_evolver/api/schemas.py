@@ -509,6 +509,15 @@ class AdoptionListResponse(BaseModel):
     items: list[AdoptionSummaryResponse]
 
 
+class EvolutionLoopBudgetUsage(BaseModel):
+    """Ledger totals in USD, excluding credentials and authorization internals."""
+
+    max_cost_usd: float
+    spent_usd: float
+    reserved_usd: float
+    available_usd: float
+
+
 class EvolutionLoopResponse(BaseModel):
     """Compact durable workflow projection; heavy campaign details remain lazy."""
 
@@ -526,6 +535,7 @@ class EvolutionLoopResponse(BaseModel):
     holdout_attempt_id: UUID | None = None
     frozen_config: dict[str, Any]
     budget: dict[str, Any]
+    budget_usage: EvolutionLoopBudgetUsage | None = None
     failure_code: str | None = None
     failure_message: str | None = None
     state_version: int

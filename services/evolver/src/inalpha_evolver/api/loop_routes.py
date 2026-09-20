@@ -15,6 +15,7 @@ from inalpha_shared.errors import NotFoundError
 
 from ..storage import campaigns as campaign_store
 from ..storage import loops as store
+from ..storage.loop_authorizations import budget_summary
 from .campaign_routes import create_campaign
 from .schemas import (
     CreateCampaignRequest,
@@ -113,6 +114,7 @@ async def get_evolution_loop(
     row = await store.get_loop(db, loop_id, account_id_from_user(user))
     if row is None:
         raise NotFoundError("EvolutionLoop not found", code="EVOLUTION_LOOP_NOT_FOUND")
+    row["budget_usage"] = await budget_summary(db, loop_id, account_id_from_user(user))
     return EvolutionLoopResponse(**row)
 
 
