@@ -19,10 +19,10 @@ from .llm_snapshot_fixtures import llm_snapshot
 
 
 def database_url():
-    return os.environ.get(
-        "EVOLVER_TEST_DATABASE_URL",
-        "postgresql://quant:devpass@localhost:5433/inalpha_evo_test",
-    ).replace("postgresql+psycopg://", "postgresql://")
+    url = os.environ.get("EVOLVER_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("EVOLVER_TEST_DATABASE_URL is required for database integration tests")
+    return url.replace("postgresql+psycopg://", "postgresql://")
 
 
 @pytest_asyncio.fixture(name="database")

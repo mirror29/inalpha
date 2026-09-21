@@ -18,10 +18,9 @@ from .llm_snapshot_fixtures import llm_snapshot
 
 @pytest.mark.asyncio
 async def test_run_idempotency_owner_scope_and_slot() -> None:
-    url = os.environ.get(
-        "EVOLVER_TEST_DATABASE_URL",
-        "postgresql+psycopg://quant:devpass@localhost:5433/inalpha_evo_test",
-    )
+    url = os.environ.get("EVOLVER_TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("EVOLVER_TEST_DATABASE_URL is required for database integration tests")
     await init_pool(url)
     try:
         owner = uuid4()

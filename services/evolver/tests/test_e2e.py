@@ -52,10 +52,10 @@ def _headers(
 
 @pytest.fixture(scope="module")
 def client() -> TestClient:
-    os.environ["DATABASE_URL"] = os.environ.get(
-        "EVOLVER_TEST_DATABASE_URL",
-        "postgresql+psycopg://quant:devpass@localhost:5433/inalpha_evo_test",
-    )
+    database_url = os.environ.get("EVOLVER_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("EVOLVER_TEST_DATABASE_URL is required for database integration tests")
+    os.environ["DATABASE_URL"] = database_url
     os.environ["JWT_SECRET"] = _SECRET
     os.environ["EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64"] = EVOLUTION_GRANT_PUBLIC_KEY_B64
     get_evolver_settings.cache_clear()
