@@ -284,7 +284,7 @@ async def get_campaign(
     db: DBConn,
     user: Annotated[User, Depends(get_current_user)],
 ) -> CampaignResponse:
-    row = await store.get_campaign(db, campaign_id, account_id_from_user(user))
+    row = await store.get_campaign(db, campaign_id, account_id_from_user(user), include_source=False)
     if row is None:
         raise NotFoundError("campaign not found", code="CAMPAIGN_NOT_FOUND")
     return _response(row)

@@ -97,8 +97,14 @@ async def get_campaign(
     conn: AsyncConnection,
     campaign_id: UUID,
     owner_account_id: UUID,
+    *,
+    include_source: bool = True,
 ) -> dict[str, Any] | None:
     """Load one owner-scoped campaign with generation-level projection."""
+    implementation_columns = ",".join(
+        column.strip() for column in _IMPLEMENTATION_COLUMNS.split(",")
+        if include_source or column.strip() != "source_code"
+    )
     async with conn.cursor() as cur:
         await cur.execute(
             f"""SELECT {_CAMPAIGN_COLUMNS} FROM evolution_campaigns
@@ -124,7 +130,7 @@ WHERE campaign_id=%s ORDER BY generation,slot""",
         )
         campaign["hypotheses"] = [dict(item) for item in await cur.fetchall()]
         await cur.execute(
-            f"""SELECT {_IMPLEMENTATION_COLUMNS} FROM evolution_implementations
+            f"""SELECT {implementation_columns} FROM evolution_implementations
 WHERE campaign_id=%s ORDER BY generation,hypothesis_id,profile""",
             (campaign_id,),
         )
