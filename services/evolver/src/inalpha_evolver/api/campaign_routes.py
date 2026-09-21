@@ -27,6 +27,7 @@ from .schemas import (
     CampaignResponse,
     CreateCampaignRequest,
     EvolutionCapabilitiesResponse,
+    ImplementationPageResponse,
     campaign_request_digest,
 )
 
@@ -288,6 +289,25 @@ async def get_campaign(
     if row is None:
         raise NotFoundError("campaign not found", code="CAMPAIGN_NOT_FOUND")
     return _response(row)
+
+
+@router.get("/campaigns/{campaign_id}/implementations", response_model=ImplementationPageResponse)
+async def list_campaign_implementations(
+    campaign_id: UUID,
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+    limit: int = 24,
+    offset: int = 0,
+    generation: int | None = None,
+) -> ImplementationPageResponse:
+    """Page candidate evidence without loading executable source or all generations."""
+    owner = account_id_from_user(user)
+    items, has_more = await store.list_implementations_page(
+        db, campaign_id, owner_account_id=owner, limit=limit, offset=offset, generation=generation,
+    )
+    if await store.get_campaign(db, campaign_id, owner, include_source=False) is None:
+        raise NotFoundError("campaign not found", code="CAMPAIGN_NOT_FOUND")
+    return ImplementationPageResponse(items=items, limit=min(max(limit, 1), 100), offset=max(offset, 0), has_more=has_more)
 
 
 @router.post("/campaigns/{campaign_id}/start", response_model=CampaignResponse)

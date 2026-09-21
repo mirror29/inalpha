@@ -463,6 +463,15 @@ class CampaignResponse(BaseModel):
     finished_at: datetime | None = None
     generations: list[GenerationProjection] = Field(default_factory=list)
     hypotheses: list[HypothesisResponse] = Field(default_factory=list)
+
+
+class ImplementationPageResponse(BaseModel):
+    """Bounded source-free candidate evidence for lazy dashboard reads."""
+
+    items: list[ImplementationResponse]
+    limit: int
+    offset: int
+    has_more: bool
     implementations: list[ImplementationResponse] = Field(default_factory=list)
 
 

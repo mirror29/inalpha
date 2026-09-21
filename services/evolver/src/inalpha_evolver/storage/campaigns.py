@@ -250,6 +250,41 @@ WHERE campaign_id=%s AND generation=%s ORDER BY hypothesis_id,profile""",
         return [dict(row) for row in await cur.fetchall()]
 
 
+async def list_implementations_page(
+    conn: AsyncConnection,
+    campaign_id: UUID,
+    *,
+    owner_account_id: UUID,
+    limit: int = 24,
+    offset: int = 0,
+    generation: int | None = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Return bounded source-free implementation evidence for dashboard pagination."""
+    limit = min(max(limit, 1), 100)
+    offset = max(offset, 0)
+    filters = ["i.campaign_id=%s", "c.owner_account_id=%s"]
+    params: list[Any] = [campaign_id, owner_account_id]
+    if generation is not None:
+        filters.append("i.generation=%s")
+        params.append(generation)
+    columns = ",".join(
+        f"i.{column.strip()}" for column in _IMPLEMENTATION_COLUMNS.split(",")
+        if column.strip() != "source_code"
+    )
+    params.extend([limit + 1, offset])
+    async with conn.cursor() as cur:
+        await cur.execute(
+            f"""SELECT {columns} FROM evolution_implementations i
+JOIN evolution_campaigns c ON c.campaign_id=i.campaign_id
+WHERE {' AND '.join(filters)}
+ORDER BY i.generation DESC,i.updated_at DESC,i.implementation_id
+LIMIT %s OFFSET %s""",
+            params,
+        )
+        rows = [dict(row) for row in await cur.fetchall()]
+    return rows[:limit], len(rows) > limit
+
+
 async def update_hypothesis_scores(
     conn: AsyncConnection,
     campaign_id: UUID,
