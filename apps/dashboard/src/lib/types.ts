@@ -704,6 +704,13 @@ export interface EvolutionImplementation {
   updated_at: string;
 }
 
+export interface EvolutionImplementationPage {
+  items: EvolutionImplementation[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
 export interface EvolutionCampaign {
   campaign_id: string;
   status: EvolutionCampaignStatus;

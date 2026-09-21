@@ -99,6 +99,7 @@ async def get_campaign(
     owner_account_id: UUID,
     *,
     include_source: bool = True,
+    include_implementations: bool = True,
 ) -> dict[str, Any] | None:
     """Load one owner-scoped campaign with generation-level projection."""
     implementation_columns = ",".join(
@@ -129,12 +130,15 @@ WHERE campaign_id=%s ORDER BY generation,slot""",
             (campaign_id,),
         )
         campaign["hypotheses"] = [dict(item) for item in await cur.fetchall()]
-        await cur.execute(
-            f"""SELECT {implementation_columns} FROM evolution_implementations
+        if include_implementations:
+            await cur.execute(
+                f"""SELECT {implementation_columns} FROM evolution_implementations
 WHERE campaign_id=%s ORDER BY generation,hypothesis_id,profile""",
-            (campaign_id,),
-        )
-        campaign["implementations"] = [dict(item) for item in await cur.fetchall()]
+                (campaign_id,),
+            )
+            campaign["implementations"] = [dict(item) for item in await cur.fetchall()]
+        else:
+            campaign["implementations"] = []
     return campaign
 
 

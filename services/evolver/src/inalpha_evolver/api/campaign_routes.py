@@ -285,7 +285,13 @@ async def get_campaign(
     db: DBConn,
     user: Annotated[User, Depends(get_current_user)],
 ) -> CampaignResponse:
-    row = await store.get_campaign(db, campaign_id, account_id_from_user(user), include_source=False)
+    row = await store.get_campaign(
+        db,
+        campaign_id,
+        account_id_from_user(user),
+        include_source=False,
+        include_implementations=False,
+    )
     if row is None:
         raise NotFoundError("campaign not found", code="CAMPAIGN_NOT_FOUND")
     return _response(row)
@@ -305,7 +311,13 @@ async def list_campaign_implementations(
     items, has_more = await store.list_implementations_page(
         db, campaign_id, owner_account_id=owner, limit=limit, offset=offset, generation=generation,
     )
-    if await store.get_campaign(db, campaign_id, owner, include_source=False) is None:
+    if await store.get_campaign(
+        db,
+        campaign_id,
+        owner,
+        include_source=False,
+        include_implementations=False,
+    ) is None:
         raise NotFoundError("campaign not found", code="CAMPAIGN_NOT_FOUND")
     return ImplementationPageResponse(items=items, limit=min(max(limit, 1), 100), offset=max(offset, 0), has_more=has_more)
 

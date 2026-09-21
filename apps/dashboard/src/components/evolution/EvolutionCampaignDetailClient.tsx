@@ -8,7 +8,7 @@ import useSWR from "swr";
 import { Link } from "@/i18n/navigation";
 import { jsonFetcher } from "@/lib/fetcher";
 import { fmtRelative } from "@/lib/format";
-import type { EvolutionCampaignDetailPayload, EvolutionImplementation } from "@/lib/types";
+import type { EvolutionCampaignDetailPayload, EvolutionImplementation, EvolutionImplementationPage } from "@/lib/types";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip } from "@/components/ui/LiveStrip";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -22,16 +22,19 @@ export function EvolutionCampaignDetailClient({ campaignId }: { campaignId: stri
   const t = useTranslations("evolution.campaign");
   const locale = useLocale();
   const [adopting, setAdopting] = useState(false);
+  const [implementationOffset, setImplementationOffset] = useState(0);
+  const [loadedImplementations, setLoadedImplementations] = useState<EvolutionImplementation[]>([]);
   const { data, error, isLoading, isValidating, mutate } = useSWR<EvolutionCampaignDetailPayload>(
     `/api/evolution/campaigns/${campaignId}`,
     jsonFetcher,
     { refreshInterval: (value) => value && ACTIVE.has(value.campaign.status) ? 4_000 : 0, keepPreviousData: true },
   );
+  const implementationKey = `/api/evolution/campaigns/${campaignId}/implementations?limit=24&offset=${implementationOffset}`;
+  const { data: implementationPage, isLoading: implementationsLoading, isValidating: implementationsValidating } = useSWR<EvolutionImplementationPage>(implementationKey, jsonFetcher, {
+    onSuccess: (page) => setLoadedImplementations((current) => implementationOffset === 0 ? page.items : mergeImplementations(current, page.items)),
+  });
   const campaign = data?.campaign;
-  const implementations = useMemo(
-    () => [...(campaign?.implementations ?? [])].sort((a, b) => b.generation - a.generation || (b.fitness ?? -Infinity) - (a.fitness ?? -Infinity)),
-    [campaign?.implementations],
-  );
+  const implementations = useMemo(() => [...loadedImplementations].sort((a, b) => b.generation - a.generation || (b.fitness ?? -Infinity) - (a.fitness ?? -Infinity)), [loadedImplementations]);
   if (isLoading && !campaign) return <SkeletonBlock className="h-[36rem]" />;
   if (error && !campaign) return <ErrorState message={error instanceof Error ? error.message : String(error)} onRetry={() => mutate()} />;
   if (!campaign) return null;
@@ -78,6 +81,7 @@ export function EvolutionCampaignDetailClient({ campaignId }: { campaignId: stri
 
       <Panel title={t("ablations")}>
         <div className="overflow-x-auto"><table className="w-full border-collapse text-sm"><thead><tr className="text-left font-mono text-[10px] uppercase tracking-wider text-fg-muted"><th className="p-3">G</th><th className="p-3">profile</th><th className="p-3">outcome</th><th className="p-3 text-right">fitness</th><th className="p-3 text-right">event advantage</th><th className="p-3 text-right">evidence</th><th className="p-3">FDR</th></tr></thead><tbody>{implementations.map((item) => <ImplementationRow key={item.implementation_id} item={item} />)}</tbody></table></div>
+        {(implementationPage?.has_more || implementationsLoading) && <div className="border-t border-border-subtle p-3 text-center"><button type="button" disabled={implementationsLoading || implementationsValidating} onClick={() => setImplementationOffset((value) => value + 24)} className="rounded-md border border-border-subtle px-3 py-1.5 font-mono text-xs text-fg-muted hover:text-cyan disabled:opacity-50">{implementationsLoading || implementationsValidating ? t("loadingMore") : t("loadMore")}</button></div>}
       </Panel>
 
       {(campaign.failure_code || campaign.failure_message) && <Panel title={t("failure")}><div className="p-4 font-mono text-sm text-fox-red">{campaign.failure_code}: {campaign.failure_message}</div></Panel>}
@@ -96,3 +100,8 @@ function objectValue(value: unknown): Record<string, unknown> | null { return ty
 function arrayValue(value: unknown): string[] { return Array.isArray(value) ? value.map(String) : []; }
 function numberValue(value: unknown): number | null { return typeof value === "number" ? value : null; }
 function formatMetric(value: number | null | undefined): string { return value === null || value === undefined ? "—" : value.toFixed(3); }
+function mergeImplementations(current: EvolutionImplementation[], next: EvolutionImplementation[]): EvolutionImplementation[] {
+  const byId = new Map(current.map((item) => [item.implementation_id, item]));
+  next.forEach((item) => byId.set(item.implementation_id, item));
+  return [...byId.values()];
+}
