@@ -72,12 +72,15 @@ const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
       { key: "activity", href: "/activity", icon: Activity },
     ],
   },
+  {
+    key: "signature",
+    items: [{ key: "divination", href: "/divination", icon: Sparkles }],
+  },
 ];
 
 /** 配置菜单复用同一组次级入口，管理员入口仍按 session 角色过滤。 */
 const SECONDARY_NAV: NavItem[] = [
   { key: "dataHealth", href: "/data-health", icon: Database },
-  { key: "divination", href: "/divination", icon: Sparkles },
   {
     key: "waitlist",
     href: "/admin/waitlist",
@@ -385,11 +388,13 @@ function SidebarBody({
       >
         {NAV_GROUPS.map((group) => (
           <div key={group.key} className="flex flex-col gap-0.5">
-            {!collapsed && group.key !== "primary" && (
-              <div className="px-3 pb-1 text-xs text-fg-muted">
-                {t(group.key)}
-              </div>
-            )}
+            {!collapsed &&
+              group.key !== "primary" &&
+              group.key !== "signature" && (
+                <div className="px-3 pb-1 text-xs text-fg-muted">
+                  {t(group.key)}
+                </div>
+              )}
             {group.items.map((item) => {
               const active = !item.soon && isNavActive(pathname, item.href);
               const Icon = item.icon;
