@@ -46,3 +46,7 @@ uv run pytest
 ```
 
 完整交易信任边界与当前阶段见 [`docs/04-current-state.md`](../../docs/04-current-state.md)。
+
+## Isolated live run wallets
+
+New live runs transfer main-account capital into independent wallets; manual trades and historical positions stay in the main book. Stopping does not close positions or release capital. Use the stopped, flat run's `POST /strategy_runs/{id}/release_capital` endpoint to settle once. Legacy shared-book statistics are explicitly unverified or contaminated. See [accounting and rollout](../../docs/05-paper-wallet-accounting.md).

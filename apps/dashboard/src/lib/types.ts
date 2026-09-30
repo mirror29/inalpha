@@ -6,6 +6,9 @@
 
 /** GET /accounts/me —— 账户快照(D-11 多币种,已折算到 base_currency)。 */
 export interface AccountSnapshot {
+  main_equity?: number;
+  run_wallets_equity?: number;
+  run_wallets?: { run_id: string; cash_balances: Record<string, number>; last_equity: number | null; valuation_at: string | null; released_at: string | null }[];
   account_id: string;
   base_currency: string;
   initial_cash: number;
@@ -89,6 +92,9 @@ export interface RunLogEntry {
 
 /** GET /strategy_runs 元素(live runner 运行态)。 */
 export interface StrategyRunRecord {
+  accounting_status?: "verified" | "legacy_unverified" | "contaminated";
+  accounting_note?: string | null;
+  original_cumulative_pnl?: number | null;
   id: string;
   candidate_id: string;
   account_id: string;
@@ -193,7 +199,13 @@ export interface RunnersPayload {
 }
 
 /** GET /api/runners/[id] —— 单个 run 详情 + 决策时间线。 */
+export interface RunWalletPayload {
+  wallet: { cash_balances: Record<string, number>; initial_cash: number; equity: number | null; net_pnl: number | null; valuation_at: string | null; released_at: string | null; warnings: string[] } | null;
+  pnl_components?: { fees: number; realized: number; funding: number; unrealized: number | null; currency: string };
+}
+
 export interface RunDetailPayload {
+  wallet?: RunWalletPayload | null;
   /** 在 list 里按 id 找到的 run;不存在为 null。 */
   run: StrategyRunRecord | null;
   decisions: StrategyRunDecisionRecord[];

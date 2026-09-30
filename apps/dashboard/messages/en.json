@@ -285,13 +285,13 @@
     },
     "empty": "No activity yet.",
     "emptyFiltered": "No {kind} events.",
-  "sourceDown": "{sources} unavailable — those events are missing from the feed.",
-  "approval": {
-    "allow": "Approve",
-    "deny": "Deny",
-    "failed": "Retry",
-    "working": "Saving…"
-  },
+    "sourceDown": "{sources} unavailable — those events are missing from the feed.",
+    "approval": {
+      "allow": "Approve",
+      "deny": "Deny",
+      "failed": "Retry",
+      "working": "Saving…"
+    },
     "source": {
       "scheduler": "Scheduler",
       "permissions": "Approvals",
@@ -655,14 +655,14 @@
       "notAvailable": "Not available yet"
     },
     "loadMore": "Load more",
-    "loadingMore": "Loading…"
-    ,"start": {
+    "loadingMore": "Loading…",
+    "start": {
       "label": "Start evolution",
       "prompt": "Start evolution",
       "hint": "Start an automatic evolution loop from the strategy or paper run on this page",
       "checking": "Checking evolution capability"
-    }
-    ,"loop": {
+    },
+    "loop": {
       "costTitle": "Model costs · USD",
       "costUnavailable": "Cost ledger unavailable; this does not mean zero spend.",
       "costExplanation": "Reservations cover in-flight or unconfirmed calls and are not settled spend.",
@@ -755,8 +755,8 @@
     "back": "Agent Activity",
     "notFound": "Backtest run not found.",
     "viewCandidate": "View strategy"
-  }
-  ,"dataHealth": {
+  },
+  "dataHealth": {
     "title": "Event Data Health",
     "subtitle": "Coverage, first acceptance, revisions, and snapshot integrity for the event source of truth.",
     "rawEvents": "Raw events",
@@ -772,5 +772,27 @@
     "latest": "Last fetch",
     "versions": "Max version",
     "empty": "No event source has been archived yet."
+  },
+  "walletAccounting": {
+    "resume": "Resume this run",
+    "verified": "Verified accounting",
+    "legacy_unverified": "Unverified legacy accounting",
+    "contaminated": "Contaminated legacy accounting",
+    "legacyWarning": "Trades and balances retained; legacy positions are no longer managed automatically. This is not verified new-run performance.",
+    "original": "Original statistic",
+    "cash": "Wallet cash",
+    "equity": "Equity",
+    "asOf": "Valuation time",
+    "fees": "Fees (including liquidation)",
+    "funding": "Net funding",
+    "realized": "Gross realized",
+    "unrealized": "Unrealized",
+    "released": "Capital released; final performance retained",
+    "stopWarning": "Stopping does not close positions or return capital. Release requires a flat book.",
+    "release": "Release capital",
+    "unavailable": "Wallet unavailable",
+    "main": "Main account equity",
+    "books": "Run wallet equity",
+    "legacyPositions": "Legacy/manual book below; old positions are no longer managed automatically."
   }
 }

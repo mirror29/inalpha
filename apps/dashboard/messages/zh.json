@@ -285,13 +285,13 @@
     },
     "empty": "暂无活动。",
     "emptyFiltered": "没有「{kind}」类事件。",
-  "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
-  "approval": {
-    "allow": "批准",
-    "deny": "拒绝",
-    "failed": "请重试",
-    "working": "提交中…"
-  },
+    "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
+    "approval": {
+      "allow": "批准",
+      "deny": "拒绝",
+      "failed": "请重试",
+      "working": "提交中…"
+    },
     "source": {
       "scheduler": "定时任务",
       "permissions": "审批",
@@ -655,14 +655,14 @@
       "notAvailable": "尚不可用"
     },
     "loadMore": "加载更多",
-    "loadingMore": "正在加载…"
-    ,"start": {
+    "loadingMore": "正在加载…",
+    "start": {
       "label": "开始进化",
       "prompt": "开始进化",
       "hint": "基于当前页面的策略或模拟盘启动自动演化闭环",
       "checking": "正在检查演化能力"
-    }
-    ,"loop": {
+    },
+    "loop": {
       "costTitle": "模型费用 · USD",
       "costUnavailable": "暂无费用账本信息，不代表费用为零。",
       "costExplanation": "预留费用用于在途或结果待确认的调用，尚未计入已结算费用。",
@@ -755,8 +755,8 @@
     "back": "Agent 活动",
     "notFound": "未找到该回测记录。",
     "viewCandidate": "查看策略详情"
-  }
-  ,"dataHealth": {
+  },
+  "dataHealth": {
     "title": "事件数据健康",
     "subtitle": "事件唯一事实源的覆盖、首次接收、修订与冻结快照完整性。",
     "rawEvents": "原始事件",
@@ -772,5 +772,27 @@
     "latest": "最后抓取",
     "versions": "最高版本",
     "empty": "尚未归档事件来源。"
+  },
+  "walletAccounting": {
+    "resume": "恢复本运行",
+    "verified": "记账已验证",
+    "legacy_unverified": "历史记账未验证",
+    "contaminated": "历史数据已证实串仓",
+    "legacyWarning": "历史成交及余额保留；旧仓已停止自动策略管理，此收益不代表可信新盘收益。",
+    "original": "原统计",
+    "cash": "钱包现金",
+    "equity": "权益",
+    "asOf": "估值时间",
+    "fees": "手续费（含强平费用）",
+    "funding": "资金费净额",
+    "realized": "已实现毛收益",
+    "unrealized": "浮盈",
+    "released": "资金已释放，最终绩效保留",
+    "stopWarning": "停止不会自动平仓或退回资金；空仓后可释放资金。",
+    "release": "释放资金",
+    "unavailable": "钱包暂不可用",
+    "main": "主账户权益",
+    "books": "运行钱包权益",
+    "legacyPositions": "以下为历史／手动账本；旧仓已停止自动策略管理。"
   }
 }
