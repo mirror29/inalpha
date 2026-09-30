@@ -116,6 +116,7 @@ async def _propose_four(
             "generation": generation,
             "slots": [item.model_dump(mode="json") for item in scaffolds],
             "aggregate_feedback": feedback,
+            "output_contract": _output_contract(),
             "frozen_event_facts": projected_facts,
         },
         ensure_ascii=False,
@@ -231,6 +232,31 @@ def _request_failure(error: Exception) -> dict[str, Any]:
     if isinstance(error, APIConnectionError):
         return {"code": "provider_connection_error"}
     return {"code": "request_failed"}
+
+
+def _output_contract() -> dict[str, Any]:
+    """Supply the exact mutable DSL schema; evidence and identity stay platform-owned."""
+    schema = HypothesisSpec.model_json_schema()
+    schema["properties"]["event_types"]["items"]["enum"] = sorted(_EVENT_TYPES)
+    return {
+        "type": "array",
+        "minItems": 4,
+        "maxItems": 4,
+        "$defs": schema["$defs"],
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                key: value for key, value in schema["properties"].items() if key in _ALLOWED_FIELDS
+            },
+        },
+        "instructions": (
+            "Return compact valid JSON only, no commentary. Each item updates its corresponding slot. "
+            "Omit unchanged fields. Nested objects must use exactly the schema's field names and types. "
+            "Direct triggers are allowed only for listing/delisting/exploit/chain_halt. "
+            "Do not output evidence, assets, lineage, identity or executable code."
+        ),
+    }
 
 
 def _project_fact(fact: dict[str, Any]) -> dict[str, Any]:

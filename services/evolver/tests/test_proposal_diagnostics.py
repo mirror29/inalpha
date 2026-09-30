@@ -48,6 +48,29 @@ async def test_rejection_categories_never_include_model_content(content, expecte
 
 
 @pytest.mark.asyncio
+async def test_provider_receives_exact_nested_contract_and_mutable_fields_only():
+    client = _ProposalClient("[{},{},{},{}]")
+    result = await propose_generation(
+        Mutator(llm_client=client),
+        generation=1,
+        scaffolds=seed_generation_one({"facts": []}, "BTC", "asset:BTC"),
+        feedback=[],
+        frozen_facts=[],
+    )
+    assert result.diagnostics == ()
+    contract = json.loads(client.requests[0].user_prompt)["output_contract"]
+    assert contract["minItems"] == contract["maxItems"] == 4
+    assert contract["items"]["additionalProperties"] is False
+    assert "evidence_ids" not in contract["items"]["properties"]
+    from inalpha_evolver.hypothesis.models import _EVENT_TYPES
+
+    assert set(contract["items"]["properties"]["event_types"]["items"]["enum"]) == _EVENT_TYPES
+    confirmation = contract["$defs"]["ConfirmationSpec"]
+    assert confirmation["additionalProperties"] is False
+    assert confirmation["properties"]["lookback_bars"]["minimum"] == 2
+
+
+@pytest.mark.asyncio
 async def test_diagnostics_commit_and_restore_with_proposal_receipt(database):
     args = await create_baseline(database, uuid4())
     campaign_id = await create_campaign(database, args)
