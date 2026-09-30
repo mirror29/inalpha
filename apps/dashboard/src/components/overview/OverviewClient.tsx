@@ -20,7 +20,6 @@ const REFRESH_MS = 8000;
 
 export function OverviewClient() {
   const t = useTranslations("overview");
-  const accounting = useTranslations("walletAccounting");
   const tStatus = useTranslations("status");
 
   const { data, error, isLoading, isValidating, mutate } =
@@ -69,12 +68,6 @@ export function OverviewClient() {
       <EvolutionSummary summary={data.evolutionSummary} />
 
       <KpiBar data={data} />
-      <section className="rounded-xl border border-border-subtle p-4 text-sm">
-        <p>{accounting("main")}: {Number(data.account.main_equity ?? data.account.total_equity).toFixed(2)} {data.account.base_currency}</p>
-        <p>{accounting("books")}: {Number(data.account.run_wallets_equity ?? 0).toFixed(2)} {data.account.base_currency}</p>
-        {data.account.run_wallets?.filter((book) => !book.released_at).map((book) => <p key={book.run_id}>{book.run_id.slice(0,8)}: {Object.entries(book.cash_balances).map(([currency,amount]) => `${currency} ${Number(amount).toFixed(2)}`).join(" · ")} · {book.valuation_at ?? "—"}</p>)}
-        <p className="text-gold">{accounting("legacyPositions")}</p>
-      </section>
 
       {/* 执行态一排:live runner + 持仓(在跑什么 ↔ 仓位什么样)。
           grid 子项包 min-w-0:表格内容宽默认会把 fr 轨道撑爆(min-width:auto),
