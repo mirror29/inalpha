@@ -167,7 +167,8 @@ uv run python scripts/validate_durable_loop.py --include-five-generations --eval
 
 脚本只接受本机 PostgreSQL 连接，使用 `DATABASE_URL`（环境变量优先，其次根 `.env`）
 创建随机命名的空测试库，迁移后运行恢复、重复请求、租约 fencing、阶段交接和预算测试，
-最后删除本次创建的测试库。数据库用户须有创建数据库权限；不会清空开发库或重启现有服务。
+迁移最多运行 120 秒，测试最多运行 600 秒；正常退出、超时及 SIGTERM 会执行测试库清理。
+SIGKILL、断电或数据库不可用可能留下 `inalpha_loop_check_<随机 ID>`，需按日志名称手动清理。数据库用户须有创建数据库权限；不会清空开发库或重启现有服务。
 日志与 JUnit 结果保存在根 `.tmp/loop-validation/`。五代检查使用真实评估引擎与合成数据，
 外部模型为离线替身，不产生 LLM 费用；它仍不能代替真实市场事件、付费模型或 Forward 验收。
 

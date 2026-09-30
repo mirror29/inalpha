@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import subprocess
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -33,6 +34,11 @@ def local_database_urls(source_url: str, database_name: str) -> tuple[str, str]:
             raise ValueError(
                 "validation rejects connection target overrides and unknown URL options"
             )
+        connect_timeout = int(dict(options).get("connect_timeout", "5"))
+        if not 1 <= connect_timeout <= 30:
+            raise ValueError("connect_timeout must be between 1 and 30 seconds")
+        options = [(key, value) for key, value in options if key != "connect_timeout"]
+        options.append(("connect_timeout", str(connect_timeout)))
         port = parsed.port or 5432
         if not 1 <= port <= 65535:
             raise ValueError("invalid port")
@@ -55,11 +61,18 @@ def local_database_urls(source_url: str, database_name: str) -> tuple[str, str]:
 def discover_tests(test_dir: Path, *, include_five_generations: bool) -> list[str]:
     """Discover durable-loop tests; the expensive five-generation suite stays opt-in."""
     files = sorted(path.name for path in test_dir.glob("test_loop_*.py") if path.is_file())
+    if "test_loop_five_generations.py" not in files:
+        raise ValueError("No durable-loop five-generation suite found; check the opt-in contract")
     if not include_five_generations:
         files = [name for name in files if name != "test_loop_five_generations.py"]
     if not files:
         raise ValueError("No durable-loop tests found")
     return files
+
+
+def terminate_validation(signum: int, _frame: object) -> None:
+    """Unwind SIGTERM through database cleanup instead of exiting abruptly."""
+    raise SystemExit(128 + signum)
 
 
 def main() -> int:
@@ -68,6 +81,7 @@ def main() -> int:
     parser.add_argument("--include-five-generations", action="store_true")
     parser.add_argument("--evaluation-concurrency", type=int, choices=range(1, 5), default=2)
     args = parser.parse_args()
+    signal.signal(signal.SIGTERM, terminate_validation)
     source_url = os.environ.get("DATABASE_URL") or dotenv_values(ROOT / ".env").get("DATABASE_URL")
     if not source_url:
         parser.error("DATABASE_URL is required")
@@ -100,6 +114,7 @@ def main() -> int:
     with psycopg.connect(admin_url, autocommit=True) as admin:
         admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
         try:
+            admin.execute("SET statement_timeout=15000")
             with (logs / "migrations.log").open("w") as output:
                 migration = subprocess.run(
                     ["uv", "run", "alembic", "upgrade", "head"],
@@ -108,6 +123,7 @@ def main() -> int:
                     stdout=output,
                     stderr=subprocess.STDOUT,
                     check=False,
+                    timeout=120,
                 )
             if migration.returncode:
                 print(f"Migration failed. Logs: {logs}")
@@ -127,9 +143,13 @@ def main() -> int:
                     stdout=output,
                     stderr=subprocess.STDOUT,
                     check=False,
+                    timeout=600,
                 )
             print(f"Validation exit code: {result.returncode}. Logs: {logs}")
             return result.returncode
+        except subprocess.TimeoutExpired:
+            print(f"Validation timed out. Logs: {logs}")
+            return 124
         finally:
             admin.execute(
                 sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(database_name))
