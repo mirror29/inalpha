@@ -28,6 +28,7 @@ export function RunnerCard({
 }) {
   const t = useTranslations("runners.card");
   const locale = useLocale();
+  const accounting = useTranslations("walletAccounting");
   const now = useNow({ updateInterval: 10_000 });
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -87,9 +88,11 @@ export function RunnerCard({
             pnlColor(run.cumulative_pnl),
           )}
         >
-          {fmtSigned(run.cumulative_pnl, null, locale)}
+          {run.accounting_status === "verified" ? fmtSigned(run.cumulative_pnl, null, locale) : "—"}
         </div>
       </div>
+
+      <p className="px-0 text-xs text-fg-muted">{accounting(run.accounting_status ?? "legacy_unverified")}</p>
 
       {/* 元信息 */}
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 font-mono text-[11px]">
@@ -170,7 +173,7 @@ export function RunnerCard({
                         pnlColor(h.cumulative_pnl),
                       )}
                     >
-                      {fmtSigned(h.cumulative_pnl, null, locale)}
+                      {h.accounting_status === "verified" ? fmtSigned(h.cumulative_pnl, null, locale) : "—"}
                     </span>
                   </Link>
                 </li>

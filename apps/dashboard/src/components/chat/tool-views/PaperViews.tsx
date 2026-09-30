@@ -130,6 +130,7 @@ export interface StrategyRunShape {
   symbol: string;
   timeframe: string;
   cumulative_pnl?: number;
+  accounting_status?: string;
   last_bar_ts?: string | null;
   started_at?: string;
   stopped_at?: string | null;
@@ -168,7 +169,7 @@ export function StrategyRunView({ r }: { r: StrategyRunShape }) {
         right={<StatusBadge status={r.status} />}
       />
       <div className="flex items-baseline gap-3 font-mono text-[11px]">
-        {r.cumulative_pnl != null && (
+        {r.accounting_status === "verified" && r.cumulative_pnl != null && (
           <span>
             pnl <Pnl value={r.cumulative_pnl} />
           </span>
@@ -219,7 +220,7 @@ export function StrategyRunListView({ list }: { list: StrategyRunShape[] }) {
           <span className="text-[10px] text-fg-muted/60">
             {r.venue} · {r.timeframe}
           </span>
-          {r.cumulative_pnl != null && (
+          {r.accounting_status === "verified" && r.cumulative_pnl != null && (
             <span className="ml-auto">
               <Pnl value={r.cumulative_pnl} />
             </span>
