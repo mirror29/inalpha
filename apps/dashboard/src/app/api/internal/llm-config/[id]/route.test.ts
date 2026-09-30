@@ -2,7 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 
 import { SignJWT } from "jose";
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { decryptUserApiKey } from "@/lib/user-preferences";
 import { getPool } from "@/lib/db";
@@ -56,12 +56,18 @@ async function callRoute(authorization?: string, id = "config-1") {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-30T00:00:00Z"));
   vi.stubEnv("EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64", PUBLIC_KEY_B64);
   mockedDecryptUserApiKey.mockReset();
   mockedGetPool.mockReset();
   mockedGetPool.mockReturnValue({
     query: vi.fn().mockResolvedValue({ rowCount: 1 }),
   } as never);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("internal owner LLM credential route", () => {
@@ -102,7 +108,7 @@ describe("internal owner LLM credential route", () => {
       callRoute(`Bearer ${await token({ token_use: "session" })}`),
       callRoute(`Bearer ${await token({ request_digest: "missing-scope" })}`),
       callRoute(`Bearer ${await token({}, { issuedAt: null })}`),
-      callRoute(`Bearer ${await token({}, { issuedAt: now - 108_100, expiresAt: now + 1 })}`),
+      callRoute(`Bearer ${await token({}, { issuedAt: now - 108_100, expiresAt: now + 60 })}`),
       callRoute(`Bearer ${await token({}, { issuedAt: now + 60, expiresAt: now + 120 })}`),
       callRoute(`Bearer ${await token({}, { issuedAt: now - 20, expiresAt: now - 10 })}`),
       callRoute(`Bearer ${await token({}, { otherKey: true })}`),
@@ -118,6 +124,19 @@ describe("internal owner LLM credential route", () => {
       401,
     ]);
     expect(mockedDecryptUserApiKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects an overlong credential after a verification delay without treating it as expired", async () => {
+    const now = Math.floor(Date.now() / 1_000);
+    const grant = await token({}, { issuedAt: now - 108_100, expiresAt: now + 60 });
+    vi.advanceTimersByTime(2_000);
+
+    const response = await callRoute(`Bearer ${grant}`);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "forbidden" });
+    expect(mockedDecryptUserApiKey).not.toHaveBeenCalled();
+    expect(mockedGetPool).not.toHaveBeenCalled();
   });
 
   it("allows one exact-scope replay for a lost response, then rejects the grant", async () => {
