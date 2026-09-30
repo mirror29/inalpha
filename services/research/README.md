@@ -81,9 +81,10 @@ uv run python scripts/extract_archived_events.py --raw-event-id <raw-event-uuid>
 通过正常 Data API 将 CoinDesk/Kraken Blog 的最新独立原文同步到已有 E2 审计库。
 仅允许 `selected-news-forward@1` / `first-seen-only-v1` 来源，测试 fixture 不进入真实覆盖。
 
-前置条件：目标数据库以 `inalpha_e2_real_` 开头、已初始化并至少有一条原文用于路由校验；
+前置条件：目标数据库以 `inalpha_e2_real_` 开头、已初始化并至少有一条 UUID 不存在于源库的原文用于路由校验；
 独立 Data 服务连接该库，独立 Research 服务的 `DATA_SERVICE_URL` 指向它，
-并设置 `EVENT_EXTRACTION_ENABLED=true`。源和目标使用同一开发 JWT 配置。
+并设置 `EVENT_EXTRACTION_ENABLED=true`。源和目标使用同一开发 JWT 配置。数据库连接须明确指向本机，不能通过 URL 查询参数
+覆盖连接目标；两个 Data 服务须使用不同端口，克隆源库中的相同原文 UUID 不能作为路由证明。
 先核对服务健康与连接配置，根服务和其他任务的 worker 无需重启。
 
 在仓库根目录执行（使用已安装 psycopg/httpx/PyJWT/python-dotenv 的 Python 环境）：

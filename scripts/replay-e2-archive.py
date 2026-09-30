@@ -7,12 +7,13 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 import httpx
 import jwt
 import psycopg
 from dotenv import dotenv_values
+from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 
 FIELDS = (
@@ -48,6 +49,37 @@ def local_url(value: str) -> str:
     ):
         raise argparse.ArgumentTypeError("service URL must be a loopback HTTP origin")
     return value.rstrip("/")
+
+
+def local_database_targets(value: str, database_name: str) -> tuple[str, str]:
+    """Pin effective libpq targets before using the destination sentinel as evidence."""
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"postgresql", "postgresql+psycopg"}
+        or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+        or not parsed.path.startswith("/")
+        or not parsed.path[1:]
+        or parsed.fragment
+    ):
+        raise ValueError("database URL must explicitly identify local PostgreSQL")
+    options = parse_qsl(parsed.query, strict_parsing=True)
+    names = [key for key, _ in options]
+    if len(names) != len(set(names)) or set(names) - {
+        "sslmode",
+        "connect_timeout",
+        "application_name",
+    }:
+        raise ValueError("database URL must not contain target overrides")
+    source_name = unquote(parsed.path[1:])
+    if source_name == database_name:
+        raise ValueError("source and destination databases must differ")
+    native = parsed._replace(scheme="postgresql").geturl()
+    address = "::1" if parsed.hostname == "::1" else "127.0.0.1"
+    pinned = {"hostaddr": address, "port": str(parsed.port or 5432)}
+    return (
+        make_conninfo(native, dbname=source_name, **pinned),
+        make_conninfo(native, dbname=database_name, **pinned),
+    )
 
 
 def headers(secret: str, purpose: str) -> dict[str, str]:
@@ -118,17 +150,19 @@ def replay(
     jwt_secret: str,
 ) -> dict:
     """Append genuine latest source records; an existing destination sentinel guards routing."""
-    if (
-        not database_name.startswith("inalpha_e2_real_")
-        or source_url == destination_url
-    ):
+    source_url = local_url(source_url)
+    destination_url = local_url(destination_url)
+    source_origin = urlsplit(source_url)
+    destination_origin = urlsplit(destination_url)
+    if not database_name.startswith("inalpha_e2_real_") or (
+        source_origin.port or 80
+    ) == (destination_origin.port or 80):
         raise ValueError("replay requires a separate isolated E2 audit destination")
-    parsed = urlsplit(database_url.replace("postgresql+psycopg://", "postgresql://"))
-    if parsed.path == "/" + database_name:
-        raise ValueError("source and destination databases must differ")
-    target_url = urlunsplit(parsed._replace(path="/" + database_name))
+    source_connection, target_connection = local_database_targets(
+        database_url, database_name
+    )
     cutoff = datetime.now(UTC)
-    with psycopg.connect(target_url, row_factory=dict_row) as conn:
+    with psycopg.connect(target_connection, row_factory=dict_row) as conn:
         conn.execute("SET TRANSACTION READ ONLY")
         conn.execute("SET LOCAL statement_timeout='15s'")
         sentinel = conn.execute(
@@ -139,11 +173,18 @@ def replay(
             "destination must have an existing audit event to verify API routing"
         )
     with psycopg.connect(
-        database_url.replace("postgresql+psycopg://", "postgresql://"),
+        source_connection,
         row_factory=dict_row,
     ) as conn:
         conn.execute("SET TRANSACTION READ ONLY")
         conn.execute("SET LOCAL statement_timeout='15s'")
+        if conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM raw_market_events WHERE event_id=%s) AS present",
+            (sentinel["event_id"],),
+        ).fetchone()["present"]:
+            raise ValueError(
+                "destination sentinel must be independent of source database"
+            )
         rows = conn.execute(
             """SELECT DISTINCT ON (source,source_event_id) event_id
 FROM raw_market_events WHERE source IN ('coindesk','kraken_blog')
