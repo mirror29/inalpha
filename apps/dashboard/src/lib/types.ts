@@ -771,6 +771,7 @@ export type EvolutionLoopStatus =
 
 export interface EvolutionLoop {
   loop_id: string;
+  owner_account_id: string;
   operation_id: string;
   target_kind: string;
   target_id: string;

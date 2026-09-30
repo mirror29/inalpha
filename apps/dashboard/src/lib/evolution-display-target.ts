@@ -25,6 +25,8 @@ export async function withDisplayTarget(
         `/strategy_runs/${loop.target_id}`,
         { timeoutMs: 2000 },
       );
+      if (!loop.owner_account_id || runner.account_id !== loop.owner_account_id)
+        return { ...loop, display_target: null };
       candidateId = runner.candidate_id;
       href = `/runners/${loop.target_id}`;
     } else if (loop.target_kind === "e1_candidate") {
@@ -50,6 +52,12 @@ export async function withDisplayTarget(
       `/strategy_candidates/${candidateId}`,
       { timeoutMs: 2000 },
     );
+    if (
+      !loop.owner_account_id ||
+      candidate.owner_account_id !== loop.owner_account_id
+    ) {
+      return { ...loop, display_target: null };
+    }
     return {
       ...loop,
       display_target: {

@@ -5,6 +5,7 @@ import { withDisplayTarget } from "./evolution-display-target";
 import type { EvolutionLoop } from "./types";
 const id = "11111111-1111-4111-8111-111111111111";
 const loop = {
+  owner_account_id: id,
   target_kind: "strategy_candidate",
   target_id: id,
 } as EvolutionLoop;
@@ -15,7 +16,10 @@ describe("owner-scoped readable evolution targets", () => {
     backend.mockReset();
   });
   it("uses the authenticated backend description and a stable strategy URL", async () => {
-    backend.mockResolvedValue({ description: "Event confirmation strategy" });
+    backend.mockResolvedValue({
+      description: "Event confirmation strategy",
+      owner_account_id: id,
+    });
     const result = await withDisplayTarget(loop);
     expect(result.display_target).toEqual({
       description: "Event confirmation strategy",
@@ -27,6 +31,16 @@ describe("owner-scoped readable evolution targets", () => {
       { timeoutMs: 2000 },
     );
   });
+  it.each([null, "22222222-2222-4222-8222-222222222222"])(
+    "hides descriptions for an unowned candidate (%s)",
+    async (owner) => {
+      backend.mockResolvedValue({
+        description: "Foreign strategy",
+        owner_account_id: owner,
+      });
+      expect((await withDisplayTarget(loop)).display_target).toBeNull();
+    },
+  );
   it("retains an owned loop when the target has been deleted or access is denied", async () => {
     backend.mockImplementation(async () => {
       throw new Error("404");
