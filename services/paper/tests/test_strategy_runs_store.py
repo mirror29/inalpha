@@ -1,4 +1,5 @@
 """``storage.strategy_runs`` 测试（D-11）——UNIQUE running + reconcile。"""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -28,8 +29,13 @@ async def _make_candidate():  # type: ignore[no-untyped-def]
 async def _insert(candidate_id, account_id):  # type: ignore[no-untyped-def]
     async with get_conn() as conn:
         return await runs_store.insert(
-            conn, candidate_id=candidate_id, account_id=account_id,
-            venue="binance", symbol="BTC/USDT", timeframe="1h", params={"x": 1},
+            conn,
+            candidate_id=candidate_id,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            timeframe="1h",
+            params={"x": 1},
         )
 
 
@@ -42,10 +48,11 @@ async def test_insert_returns_running_row(app_with_lifespan: Any) -> None:
 
 async def test_unique_running_per_candidate(app_with_lifespan: Any) -> None:
     candidate_id = await _make_candidate()
-    await _insert(candidate_id, uuid4())
+    account_id = uuid4()
+    await _insert(candidate_id, account_id)
     # 同 candidate 第二个 running → 撞部分唯一索引 → StrategyRunConflict
     with pytest.raises(runs_store.StrategyRunConflict):
-        await _insert(candidate_id, uuid4())
+        await _insert(candidate_id, account_id)
 
 
 async def test_stopped_frees_the_candidate(app_with_lifespan: Any) -> None:
@@ -62,9 +69,12 @@ async def test_stopped_frees_the_candidate(app_with_lifespan: Any) -> None:
 async def test_update_progress_and_error_log(app_with_lifespan: Any) -> None:
     run = await _insert(await _make_candidate(), uuid4())
     from datetime import UTC, datetime
+
     async with get_conn() as conn:
         await runs_store.update_progress(
-            conn, run["id"], last_bar_ts=datetime(2026, 6, 1, tzinfo=UTC),
+            conn,
+            run["id"],
+            last_bar_ts=datetime(2026, 6, 1, tzinfo=UTC),
             cumulative_pnl=Decimal("12.5"),
         )
         await runs_store.append_error_log(conn, run["id"], "boom")
@@ -94,9 +104,7 @@ async def test_list_by_account_filters_by_candidate(app_with_lifespan: Any) -> N
     run_b = await _insert(cand_b, account_id)
 
     async with get_conn() as conn:
-        only_a = await runs_store.list_by_account(
-            conn, account_id, candidate_id=cand_a
-        )
+        only_a = await runs_store.list_by_account(conn, account_id, candidate_id=cand_a)
         both = await runs_store.list_by_account(conn, account_id)
 
     assert {r["id"] for r in only_a} == {run_a["id"]}
