@@ -2,8 +2,8 @@
 
 from alembic import op
 
-revision = "0058"
-down_revision = "0057"
+revision = "0059"
+down_revision = "0058"
 branch_labels = None
 depends_on = None
 
@@ -22,7 +22,7 @@ def downgrade() -> None:
     op.execute("""SET LOCAL lock_timeout = '10s';
 DO $$ BEGIN
   IF EXISTS(SELECT 1 FROM evolution_proposal_checkpoints WHERE diagnostics!='[]'::jsonb) THEN
-    RAISE EXCEPTION 'cannot downgrade 0058 with recorded proposal diagnostics';
+    RAISE EXCEPTION 'cannot downgrade 0059 with recorded proposal diagnostics';
   END IF;
 END $$;
 ALTER TABLE evolution_proposal_checkpoints DROP COLUMN diagnostics;

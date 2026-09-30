@@ -50,7 +50,7 @@ def _provision_test_database(url: str) -> None:
             admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database)))
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def migration_db_url() -> Iterator[str]:
     """Reset only an explicitly dedicated migration test database."""
     configured_url = os.environ.get("INALPHA_MIGRATION_TEST_DATABASE_URL")

@@ -6,6 +6,9 @@
 
 /** GET /accounts/me —— 账户快照(D-11 多币种,已折算到 base_currency)。 */
 export interface AccountSnapshot {
+  main_equity?: number;
+  run_wallets_equity?: number;
+  run_wallets?: { run_id: string; cash_balances: Record<string, number>; last_equity: number | null; valuation_at: string | null; released_at: string | null }[];
   account_id: string;
   base_currency: string;
   initial_cash: number;
@@ -89,6 +92,9 @@ export interface RunLogEntry {
 
 /** GET /strategy_runs 元素(live runner 运行态)。 */
 export interface StrategyRunRecord {
+  accounting_status?: "verified" | "legacy_unverified" | "contaminated";
+  accounting_note?: string | null;
+  original_cumulative_pnl?: number | null;
   id: string;
   candidate_id: string;
   account_id: string;
@@ -193,7 +199,13 @@ export interface RunnersPayload {
 }
 
 /** GET /api/runners/[id] —— 单个 run 详情 + 决策时间线。 */
+export interface RunWalletPayload {
+  wallet: { cash_balances: Record<string, number>; initial_cash: number; equity: number | null; net_pnl: number | null; valuation_at: string | null; released_at: string | null; warnings: string[] } | null;
+  pnl_components?: { fees: number; realized: number; funding: number; unrealized: number | null; currency: string };
+}
+
 export interface RunDetailPayload {
+  wallet?: RunWalletPayload | null;
   /** 在 list 里按 id 找到的 run;不存在为 null。 */
   run: StrategyRunRecord | null;
   decisions: StrategyRunDecisionRecord[];
@@ -256,7 +268,12 @@ export interface StrategyCandidateRecord extends StrategyCandidateSummary {
 export interface LabPayload {
   /** 后端已按 fitness DESC 排序。 */
   candidates: StrategyCandidateSummary[];
-  counts: { all: number; promoted: number; candidate: number; rejected: number };
+  counts: {
+    all: number;
+    promoted: number;
+    candidate: number;
+    rejected: number;
+  };
   /** candidates 命中上限被截断(还有更多候选未显示) —— UI 给截断提示,不静默。 */
   truncated: boolean;
   experimentalAdoptions: ExperimentalStrategyAdoption[];
@@ -392,7 +409,12 @@ export interface RiskPayload {
   locks: RiskLock[];
   /** 最近风控事件(历史锁 + 跨 run 被拒决策),按时间倒序。 */
   events: RiskEvent[];
-  sources: { rules: boolean; locks: boolean; history: boolean; rejections: boolean };
+  sources: {
+    rules: boolean;
+    locks: boolean;
+    history: boolean;
+    rejections: boolean;
+  };
   asOf: string;
 }
 
@@ -761,10 +783,12 @@ export type EvolutionLoopStatus =
 
 export interface EvolutionLoop {
   loop_id: string;
+  owner_account_id: string;
   operation_id: string;
   target_kind: string;
   target_id: string;
   target_snapshot: Record<string, unknown>;
+  display_target?: { description: string; href: string } | null;
   status: EvolutionLoopStatus;
   e1_run_id: string | null;
   campaign_id: string | null;

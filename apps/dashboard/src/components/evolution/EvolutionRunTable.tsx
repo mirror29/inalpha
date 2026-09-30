@@ -31,22 +31,142 @@ export function EvolutionRunTable({
   const locale = useLocale();
   const [filter, setFilter] = useState<StatusFilter>("all");
   const rows = useMemo(
-    () => filter === "all" ? runs : runs.filter((run) => filter === "active" ? isEvolutionActive(run.status) : !isEvolutionActive(run.status)),
+    () =>
+      filter === "all"
+        ? runs
+        : runs.filter((run) =>
+            filter === "active"
+              ? isEvolutionActive(run.status)
+              : !isEvolutionActive(run.status),
+          ),
     [filter, runs],
   );
   return (
-    <Panel title={t("evolutionRuns")} aside={<div className="flex flex-wrap gap-1">{FILTERS.map((value) => <FilterChip key={value} label={t(`filter.${value}`)} active={filter === value} onClick={() => setFilter(value)} />)}</div>}>
-      {rows.length === 0 ? <TableEmpty>{t("empty")}</TableEmpty> : <div className="overflow-x-auto"><table className="w-full border-collapse text-sm"><thead><TableHeadRow><Th>{t("col.run")}</Th><Th>{t("col.status")}</Th><Th>{t("col.seed")}</Th><Th right>{t("col.budget")}</Th><Th right>{t("col.candidates")}</Th><Th right>{t("col.rejected")}</Th><Th right>{t("col.cost")}</Th><Th>{t("col.time")}</Th></TableHeadRow></thead><tbody>{rows.map((run) => <RunRow key={run.run_id} run={run} locale={locale} />)}</tbody></table></div>}
-      {hasMore && <div className="border-t border-border-subtle p-3 text-center"><button type="button" disabled={isLoadingMore} onClick={onLoadMore} className="rounded-md border border-border-subtle px-3 py-1.5 font-mono text-xs text-fg-muted hover:text-cyan disabled:opacity-50">{isLoadingMore ? t("loadingMore") : t("loadMore")}</button></div>}
+    <Panel
+      title={t("evolutionRuns")}
+      aside={
+        <div className="flex flex-wrap gap-1">
+          {FILTERS.map((value) => (
+            <FilterChip
+              key={value}
+              label={t(`filter.${value}`)}
+              active={filter === value}
+              onClick={() => setFilter(value)}
+            />
+          ))}
+        </div>
+      }
+    >
+      {rows.length === 0 ? (
+        <TableEmpty>{t("empty")}</TableEmpty>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <TableHeadRow>
+                <Th>{t("col.run")}</Th>
+                <Th>{t("col.status")}</Th>
+                <Th>{t("col.seed")}</Th>
+                <Th right>{t("col.budget")}</Th>
+                <Th right>{t("col.candidates")}</Th>
+                <Th right>{t("col.rejected")}</Th>
+                <Th right>{t("col.cost")}</Th>
+                <Th>{t("col.time")}</Th>
+              </TableHeadRow>
+            </thead>
+            <tbody>
+              {rows.map((run) => (
+                <RunRow key={run.run_id} run={run} locale={locale} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {hasMore && (
+        <div className="border-t border-border-subtle p-3 text-center">
+          <button
+            type="button"
+            disabled={isLoadingMore}
+            onClick={onLoadMore}
+            className="rounded-md border border-border-subtle px-3 py-1.5 font-mono text-xs text-fg-muted hover:text-cyan disabled:opacity-50"
+          >
+            {isLoadingMore ? t("loadingMore") : t("loadMore")}
+          </button>
+        </div>
+      )}
     </Panel>
   );
 }
 
 function RunRow({ run, locale }: { run: EvolutionRunSummary; locale: string }) {
-  const ago = fmtRelative(run.finished_at ?? run.started_at ?? run.queued_at, Date.now(), locale);
-  return <tr className="border-t border-border-subtle/60 hover:bg-bg-elev/30"><Td mono muted><Link href={`/evolution/${run.run_id}`} className="hover:text-cyan">{run.run_id.slice(0, 8)}</Link></Td><Td><StatusBadge label={run.status} tone={evolutionTone(run.status)} dot pulse={isEvolutionActive(run.status)} /></Td><Td><span className="text-fg">{run.seed_strategy_id}</span></Td><Td right mono muted>{run.budget}</Td><Td right mono><span className="text-bull">{run.succeeded}</span></Td><Td right mono muted>{run.rejected}</Td><Td right mono muted>${run.llm_cost_usd.toFixed(4)}</Td><Td><span className="font-mono text-[11px] text-fg-muted/70">{ago}</span></Td></tr>;
+  const t = useTranslations("evolution.workflow");
+  const ago = fmtRelative(
+    run.finished_at ?? run.started_at ?? run.queued_at,
+    Date.now(),
+    locale,
+  );
+  return (
+    <tr className="border-t border-border-subtle/60 hover:bg-bg-elev/30">
+      <Td mono muted>
+        <Link href={`/evolution/${run.run_id}`} className="hover:text-cyan">
+          {t("baselineEvidence")}
+        </Link>
+      </Td>
+      <Td>
+        <StatusBadge
+          label={t(`states.${run.status}`)}
+          tone={evolutionTone(run.status)}
+          dot
+          pulse={isEvolutionActive(run.status)}
+        />
+      </Td>
+      <Td>
+        <span className="text-fg">
+          {typeof run.config.symbol === "string"
+            ? run.config.symbol
+            : t("marketUnavailable")}
+        </span>
+      </Td>
+      <Td right mono muted>
+        {run.budget}
+      </Td>
+      <Td right mono>
+        <span className="text-bull">{run.succeeded}</span>
+      </Td>
+      <Td right mono muted>
+        {run.rejected}
+      </Td>
+      <Td right mono muted>
+        ${run.llm_cost_usd.toFixed(4)}
+      </Td>
+      <Td>
+        <span className="font-mono text-[11px] text-fg-muted/70">{ago}</span>
+      </Td>
+    </tr>
+  );
 }
 
-function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className={cn("rounded-md border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider", active ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-border-subtle text-fg-muted hover:text-fg")}>{label}</button>;
+function FilterChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-md border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider",
+        active
+          ? "border-cyan/40 bg-cyan/10 text-cyan"
+          : "border-border-subtle text-fg-muted hover:text-fg",
+      )}
+    >
+      {label}
+    </button>
+  );
 }

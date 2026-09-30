@@ -94,3 +94,18 @@ python scripts/replay-e2-archive.py \
 核对选择窗口；默认 BTC 永续 4h，`--timeframe 1h` 可检查一小时行情。
 就绪检查只证明必要输入覆盖，匹配对照、FDR、收益和 Forward 仍需正式链路验证。
 模型预算、当前真实证据与下一步清单以 [当前状态文档](../../docs/04-current-state.md#未完成--下一步) 为准。
+
+## 有界归档事件验证
+
+对明确选出的真实新闻归档，先预览抽取结果，再选择是否写入事实账本：
+
+```bash
+uv run python scripts/extract_archived_events.py --raw-event-id <raw-event-uuid>
+uv run python scripts/extract_archived_events.py --raw-event-id <raw-event-uuid> --write
+```
+
+可重复传入 `--raw-event-id`，最多 100 个不同 ID。脚本仅接受 `coindesk` / `kraken_blog`
+的 `selected-news-forward@1`、`first-seen-only-v1` 未撤回归档，经正常服务鉴权访问 Data。
+确定性抽取不调用 LLM；重复写入由 Data 幂等处理，`processed` 不代表新增事实数。
+保留 `accepted_at` 作为事实可见时间，不回填至新闻发布时间。预览及写入均汇总事件分类、
+关联资产与失败类型；没有关联资产的事实不能直接视为可用于单资产评估的有效样本。

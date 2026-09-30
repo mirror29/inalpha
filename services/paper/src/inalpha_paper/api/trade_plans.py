@@ -12,6 +12,7 @@
 
 设计动机见 [ADR-0012](../../../../docs/decisions/0012-plan-exec-separation.md)。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -28,8 +29,16 @@ from ..account_id import account_id_from_user
 from ..config import PaperSettings, get_paper_settings
 from ..data_client import DataClient
 from ..execution import risk_guard as risk_guard_mod
+from ..execution.currency_resolver import resolve_currency
 from ..execution.order_executor import OrderExecutor
+from ..execution.spot_guard import (
+    InsufficientCashError,
+    InsufficientPositionError,
+    violates_spot_buying_power,
+    violates_spot_long_only,
+)
 from ..fills import apply_fill_to_positions_and_cash
+from ..fx import BaseCurrencyConverter
 from ..market_identity import canonicalize_market_identity
 from ..schemas import (
     ApprovePlanRequest,
@@ -42,6 +51,8 @@ from ..schemas import (
 )
 from ..storage import accounts as accounts_store
 from ..storage import orders as orders_store
+from ..storage import positions as positions_store
+from ..storage import run_wallets as wallets_store
 from ..storage import trade_plans as plans_store
 from ..storage.trade_plans import PlanError
 
@@ -125,7 +136,9 @@ async def get_plan(
     account_id = account_id_from_user(user)
     row = await plans_store.get(db, account_id=account_id, plan_id=plan_id)
     if row is None:
-        raise PlanHttpError(f"plan {plan_id} not found", code="PLAN_NOT_FOUND", details={"planId": str(plan_id)})
+        raise PlanHttpError(
+            f"plan {plan_id} not found", code="PLAN_NOT_FOUND", details={"planId": str(plan_id)}
+        )
     return _row_to_plan_record(row)
 
 
@@ -262,6 +275,8 @@ async def execute_plan(
     if not authorization or not authorization.startswith("Bearer "):
         raise PlanHttpError("missing Authorization header", code="UNAUTHORIZED")
     user_token = authorization.removeprefix("Bearer ").strip()
+    spot_converter: BaseCurrencyConverter | None = None
+    order_currency = resolve_currency(venue, symbol)
     async with DataClient(settings.data_service_url, user_token) as data_client:
         try:
             ticker = await data_client.get_execution_ticker(
@@ -274,13 +289,21 @@ async def execute_plan(
                 code="REF_PRICE_UNAVAILABLE",
                 details={"venue": venue, "symbol": symbol, "planId": str(plan_id)},
             ) from e
+        if side == "BUY":
+            account = await accounts_store.get_or_create(db, account_id)
+            spot_converter = BaseCurrencyConverter(account["base_currency"], data_client)
+            for currency in {*account["cash_balances"], order_currency}:
+                await spot_converter.rate(currency)
     ref_price = float(ticker["price"])
 
     # 单笔 notional 硬上限（无状态前置校验，issue #42）；超限 → 409 RISK_REJECTED
     # 不消费 approval_token —— 同 enforce，plan 维持 approved 待用户调小后重发
     risk_guard_mod.check_order_notional(
-        factory, quantity=quantity, ref_price=ref_price,
-        venue=venue, symbol=symbol,
+        factory,
+        quantity=quantity,
+        ref_price=ref_price,
+        venue=venue,
+        symbol=symbol,
     )
 
     # 3. 撮合（pure）
@@ -298,6 +321,7 @@ async def execute_plan(
     # 4. 单一事务：consume_token + 撮合落盘 + 切 executed（失败一起回滚）
     #    consume_approval 原子检查 token+status+expire，并发或重放都在这里 fail。
     async with db.transaction():
+        account = await accounts_store.get_or_create(db, account_id, for_update=True)
         try:
             await plans_store.consume_approval(
                 db,
@@ -308,7 +332,41 @@ async def execute_plan(
         except PlanError as e:
             _raise_plan_http(e)
             raise  # mypy
-        await accounts_store.get_or_create(db, account_id)
+        if result["status"] == "FILLED":
+            if side == "BUY":
+                converter = (
+                    spot_converter.offline_copy()
+                    if spot_converter is not None
+                    else BaseCurrencyConverter(account["base_currency"], None)
+                )
+                if converter.base != account["base_currency"]:
+                    raise InsufficientCashError("Account currency changed; retry execution")
+                available = await wallets_store.available_cash(db, account, converter)
+                if (
+                    violates_spot_buying_power(
+                        side=side,
+                        quantity=quantity,
+                        ref_price=Decimal(str(result["avg_fill_price"])),
+                        fee_rate=Decimal("0.001"),
+                        order_ccy_rate=await converter.rate(order_currency),
+                        available_cash_base=available,
+                    )
+                    or converter.warnings
+                ):
+                    raise InsufficientCashError("Plan exceeds main-account available cash")
+            elif side == "SELL":
+                position = await positions_store.get(
+                    db,
+                    account_id=account_id,
+                    venue=venue,
+                    symbol=symbol,
+                    for_update=True,
+                )
+                quantity_available = Decimal(str(position["quantity"])) if position else Decimal(0)
+                if violates_spot_long_only(
+                    side=side, quantity=quantity, current_qty=quantity_available
+                ):
+                    raise InsufficientPositionError("Plan exceeds main-account spot position")
         await orders_store.insert(
             db,
             account_id=account_id,
@@ -352,7 +410,9 @@ async def execute_plan(
             )
         # plan 切 executed（即使 result.status=REJECTED 也 executed —— "已尝试"是事实）
         await plans_store.record_execution(
-            db, plan_id=plan_id, resulting_order_id=result["client_order_id"]  # type: ignore[arg-type]
+            db,
+            plan_id=plan_id,
+            resulting_order_id=result["client_order_id"],  # type: ignore[arg-type]
         )
 
     return ExecutePlanResponse(

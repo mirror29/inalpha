@@ -247,4 +247,4 @@ jobs:
       - name: Verify migration round trip
         if: matrix.service == 'evolver'
         working-directory: services/evolver
-        run: uv run pytest -q ../../infra/migrations/tests/test_migration_0038.py
+        run: uv run pytest -q ../../infra/migrations/tests/test_migration_0038.py ../../infra/migrations/tests/test_migration_0058.py

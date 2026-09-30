@@ -117,6 +117,28 @@ class DataClient:
             )
         return ticker
 
+    async def get_perp_funding_history(
+        self, *, venue: str, symbol: str, from_ts: datetime, to_ts: datetime
+    ) -> list[dict[str, Any]]:
+        """Fetch published rates and marks with exact settlement timestamps."""
+        response = await self._client.get(
+            "/perp/funding/history",
+            params={
+                "venue": venue,
+                "symbol": symbol,
+                "from_ts": from_ts.isoformat(),
+                "to_ts": to_ts.isoformat(),
+            },
+        )
+        if response.status_code >= 400:
+            raise DataServiceError(
+                "Historical funding unavailable", code="FUNDING_HISTORY_UNAVAILABLE"
+            )
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise DataServiceError("Invalid funding history")
+        return rows
+
     async def get_perp_funding(self, *, venue: str, symbol: str) -> dict[str, Any]:
         """``GET /perp/funding`` —— USDT-M 永续 mark price + 当期 funding rate(perp 记账用)。
 
