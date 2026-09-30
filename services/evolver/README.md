@@ -171,6 +171,10 @@ uv run python scripts/validate_durable_loop.py --include-five-generations --eval
 日志与 JUnit 结果保存在根 `.tmp/loop-validation/`。五代检查使用真实评估引擎与合成数据，
 外部模型为离线替身，不产生 LLM 费用；它仍不能代替真实市场事件、付费模型或 Forward 验收。
 
+验证脚本自动发现 `tests/test_loop_*.py`，五代评估仍需显式启用。连接 URL 中覆盖主机、
+数据库或 service 的参数会被拒绝；libpq 与 Alembic 均显式固定本机地址和随机测试库，
+支持 IPv6，并避免环境变量 `PGHOSTADDR` 改变连接目标。
+
 仓库级开发推荐直接运行 `bash scripts/dev.sh`。要在本地试用 E2，在根 `.env` 设置
 `EVENT_EVOLUTION_ENABLED=true`，并先导入历史事件，或同时启用 `EVENT_ARCHIVE_ENABLED=true`
 与 `EVENT_EXTRACTION_ENABLED=true`。重启服务后，登录并在策略、
