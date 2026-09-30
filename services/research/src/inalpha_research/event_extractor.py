@@ -21,6 +21,19 @@ _EVENT_RULES: tuple[tuple[str, tuple[str, ...], float], ...] = (
 )
 
 
+EXTRACTOR_VERSION = "deterministic-event-extractor-v2"
+_ASSET_NAMES: tuple[tuple[str, str], ...] = (
+    ("BTC", r"\bbitcoin\b(?![\s-]+(?:cash|sv|gold)\b)"),
+    ("ETH", r"\bethereum\b(?![\s-]+classic\b)"),
+    ("SOL", r"\bsolana\b"),
+    ("ADA", r"\bcardano\b"),
+    ("DOGE", r"\bdogecoin\b"),
+    ("DOT", r"\bpolkadot\b"),
+    ("LINK", r"\bchainlink\b"),
+    ("BNB", r"\bbinance coin\b"),
+)
+
+
 def extract_event_fact(raw: dict[str, Any], policy_version: str) -> dict[str, Any]:
     """Map curated provider text to one conservative fact with hashed evidence."""
     title = str(raw.get("title") or "")
@@ -64,7 +77,7 @@ def extract_event_fact(raw: dict[str, Any], policy_version: str) -> dict[str, An
         "effective_at": _iso(effective_at),
         "available_at": _iso(available_at),
         "evidence_spans": spans,
-        "extractor_version": "deterministic-event-extractor-v1",
+        "extractor_version": EXTRACTOR_VERSION,
         "policy_version": policy_version,
         "retracted": bool(raw.get("retracted")),
     }
@@ -84,8 +97,9 @@ def _assets(payload: dict[str, Any], evidence: str) -> list[str]:
         elif value:
             values.append(str(value))
     values.extend(
-        re.findall(r"\b(?:BTC|ETH|SOL|XRP|ADA|DOGE|BNB|AVAX|DOT|LINK)\b", evidence.upper())
+        re.findall(r"\b(?:BTC|ETH|SOL|XRP|ADA|DOGE|BNB|AVAX|DOT|LINK)\b", evidence)
     )
+    values.extend(symbol for symbol, pattern in _ASSET_NAMES if re.search(pattern, evidence, re.I))
     return sorted({item.strip().upper().split("/")[0] for item in values if item.strip()})[:64]
 
 
