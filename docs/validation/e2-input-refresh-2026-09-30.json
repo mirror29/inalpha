@@ -1,0 +1,338 @@
+{
+  "checked_at": "2026-09-30T08:59:42.104958+00:00",
+  "scope": "genuine news replay and normal durable extraction worker in isolated local services; no model calls or production deployment",
+  "raw": {
+    "versions": 349,
+    "independent_originals": 348
+  },
+  "facts": {
+    "fact_versions": 349
+  },
+  "extraction_jobs": [
+    {
+      "status": "completed",
+      "count": 349
+    }
+  ],
+  "replay": {
+    "checked_at": "2026-09-30T08:55:43.106822+00:00",
+    "source_records": 348,
+    "raw_versions_created": 0,
+    "provenance_verified": 348,
+    "conservatively_reobserved_revisions": 1,
+    "source_metadata_sha256": "cd09ae9420d0d655c0a861e038dee3339af8c85b940d96e42ba140e2ee95333e",
+    "model_calls": 0,
+    "extraction": "Use the normal Research worker; this command only ingests raw evidence."
+  },
+  "event_snapshot": {
+    "snapshot_id": "8f673390-1d5f-4b43-a490-20b7c1f4fb9e",
+    "events_sha256": "f336f61454bd462ad111ea094930178c976ef3b7092484ffb0c6ec77358f67c3",
+    "fact_count": 3,
+    "policy_version": "all-visible-facts-v1"
+  },
+  "same_cutoff_snapshot_reused": true,
+  "markets": [
+    {
+      "manifest": {
+        "schema_version": "e1.dataset.v2",
+        "venue": "binance",
+        "symbol": "BTC/USDT:USDT",
+        "requested_timeframe": "1h",
+        "data_timeframe": "1h",
+        "canonical_timeframe": "1h",
+        "requested_from": "2026-09-04T00:00:00Z",
+        "requested_as_of": "2026-09-30T08:59:42.104958Z",
+        "effective_from": "2026-09-04T00:00:00Z",
+        "effective_to": "2026-09-30T07:00:00Z",
+        "latest_bar_ts": "2026-09-30T07:00:00Z",
+        "cutoff_bar_ts": "2026-09-30T07:00:00Z",
+        "freshness_lag_seconds": 0.0,
+        "data_epoch": 1790751600000,
+        "bar_count": 632,
+        "annualization_periods": 8760,
+        "calendar_code": null,
+        "content_sha256": "69fc5951953cd290dbc11f3f2088b0e0dd316f1a45a6160a1ea0d8cf486b5fde",
+        "hash_algorithm": "sha256:e1-bars-v1",
+        "backfill": {
+          "venue": "binance",
+          "symbol": "BTC/USDT:USDT",
+          "timeframe": "1h",
+          "bars_fetched": 2,
+          "bars_inserted": 2,
+          "from_ts": "2026-09-04T00:00:00Z",
+          "to_ts": "2026-09-30T08:59:42.104958Z"
+        },
+        "warnings": []
+      },
+      "event_windows": {
+        "discovery": 2,
+        "selection": 0,
+        "sealed_holdout": 1
+      },
+      "readiness": {
+        "checked_at": "2026-09-30T08:59:42.104958+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 632,
+        "timeframe": "1h",
+        "bars_fresh": true,
+        "bars_contiguous": true,
+        "selection_start": "2026-09-19T20:00:00+00:00",
+        "selection_end": "2026-09-25T01:00:00+00:00",
+        "independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      },
+      "selection_scaffold_event_studies": [
+        {
+          "lane": "event",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "event",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "event",
+          "event_types": [
+            "chain_halt"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "event_regime",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "factor",
+          "event_types": [
+            "other"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "execution_risk",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "regime",
+          "event_types": [
+            "other"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "restart",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        }
+      ]
+    },
+    {
+      "manifest": {
+        "schema_version": "e1.dataset.v2",
+        "venue": "binance",
+        "symbol": "BTC/USDT:USDT",
+        "requested_timeframe": "4h",
+        "data_timeframe": "4h",
+        "canonical_timeframe": "4h",
+        "requested_from": "2026-09-04T00:00:00Z",
+        "requested_as_of": "2026-09-30T08:59:42.104958Z",
+        "effective_from": "2026-09-04T00:00:00Z",
+        "effective_to": "2026-09-30T04:00:00Z",
+        "latest_bar_ts": "2026-09-30T04:00:00Z",
+        "cutoff_bar_ts": "2026-09-30T04:00:00Z",
+        "freshness_lag_seconds": 0.0,
+        "data_epoch": 1790740800000,
+        "bar_count": 158,
+        "annualization_periods": 2190,
+        "calendar_code": null,
+        "content_sha256": "0afe8dbd7173a77e41391a0d7669c3fec3602c31557bb9a866d2739cf415665b",
+        "hash_algorithm": "sha256:e1-bars-v1",
+        "backfill": {
+          "venue": "binance",
+          "symbol": "BTC/USDT:USDT",
+          "timeframe": "4h",
+          "bars_fetched": 159,
+          "bars_inserted": 159,
+          "from_ts": "2026-09-04T00:00:00Z",
+          "to_ts": "2026-09-30T08:59:42.104958Z"
+        },
+        "warnings": []
+      },
+      "event_windows": {
+        "discovery": 2,
+        "selection": 0,
+        "sealed_holdout": 1
+      },
+      "readiness": {
+        "checked_at": "2026-09-30T08:59:42.104958+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 158,
+        "timeframe": "4h",
+        "bars_fresh": true,
+        "bars_contiguous": true,
+        "selection_start": "2026-09-19T20:00:00+00:00",
+        "selection_end": "2026-09-25T00:00:00+00:00",
+        "independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      },
+      "selection_scaffold_event_studies": [
+        {
+          "lane": "event",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "event",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "event",
+          "event_types": [
+            "chain_halt"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "event_regime",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "factor",
+          "event_types": [
+            "other"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "execution_risk",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "regime",
+          "event_types": [
+            "other"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        },
+        {
+          "lane": "restart",
+          "event_types": [
+            "exploit"
+          ],
+          "event_count": 0,
+          "matched_control_count": 0,
+          "unmatched_events": 0
+        }
+      ]
+    }
+  ],
+  "new_model_calls": 0,
+  "new_model_cost_usd": 0,
+  "positive_chain_ready": false,
+  "boundary": "No selection event or matched control exists. No new search, champion, Forward, holdout or adoption was started.",
+  "previous_raw_versions": 345,
+  "previous_independent_originals": 345,
+  "new_independent_originals": 3,
+  "new_raw_versions": 4,
+  "repeated_replay": {
+    "checked_at": "2026-09-30T09:02:30.864991+00:00",
+    "source_records": 348,
+    "raw_versions_created": 0,
+    "provenance_verified": 348,
+    "conservatively_reobserved_revisions": 1,
+    "source_metadata_sha256": "cd09ae9420d0d655c0a861e038dee3339af8c85b940d96e42ba140e2ee95333e",
+    "model_calls": 0,
+    "extraction": "Use the normal Research worker; this command only ingests raw evidence."
+  },
+  "extraction_restart": {
+    "worker_restart": true,
+    "completed_jobs_unchanged": true,
+    "counts_before": {
+      "raw": 349,
+      "facts": 349,
+      "jobs": [
+        {
+          "status": "completed",
+          "count": 349
+        }
+      ]
+    },
+    "counts_after": {
+      "raw": 349,
+      "facts": 349,
+      "jobs": [
+        {
+          "status": "completed",
+          "count": 349
+        }
+      ]
+    },
+    "model_calls": 0
+  },
+  "provenance_boundary": "One superseding content revision was conservatively re-observed at local acceptance time by the normal Data API. Source identity/hash/first_seen and source publication timestamps stayed unchanged; only fetched_at/accepted_at moved later. This is not an exact historical copy for that revision. No timestamp was moved earlier and old frozen snapshots were not changed.",
+  "validation": {
+    "replay_and_readiness_tests_passed": 15,
+    "consistency_passed": 19,
+    "consistency_failures": 0,
+    "existing_consistency_warnings": 12
+  }
+}
