@@ -74,13 +74,13 @@ async def _clean_closed_trades(app_with_lifespan: Any) -> AsyncIterator[None]:
     del app_with_lifespan
     async with get_conn() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("TRUNCATE TABLE closed_trades RESTART IDENTITY")
+            await cur.execute("TRUNCATE TABLE closed_trades, paper_legacy_attributions RESTART IDENTITY")
             await cur.execute("TRUNCATE TABLE risk_locks RESTART IDENTITY")
         await conn.commit()
     yield
     async with get_conn() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("TRUNCATE TABLE closed_trades RESTART IDENTITY")
+            await cur.execute("TRUNCATE TABLE closed_trades, paper_legacy_attributions RESTART IDENTITY")
             await cur.execute("TRUNCATE TABLE risk_locks RESTART IDENTITY")
         await conn.commit()
 

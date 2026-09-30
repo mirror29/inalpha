@@ -1,4 +1,5 @@
 """``BinanceConnector.fetch_perp_funding_rate`` 单测(mock futures ccxt,零网络)。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -90,7 +91,34 @@ async def test_fetch_bars_spot_symbol_unchanged() -> None:
     conn = BinanceConnector()
     fake = _RecordingSpot()
     conn._exchange = fake  # type: ignore[assignment]
-    await conn.fetch_bars(
-        symbol="ETH/USDT", timeframe="1h", since=datetime(2024, 1, 1, tzinfo=UTC)
-    )
+    await conn.fetch_bars(symbol="ETH/USDT", timeframe="1h", since=datetime(2024, 1, 1, tzinfo=UTC))
     assert fake.seen_symbol == "ETH/USDT"
+
+
+async def test_funding_history_uses_published_settlement_marks() -> None:
+    class HistoryExchange:
+        async def load_markets(self) -> None:
+            pass
+
+        def market(self, symbol: str) -> dict[str, str]:
+            return {"id": "BTCUSDT"}
+
+        async def fapiPublicGetFundingRate(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+            assert params["symbol"] == "BTCUSDT"
+            assert params["startTime"] == 1700000000001
+            return [{"fundingTime": 1700000010000, "fundingRate": "0.001", "markPrice": "123.45"}]
+
+    connector = BinanceConnector()
+    connector._futures_exchange = HistoryExchange()
+    out = await connector.fetch_perp_funding_history(
+        "BTC/USDT:USDT",
+        datetime.fromtimestamp(1700000000, tz=UTC),
+        datetime.fromtimestamp(1700000020, tz=UTC),
+    )
+    assert out == [
+        {
+            "ts": datetime.fromtimestamp(1700000010, tz=UTC),
+            "funding_rate": 0.001,
+            "mark_price": 123.45,
+        }
+    ]

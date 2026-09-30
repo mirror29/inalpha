@@ -7,6 +7,7 @@ orders 表 schema 见 migration 0001（基础） + 0002（扩 account/venue/symb
 - ``client_order_id`` 由 ``OrderExecutor`` 生成（进程内自增），写库时作为 PK
 - ``instrument_id`` 字段保留向后兼容（值 = "{symbol}@{venue}"），新代码用拆分的 venue/symbol
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -37,6 +38,7 @@ async def insert(
     trade_plan_id: UUID | None = None,
     trading_mode: str = "spot",
     leverage: int = 1,
+    run_id: UUID | None = None,
 ) -> None:
     """写一行订单。status 可以是 FILLED / REJECTED / 等等（见 schema CHECK）。
 
@@ -49,12 +51,12 @@ async def insert(
                 client_order_id, instrument_id, side, type, quantity, price,
                 status, filled_quantity, avg_fill_price, ts_event,
                 account_id, venue, symbol, fee, notional, trade_plan_id,
-                trading_mode, leverage
+                trading_mode, leverage, run_id
             ) VALUES (
                 %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s,
-                %s, %s
+                %s, %s, %s
             )
             """,
             (
@@ -76,6 +78,7 @@ async def insert(
                 str(trade_plan_id) if trade_plan_id else None,
                 trading_mode,
                 leverage,
+                run_id,
             ),
         )
 
@@ -122,9 +125,9 @@ async def list_by_account(
         "SELECT client_order_id, venue, symbol, side, type, quantity, price, "
         "status, filled_quantity, avg_fill_price, fee, notional, realized_pnl, "
         "ts_event, ts_init, trade_plan_id, "
-        "(SELECT d.run_id FROM strategy_run_decisions AS d "
+        "COALESCE(orders.run_id, (SELECT d.run_id FROM strategy_run_decisions AS d "
         " WHERE d.order_id = orders.client_order_id "
-        " ORDER BY d.created_at DESC, d.id DESC LIMIT 1) AS strategy_run_id "
+        " ORDER BY d.created_at DESC, d.id DESC LIMIT 1)) AS strategy_run_id "
         "FROM orders WHERE account_id = %s"
     )
     params: list[Any] = [str(account_id)]
