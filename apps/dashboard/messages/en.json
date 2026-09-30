@@ -285,13 +285,13 @@
     },
     "empty": "No activity yet.",
     "emptyFiltered": "No {kind} events.",
-  "sourceDown": "{sources} unavailable — those events are missing from the feed.",
-  "approval": {
-    "allow": "Approve",
-    "deny": "Deny",
-    "failed": "Retry",
-    "working": "Saving…"
-  },
+    "sourceDown": "{sources} unavailable — those events are missing from the feed.",
+    "approval": {
+      "allow": "Approve",
+      "deny": "Deny",
+      "failed": "Retry",
+      "working": "Saving…"
+    },
     "source": {
       "scheduler": "Scheduler",
       "permissions": "Approvals",
@@ -589,12 +589,12 @@
   },
   "evolution": {
     "title": "Evolution",
-    "subtitle": "Event facts and paper feedback drive two-level evolution: agents diversify hypotheses, deterministic DSL arms validate them, and one champion enters durable Forward.",
+    "subtitle": "Agents explore improvements from events and simulation feedback, validate them through backtests and observation, and leave adoption to you.",
     "runs": "Total runs",
     "running": "Running",
     "llmCost": "LLM cost",
     "rejected": "Rejected",
-    "evolutionRuns": "Evolution Runs",
+    "evolutionRuns": "Single-generation optimization",
     "empty": "No evolution runs yet. Trigger one via the chat agent: \"run evolution\" or \"evolve sma_cross\".",
     "truncated": "Showing the latest {n} — earlier ones aren't listed here.",
     "filter": {
@@ -655,14 +655,14 @@
       "notAvailable": "Not available yet"
     },
     "loadMore": "Load more",
-    "loadingMore": "Loading…"
-    ,"start": {
+    "loadingMore": "Loading…",
+    "start": {
       "label": "Start evolution",
       "prompt": "Start evolution",
       "hint": "Start an automatic evolution loop from the strategy or paper run on this page",
       "checking": "Checking evolution capability"
-    }
-    ,"loop": {
+    },
+    "loop": {
       "costTitle": "Model costs · USD",
       "costUnavailable": "Cost ledger unavailable; this does not mean zero spend.",
       "costExplanation": "Reservations cover in-flight or unconfirmed calls and are not settled spend.",
@@ -673,7 +673,7 @@
         "available_usd": "Available"
       },
       "back": "Back to evolution",
-      "baseline": "E1 baseline",
+      "baseline": "Evaluate original strategy",
       "adoption": "Manual adoption",
       "unavailable": "Unable to load this workflow",
       "refreshFailed": "Refresh failed. Showing the last received state; please retry.",
@@ -683,41 +683,46 @@
         "target_resolved": "Preparing frozen data and the E1 baseline. No repeat trigger is needed.",
         "baseline_ready": "The baseline is ready. The scheduler will hand off to E2 automatically.",
         "campaign_running": "Evaluating five generations. Insufficient evidence ends the campaign without forcing a winner.",
-        "candidate_locked": "The champion is locked. Preparing an independent Forward sandbox.",
+        "candidate_locked": "One candidate has been selected and fixed. Independent paper observation is being prepared.",
         "waiting_forward": "Waiting for real Forward evidence: at least 30 days and 3 independent events, up to 90 days.",
-        "holdout_running": "Running the one-shot sealed holdout. Another candidate cannot retry it.",
-        "adoption_ready": "Open the Campaign to review evidence and adopt manually. Adoption remains research-only.",
+        "holdout_running": "Testing the fixed candidate on data reserved from selection. The test is single-use; another candidate cannot be substituted for a retry.",
+        "adoption_ready": "Validation stages have passed. Review the evidence before manually adopting into Strategy Lab; adoption remains research-only.",
         "rejected": "Validation did not pass. No automatic adoption; review diagnostics and Campaign evidence.",
-        "insufficient_evidence": "Evidence cannot support a winner conclusion. No strategy will be started automatically.",
-        "failed": "Execution failed. Review diagnostics; refreshing does not charge again or restart the experiment."
+        "insufficient_evidence": "This research has insufficient evidence for adopting an improvement. Review hypotheses, statistical checks, and event coverage before deciding whether to add data or revise hypotheses.",
+        "failed": "Execution encountered a fault, so strategy effectiveness is not established. Review diagnostics; refreshing does not restart or repurchase the experiment.",
+        "holdout_ready": "Observation passed. Awaiting the single-use reserved-data test.",
+        "aborted": "Research was aborted. Incurred model costs remain payable; strategy effectiveness is not established."
       },
       "title": "Automatic Evolution Loops",
       "empty": "No evolution loop yet. Say “start evolution” from a strategy, paper run, or E1 result.",
       "target": "Target",
       "status": "Current stage",
-      "campaign": "Campaign",
-      "forward": "Forward sandbox",
-      "holdout": "Sealed holdout",
+      "campaign": "Explore and test improvements",
+      "forward": "Observe in paper simulation",
+      "holdout": "Test reserved data",
       "updated": "Updated",
       "pending": "Pending",
       "created": "Created",
-      "sealed": "Unconsumed",
-      "consumed": "Locked",
+      "sealed": "Sealed; not started",
+      "consumed": "Test started",
       "states": {
         "target_resolved": "Target resolved",
         "baseline_ready": "Baseline ready",
         "campaign_running": "Five-generation evolution",
         "candidate_locked": "Champion locked",
-        "waiting_forward": "Forward observation",
+        "waiting_forward": "Paper observation in progress",
         "holdout_running": "Sealed holdout",
         "adoption_ready": "Awaiting adoption",
         "rejected": "Rejected",
         "insufficient_evidence": "Insufficient evidence",
-        "failed": "Failed"
+        "failed": "Execution failure",
+        "draft": "Preparing research",
+        "holdout_ready": "Awaiting reserved-data test",
+        "aborted": "Aborted"
       }
     },
     "campaign": {
-      "title": "Event Campaigns",
+      "title": "Historical event research",
       "empty": "No event campaign yet; E1 single-generation runs keep their existing semantics.",
       "id": "Campaign",
       "status": "Status",
@@ -748,15 +753,149 @@
       "adopt": "Adopt into Strategy Lab",
       "adopting": "Adopting…",
       "adopted": "Adopted as an experimental strategy",
-      "adoptHint": "Adoption does not promote, start Runner, or trade; runner_eligible is enforced false."
+      "adoptHint": "Adoption does not promote, start Runner, or trade; runner_eligible is enforced false.",
+      "loadMore": "Load more evaluations",
+      "loadingMore": "Loading…"
+    },
+    "workflow": {
+      "tasks": "Strategy improvement tasks",
+      "loaded": "{count} loaded",
+      "loadedTasks": "Loaded tasks",
+      "researching": "Research in progress",
+      "observing": "Forward observation",
+      "ready": "Ready for manual adoption",
+      "scope": "Counts cover loaded workflows only. Settled costs are shown per task.",
+      "chooseStrategy": "Start from Strategy Lab",
+      "history": "Historical standalone experiments",
+      "historyHint": "These records are not linked to the currently loaded workflows. Original experiment and audit views remain available.",
+      "marketUnavailable": "Market information unavailable",
+      "unknown": "Unavailable",
+      "targets": {
+        "strategy_candidate": "Strategy improvement research",
+        "paper_runner": "Paper strategy improvement",
+        "backtest_run": "Backtest strategy improvement",
+        "e1_candidate": "Continue improving a candidate"
+      },
+      "viewResearch": "View research",
+      "reviewAdoption": "Review evidence and adoption",
+      "conclusion": "Conclusion and next step",
+      "process": "Strategy improvement process",
+      "steps": {
+        "baseline": "Evaluate original strategy",
+        "campaign": "Explore and test improvements",
+        "forward": "Observe in paper simulation",
+        "holdout": "Test reserved data",
+        "adoption": "Manual adoption"
+      },
+      "evidence": "Research evidence",
+      "viewOriginal": "View original strategy or simulation",
+      "targetUnavailable": "Original target information is unavailable. Existing research remains readable.",
+      "baselineEvidence": "Original strategy and benchmark",
+      "searchEvidence": "Hypotheses and five-round validation",
+      "audit": "Reproduction and diagnostics",
+      "auditHint": "Record IDs locate experiments. Hashes check that data, code, or configuration match; they do not measure strategy quality.",
+      "recordId": "Record ID",
+      "forwardHint": "One selected candidate is observed independently for at least 30 days and 3 independent events, up to 90 days. Reserved data is tested only after observation passes.",
+      "notStarted": "Forward observation has not started",
+      "candidateLocked": "One candidate fixed; no replacement",
+      "round": "Round {n}",
+      "rounds": "Research progress by round",
+      "hypothesisCount": "{count} hypotheses · 3 implementations each",
+      "hypotheses": "What this round is testing",
+      "hypothesisHint": "Agents propose hypotheses and test different response styles. A successful evaluation does not establish an effective strategy.",
+      "selected": "Retained research hypothesis",
+      "lineage": "Origin: {kind} · {count} parent hypotheses",
+      "lineageKinds": {
+        "elite": "Retain selected hypotheses",
+        "mutation": "Improve an existing hypothesis",
+        "crossover": "Combine existing hypotheses",
+        "restart": "Explore a new direction",
+        "seed": "Initial hypothesis"
+      },
+      "credit": "Research contribution score",
+      "novelty": "Difference from existing approaches",
+      "fdrHint": "Statistical checks control chance findings from searching many candidates. Passing still requires Forward observation and reserved-data validation.",
+      "profile": "Response style",
+      "profiles": {
+        "direct": "Direct event response",
+        "confirmed": "Signal-confirmed response",
+        "hybrid": "Events with other signals",
+        "canonical": "Standard parameters",
+        "aggressive": "Aggressive parameters",
+        "conservative": "Conservative parameters"
+      },
+      "outcome": "Evaluation result",
+      "fitness": "Combined backtest score",
+      "advantage": "Event advantage (%)",
+      "evidenceQuality": "Evidence quality",
+      "statisticalCheck": "Statistical evidence",
+      "pass": "Passed",
+      "noPass": "Not passed",
+      "outcomes": {
+        "succeeded": "Evaluation completed",
+        "failed": "Evaluation failed",
+        "rejected": "Safety checks failed",
+        "pending": "Awaiting evaluation",
+        "queued": "Awaiting evaluation",
+        "running": "Evaluating"
+      },
+      "states": {
+        "queued": "Queued",
+        "running": "Running",
+        "cancelling": "Cancelling",
+        "completed": "Evaluation completed",
+        "failed": "Execution failure",
+        "aborted": "Aborted"
+      },
+      "comparisons": "Response styles and validation results",
+      "detailTitle": "Event-driven improvement research",
+      "dataExplanation": "Research data is fixed at the start and shared by all candidates. IDs and versions are available below for verification.",
+      "metrics": {
+        "fitness": "Combined score",
+        "sharpe": "Sharpe ratio",
+        "total_return_pct": "Total return (%)",
+        "max_drawdown_pct": "Maximum drawdown (%)",
+        "num_trades": "Trades",
+        "calmar": "Calmar ratio",
+        "sortino": "Sortino ratio",
+        "win_rate": "Win rate"
+      },
+      "stages": {
+        "mutation": "Proposing improvements",
+        "audit": "Safety checks",
+        "evaluation": "Backtest evaluation",
+        "completed": "Evaluation completed",
+        "baseline": "Evaluating original strategy",
+        "unknown": "Processing"
+      },
+      "risks": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      },
+      "roundNotLoaded": "This round is not in the loaded records yet. Load more evaluation results.",
+      "roundEmpty": "No evaluation results are available for this round.",
+      "eventTypes": {
+        "listing": "Listing",
+        "delisting": "Delisting",
+        "exploit": "Exploit / attack",
+        "chain_halt": "Chain halt",
+        "regulatory": "Regulatory",
+        "upgrade": "Network upgrade",
+        "unlock": "Token unlock",
+        "burn": "Token burn",
+        "partnership": "Partnership",
+        "macro": "Macro",
+        "other": "Other"
+      }
     }
   },
   "backtests": {
     "back": "Agent Activity",
     "notFound": "Backtest run not found.",
     "viewCandidate": "View strategy"
-  }
-  ,"dataHealth": {
+  },
+  "dataHealth": {
     "title": "Event Data Health",
     "subtitle": "Coverage, first acceptance, revisions, and snapshot integrity for the event source of truth.",
     "rawEvents": "Raw events",

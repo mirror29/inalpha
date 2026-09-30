@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl";
 
+import { evolutionMarket } from "@/lib/evolution-presentation";
 import type { EvolutionRun } from "@/lib/types";
 import { evolutionTone, isEvolutionActive } from "@/lib/evolution";
 import { LiveStrip } from "@/components/ui/LiveStrip";
@@ -22,21 +23,24 @@ export function EvolutionRunHeader({
   onAbort: () => void;
 }) {
   const t = useTranslations("evolution.detail");
+  const w = useTranslations("evolution.workflow");
   const active = isEvolutionActive(run.status);
   return (
     <header className="flex flex-col gap-4 border-b border-border-subtle pb-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-display text-3xl text-fg lg:text-4xl">{t("title")}</h1>
+          <h1 className="font-display text-3xl text-fg lg:text-4xl">
+            {t("title")}
+          </h1>
           <StatusBadge
-            label={run.status}
+            label={w(`states.${run.status}`)}
             tone={evolutionTone(run.status)}
             dot
             pulse={active}
           />
         </div>
         <p className="mt-2 font-mono text-xs text-fg-muted">
-          {run.run_id} · {run.seed_strategy_id}
+          {evolutionMarket(run.config) || w("marketUnavailable")}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">

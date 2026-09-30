@@ -256,7 +256,12 @@ export interface StrategyCandidateRecord extends StrategyCandidateSummary {
 export interface LabPayload {
   /** 后端已按 fitness DESC 排序。 */
   candidates: StrategyCandidateSummary[];
-  counts: { all: number; promoted: number; candidate: number; rejected: number };
+  counts: {
+    all: number;
+    promoted: number;
+    candidate: number;
+    rejected: number;
+  };
   /** candidates 命中上限被截断(还有更多候选未显示) —— UI 给截断提示,不静默。 */
   truncated: boolean;
   experimentalAdoptions: ExperimentalStrategyAdoption[];
@@ -392,7 +397,12 @@ export interface RiskPayload {
   locks: RiskLock[];
   /** 最近风控事件(历史锁 + 跨 run 被拒决策),按时间倒序。 */
   events: RiskEvent[];
-  sources: { rules: boolean; locks: boolean; history: boolean; rejections: boolean };
+  sources: {
+    rules: boolean;
+    locks: boolean;
+    history: boolean;
+    rejections: boolean;
+  };
   asOf: string;
 }
 
@@ -765,6 +775,7 @@ export interface EvolutionLoop {
   target_kind: string;
   target_id: string;
   target_snapshot: Record<string, unknown>;
+  display_target?: { description: string; href: string } | null;
   status: EvolutionLoopStatus;
   e1_run_id: string | null;
   campaign_id: string | null;

@@ -285,13 +285,13 @@
     },
     "empty": "暂无活动。",
     "emptyFiltered": "没有「{kind}」类事件。",
-  "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
-  "approval": {
-    "allow": "批准",
-    "deny": "拒绝",
-    "failed": "请重试",
-    "working": "提交中…"
-  },
+    "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
+    "approval": {
+      "allow": "批准",
+      "deny": "拒绝",
+      "failed": "请重试",
+      "working": "提交中…"
+    },
     "source": {
       "scheduler": "定时任务",
       "permissions": "审批",
@@ -589,12 +589,12 @@
   },
   "evolution": {
     "title": "策略演化",
-    "subtitle": "事件事实与模拟盘反馈驱动的双层自动演化 —— Agent 发散假设，确定性 DSL 消融验证，单冠军进入耐久 Forward。",
+    "subtitle": "让 Agent 根据事件与模拟反馈探索策略改进，用回测和持续观察检验，结果由你决定是否采用。",
     "runs": "总运行轮次",
     "running": "运行中",
     "llmCost": "LLM 费用",
     "rejected": "已拦",
-    "evolutionRuns": "演化运行",
+    "evolutionRuns": "单代策略优化",
     "empty": "暂无演化记录。通过 Agent 对话触发：\"演化一下 sma_cross\" 或 \"帮我优化策略\"。",
     "truncated": "仅展示最近 {n} 条，更早的记录未列出。",
     "filter": {
@@ -655,14 +655,14 @@
       "notAvailable": "尚不可用"
     },
     "loadMore": "加载更多",
-    "loadingMore": "正在加载…"
-    ,"start": {
+    "loadingMore": "正在加载…",
+    "start": {
       "label": "开始进化",
       "prompt": "开始进化",
       "hint": "基于当前页面的策略或模拟盘启动自动演化闭环",
       "checking": "正在检查演化能力"
-    }
-    ,"loop": {
+    },
+    "loop": {
       "costTitle": "模型费用 · USD",
       "costUnavailable": "暂无费用账本信息，不代表费用为零。",
       "costExplanation": "预留费用用于在途或结果待确认的调用，尚未计入已结算费用。",
@@ -673,7 +673,7 @@
         "available_usd": "剩余可用"
       },
       "back": "返回演化列表",
-      "baseline": "E1 基线",
+      "baseline": "评估原策略",
       "adoption": "人工采用",
       "unavailable": "暂时无法读取演化任务",
       "refreshFailed": "更新失败，当前显示上次读取的状态。请重试。",
@@ -683,41 +683,46 @@
         "target_resolved": "正在准备冻结数据与 E1 基线，无需重复触发。",
         "baseline_ready": "基线已完成，调度器将自动交接 E2，无需再次点击开始。",
         "campaign_running": "正在评估五代候选；证据不足时会结束，不会强行产生赢家。",
-        "candidate_locked": "冠军已锁定，正在准备独立 Forward 沙盒。",
+        "candidate_locked": "已筛选并固定一个候选，正在准备独立模拟观察。",
         "waiting_forward": "等待真实 Forward 证据：至少 30 天、3 个独立事件；最多等待 90 天。",
-        "holdout_running": "正在执行一次性封存测试，不能更换候选重试。",
-        "adoption_ready": "请打开 Campaign 查看证据并手动采用。采用后仍仅限研究。",
+        "holdout_running": "正在用此前未参与筛选的数据检验固定候选。这项测试只能消费一次，不能更换候选重试。",
+        "adoption_ready": "各阶段验证已通过。请查看研究证据，再决定是否采用到策略实验室；采用后仍仅限研究。",
         "rejected": "本轮未通过验证，不会自动采用。请查看诊断与 Campaign 证据。",
-        "insufficient_evidence": "当前证据不足以支持赢家结论，不会自动启动策略。",
-        "failed": "任务执行失败。请查看诊断信息；刷新页面不会重新收费或重启实验。"
+        "insufficient_evidence": "本轮没有足够证据支持采用改进策略。查看研究假设、统计筛选和事件覆盖，判断是否需要补充数据或调整假设。",
+        "failed": "执行遇到故障，尚不能判断策略是否有效。请查看诊断信息；刷新页面不会重新收费或重启实验。",
+        "holdout_ready": "持续观察已通过，等待执行一次性留存数据检验。",
+        "aborted": "本轮研究已中止。已发生的模型费用不会撤销，尚不能据此判断策略有效性。"
       },
       "title": "自动演化闭环",
       "empty": "暂无演化闭环。可在策略、模拟盘或 E1 结果页说一句“开始进化”。",
       "target": "演化目标",
       "status": "当前阶段",
-      "campaign": "Campaign",
-      "forward": "Forward 沙盒",
-      "holdout": "封存测试",
+      "campaign": "探索与验证改进",
+      "forward": "持续模拟观察",
+      "holdout": "留存数据检验",
       "updated": "更新",
       "pending": "待创建",
       "created": "已创建",
-      "sealed": "未消费",
-      "consumed": "已锁定",
+      "sealed": "仍封存，未启动",
+      "consumed": "已启动检验",
       "states": {
         "target_resolved": "已解析目标",
         "baseline_ready": "基线已就绪",
         "campaign_running": "五代演化中",
         "candidate_locked": "冠军已锁定",
-        "waiting_forward": "Forward 观察中",
+        "waiting_forward": "持续模拟观察中",
         "holdout_running": "封存测试中",
         "adoption_ready": "等待人工采用",
         "rejected": "未通过",
         "insufficient_evidence": "证据不足",
-        "failed": "失败"
+        "failed": "执行故障",
+        "draft": "正在准备研究",
+        "holdout_ready": "等待留存数据检验",
+        "aborted": "已中止"
       }
     },
     "campaign": {
-      "title": "事件 Campaign",
+      "title": "历史事件研究",
       "empty": "暂无事件演化 Campaign；E1 单代演化仍保留原语义。",
       "id": "Campaign",
       "status": "状态",
@@ -748,15 +753,149 @@
       "adopt": "采用到策略实验室",
       "adopting": "正在采用…",
       "adopted": "已作为实验性策略采用",
-      "adoptHint": "采用不会 promote、启动 Runner 或下单；后端强制 runner_eligible=false。"
+      "adoptHint": "采用不会 promote、启动 Runner 或下单；后端强制 runner_eligible=false。",
+      "loadMore": "加载更多评估结果",
+      "loadingMore": "正在加载…"
+    },
+    "workflow": {
+      "tasks": "策略改进任务",
+      "loaded": "已加载 {count} 项",
+      "loadedTasks": "已加载任务",
+      "researching": "正在研究",
+      "observing": "持续观察中",
+      "ready": "可人工采用",
+      "scope": "统计仅覆盖当前已加载的演化任务。每项任务的费用单独展示。",
+      "chooseStrategy": "从策略实验室开始",
+      "history": "历史独立实验与单代优化",
+      "historyHint": "以下记录未关联到当前已加载的完整任务；保留原实验与审计入口。",
+      "marketUnavailable": "市场信息尚不可用",
+      "unknown": "尚不可用",
+      "targets": {
+        "strategy_candidate": "策略改进研究",
+        "paper_runner": "模拟盘策略改进",
+        "backtest_run": "回测策略改进",
+        "e1_candidate": "候选策略继续改进"
+      },
+      "viewResearch": "查看研究过程",
+      "reviewAdoption": "查看证据并决定采用",
+      "conclusion": "本轮结论与下一步",
+      "process": "策略改进过程",
+      "steps": {
+        "baseline": "评估原策略",
+        "campaign": "探索与验证改进",
+        "forward": "持续模拟观察",
+        "holdout": "留存数据检验",
+        "adoption": "人工采用"
+      },
+      "evidence": "研究证据",
+      "viewOriginal": "查看原策略或模拟结果",
+      "targetUnavailable": "原策略信息暂时不可用，已有研究记录仍可查看。",
+      "baselineEvidence": "原策略与基准评估",
+      "searchEvidence": "研究假设与五轮验证",
+      "audit": "复现与诊断",
+      "auditHint": "记录编号用于定位实验；哈希用于核对数据、代码或配置是否相同，它们不代表策略质量。",
+      "recordId": "记录编号",
+      "forwardHint": "筛选出一个候选后，在独立模拟环境观察至少 30 天和 3 个独立事件，最多等待 90 天。通过后才检验未用于筛选的留存数据。",
+      "notStarted": "尚未进入持续观察",
+      "candidateLocked": "已固定一个候选，不再更换",
+      "round": "第 {n} 轮",
+      "rounds": "每轮研究进展",
+      "hypothesisCount": "{count} 项假设 · 每项 3 种实现",
+      "hypotheses": "这一轮正在验证什么",
+      "hypothesisHint": "Agent 提出研究假设，同一假设用不同响应方式验证；执行成功不等于策略有效。",
+      "selected": "本轮保留的研究假设",
+      "lineage": "来源：{kind} · {count} 个父假设",
+      "lineageKinds": {
+        "elite": "保留优秀假设",
+        "mutation": "改进已有假设",
+        "crossover": "组合已有假设",
+        "restart": "尝试新方向",
+        "seed": "初始假设"
+      },
+      "credit": "研究贡献评分",
+      "novelty": "与已有方案的差异",
+      "fdrHint": "统计证据检查用于控制批量搜索中的偶然发现；通过仍需后续持续观察与留存数据检验。",
+      "profile": "响应方式",
+      "profiles": {
+        "direct": "直接响应事件",
+        "confirmed": "信号确认后响应",
+        "hybrid": "结合事件与其他信号",
+        "canonical": "标准参数",
+        "aggressive": "积极参数",
+        "conservative": "保守参数"
+      },
+      "outcome": "执行结果",
+      "fitness": "综合回测评分",
+      "advantage": "事件优势（%）",
+      "evidenceQuality": "证据质量",
+      "statisticalCheck": "统计证据",
+      "pass": "通过",
+      "noPass": "未通过",
+      "outcomes": {
+        "succeeded": "已完成评估",
+        "failed": "评估失败",
+        "rejected": "未通过安全检查",
+        "pending": "等待评估",
+        "queued": "等待评估",
+        "running": "评估中"
+      },
+      "states": {
+        "queued": "等待执行",
+        "running": "执行中",
+        "cancelling": "正在中止",
+        "completed": "评估已完成",
+        "failed": "执行故障",
+        "aborted": "已中止"
+      },
+      "comparisons": "响应方式与验证结果",
+      "detailTitle": "事件驱动的改进研究",
+      "dataExplanation": "数据在研究开始时固定，各候选使用同一份数据；详细编号与版本可在下方核对。",
+      "metrics": {
+        "fitness": "综合评分",
+        "sharpe": "夏普比率",
+        "total_return_pct": "总收益率（%）",
+        "max_drawdown_pct": "最大回撤（%）",
+        "num_trades": "交易次数",
+        "calmar": "收益回撤比",
+        "sortino": "索提诺比率",
+        "win_rate": "胜率"
+      },
+      "stages": {
+        "mutation": "提出代码改进",
+        "audit": "安全检查",
+        "evaluation": "回测评估",
+        "completed": "评估完成",
+        "baseline": "评估原策略",
+        "unknown": "处理中"
+      },
+      "risks": {
+        "low": "低",
+        "medium": "中",
+        "high": "高"
+      },
+      "roundNotLoaded": "已加载的记录尚未包含这一轮，请加载更多评估结果。",
+      "roundEmpty": "这一轮暂无可展示的评估结果。",
+      "eventTypes": {
+        "listing": "上市／上币",
+        "delisting": "退市／下架",
+        "exploit": "漏洞与攻击",
+        "chain_halt": "链暂停",
+        "regulatory": "监管",
+        "upgrade": "网络升级",
+        "unlock": "代币解锁",
+        "burn": "代币销毁",
+        "partnership": "合作",
+        "macro": "宏观事件",
+        "other": "其他事件"
+      }
     }
   },
   "backtests": {
     "back": "Agent 活动",
     "notFound": "未找到该回测记录。",
     "viewCandidate": "查看策略详情"
-  }
-  ,"dataHealth": {
+  },
+  "dataHealth": {
     "title": "事件数据健康",
     "subtitle": "事件唯一事实源的覆盖、首次接收、修订与冻结快照完整性。",
     "rawEvents": "原始事件",
