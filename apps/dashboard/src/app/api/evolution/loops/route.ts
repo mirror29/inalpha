@@ -1,3 +1,4 @@
+import { withDisplayTargets } from "@/lib/evolution-display-target";
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
@@ -14,10 +15,12 @@ export async function GET() {
       { query: { limit: 50 }, timeoutMs: 5_000 },
     );
     const payload: EvolutionLoopPayload = {
-      loops: response.items,
+      loops: await withDisplayTargets(response.items),
       asOf: new Date().toISOString(),
     };
-    return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(payload, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "unknown error" },
