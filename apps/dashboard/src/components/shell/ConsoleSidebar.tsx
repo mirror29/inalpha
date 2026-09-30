@@ -50,22 +50,52 @@ interface NavItem {
   adminOnly?: boolean;
 }
 
-// 顺序按「看板 → 研究 → 执行 → 风控 → 彩蛋 → 日志」的操作动线:
-// 总览(总控制台)→ 策略实验室 → Live Runner → 因子库 → 风控 → 狐神签 → Agent 活动。
-const NAV: NavItem[] = [
-  { key: "overview", href: "/", icon: LayoutDashboard },
-  { key: "lab", href: "/lab", icon: FlaskConical },
-  { key: "runners", href: "/runners", icon: Radio },
-  { key: "factors", href: "/factors", icon: Sigma },
-  { key: "risk", href: "/risk", icon: ShieldAlert },
-  // E2 策略演化引擎（LLM 自动变异 + 评估）
-  { key: "evolution", href: "/evolution", icon: Workflow },
-  { key: "dataHealth", href: "/data-health", icon: Database },
-  // 玄学彩蛋占卜台(纯娱乐)
-  { key: "divination", href: "/divination", icon: Sparkles },
-  { key: "activity", href: "/activity", icon: Activity },
-  { key: "waitlist", href: "/admin/waitlist", icon: UserRoundCheck, adminOnly: true },
+/** 主导航按研究与运行工作流分组，低频工具放入配置菜单。 */
+const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
+  {
+    key: "primary",
+    items: [{ key: "overview", href: "/", icon: LayoutDashboard }],
+  },
+  {
+    key: "research",
+    items: [
+      { key: "lab", href: "/lab", icon: FlaskConical },
+      { key: "factors", href: "/factors", icon: Sigma },
+      { key: "evolution", href: "/evolution", icon: Workflow },
+    ],
+  },
+  {
+    key: "operations",
+    items: [
+      { key: "runners", href: "/runners", icon: Radio },
+      { key: "risk", href: "/risk", icon: ShieldAlert },
+      { key: "activity", href: "/activity", icon: Activity },
+    ],
+  },
 ];
+
+/** 配置菜单复用同一组次级入口，管理员入口仍按 session 角色过滤。 */
+const SECONDARY_NAV: NavItem[] = [
+  { key: "dataHealth", href: "/data-health", icon: Database },
+  { key: "divination", href: "/divination", icon: Sparkles },
+  {
+    key: "waitlist",
+    href: "/admin/waitlist",
+    icon: UserRoundCheck,
+    adminOnly: true,
+  },
+];
+
+/** 详情页继承所属模块；回测详情属于策略实验室。 */
+function isNavActive(pathname: string, href: string | undefined): boolean {
+  if (!href) return false;
+  if (href === "/") return pathname === "/";
+  return (
+    pathname === href ||
+    pathname.startsWith(`${href}/`) ||
+    (href === "/lab" && pathname.startsWith("/backtests/"))
+  );
+}
 
 const LS_COLLAPSED = "inalpha-sidebar-collapsed";
 
@@ -84,8 +114,9 @@ export function ConsoleSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // 获取 GitHub last update 日期。
-  const { data: versionData } = useSWR<{ date: string }>("/api/version", (url: string) =>
-    fetch(url).then((r) => r.json()),
+  const { data: versionData } = useSWR<{ date: string }>(
+    "/api/version",
+    (url: string) => fetch(url).then((r) => r.json()),
   );
   const { data: sessionData } = useSWR<{
     user: { roles?: string[] } | null;
@@ -227,9 +258,11 @@ function SidebarBody({
   const [configMenuOpen, setConfigMenuOpen] = useState(false);
   // 脱离 aside(z-10 + backdrop-blur)的层叠上下文 —— 否则在 aside 内无论写多大
   // z-index 都会被外部 z-20+ 的模块(活动日志条 / 对话栏等)压住。
-  const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(
-    null,
-  );
+  const [tip, setTip] = useState<{
+    label: string;
+    top: number;
+    left: number;
+  } | null>(null);
 
   // 侧栏因视口 resize 从折叠态自动展开时,onMouseLeave 不会触发(handler 已不绑),
   // 残留的 tip 会以旧坐标浮在展开后的栏上 —— collapsed 转 false 即清。
@@ -252,6 +285,25 @@ function SidebarBody({
           onBlur: () => setTip(null),
         }
       : undefined;
+
+  /** 次级导航保留 Link 语义，并在移动端选择后关闭抽屉。 */
+  const secondaryEntries = SECONDARY_NAV.filter(
+    (item) => !item.adminOnly || isAdmin,
+  ).map((item) => {
+    const Icon = item.icon;
+    return (
+      <DropdownMenuItem key={item.key} asChild>
+        <Link
+          href={item.href!}
+          onClick={onNavigate}
+          aria-current={isNavActive(pathname, item.href) ? "page" : undefined}
+        >
+          <Icon className="size-4" strokeWidth={1.75} />
+          {t(item.key)}
+        </Link>
+      </DropdownMenuItem>
+    );
+  });
 
   return (
     <>
@@ -327,102 +379,119 @@ function SidebarBody({
       </div>
 
       {/* Nav —— 折叠态仅图标(居中 + 右侧气泡显示菜单名)。 */}
-      <nav className="flex flex-1 flex-col gap-0.5 p-3">
-        {NAV.filter((item) => !item.adminOnly || isAdmin).map((item) => {
-          const active = !item.soon && pathname === item.href;
-          const Icon = item.icon;
-          const inner = (
-            <>
-              <Icon
-                className={cn(
-                  "size-4 shrink-0 transition-colors",
-                  active ? "text-cyan" : "text-fg-muted group-hover:text-fg",
-                )}
-                strokeWidth={1.75}
-              />
-              {!collapsed && (
+      <nav
+        aria-label={t("menu")}
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3"
+      >
+        {NAV_GROUPS.map((group) => (
+          <div key={group.key} className="flex flex-col gap-0.5">
+            {!collapsed && group.key !== "primary" && (
+              <div className="px-3 pb-1 text-xs text-fg-muted">
+                {t(group.key)}
+              </div>
+            )}
+            {group.items.map((item) => {
+              const active = !item.soon && isNavActive(pathname, item.href);
+              const Icon = item.icon;
+              const inner = (
                 <>
-                  <span className="flex-1 truncate">{t(item.key)}</span>
-                  {item.soon && (
-                    <span className="rounded-sm border border-border-subtle px-1 py-px font-mono text-[9px] uppercase tracking-wider text-fg-muted/70">
-                      {t("soon")}
-                    </span>
+                  <Icon
+                    className={cn(
+                      "size-4 shrink-0 transition-colors",
+                      active
+                        ? "text-cyan"
+                        : "text-fg-muted group-hover:text-fg",
+                    )}
+                    strokeWidth={1.75}
+                  />
+                  {!collapsed && (
+                    <>
+                      <span className="flex-1 truncate">{t(item.key)}</span>
+                      {item.soon && (
+                        <span className="rounded-sm border border-border-subtle px-1 py-px font-mono text-[9px] uppercase tracking-wider text-fg-muted/70">
+                          {t("soon")}
+                        </span>
+                      )}
+                    </>
                   )}
                 </>
-              )}
-            </>
-          );
+              );
 
-          const baseCls = cn(
-            "group relative flex items-center rounded-md py-2 text-sm transition-[color,background-color,transform] duration-200",
-            collapsed ? "justify-center px-0" : "gap-2.5 px-3",
-          );
-          const tipLabel = item.soon
-            ? `${t(item.key)} · ${t("soon")}`
-            : t(item.key);
+              const baseCls = cn(
+                "group relative flex items-center rounded-md py-2 text-sm transition-[color,background-color,transform] duration-200",
+                collapsed ? "justify-center px-0" : "gap-2.5 px-3",
+              );
+              const tipLabel = item.soon
+                ? `${t(item.key)} · ${t("soon")}`
+                : t(item.key);
 
-          if (item.soon) {
-            return (
-              <div
-                key={item.key}
-                aria-disabled
-                aria-label={collapsed ? tipLabel : undefined}
-                {...tipHandlers(tipLabel)}
-                className={cn(baseCls, "cursor-not-allowed text-fg-muted/50")}
-              >
-                {inner}
-              </div>
-            );
-          }
+              if (item.soon) {
+                return (
+                  <div
+                    key={item.key}
+                    aria-disabled
+                    aria-label={collapsed ? tipLabel : undefined}
+                    {...tipHandlers(tipLabel)}
+                    className={cn(
+                      baseCls,
+                      "cursor-not-allowed text-fg-muted/50",
+                    )}
+                  >
+                    {inner}
+                  </div>
+                );
+              }
 
-          // 有 onClick 或有 href 的导航项
-          if (item.onClick) {
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => {
-                  item.onClick!();
-                  onNavigate?.();
-                }}
-                aria-label={collapsed ? tipLabel : undefined}
-                {...tipHandlers(tipLabel)}
-                className={cn(
-                  baseCls,
-                  "w-full text-left",
-                  !collapsed && "hover:translate-x-0.5",
-                  "text-fg-muted hover:bg-bg-elev/60 hover:text-fg",
-                )}
-              >
-                {inner}
-              </button>
-            );
-          }
+              // 有 onClick 或有 href 的导航项
+              if (item.onClick) {
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => {
+                      item.onClick!();
+                      onNavigate?.();
+                    }}
+                    aria-label={collapsed ? tipLabel : undefined}
+                    {...tipHandlers(tipLabel)}
+                    className={cn(
+                      baseCls,
+                      "w-full text-left",
+                      !collapsed && "hover:translate-x-0.5",
+                      "text-fg-muted hover:bg-bg-elev/60 hover:text-fg",
+                    )}
+                  >
+                    {inner}
+                  </button>
+                );
+              }
 
-          return (
-            <Link
-              key={item.key}
-              href={item.href!}
-              onClick={onNavigate}
-              aria-current={active ? "page" : undefined}
-              aria-label={collapsed ? tipLabel : undefined}
-              {...tipHandlers(tipLabel)}
-              className={cn(
-                baseCls,
-                !collapsed && "hover:translate-x-0.5",
-                active
-                  ? "bg-cyan/10 text-fg"
-                  : "text-fg-muted hover:bg-bg-elev/60 hover:text-fg",
-              )}
-            >
-              {/* 激活态:左侧朱红印章刻度(品牌色锚定当前位置)。 */}
-              {active && !collapsed && (
-                <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-seal" />
-              )}
-              {inner}
-            </Link>
-          );
-        })}
+              return (
+                <Link
+                  key={item.key}
+                  href={item.href!}
+                  onClick={onNavigate}
+                  aria-current={active ? "page" : undefined}
+                  aria-label={collapsed ? tipLabel : undefined}
+                  {...tipHandlers(tipLabel)}
+                  className={cn(
+                    baseCls,
+                    !collapsed && "hover:translate-x-0.5",
+                    active
+                      ? "bg-cyan/10 text-fg"
+                      : "text-fg-muted hover:bg-bg-elev/60 hover:text-fg",
+                  )}
+                >
+                  {/* 激活态:左侧朱红印章刻度(品牌色锚定当前位置)。 */}
+                  {active && !collapsed && (
+                    <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-seal" />
+                  )}
+                  {inner}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* 折叠态气泡本体:portal 到 body,fixed + z-[60](全局最高 z-50 是移动抽屉,
@@ -450,7 +519,12 @@ function SidebarBody({
           {/* 折叠态配置按钮 */}
           <DropdownMenu open={configMenuOpen} onOpenChange={setConfigMenuOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="size-8">
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                aria-label={t("config")}
+              >
                 <Settings className="size-4" strokeWidth={1.75} />
               </Button>
             </DropdownMenuTrigger>
@@ -458,12 +532,15 @@ function SidebarBody({
               <DropdownMenuItem
                 onClick={() => {
                   clearLLMConfigDismissed();
-                  window.dispatchEvent(new CustomEvent("inalpha:open-llm-settings"));
+                  window.dispatchEvent(
+                    new CustomEvent("inalpha:open-llm-settings"),
+                  );
                 }}
               >
                 <Key className="size-4" strokeWidth={1.75} />
                 {llmLabel}
               </DropdownMenuItem>
+              {secondaryEntries}
             </DropdownMenuContent>
           </DropdownMenu>
           {onToggleCollapsed && (
@@ -493,16 +570,22 @@ function SidebarBody({
                 <span>{t("config")}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" className="mb-1 w-[--radix-dropdown-menu-trigger-width]">
+            <DropdownMenuContent
+              side="top"
+              className="mb-1 w-[--radix-dropdown-menu-trigger-width]"
+            >
               <DropdownMenuItem
                 onClick={() => {
                   clearLLMConfigDismissed();
-                  window.dispatchEvent(new CustomEvent("inalpha:open-llm-settings"));
+                  window.dispatchEvent(
+                    new CustomEvent("inalpha:open-llm-settings"),
+                  );
                 }}
               >
                 <Key className="size-4" strokeWidth={1.75} />
                 {llmLabel}
               </DropdownMenuItem>
+              {secondaryEntries}
             </DropdownMenuContent>
           </DropdownMenu>
           <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted/60">
