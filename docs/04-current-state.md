@@ -1,6 +1,6 @@
 # 04 · 当前状态：D-12 + E2 事件驱动自动演化
 
-> 状态：**D-12 因子库闭环 + E2 事件驱动 Evolver 已落地（更新至 2026-09-20）**——因子血缘 + 衰减巡检 + monthly
+> 状态：**D-12 因子库闭环 + E2 事件驱动 Evolver 已落地（代码核对至 2026-09-30）**——因子血缘 + 衰减巡检 + monthly
 > 宏观 + 因子发现 L1，在 D-11（多市场模拟盘）/ D-10（web 搜索 + 财报基本面 +
 > 多市场数据）/ D-9（Plan/Exec 闭环 + LLM 自创策略 + 风控引擎）/ D-9.1a 基础上落地。
 > research-hub（issue #6）已于 2026-06-12 收口；E1 生产代码由 PR #159 合入 main；
@@ -255,6 +255,20 @@ seed / buy-and-hold / 全候选同数据哈希评估、owner 隔离、数据库�
   策略标签、过滤后的 Agent Activity 和事件数据健康页。通过 `EVENT_EVOLUTION_ENABLED` 分阶段开放。
 - 策略、模拟盘与 E1 结果详情可一键或用一句“开始进化”创建 owner-scoped `EvolutionLoop`；重复
   触发复用同一活动 loop。当前默认模型为 DeepSeek `deepseek-flash`（V4.1 Flash）。
+- **持久化闭环收口（2026-09-21）**：Loop 冻结 target、数据 snapshot 与模型配置，先完成 E1
+  baseline，再原子交接唯一 E2 campaign；simulation feedback 保留候选贡献归属。步骤结果、
+  状态版本与 UI 事件落库，服务端 dispatcher 使用租约、心跳与 fencing 阻止过期 worker 写入。
+  重启后可重新领取可执行任务，复用已有 checkpoint 与交接结果。
+- **授权与预算**：签名启动请求验证后，同事务保存 owner-bound loop 授权（90 天有效期）与
+  冻结模型、费用上限；后续调用按用途签发短时凭据，费用先预留再结算。恢复不得刷新授权、
+  绕过预算或重复消费 holdout；最终采用仍由用户手动执行。
+- **验证层级**：代码已落地；仓库已有 loop baseline 恢复、dispatcher/租约隔离、预算投影、
+  五代搜索、Forward 交接、holdout 与重放归属的自动化测试。真实环境的完整运行、重启恢复、
+  成本与事件覆盖仍需记录验证证据，不能由测试文件存在推断生产验证通过。
+- **控制台入口（2026-09-30）**：总览；研究（策略实验室、因子库、策略演化）；运行（模拟盘、
+  风控、Agent 活动）；狐神签作为项目特色保留侧栏独立入口。事件数据诊断与管理员试用审核
+  进入底部配置菜单。总览不再
+  展示整块汇率/缺价/过期行情提示；估值逻辑、`fx_warnings` 与持仓原有状态标记保持不变。
 
 ---
 
@@ -567,8 +581,22 @@ spot 仍严格 long-only（裸空 / 超卖翻空被守门拒），做空 / 杠�
 
 > 重心：模拟盘（paper）先于实盘（live）。
 
-- **E2 运行观测**：在 feature flag 小流量 campaign 上校准事件覆盖、费用、FDR 与 Forward
-  样本积累；MAP-Elites / Island Model 继续后置到真实运行数据证明需要时再做
+### 当前优先级（代码核对至 2026-09-30）
+
+1. **P0 · 真实 E2 运行证据**：从已有策略启动一次小流量 loop，记录 target、loop/campaign id、
+   bars/event snapshot hash、各阶段耗时、候选拒绝原因与实际费用；检查五代搜索、冠军锁定和
+   Paper Forward sandbox 交接。Forward 按真实时间与独立事件积累证据，未达门槛前不消费 holdout。
+2. **P0 · 重启与幂等验证**：在 baseline、campaign 与阶段交接时重启服务，确认重复点击复用
+   同一活动 loop、恢复复用 snapshot/checkpoint、失效租约不能写入、费用不重复结算、交接不
+   重复创建。Forward 通过后验证 holdout 仅消费一次，并保留数据库状态与日志证据。
+3. **P1 · 数据与评估校准**：按来源汇总失败、事件覆盖和可用样本，结合 direct/confirmed/hybrid
+   消融、FDR、费用与 Forward 表现决定数据补齐或评估调整。空结果与覆盖不足分别记录。
+4. **后置扩展**：MAP-Elites、Island Model 与因子多 agent 扩展先等待真实运行数据证明需要。
+
+上述项目是待完成验证，不是本次文档同步已经执行的实验。
+
+### 其他后续事项
+
 - **delegation hop**（issue #5 · ADR-0012 补丁）：sub-strategy 派生计划的转授权链
 
 > 已收口：paper live runner（#1，D-11）、PnL 净口径 / 运行时长 TTL / build 退避（#45 /

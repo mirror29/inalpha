@@ -23,7 +23,7 @@
 ## 顶层架构方向（决策摘要）
 
 - **不 fork** 任何单一开源项目，拆 4 个最具代表性的 repo 学各自最强的设计
-- **三层架构**：Next.js + CopilotKit（入口）→ Mastra / TypeScript（编排）→ Python services（内核）
+- **三层架构**：Next.js Dashboard + 同源 BFF（入口）→ Mastra / TypeScript（编排）→ Python services（内核）
 - **核心服务用 Python**：data / paper（回测+模拟盘内核）/ research / factor / evolver，跨服务走 HTTP / MCP
 - **护栏借鉴 Claude Code**：hooks / permissions / plan-exec / 审计签名——数据层强制 > prompt 自律
 
@@ -38,7 +38,7 @@
 | **qlib** | DatasetH / Handler / Alpha / Model pipeline | ✅ `services/factor`（Alpha101 / IC 有效性） |
 | **TradingAgents** | 多 agent 角色分工 / 辩论 / 决策合成 | ✅ `services/research`（多 analyst + bull/bear 辩论） |
 
-## 当前完成度快照（2026-08-27）
+## 当前完成度快照（2026-09-30 代码核对）
 
 > 完整逐项见 [`04-current-state.md`](./04-current-state.md)。
 
@@ -53,7 +53,12 @@
 | E1 生产闭环 | 独立 Evolver：真实 frozen bars、单代 unified-diff 变异、显式审批、owner 隔离、异步持久化与可复现实验元数据 | ✅ |
 | E1 收口 | 冻结 LLM/定价快照、owner key 即时获取、token/cost 审计 | ✅ |
 | E2 事件共演化 | 双时态事件 snapshot、HypothesisSpec、五代 8×3 搜索、Forward/一次性 holdout、实验性采用 | ✅ feature flag |
-| 下一 | 小流量校准事件覆盖与信用分配；MAP-Elites / Island Model 后置 | 🔲 |
+| E2 持久化闭环 | owner-scoped EvolutionLoop、重复触发复用、租约恢复、proposal checkpoint 与原子阶段交接 | ✅ 代码与自动化测试；真实运行待验证 |
+| 下一 | 真实 E2 链路与重启幂等验证，再校准事件覆盖、费用与评估；[统一优先级](./04-current-state.md#未完成--下一步) | 🔲 |
+
+> 本页的完成状态描述代码落地，不代表部署或真实模型运行验收通过。E1 每次新计费 run
+> 显式授权；E2 点击或明确指令授权一个受预算约束的研究 Loop，内部迭代无需逐代审批。
+> 最终采用仍由用户手动执行，产生 `runner_eligible=false` 的实验资产，不自动进入交易。
 
 ## 不做的事（边界）
 
@@ -71,6 +76,6 @@
 | Phase A–B | 文档骨架 + 4 份 repo 深度拆解 | ✅ |
 | Phase C | Inalpha 自建内核架构（设计文档锁定 2026-05-21） | ✅ |
 | Phase D-8~D-12 | Plan/Exec 护栏 → 策略创作 → 多市场数据/模拟盘 → factor/research 闭环 | ✅ |
-| Phase E1 | 独立策略演化生产闭环（frozen dataset + unified diff + 显式审批 + 审计） | ✅，收口中 |
-| Phase E2 | best-parent 多代选择 + early stopping | 🔲 规划中 |
+| Phase E1 | 独立策略演化（frozen dataset + unified diff + 显式审批 + 审计） | ✅ 代码已落地；生产式成功证据仍需验证 |
+| Phase E2 | 事件假设 × 确定性实现五代共演化 + 持久化 Loop + Forward/holdout | ✅ feature flag；真实运行待验证 |
 | Phase E3+ | MAP-Elites / Island Model 等更复杂搜索 | 🔲 后置 |

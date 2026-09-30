@@ -14,6 +14,7 @@
 - `README.md` / `README.zh-CN.md` 首页；`AGENTS.md` 多工具入口；`docs/00-context.md` 背景 / `01-architecture-overview.md` 架构 / `03-kernel-design.md` services / `04-current-state.md` 进度
 - 内部 ADR 在 `docs/miro/`（gitignored，公开文档勿引用）
 - D-8~D-12、research-hub 与 E1 已收口；E2 在 feature flag 后落地双时态事件 snapshot、确定性 DSL、五代 8×3 共演化、Forward/Holdout 和非 Runner 实验性采用。E1 原语义不变
+- 2026-09-30 核对：EvolutionLoop 持久化、重复复用、租约恢复、原子交接与预算授权已落地；已有自动化测试，真实运行待验证。下一步统一见 `docs/04-current-state.md`「未完成 / 下一步」
 
 ## 3. 协作硬约束
 

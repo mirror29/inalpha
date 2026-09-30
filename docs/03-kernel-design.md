@@ -4,6 +4,7 @@
 > [`01-architecture-overview.md`](./01-architecture-overview.md) 才是现行高层架构，
 > [`04-current-state.md`](./04-current-state.md) 是实现进度权威来源；本文中的 MVP、目录树和
 > 启动清单属于历史设计，不应用来判断当前能力是否已落地。
+> 现行差异核对日期：2026-09-30；代码落地与真实运行验收分开记录。
 
 ## 锁定决策（Phase C·2026-05-21）
 
@@ -141,7 +142,7 @@ Python 服务已扩展为 data/paper/research/factor/evolver 五个，Evolver �
 | `services/paper` | 8002 | 内核：Clock / MessageBus / Strategy / Gateway / Engine；回测 + 模拟盘（同代码可延伸实盘，不在当前计划） | Python kernel（自研） |
 | `services/research` | 8003 | LLM 多 agent 决策（TradingAgents 风格，Mastra 重写） | OpenAI/Anthropic SDK |
 | `services/factor` | 8004 | 因子库（pandas-ta / Alpha101 / qlib）+ IC 有效性检验，只产出信号（已落地 D-11） | qlib + 自研 |
-| `services/evolver` | 8005 | frozen dataset 上的单代策略演化、显式审批、owner 隔离、候选与费用审计 | FastAPI + paper evaluator |
+| `services/evolver` | 8005 | E1 单代变异；E2 事件共演化与持久化 Loop、租约恢复、checkpoint、Forward/holdout 交接、owner 隔离及费用审计 | FastAPI + paper evaluator + Paper Forward 沙盒 |
 
 ---
 
@@ -419,7 +420,7 @@ export const strategyLifecycle = createWorkflow({ id: 'strategy-lifecycle' })
 
 ### 代表性 Tools（当前实现）
 
-> 本节原为 Phase C 的 MVP 设想，现只列 **当前代表性 tool 族与入口**（2026-08-27），
+> 本节原为 Phase C 的 MVP 设想，现只列 **当前代表性 tool 族与入口**（2026-09-30 代码核对），
 > 不逐项穷举 risk / scheduler / divination / sandbox 等运维或辅助 tools。权威清单以代码为准：
 > `packages/orchestration/src/tools/` + `agents/orchestrator.ts`。
 
@@ -433,7 +434,7 @@ export const strategyLifecycle = createWorkflow({ id: 'strategy-lifecycle' })
 | **paper.\*（模拟盘）** | `paper.start_strategy` `.stop_strategy` `.list_strategy_runs` `.list_strategy_run_decisions` `.list_orders` `.list_positions` | paper:8002 | live runner 起停 / 运行状态 / 决策复盘 / 持仓 |
 | **trade.\***（下单护栏三件套） | `trade.create_plan` → `.approve_plan` → `.execute_plan`（+ `.reject_plan` `.get_plan`） | orchestration + paper `/orders/submit` | 两阶段批准，approval_token 一次性 + 5min TTL，`execute_plan` 是**唯一**有 side-effect 的下单 tool |
 | **swarm.\*** | `swarm.run_backtest_grid` | paper:8002 | 参数网格批量回测（grid-size-cap 守门） |
-| **evolver.\*** | `evolver.run_evolution` `.get_evolution` `.get_candidate` `.abort_evolution` | evolver:8005 | 显式批准后启动 owner-scoped 演化，查询候选或取消；不自动 promote/start/order |
+| **evolver.\*** | `evolver.run_evolution` `.get_evolution` `.get_candidate` `.abort_evolution`；`.run_event_campaign` `.get_event_campaign` | evolver:8005 | E1 逐次审批；E2 明确指令启动研究 campaign/Loop，内部迭代不逐代审批；不自动 promote/start/order |
 | **mcp__\<server\>__\*** | `mcp__coingecko__*` … | 外部 MCP | 可插拔外部源，走同一套 hooks + permissions；默认只启零密钥端点 |
 
 > **执行链路**：`trade.* → Hooks (PreToolUse) → Permission Engine → paper DB plan/approval → /orders/submit`。
@@ -446,13 +447,13 @@ export const strategyLifecycle = createWorkflow({ id: 'strategy-lifecycle' })
 ## 模块依赖图
 
 ```
-apps/web (Next.js)
-   ↓ imports
-packages/orchestration (Mastra)
-   ↓ HTTP+WS
-services/* (FastAPI)
-   ↓ uses
-shared-py (internal Python lib: kernel / model / utils)
+apps/dashboard (Next.js + same-origin BFF)
+   ↓ HTTP (owner-scoped JWT)
+packages/orchestration (Mastra) / services/* (FastAPI)
+   ↓ services use
+services/_shared (auth / DB / client / errors infrastructure)
+
+apps/web (static marketing site; no trading runtime)
 
 服务之间：
 data-service ◄─── paper-service（用于历史回放和实盘数据订阅）
@@ -471,6 +472,11 @@ research-service ──► orchestration plan/exec（决策落地）
 - evolver-service **不**持久化 owner 明文 LLM key，也**不**自动调用 promote/start/order
 
 ---
+
+> 当前 E2 使用 owner-scoped `EvolutionLoop` 持久化调度，复用活动目标、恢复租约并原子交接
+> baseline/campaign/Forward/holdout。最终采用仍需手动执行，资产为 `runner_eligible=false`；
+> 完整现行边界与真实运行待验证事项见 [`01`](./01-architecture-overview.md) 与
+> [`04`](./04-current-state.md)，本页历史目录与流程不据此改写。
 
 ## MVP 端到端流程（Phase C 历史示例）
 

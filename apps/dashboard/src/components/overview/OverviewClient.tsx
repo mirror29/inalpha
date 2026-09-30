@@ -9,7 +9,6 @@ import { jsonFetcher } from "@/lib/fetcher";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip, Meta } from "@/components/ui/LiveStrip";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { FxWarningBanner } from "./FxWarningBanner";
 import { KpiBar } from "./KpiBar";
 import { OrdersTable } from "./OrdersTable";
 import { PositionsTable } from "./PositionsTable";
@@ -65,8 +64,6 @@ export function OverviewClient() {
           </LiveStrip>
         }
       />
-
-      <FxWarningBanner warnings={data.account.fx_warnings} />
 
       <EvolutionSummary summary={data.evolutionSummary} />
 
