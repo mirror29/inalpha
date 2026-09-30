@@ -60,16 +60,31 @@ Ethereum Classic 不映射到 BTC / ETH。资产被提及只表示报道关联�
   的测试事实不能用于证明真实事件覆盖。快照 `coverage.complete` 也不代表统计样本充分。
 - 下一步与实际验证记录集中维护在 [当前状态文档](../../docs/04-current-state.md#未完成--下一步)。
 
+## 有界归档事件验证
 
-### 隔离 E2 输入刷新
+对明确选出的真实新闻归档，先预览抽取结果，再选择是否写入事实账本：
+
+```bash
+uv run python scripts/extract_archived_events.py --raw-event-id <raw-event-uuid>
+uv run python scripts/extract_archived_events.py --raw-event-id <raw-event-uuid> --write
+```
+
+可重复传入 `--raw-event-id`，最多 100 个不同 ID。脚本仅接受 `coindesk` / `kraken_blog`
+的 `selected-news-forward@1`、`first-seen-only-v1` 未撤回归档，经正常服务鉴权访问 Data。
+确定性抽取不调用 LLM；重复写入由 Data 幂等处理，`processed` 不代表新增事实数。
+保留 `accepted_at` 作为事实可见时间，不回填至新闻发布时间。预览及写入均汇总事件分类、
+关联资产与失败类型；没有关联资产的事实不能直接视为可用于单资产评估的有效样本。
+
+## 隔离 E2 输入刷新
 
 已有真实归档的本地开发环境可以使用根目录 `scripts/replay-e2-archive.py`，
 通过正常 Data API 将 CoinDesk/Kraken Blog 的最新独立原文同步到已有 E2 审计库。
 仅允许 `selected-news-forward@1` / `first-seen-only-v1` 来源，测试 fixture 不进入真实覆盖。
 
-前置条件：目标数据库以 `inalpha_e2_real_` 开头、已初始化并至少有一条原文用于路由校验；
+前置条件：目标数据库以 `inalpha_e2_real_` 开头、已初始化并至少有一条 UUID 不存在于源库的原文用于路由校验；
 独立 Data 服务连接该库，独立 Research 服务的 `DATA_SERVICE_URL` 指向它，
-并设置 `EVENT_EXTRACTION_ENABLED=true`。源和目标使用同一开发 JWT 配置。
+并设置 `EVENT_EXTRACTION_ENABLED=true`。源和目标使用同一开发 JWT 配置。数据库连接须明确指向本机，不能通过 URL 查询参数
+覆盖连接目标；两个 Data 服务须使用不同端口，克隆源库中的相同原文 UUID 不能作为路由证明。
 先核对服务健康与连接配置，根服务和其他任务的 worker 无需重启。
 
 在仓库根目录执行（使用已安装 psycopg/httpx/PyJWT/python-dotenv 的 Python 环境）：
@@ -94,18 +109,3 @@ python scripts/replay-e2-archive.py \
 核对选择窗口；默认 BTC 永续 4h，`--timeframe 1h` 可检查一小时行情。
 就绪检查只证明必要输入覆盖，匹配对照、FDR、收益和 Forward 仍需正式链路验证。
 模型预算、当前真实证据与下一步清单以 [当前状态文档](../../docs/04-current-state.md#未完成--下一步) 为准。
-
-## 有界归档事件验证
-
-对明确选出的真实新闻归档，先预览抽取结果，再选择是否写入事实账本：
-
-```bash
-uv run python scripts/extract_archived_events.py --raw-event-id <raw-event-uuid>
-uv run python scripts/extract_archived_events.py --raw-event-id <raw-event-uuid> --write
-```
-
-可重复传入 `--raw-event-id`，最多 100 个不同 ID。脚本仅接受 `coindesk` / `kraken_blog`
-的 `selected-news-forward@1`、`first-seen-only-v1` 未撤回归档，经正常服务鉴权访问 Data。
-确定性抽取不调用 LLM；重复写入由 Data 幂等处理，`processed` 不代表新增事实数。
-保留 `accepted_at` 作为事实可见时间，不回填至新闻发布时间。预览及写入均汇总事件分类、
-关联资产与失败类型；没有关联资产的事实不能直接视为可用于单资产评估的有效样本。

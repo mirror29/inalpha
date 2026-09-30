@@ -5,6 +5,7 @@ import runpy
 from pathlib import Path
 
 import pytest
+from psycopg.conninfo import conninfo_to_dict
 
 module = runpy.run_path(str(Path(__file__).parents[1] / "replay-e2-archive.py"))
 verify_provenance = module["verify_provenance"]
@@ -111,9 +112,12 @@ def test_misdirected_destination_rejected_before_any_write(monkeypatch):
 
         def execute(self, statement, *args):
             assert statement.startswith(("SELECT", "SET"))
+            self.statement = statement
             return self
 
         def fetchone(self):
+            if "SELECT EXISTS" in self.statement:
+                return {"present": False}
             return {"event_id": "audit-event", "content_hash": "a" * 64}
 
         def fetchall(self):
@@ -150,4 +154,81 @@ def test_misdirected_destination_rejected_before_any_write(monkeypatch):
             database_url="postgresql://localhost/main",
             database_name="inalpha_e2_real_test",
             jwt_secret="a" * 32,
+        )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "dbname=main",
+        "host=remote.example",
+        "hostaddr=203.0.113.1",
+        "service=shared",
+        "port=5433",
+    ],
+)
+def test_database_target_overrides_rejected_before_access(query):
+    with pytest.raises(ValueError, match="target overrides"):
+        module["local_database_targets"](
+            f"postgresql://localhost/main?{query}", "inalpha_e2_real_test"
+        )
+
+
+def test_effective_database_names_and_loopback_are_explicit(monkeypatch):
+    monkeypatch.setenv("PGHOSTADDR", "203.0.113.1")
+    monkeypatch.setenv("PGPORT", "6543")
+    monkeypatch.setenv("PGDATABASE", "shared")
+    source, destination = module["local_database_targets"](
+        "postgresql://localhost/main?sslmode=disable", "inalpha_e2_real_test"
+    )
+    for target, expected in [(source, "main"), (destination, "inalpha_e2_real_test")]:
+        params = conninfo_to_dict(target)
+        assert params["dbname"] == expected
+        assert params["hostaddr"] == "127.0.0.1"
+        assert params["port"] == "5432"
+
+
+def test_loopback_aliases_of_same_service_rejected_before_access():
+    with pytest.raises(ValueError, match="separate isolated"):
+        replay(
+            source_url="http://localhost:8001/",
+            destination_url="http://127.0.0.1:8001",
+            database_url="postgresql://localhost/main",
+            database_name="inalpha_e2_real_test",
+            jwt_secret="unused",
+        )
+
+
+def test_shared_sentinel_rejected_before_api_access(monkeypatch):
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, statement, *args):
+            self.statement = statement
+            return self
+
+        def fetchone(self):
+            if "SELECT EXISTS" in self.statement:
+                return {"present": True}
+            return {"event_id": "shared-event", "content_hash": "a" * 64}
+
+    monkeypatch.setattr(
+        module["psycopg"], "connect", lambda *args, **kwargs: Connection()
+    )
+    monkeypatch.setattr(
+        module["httpx"],
+        "Client",
+        lambda *args, **kwargs: pytest.fail("shared sentinel must fail before HTTP"),
+    )
+    with pytest.raises(ValueError, match="independent of source"):
+        replay(
+            source_url="http://localhost:8001",
+            destination_url="http://127.0.0.1:18011",
+            database_url="postgresql://localhost/main",
+            database_name="inalpha_e2_real_test",
+            jwt_secret="unused",
         )

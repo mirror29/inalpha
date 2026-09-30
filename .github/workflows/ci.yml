@@ -244,7 +244,11 @@ jobs:
       - name: Run service tests
         working-directory: services/${{ matrix.service }}
         run: uv run pytest -q tests
+      - name: Verify E2 input tools
+        if: matrix.service == 'evolver'
+        working-directory: services/evolver
+        run: uv run pytest -q ../../scripts/tests/test_e2_readiness.py ../../scripts/tests/test_e2_archive_replay.py
       - name: Verify migration round trip
         if: matrix.service == 'evolver'
         working-directory: services/evolver
-        run: uv run pytest -q ../../infra/migrations/tests/test_migration_0038.py ../../infra/migrations/tests/test_migration_0058.py
+        run: uv run pytest -q ../../infra/migrations/tests/test_migration_0038.py ../../infra/migrations/tests/test_migration_0058.py ../../infra/migrations/tests/test_migration_0059.py
