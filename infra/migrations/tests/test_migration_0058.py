@@ -30,7 +30,7 @@ def test_0058_pauses_legacy_without_moving_cash_or_positions(
             "INSERT INTO positions(account_id,venue,symbol,quantity,avg_open_price,realized_pnl,generation) VALUES (%s,'binance','BTC/USDT',2,100,0,1)",
             (owner,),
         )
-    alembic(migration_db_url, "upgrade", "head")
+    alembic(migration_db_url, "upgrade", "0058")
     with psycopg.connect(db_url(migration_db_url)) as conn:
         assert conn.execute(
             "SELECT status,accounting_status,cumulative_pnl,original_cumulative_pnl FROM strategy_runs WHERE id=%s",
