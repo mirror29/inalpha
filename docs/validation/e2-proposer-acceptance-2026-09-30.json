@@ -1,0 +1,156 @@
+{
+  "date": "2026-09-30",
+  "scope": "isolated local real-provider diagnostic and prompt-contract runs; no positive E2 acceptance",
+  "diagnostic_run": {
+    "loop_id": "5aa8ed84-7e81-4d1b-a087-3526f5f55a03",
+    "status": "insufficient_evidence",
+    "budget_usage": {
+      "max_cost_usd": "0.5",
+      "spent_usd": "0.0948498",
+      "reserved_usd": "0E-7"
+    },
+    "checkpoints": [
+      {
+        "generation": 1,
+        "diagnostics": [
+          {
+            "code": "invalid_json_array",
+            "batch": 0
+          },
+          {
+            "code": "dsl_validation_failed",
+            "slot": 0,
+            "batch": 1,
+            "fields": [
+              "confirmation"
+            ]
+          }
+        ],
+        "fallback_calls": 2,
+        "cost_usd": "0.0190629"
+      },
+      {
+        "generation": 2,
+        "diagnostics": [],
+        "fallback_calls": 0,
+        "cost_usd": "0.0199065"
+      },
+      {
+        "generation": 3,
+        "diagnostics": [
+          {
+            "code": "invalid_json_array",
+            "batch": 0
+          },
+          {
+            "code": "invalid_json_array",
+            "batch": 1
+          }
+        ],
+        "fallback_calls": 2,
+        "cost_usd": "0.0212355"
+      },
+      {
+        "generation": 4,
+        "diagnostics": [
+          {
+            "code": "invalid_json_array",
+            "batch": 1
+          }
+        ],
+        "fallback_calls": 1,
+        "cost_usd": "0.018249"
+      },
+      {
+        "generation": 5,
+        "diagnostics": [
+          {
+            "code": "dsl_validation_failed",
+            "slot": 3,
+            "batch": 0,
+            "fields": [
+              "confirmation"
+            ]
+          }
+        ],
+        "fallback_calls": 1,
+        "cost_usd": "0.0113571"
+      }
+    ]
+  },
+  "schema_run": {
+    "loop": {
+      "loop_id": "1d1500f4-3261-415c-98f4-1f62c275161f",
+      "status": "insufficient_evidence",
+      "campaign_id": "3b4c111a-a05e-4fa6-8aa7-de79a8ac438c",
+      "failure_code": "INSUFFICIENT_FDR_EVIDENCE",
+      "created_at": "2026-09-30 07:53:05.064510+00:00",
+      "finished_at": "2026-09-30 07:58:11.172408+00:00"
+    },
+    "budget_usage": {
+      "max_cost_usd": "0.5",
+      "spent_usd": "0.0577704",
+      "reserved_usd": "0.0340608"
+    },
+    "checkpoints": [
+      {
+        "generation": 1,
+        "fallback_calls": 1,
+        "diagnostics": [
+          {
+            "code": "request_failed",
+            "batch": 0
+          }
+        ],
+        "cost_usd": "0.008865"
+      },
+      {
+        "generation": 2,
+        "fallback_calls": 0,
+        "diagnostics": [],
+        "cost_usd": "0.0092526"
+      },
+      {
+        "generation": 3,
+        "fallback_calls": 1,
+        "diagnostics": [
+          {
+            "code": "request_failed",
+            "batch": 1
+          }
+        ],
+        "cost_usd": "0.0068364"
+      },
+      {
+        "generation": 4,
+        "fallback_calls": 0,
+        "diagnostics": [],
+        "cost_usd": "0.0102225"
+      },
+      {
+        "generation": 5,
+        "fallback_calls": 0,
+        "diagnostics": [],
+        "cost_usd": "0.0159471"
+      }
+    ],
+    "model_receipts": [
+      {
+        "settled": false,
+        "calls": 2,
+        "actual_cost": null
+      },
+      {
+        "settled": true,
+        "calls": 9,
+        "actual_cost": "0.0577704"
+      }
+    ],
+    "accepted_model_batches": 8,
+    "request_failed_batches": 2,
+    "json_or_dsl_rejected_batches": 0
+  },
+  "cost_basis": "Provider usage and frozen estimated unit prices; invoice not independently verified. Two requests have unknown usage and keep their maximum reservation, not zero cost.",
+  "evidence_boundary": "Same genuine archive, selection contains zero qualifying events. No champion, Forward, holdout consumption or adoption.",
+  "remaining": "Safe schema supplied; future request diagnostics distinguish provider timeout/status/connection and local input-budget rejection. Specific causes of these two prior generic request failures remain unverified. Final enum contract addition has automated coverage; no additional real calls were made just to recheck that addition."
+}
