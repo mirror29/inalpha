@@ -774,7 +774,10 @@
         "strategy_candidate": "Strategy improvement research",
         "paper_runner": "Paper strategy improvement",
         "backtest_run": "Backtest strategy improvement",
-        "e1_candidate": "Continue improving a candidate"
+        "e1_candidate": "Continue improving a candidate",
+        "e1_run": "Seed strategy experiment",
+        "e2_campaign": "Event-driven improvement research",
+        "generic": "Strategy improvement research"
       },
       "viewResearch": "View research",
       "reviewAdoption": "Review evidence and adoption",

@@ -774,7 +774,10 @@
         "strategy_candidate": "策略改进研究",
         "paper_runner": "模拟盘策略改进",
         "backtest_run": "回测策略改进",
-        "e1_candidate": "候选策略继续改进"
+        "e1_candidate": "候选策略继续改进",
+        "e1_run": "原策略优化实验",
+        "e2_campaign": "事件驱动改进研究",
+        "generic": "策略改进研究"
       },
       "viewResearch": "查看研究过程",
       "reviewAdoption": "查看证据并决定采用",

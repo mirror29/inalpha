@@ -42,7 +42,11 @@ export function EvolutionLoopDetailClient({ loopId }: { loopId: string }) {
       <PageHeader
         title={
           strategyTitle(loop.display_target?.description) ||
-          w(`targets.${loop.target_kind}`)
+          w(
+            w.has(`targets.${loop.target_kind}`)
+              ? `targets.${loop.target_kind}`
+              : "targets.generic",
+          )
         }
         subtitle={evolutionMarket(loop.frozen_config) || w("marketUnavailable")}
         right={

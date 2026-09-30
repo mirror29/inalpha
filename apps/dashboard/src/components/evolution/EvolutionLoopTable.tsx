@@ -52,7 +52,11 @@ export function EvolutionLoopTable({ loops }: { loops: EvolutionLoop[] }) {
                   className="line-clamp-2 block text-base font-medium leading-6 text-cyan hover:underline [overflow-wrap:anywhere]"
                 >
                   {strategyTitle(loop.display_target?.description) ||
-                    t(`workflow.targets.${loop.target_kind}`)}
+                    t(
+                      t.has(`workflow.targets.${loop.target_kind}`)
+                        ? `workflow.targets.${loop.target_kind}`
+                        : "workflow.targets.generic",
+                    )}
                 </Link>
                 <p className="mt-2 text-xs text-fg-muted">
                   {fmtRelative(loop.updated_at, Date.now(), locale)}
