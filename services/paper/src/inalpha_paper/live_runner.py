@@ -12,6 +12,7 @@
 **后台服务身份**：loop 调 data ``/bars`` 需 JWT，但后台无用户请求转发 token——用共享
 ``JWT_SECRET`` 自签一个短期 service token（sub = 账户 UUID）。market data 不挑用户身份。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,10 +48,9 @@ from .kernel.identifiers import InstrumentId, StrategyId
 from .model.data import Bar
 from .model.orders import Order, is_protective_order
 from .runner import _bar_from_dict
-from .storage import accounts as accounts_store
-from .storage import closed_trades as closed_trades_store
 from .storage import orders as orders_store
 from .storage import positions as positions_store
+from .storage import run_wallets as wallets_store
 from .storage import strategy_candidates as candidates_store
 from .storage import strategy_runs as runs_store
 from .storage import trade_plans as plans_store
@@ -106,9 +106,19 @@ _PLAN_EXPIRE_S = 300
 # 缺键会 fallback 1h（_timeframe_seconds），让 _closed_bars 把"开盘超 1h 的未收盘周线
 # bar"误判成已收盘 → 对半成品 bar 真下单。1wk/1w 必须显式列出（issue O-1）。
 _TIMEFRAME_SECONDS: dict[str, int] = {
-    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
-    "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
-    "1d": 86400, "1wk": 604800, "1w": 604800,
+    "1m": 60,
+    "3m": 180,
+    "5m": 300,
+    "15m": 900,
+    "30m": 1800,
+    "1h": 3600,
+    "2h": 7200,
+    "4h": 14400,
+    "6h": 21600,
+    "12h": 43200,
+    "1d": 86400,
+    "1wk": 604800,
+    "1w": 604800,
 }
 
 
@@ -159,7 +169,8 @@ class LiveRunnerManager:
             asyncio.get_running_loop().create_task(self._mark_loop_crashed(run_id, exc))
         except RuntimeError:
             _logger.warning(
-                "live run %s: event loop 已关闭，loop_crashed 兜底跳过（重启 reconcile 收尾）", run_id
+                "live run %s: event loop 已关闭，loop_crashed 兜底跳过（重启 reconcile 收尾）",
+                run_id,
             )
 
     async def _mark_loop_crashed(self, run_id: UUID, exc: BaseException) -> None:
@@ -183,7 +194,9 @@ class LiveRunnerManager:
                         )
                 except Exception:
                     _logger.warning(
-                        "live run %s: loop_crashed 错误日志写入失败（已忽略）", run_id, exc_info=True
+                        "live run %s: loop_crashed 错误日志写入失败（已忽略）",
+                        run_id,
+                        exc_info=True,
                     )
                 # only_if_status：与 stop() 的竞态守卫（PR review）——上面 get 之后的
                 # await 点里 stop() 可能已写 stopped，无守卫会把它盖成 errored
@@ -205,8 +218,7 @@ class LiveRunnerManager:
     async def stop(self, run_id: UUID) -> None:
         """停一个 run：cancel task + 置 stopped。
 
-        只在当前仍是 'running' 时才写 'stopped'——避免把已 'errored'（策略崩过、
-        error_log 有记录）的终态静默覆盖成 'stopped'，否则用户看不到策略曾崩（CR）。
+        用户显式停止独立钱包的 errored 运行也可确认终止；保留原错误日志。
         """
         task = self._tasks.pop(run_id, None)
         if task is not None and not task.done():
@@ -217,7 +229,10 @@ class LiveRunnerManager:
                 pass
         async with get_conn() as conn:
             current = await runs_store.get(conn, run_id)
-            if current is not None and current["status"] == "running":
+            if current is not None and (
+                current["status"] == "running"
+                or (current["status"] == "errored" and current["accounting_status"] == "verified")
+            ):
                 # 日志写入是 best-effort，失败不应阻断 set_status——否则 run 停不下来、
                 # API 返回 500，用户以为停止失败（CR）。用 savepoint 隔离：append_log 抛错
                 # 只回滚这一步（否则会污染整个事务，连带 set_status 也失败），再照常置 stopped。
@@ -225,10 +240,14 @@ class LiveRunnerManager:
                     async with conn.transaction():
                         await runs_store.append_log(conn, run_id, "info", "用户停止运行")
                 except Exception:
-                    _logger.warning("live run %s: 停止日志写入失败（已忽略）", run_id, exc_info=True)
+                    _logger.warning(
+                        "live run %s: 停止日志写入失败（已忽略）", run_id, exc_info=True
+                    )
                 # only_if_status：反向竞态守卫（PR review）——本协程 get 之后的 await 点里
                 # loop_crashed 兜底可能已写 errored，无守卫会把 crash 终态盖成 stopped
-                await runs_store.set_status(conn, run_id, "stopped", only_if_status="running")
+                await runs_store.set_status(
+                    conn, run_id, "stopped", only_if_status=current["status"]
+                )
 
     async def stop_all(self) -> None:
         """服务停机：cancel 所有 task（不改 DB 状态，重启由 reconcile 处理）。"""
@@ -252,14 +271,17 @@ class LiveRunnerManager:
         # 手动 HTTP 下单 fail-open 时人还在回路里，这里没有，必须默认拒跑。
         if self._factory is None:
             if self._settings.live_runner_require_risk_guard:
-                _logger.error("live run %s: 风控不可用（factory=None），fail-closed 拒绝起跑", run_id)
+                _logger.error(
+                    "live run %s: 风控不可用（factory=None），fail-closed 拒绝起跑", run_id
+                )
                 async with get_conn() as conn:
                     # savepoint 隔离（同 _mark_loop_crashed / stop() 范式，PR review）：
                     # append 失败不连带跳过 set_status，否则 run 卡 running（#67 根因），下同
                     try:
                         async with conn.transaction():
                             await runs_store.append_error_log(
-                                conn, run_id,
+                                conn,
+                                run_id,
                                 "风控不可用（risk_engine_enabled=false 或 risk_rules 加载失败），"
                                 "live runner 默认 fail-closed 拒绝起跑；如确需无风控运行，"
                                 "设 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false",
@@ -276,7 +298,9 @@ class LiveRunnerManager:
             _logger.warning("live run %s: 风控不可用但已显式放行，零风控运行", run_id)
             async with get_conn() as conn:
                 await runs_store.append_log(
-                    conn, run_id, "warn",
+                    conn,
+                    run_id,
+                    "warn",
                     "⚠ 风控不可用且 INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false，本 run 在零风控下运行",
                 )
         # build 退避（issue #41）：data 服务短暂不可用不该直接判死，退避重试；策略代码 /
@@ -292,7 +316,11 @@ class LiveRunnerManager:
                 code, retryable = _classify_build_error(e)
                 _logger.warning(
                     "live run %s: build failed (code=%s, retryable=%s, streak=%d): %s",
-                    run_id, code, retryable, build_streak, e,
+                    run_id,
+                    code,
+                    retryable,
+                    build_streak,
+                    e,
                 )
                 build_streak = build_streak + 1 if retryable else build_streak
                 # 不可重试 或 攒够 streak → errored；可重试 → 指数退避后重试。
@@ -305,7 +333,9 @@ class LiveRunnerManager:
                                 )
                         except Exception:
                             _logger.warning(
-                                "live run %s: build 失败日志写入失败（已忽略）", run_id, exc_info=True
+                                "live run %s: build 失败日志写入失败（已忽略）",
+                                run_id,
+                                exc_info=True,
                             )
                         await runs_store.set_status(
                             conn, run_id, "errored", only_if_status="running"
@@ -315,7 +345,7 @@ class LiveRunnerManager:
                     await runs_store.append_log(
                         conn, run_id, "warn", f"build retry {build_streak}: {e}", code=code
                     )
-                await asyncio.sleep(min(2 ** build_streak, 60))
+                await asyncio.sleep(min(2**build_streak, 60))
 
         # 入场因子基准（ADR-0047）：best-effort，factor 服务不可用 → 巡检自愈补拍。
         # 放 build 成功后：candidate 已确认可跑，基准时刻≈真正起跑时刻。
@@ -332,7 +362,9 @@ class LiveRunnerManager:
         try:
             async with get_conn() as conn:
                 await runs_store.append_log(
-                    conn, run_id, "info",
+                    conn,
+                    run_id,
+                    "info",
                     f"{'恢复运行' if run.get('last_bar_ts') else '策略起跑'}："
                     f"{run['venue']} {run['symbol']} {run['timeframe']}",
                 )
@@ -341,9 +373,7 @@ class LiveRunnerManager:
 
         _db_bound = run.get("last_bar_ts")
         last_bar_ts: datetime | None = (
-            max(_db_bound, warmup_ts)
-            if _db_bound and warmup_ts
-            else _db_bound or warmup_ts
+            max(_db_bound, warmup_ts) if _db_bound and warmup_ts else _db_bound or warmup_ts
         )
         poll_s = _timeframe_seconds(run["timeframe"])
         if self._settings.live_poll_interval_s > 0:
@@ -373,7 +403,9 @@ class LiveRunnerManager:
                     _logger.warning("live run %s: 账户级风控熔断，auto-stop", run_id)
                     async with get_conn() as conn:
                         await runs_store.append_log(
-                            conn, run_id, "warn",
+                            conn,
+                            run_id,
+                            "warn",
                             "账户级风控熔断（global scope 锁：回撤 / 连续止损上限）→ auto-stop；"
                             "复核账户状态后可重新 start。设 "
                             "INALPHA_LIVE_RUNNER_AUTO_STOP_ON_CIRCUIT_BREAK=false 维持旧行为（继续跑）",
@@ -392,15 +424,16 @@ class LiveRunnerManager:
                 err_streak = err_streak + 1 if retryable else err_streak
                 _logger.warning(
                     "live run %s error (retryable=%s, streak=%d): %s",
-                    run_id, retryable, err_streak, e,
+                    run_id,
+                    retryable,
+                    err_streak,
+                    e,
                 )
                 # handler 内的 DB 调用也要兜——否则 DB 短暂不可达时异常逃出 while
                 # loop，task 静默死亡、run 永久卡在 'running'（CR）。
                 try:
                     async with get_conn() as conn:
-                        await runs_store.append_error_log(
-                            conn, run_id, f"{type(e).__name__}: {e}"
-                        )
+                        await runs_store.append_error_log(conn, run_id, f"{type(e).__name__}: {e}")
                 except Exception:
                     _logger.exception("live run %s: 写 error_log 失败", run_id)
                 # 不可重试（确定性）错误 → 立即 errored，跳过退避（issue #37.3）；
@@ -414,7 +447,7 @@ class LiveRunnerManager:
                     except Exception:
                         _logger.exception("live run %s: 置 errored 失败", run_id)
                     return
-                await asyncio.sleep(min(2 ** err_streak, 60))  # 指数退避，cap 60s
+                await asyncio.sleep(min(2**err_streak, 60))  # 指数退避，cap 60s
 
     async def _ttl_exceeded(
         self, run_id: UUID, started_at: datetime | None, max_runtime_s: int
@@ -434,7 +467,9 @@ class LiveRunnerManager:
         )
         async with get_conn() as conn:
             await runs_store.append_log(
-                conn, run_id, "warn",
+                conn,
+                run_id,
+                "warn",
                 f"运行时长 {elapsed:.0f}s 超过 TTL（INALPHA_LIVE_RUNNER_MAX_RUNTIME_S="
                 f"{max_runtime_s}s）→ auto-stop（防长尾僵尸 run）；复核后可重新 start。",
             )
@@ -463,15 +498,16 @@ class LiveRunnerManager:
         strategy_cls = load_strategy_class(code)
         verify_strategy_contract(strategy_cls)
         instrument_id = InstrumentId(symbol=run["symbol"], venue=run["venue"])
-        # per-run 资金额度:sizing 与 run 级购买力(step 1.7 ①)都以它为上限;
-        # 老 run 行 allocation 为空 → 沿用旧语义固定 1 万。
-        allocation = run.get("allocation")
+        # A live session must have an actual funded isolated book.
+        async with get_conn() as conn:
+            initial_wallet = await wallets_store.require(conn, run)
+        allocation = initial_wallet["initial_quote_cash"]
         session = LiveEngineSession(
             strategy_cls=strategy_cls,
             instrument_id=instrument_id,
             timeframe=run["timeframe"],
             params=run.get("params") or {},
-            initial_cash=float(allocation) if allocation is not None else _LIVE_INITIAL_CASH,
+            initial_cash=float(allocation),
             fee_rate=_FEE_RATE,
             # ADR-0052：框架级持仓保护止损（与回测共用同一阈值，行为一致）
             protective_stop_loss_pct=self._settings.protective_stop_loss_pct,
@@ -483,60 +519,45 @@ class LiveRunnerManager:
             trading_mode=run.get("trading_mode") or "spot",
             leverage=int(run.get("leverage") or 1),
         )
+        async with get_conn() as conn:
+            await wallets_store.require(conn, run)
         warmup_ts = await self._warmup_session(session, run)
         # resume（last_bar_ts 非空 = 本 run 之前跑过）：把 DB 当前持仓灌回 session，让续跑
         # 策略知道自己有仓（issue #37.2 / #46）。全新 run（last_bar_ts=None）保持空仓起，
         # 符合"全新 live run 从无持仓开始"语义。
-        if run.get("last_bar_ts") is not None:
-            await self._restore_position(session, run)
+        await self._restore_position(session, run)
         return session, warmup_ts
 
-    async def _restore_position(
-        self, session: LiveEngineSession, run: dict[str, Any]
-    ) -> None:
-        """从 DB 读 run 的 (account, venue, symbol) 当前持仓，灌回 session（resume 续跑）。
-
-        同时把 run 此前的**净已实现盈亏**(closed_trades 毛盈亏 − 手续费,自
-        started_at,与 cumulative_pnl 展示同口径)灌回 session 钱包——否则重启后
-        钱包从 allocation 满额重建,亏损 run 一重启就"回血",allocation 花费记忆
-        丢失、run 级购买力失真(盈利同理:赚到的额度重启后凭空消失)。
-        """
-        started_at = run.get("started_at")
+    async def _restore_position(self, session: LiveEngineSession, run: dict[str, Any]) -> None:
+        """Restore this run's exact wallet cash and position without importing legacy trades."""
         async with get_conn() as conn:
+            wallet = await wallets_store.require(conn, run)
             pos = await positions_store.get(
-                conn, account_id=run["account_id"], venue=run["venue"], symbol=run["symbol"]
+                conn,
+                account_id=run["account_id"],
+                venue=run["venue"],
+                symbol=run["symbol"],
+                run_id=run["id"],
             )
-            if started_at is not None:
-                realized = await closed_trades_store.sum_realized(
-                    conn, account_id=run["account_id"], venue=run["venue"],
-                    symbol=run["symbol"], since=started_at,
-                )
-                fees = await orders_store.sum_fees(
-                    conn, account_id=run["account_id"], venue=run["venue"],
-                    symbol=run["symbol"], since=started_at,
-                )
-            else:  # 防御:无 started_at(理论只在测试构造 dict 时出现)→ 不回灌
-                realized = fees = Decimal(0)
-        net_realized = float(realized - fees)
-        if net_realized:
-            session.portfolio.adjust_cash(net_realized)
-            _logger.info(
-                "live run %s: resume 回灌净已实现 %+.4f(毛 %s − fee %s)到 session 钱包",
-                run["id"], net_realized, realized, fees,
-            )
-        if pos is None:
+        currency = resolve_currency(run["venue"], run["symbol"])
+        cash = float(wallet["cash_balances"].get(currency, 0))
+        if pos is None or float(pos["quantity"]) == 0:
+            session.portfolio.adjust_cash(cash - session.portfolio.cash)
             return
         qty = float(pos["quantity"])
-        if qty == 0:
-            return
         avg = float(pos["avg_open_price"])
         # ts 用 last_bar_ts（重建发生在续喂前），ns 化喂给 session 时钟
-        last_bar_ts: datetime = run["last_bar_ts"]
+        last_bar_ts: datetime = run.get("last_bar_ts") or run["started_at"]
         ts_ns = int(last_bar_ts.timestamp() * 1_000_000_000)
         session.restore_position(quantity_signed=qty, avg_price=avg, ts_event=ts_ns)
+        session.portfolio.adjust_cash(cash - session.portfolio.cash)
         _logger.info(
             "live run %s: resume 重建持仓 %s %s qty=%s avg=%s",
-            run["id"], run["venue"], run["symbol"], qty, avg,
+            run["id"],
+            run["venue"],
+            run["symbol"],
+            qty,
+            avg,
         )
 
     async def _warmup_session(
@@ -572,7 +593,14 @@ class LiveRunnerManager:
         closed = _closed_bars(raw, instrument_id, run["timeframe"], now)
         last_ts: datetime | None = None
         for bar in closed:
-            session.feed_bar(bar)  # 丢弃 orders —— 预热只为建立指标状态
+            discarded = session.feed_bar(bar)
+            for order, strategy_id in discarded:
+                session.reject_order(
+                    order=order,
+                    strategy_id=strategy_id,
+                    reason="Historical warmup: no execution",
+                    ts_event=bar.ts_event,
+                )
             session.take_unsupported_orders()  # 同样排空，避免泄漏到 start 后第一根 bar
             last_ts = _ns_to_dt(bar.ts_event)
         return last_ts
@@ -621,6 +649,11 @@ class LiveRunnerManager:
         返回 ``True`` 表示本根 bar 触发了账户级风控熔断（global scope 锁，issue #44），
         ``_run_loop`` 据此 auto-stop 该 run。
         """
+        async with get_conn() as conn:
+            wallet = await wallets_store.require(conn, run)
+        session.portfolio.adjust_cash(
+            float(wallet["cash_balances"].get(wallet["quote_currency"], 0)) - session.portfolio.cash
+        )
         orders = session.feed_bar(bar)
         # 不支持单型（STOP_* 等）被 gateway 守门拒掉：记一行 rejected 决策让运维可见
         # （issue #43），不下单、不计 err_streak。必须每根 bar 排空避免跨 bar 泄漏。
@@ -630,8 +663,13 @@ class LiveRunnerManager:
             try:
                 async with get_conn() as conn:
                     await self._record_decision(
-                        conn, run, order, bar, outcome="rejected",
-                        intent=self._intent_for(session, order), reason=reason,
+                        conn,
+                        run,
+                        order,
+                        bar,
+                        outcome="rejected",
+                        intent=self._intent_for(session, order),
+                        reason=reason,
                     )
             except Exception:
                 _logger.exception("live run %s: 记不支持单型决策行失败", run["id"])
@@ -651,7 +689,9 @@ class LiveRunnerManager:
             try:
                 async with get_conn() as conn:
                     await runs_store.append_log(
-                        conn, run["id"], "info",
+                        conn,
+                        run["id"],
+                        "info",
                         f"bar {_ns_to_dt(bar.ts_event):%Y-%m-%d %H:%M} · "
                         f"{' + '.join(parts)}（待撮合）",
                     )
@@ -669,24 +709,12 @@ class LiveRunnerManager:
                 # 都没调到 → EE 内存留孤儿单、策略以为有挂单而 portfolio 空仓，状态分叉。
                 # 先 reject 清掉 EE 内存状态，再把异常抛给 _run_loop 计 err_streak。
                 session.reject_order(
-                    order=order, strategy_id=strategy_id,
+                    order=order,
+                    strategy_id=strategy_id,
                     reason="route_through_plan_exec failed; cleaning up EE state",
                     ts_event=bar.ts_event,
                 )
                 raise
-        # perp 资金费:本根 bar 跨过的结算时点对当前持仓计提(进计价货币现金桶,用真 mark)。
-        # best-effort——拉不到 funding rate 就本结算跳过、不在 stale 数据上乱计提（不阻断主流程）。
-        if (run.get("trading_mode") or "spot") == "perp":
-            try:
-                await self._accrue_perp_funding(run, bar, session)
-            except Exception:
-                _logger.exception("live run %s: perp 资金费计提失败（best-effort，已忽略）", run["id"])
-            # **推进内存 run["last_bar_ts"]**：funding 以它为"上根 bar"边界算本区间结算次数,
-            # 但 _run_loop 只推进局部变量、update_progress 只写 DB,都不回写本 dict(按引用传入)。
-            # 不在此同步会让:新 run(None)每根命中 prev is None → 永不计提 funding;续跑 run 每根
-            # 用固定 T0 重复计提 [T0, 当前] 全部结算 → 累计指数级重复扣费(CR)。放在 accrue 之后
-            # (它先读旧值算 [prev, bar]),下根 bar 即从本根续算 [bar, next]。
-            run["last_bar_ts"] = _ns_to_dt(bar.ts_event)
         # 进度写做 best-effort（CR medium）：本根 bar 的下单意图已落账 + confirm_fill 已回灌，
         # 这些副作用**不幂等**。若 update_progress 因 DB 瞬时错误抛出，绝不能让它逃出本函数——
         # 否则 _run_loop 的内存 last_bar_ts 不前进 → 下轮重喂同一根 bar → 重复下单 / 指标污染。
@@ -707,6 +735,24 @@ class LiveRunnerManager:
             # ↑ 连接已归还连接池；↓ FX 折算（可能 HTTP）在连接上下文**之外**
             pnl = await self._convert_run_pnl_to_base(run, quote_total, currency, base)
             async with get_conn() as conn:
+                if pnl is not None:
+                    updated = await conn.execute(
+                        "UPDATE strategy_run_wallets SET last_equity=%s,valuation_at=%s WHERE run_id=%s AND released_at IS NULL AND revision=%s RETURNING run_id",
+                        (
+                            pnl + Decimal(str(run["allocation"])),
+                            _ns_to_dt(bar.ts_event),
+                            run["id"],
+                            run["_valuation_revision"],
+                        ),
+                    )
+                    if await updated.fetchone() is None:
+                        pnl = None
+
+                else:
+                    await conn.execute(
+                        "UPDATE strategy_run_wallets SET valuation_warnings='[\"FX unavailable; retaining last trusted valuation\"]' WHERE run_id=%s",
+                        (run["id"],),
+                    )
                 await runs_store.update_progress(
                     conn,
                     run["id"],
@@ -714,145 +760,64 @@ class LiveRunnerManager:
                     cumulative_pnl=pnl,  # None（FX 不可用）→ 只推进 last_bar_ts、留旧 pnl
                 )
         except Exception:
-            _logger.exception("live run %s: update_progress 失败（best-effort，不重喂 bar）", run["id"])
+            _logger.exception(
+                "live run %s: update_progress 失败（best-effort，不重喂 bar）", run["id"]
+            )
 
         return circuit_break
-
-    async def _accrue_perp_funding(
-        self, run: dict[str, Any], bar: Bar, session: LiveEngineSession
-    ) -> None:
-        """perp:本根 bar 跨过的每个资金费结算时点,对当前 DB 持仓计提(进计价货币现金桶)。
-
-        funding = ``qty_signed × mark × rate``(正费率多付空),进 cash 已实现现金流、不并入 UPNL。
-        mark / rate 取自 data ``/perp/funding``(真 mark);拉不到则本结算跳过(不在 stale 上乱计提)。
-        M-1:DB 读 / 外部 HTTP 严格分段,不在持连接时发请求。
-        """
-        prev = run.get("last_bar_ts")
-        if prev is None:
-            return  # 首根 bar 无前序,无结算区间
-        prev_ns = int(prev.timestamp() * 1_000_000_000)
-        n_settle = perp_margin.funding_settlements_between(prev_ns, bar.ts_event)
-        if n_settle <= 0:
-            return
-        account_id: UUID = run["account_id"]
-        venue: str = run["venue"]
-        symbol: str = run["symbol"]
-        # 1) 读持仓(DB,短连接)
-        async with get_conn() as conn:
-            pos = await positions_store.get(
-                conn, account_id=account_id, venue=venue, symbol=symbol
-            )
-        qty = float(pos["quantity"]) if pos is not None else 0.0
-        if qty == 0:
-            return  # flat 无计提
-        # 2) 拉 funding rate + mark(HTTP,不持连接)
-        try:
-            token = self._mint_service_token(account_id)
-            async with DataClient(self._settings.data_service_url, token) as dc:
-                out = await dc.get_perp_funding(venue=venue, symbol=symbol)
-            mark = float(out["mark_price"])
-            rate = float(out["funding_rate"])
-        except Exception:
-            _logger.warning(
-                "live run %s: perp funding 拉取失败,本结算(%d 次)跳过、不计提", run["id"], n_settle
-            )
-            return
-        # 3) 计提 → cash delta(进计价货币桶,n 次结算)
-        payment = (
-            perp_margin.funding_payment(qty_signed=qty, mark_price=mark, funding_rate=rate)
-            * n_settle
-        )
-        currency = resolve_currency(venue, symbol)
-        async with get_conn() as conn:
-            await accounts_store.apply_cash_delta(
-                conn, account_id, Decimal(str(-payment)), currency=currency
-            )
-            await runs_store.append_log(
-                conn, run["id"], "info",
-                f"资金费计提 {n_settle}× rate={rate:.6f} mark={mark:.2f} qty={qty} "
-                f"→ cash {-payment:+.4f} {currency}",
-            )
-        # 同步内存 session portfolio:funding 是**无 fill 的现金变动**,成交回灌不覆盖它——不同步
-        # 会让 session._cash 与 DB 钱包发散,策略 can_afford / equity 失真、可能开出 DB 守门会拒
-        # 的幽灵仓(CR)。与回测 backtest.py 对称:每个结算时点调一次 apply_funding。
-        iid = InstrumentId(symbol=symbol, venue=venue)
-        for _ in range(n_settle):
-            session.portfolio.apply_funding(iid, rate, mark=mark)
 
     async def _read_run_pnl_quote(
         self, conn: Any, run: dict[str, Any], mark_price: float
     ) -> tuple[Decimal, str, str]:
-        """读 DB 算 run 累计盈亏（**计价货币**，未折算）+ 解析币种 / base（issue #45 / M-1）。
-
-        = 已实现（``closed_trades`` 自 started_at，按 symbol scope）+ 未实现（当前持仓
-        ``(mark - avg) * qty``）- 手续费（``orders`` 自 started_at，同 symbol scope）。
-        手续费已在 ``fills`` 阶段从 cash 扣，但 ``close_profit_abs`` / 未实现都是**毛
-        口径**不含费，不补回这个展示盈亏会让高频策略 cumulative_pnl 虚高、看起来比真实
-        净值更赚（issue #45 follow-up，用户实测发现）。
-        **只读 DB、不发外部请求**（FX 折算见
-        :meth:`_convert_run_pnl_to_base`，在连接池连接之外做）。
-
-        返回 ``(total_quote, currency, base_currency)``。
-        """
-        account_id: UUID = run["account_id"]
-        venue: str = run["venue"]
-        symbol: str = run["symbol"]
-        started_at: datetime = run["started_at"]
-
-        realized = await closed_trades_store.sum_realized(
-            conn, account_id=account_id, venue=venue, symbol=symbol, since=started_at
-        )
-        fees = await orders_store.sum_fees(
-            conn, account_id=account_id, venue=venue, symbol=symbol, since=started_at
-        )
-        pos = await positions_store.get(
-            conn, account_id=account_id, venue=venue, symbol=symbol
-        )
-        unrealized = Decimal(0)
-        currency: str | None = None
-        if pos is not None and Decimal(str(pos["quantity"])) != 0:
+        """Read wallet equity and position from one snapshot; fees and funding are already cash."""
+        wallet = await (
+            await conn.execute(
+                "SELECT w.*,COALESCE((SELECT jsonb_agg(p) FROM positions p WHERE p.account_id=w.account_id AND p.run_id=w.run_id AND p.quantity<>0),'[]') book_positions FROM strategy_run_wallets w WHERE w.account_id=%s AND w.run_id=%s AND w.released_at IS NULL",
+                (run["account_id"], run["id"]),
+            )
+        ).fetchone()
+        if wallet is None:
+            raise wallets_store.WalletConflict("Missing active run wallet")
+        pos = wallet["book_positions"][0] if wallet["book_positions"] else None
+        run["_valuation_revision"] = wallet["revision"]
+        currency = wallet["quote_currency"]
+        equity = Decimal(str(wallet["cash_balances"].get(currency, 0)))
+        if pos is not None:
             qty = Decimal(str(pos["quantity"]))
-            avg = Decimal(str(pos["avg_open_price"]))
-            unrealized = (Decimal(str(mark_price)) - avg) * qty
-            currency = pos.get("currency")
-
-        # 净盈亏 = 毛已实现 + 毛未实现 - 手续费（手续费已在 cash 扣，这里补回展示口径）
-        total_quote = realized + unrealized - fees
-
-        account = await accounts_store.get(conn, account_id)
-        base = account["base_currency"] if account else accounts_store.DEFAULT_BASE_CURRENCY
-        currency = currency or resolve_currency(venue, symbol, default=base)
-        return total_quote, currency, base
+            mark = Decimal(str(mark_price))
+            equity += (
+                (mark - Decimal(str(pos["avg_open_price"]))) * qty
+                if run.get("trading_mode") == "perp"
+                else mark * qty
+            )
+        return equity, currency, wallet["base_currency"]
 
     async def _convert_run_pnl_to_base(
         self, run: dict[str, Any], total_quote: Decimal, currency: str, base: str
     ) -> Decimal | None:
-        """把计价货币盈亏折算到 base_currency（issue #45 / M-1）。
-
-        **不持有任何 DB 连接**——可能发 data ``/fx`` HTTP。crypto-USD 等本地可解析路径
-        零网络、恒成功。拿不到汇率（非 USD 折算失败）返 ``None`` → 调用方保留旧 pnl 不覆盖。
-        """
-        # 0 盈亏（flat 且无平仓 / 已实现与未实现相抵）→ 折算后仍是 0，直接短路：
-        # 否则非 USD flat run 每根 bar 白打一次 /fx HTTP，且 FX 不可用时会返 None 把真实
-        # 的 0 PnL 错留成旧值。
+        """Convert wallet equity, then subtract original base-currency principal; stale FX fails closed."""
         if total_quote == 0:
-            return Decimal(0)
+            return -Decimal(str(run["allocation"]))
         # 计价货币 == base 或本地可解析（crypto USDT→USD）→ 零网络
         if not needs_network([currency], base):
             conv = BaseCurrencyConverter(base, None)
-            return await conv.convert(total_quote, currency)
+            value = await conv.convert(total_quote, currency)
+            return value - Decimal(str(run["allocation"])) if value is not None else None
 
         # 否则调 data /fx；拿不到 → 返 None（保留旧值，不乱猜）
         token = self._mint_service_token(run["account_id"])
         async with DataClient(self._settings.data_service_url, token) as dc:
             conv = BaseCurrencyConverter(base, dc)
             result = await conv.convert(total_quote, currency)
+        if conv.warnings:
+            result = None
         if result is None and conv.warnings:
             _logger.warning(
                 "live run %s: PnL FX 折算不可用，保留旧 cumulative_pnl：%s",
-                run["id"], "; ".join(conv.warnings),
+                run["id"],
+                "; ".join(conv.warnings),
             )
-        return result
+        return result - Decimal(str(run["allocation"])) if result is not None else None
 
     async def _route_through_plan_exec(
         self,
@@ -895,7 +860,7 @@ class LiveRunnerManager:
         if is_protective_exit:
             async with get_conn() as conn:
                 _guard_pos = await positions_store.get(
-                    conn, account_id=account_id, venue=venue, symbol=symbol
+                    conn, account_id=account_id, venue=venue, symbol=symbol, run_id=run["id"]
                 )
             _cur_qty = float(_guard_pos["quantity"]) if _guard_pos is not None else 0.0
             reduces = (side == "SELL" and _cur_qty > 0) or (side == "BUY" and _cur_qty < 0)
@@ -904,24 +869,37 @@ class LiveRunnerManager:
         try:
             if not is_protective_exit:
                 risk_guard_mod.check_order_notional(
-                    self._factory, quantity=order.quantity, ref_price=float(bar.close),
-                    venue=venue, symbol=symbol,
+                    self._factory,
+                    quantity=order.quantity,
+                    ref_price=float(bar.close),
+                    venue=venue,
+                    symbol=symbol,
                 )
                 await risk_guard_mod.enforce(
-                    self._factory, account_id=account_id, venue=venue, symbol=symbol,
+                    self._factory,
+                    account_id=account_id,
+                    venue=venue,
+                    symbol=symbol,
                     side=side,
                 )
         except ConflictError as e:
             session.reject_order(
-                order=order, strategy_id=strategy_id,
-                reason=f"RISK_REJECTED: {e.message}", ts_event=bar.ts_event,
+                order=order,
+                strategy_id=strategy_id,
+                reason=f"RISK_REJECTED: {e.message}",
+                ts_event=bar.ts_event,
             )
             async with get_conn() as conn:
                 await runs_store.append_log(
                     conn, run_id, "warn", f"order rejected by risk: {e.message}"
                 )
                 await self._record_decision(
-                    conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                    conn,
+                    run,
+                    order,
+                    bar,
+                    outcome="risk_rejected",
+                    intent=intent,
                     reason=e.message,
                 )
             # 账户级（global scope）锁 = 回撤 / 连续止损熔断：返回信号让 _run_loop 终止 run
@@ -943,11 +921,13 @@ class LiveRunnerManager:
         if side == "SELL" and not is_protective_exit:
             async with get_conn() as conn:
                 cur_pos = await positions_store.get(
-                    conn, account_id=account_id, venue=venue, symbol=symbol
+                    conn, account_id=account_id, venue=venue, symbol=symbol, run_id=run["id"]
                 )
             current_qty = Decimal(str(cur_pos["quantity"])) if cur_pos else Decimal(0)
             if violates_spot_long_only(
-                side=side, quantity=order.quantity, current_qty=current_qty,
+                side=side,
+                quantity=order.quantity,
+                current_qty=current_qty,
                 trading_mode=run.get("trading_mode") or "spot",
             ):
                 reason = (
@@ -955,15 +935,22 @@ class LiveRunnerManager:
                     f"{current_qty} (spot long-only guard)"
                 )
                 session.reject_order(
-                    order=order, strategy_id=strategy_id,
-                    reason=reason, ts_event=bar.ts_event,
+                    order=order,
+                    strategy_id=strategy_id,
+                    reason=reason,
+                    ts_event=bar.ts_event,
                 )
                 async with get_conn() as conn:
                     await runs_store.append_log(
                         conn, run_id, "warn", f"order rejected by spot guard: {reason}"
                     )
                     await self._record_decision(
-                        conn, run, order, bar, outcome="rejected", intent=intent,
+                        conn,
+                        run,
+                        order,
+                        bar,
+                        outcome="rejected",
+                        intent=intent,
                         reason=reason,
                     )
                 return "rejected"
@@ -978,14 +965,18 @@ class LiveRunnerManager:
             close = float(bar.close)
             currency = resolve_currency(venue, symbol)
             async with get_conn() as conn:
-                acct = await accounts_store.get_or_create(conn, account_id)
+                acct = await wallets_store.require(conn, run)
                 cur_pos = await positions_store.get(
-                    conn, account_id=account_id, venue=venue, symbol=symbol
+                    conn, account_id=account_id, venue=venue, symbol=symbol, run_id=run["id"]
                 )
                 others_im = float(
                     await positions_store.sum_other_margin_used(
-                        conn, account_id, currency=currency,
-                        exclude_venue=venue, exclude_symbol=symbol,
+                        conn,
+                        account_id,
+                        currency=currency,
+                        exclude_venue=venue,
+                        exclude_symbol=symbol,
+                        run_id=run["id"],
                     )
                 )
             cur_qty = float(cur_pos["quantity"]) if cur_pos else 0.0
@@ -995,8 +986,7 @@ class LiveRunnerManager:
             wallet = float((acct.get("cash_balances") or {}).get(currency, 0) or 0)
             # perp 专用 wallet:现货桶可为负(其他 spot 策略共用),取 max(0,桶)+本 run 额度
             # 作为可用——perp 只动保证金和已实现盈亏,不应被现货交易拖垮(ADR-0061)。
-            perp_allocation = float(run.get("allocation") or 0)
-            perp_wallet = max(0.0, wallet) + perp_allocation
+            perp_wallet = wallet
             if others_im + im + fee_amt > perp_wallet:
                 reason = (
                     f"INSUFFICIENT_MARGIN: 其他仓已占 IM {others_im:.2f} + "
@@ -1004,14 +994,23 @@ class LiveRunnerManager:
                     f"超 perp 钱包 {perp_wallet:.2f} {currency}"
                 )
                 session.reject_order(
-                    order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
+                    order=order,
+                    strategy_id=strategy_id,
+                    reason=reason,
+                    ts_event=bar.ts_event,
                 )
                 async with get_conn() as conn:
                     await runs_store.append_log(
                         conn, run_id, "warn", f"order rejected by perp margin: {reason}"
                     )
                     await self._record_decision(
-                        conn, run, order, bar, outcome="rejected", intent=intent, reason=reason,
+                        conn,
+                        run,
+                        order,
+                        bar,
+                        outcome="rejected",
+                        intent=intent,
+                        reason=reason,
                     )
                 return "rejected"
 
@@ -1033,24 +1032,31 @@ class LiveRunnerManager:
                     f"剩余额度 {session.portfolio.cash:.2f}(run 虚拟钱包)"
                 )
                 session.reject_order(
-                    order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
+                    order=order,
+                    strategy_id=strategy_id,
+                    reason=reason,
+                    ts_event=bar.ts_event,
                 )
                 async with get_conn() as conn:
                     await runs_store.append_log(
                         conn, run_id, "warn", f"order rejected by allocation: {reason}"
                     )
                     await self._record_decision(
-                        conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                        conn,
+                        run,
+                        order,
+                        bar,
+                        outcome="risk_rejected",
+                        intent=intent,
                         reason=reason,
                     )
                 return "risk_rejected"
 
             order_ccy = resolve_currency(venue, symbol)
             async with get_conn() as conn:
-                acct = await accounts_store.get_or_create(conn, account_id)
+                acct = await wallets_store.require(conn, run)
             balances = {
-                cur: Decimal(str(amt))
-                for cur, amt in (acct.get("cash_balances") or {}).items()
+                cur: Decimal(str(amt)) for cur, amt in (acct.get("cash_balances") or {}).items()
             }
             base_ccy = acct["base_currency"]
             fx_client = (
@@ -1068,11 +1074,17 @@ class LiveRunnerManager:
             finally:
                 if fx_client is not None:
                     await fx_client.close()
-            if violates_spot_buying_power(
-                side=side, quantity=order.quantity, ref_price=close,
-                fee_rate=_FEE_RATE, order_ccy_rate=order_ccy_rate,
-                available_cash_base=available,
-                trading_mode=run.get("trading_mode") or "spot",
+            if (
+                violates_spot_buying_power(
+                    side=side,
+                    quantity=order.quantity,
+                    ref_price=close,
+                    fee_rate=_FEE_RATE,
+                    order_ccy_rate=order_ccy_rate,
+                    available_cash_base=available,
+                    trading_mode=run.get("trading_mode") or "spot",
+                )
+                or spot_buy_converter.warnings
             ):
                 fx_note = (
                     f"; FX warnings: {'; '.join(spot_buy_converter.warnings)}"
@@ -1084,14 +1096,22 @@ class LiveRunnerManager:
                     f"(含手续费)超过账户折算可用 {available:.2f} {base_ccy}{fx_note}"
                 )
                 session.reject_order(
-                    order=order, strategy_id=strategy_id, reason=reason, ts_event=bar.ts_event,
+                    order=order,
+                    strategy_id=strategy_id,
+                    reason=reason,
+                    ts_event=bar.ts_event,
                 )
                 async with get_conn() as conn:
                     await runs_store.append_log(
                         conn, run_id, "warn", f"order rejected by buying power: {reason}"
                     )
                     await self._record_decision(
-                        conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                        conn,
+                        run,
+                        order,
+                        bar,
+                        outcome="risk_rejected",
+                        intent=intent,
                         reason=reason,
                     )
                 return "risk_rejected"
@@ -1127,8 +1147,10 @@ class LiveRunnerManager:
         exec_qty = order.quantity
         clamped_fill: Decimal | None = None
         order_params = {
-            "side": side, "type": order.type.value,
-            "quantity": exec_qty, "price": order.price,
+            "side": side,
+            "type": order.type.value,
+            "quantity": exec_qty,
+            "price": order.price,
         }
         rationale = (
             f"[live_runner run:{run_id}] candidate:{run['candidate_id']} on_bar {side} signal"
@@ -1138,20 +1160,27 @@ class LiveRunnerManager:
                 # 首单 lazy create + **恒锁账户行**(统一全局锁序 accounts → positions,
                 # 与 HTTP /orders/submit、deposit/reset 同序防死锁);spot BUY / perp
                 # 开仓的权威复检都以本锁为串行化点。
-                locked_acct = await accounts_store.get_or_create(
-                    conn, account_id, for_update=True
-                )
+                locked_acct = await wallets_store.lock(conn, run)
+                current_run = await runs_store.get(conn, run_id)
+                if current_run is None or current_run["status"] != "running":
+                    raise wallets_store.WalletConflict("Strategy stopped before execution")
                 # 现货 long-only 权威守门（事务内 FOR UPDATE）：闭合 step 1.5 乐观读与本 apply
                 # 跨事务的 TOCTOU——并发同账户同标的 SELL 各读旧持仓双双过 step 1.5，这里锁行
                 # 串行化，第二个读到更新后持仓 → raise 回滚（不落 plan/order/fill）转 except 拒单。
                 if side == "SELL" and result["status"] == "FILLED":
                     locked = await positions_store.get(
-                        conn, account_id=account_id, venue=venue, symbol=symbol,
+                        conn,
+                        account_id=account_id,
+                        venue=venue,
+                        symbol=symbol,
                         for_update=True,
+                        run_id=run["id"],
                     )
                     locked_qty = Decimal(str(locked["quantity"])) if locked else Decimal(0)
                     if violates_spot_long_only(
-                        side=side, quantity=exec_qty, current_qty=locked_qty,
+                        side=side,
+                        quantity=exec_qty,
+                        current_qty=locked_qty,
                         trading_mode=run.get("trading_mode") or "spot",
                     ):
                         if is_protective_exit and locked_qty > 0:
@@ -1164,11 +1193,14 @@ class LiveRunnerManager:
                             clamped_fill = locked_qty  # 精确 Decimal,绕开 float 往返
                             order_params["quantity"] = exec_qty
                             result = OrderExecutor.execute(
-                                venue=venue, symbol=symbol,
+                                venue=venue,
+                                symbol=symbol,
                                 side=side,  # type: ignore[arg-type]
                                 order_type=order.type.value,  # type: ignore[arg-type]
-                                quantity=exec_qty, price=order.price,
-                                ref_price=float(bar.close), fee_rate=_FEE_RATE,
+                                quantity=exec_qty,
+                                price=order.price,
+                                ref_price=float(bar.close),
+                                fee_rate=_FEE_RATE,
                             )
                         else:
                             raise InsufficientPositionError(
@@ -1185,8 +1217,12 @@ class LiveRunnerManager:
                     and result["status"] == "FILLED"
                 ):
                     locked = await positions_store.get(
-                        conn, account_id=account_id, venue=venue, symbol=symbol,
+                        conn,
+                        account_id=account_id,
+                        venue=venue,
+                        symbol=symbol,
                         for_update=True,
+                        run_id=run["id"],
                     )
                     locked_qty = Decimal(str(locked["quantity"])) if locked else Decimal(0)
                     short_size = -locked_qty  # 空头持仓量(正);非空头则 ≤ 0
@@ -1196,11 +1232,14 @@ class LiveRunnerManager:
                         clamped_fill = short_size
                         order_params["quantity"] = exec_qty
                         result = OrderExecutor.execute(
-                            venue=venue, symbol=symbol,
+                            venue=venue,
+                            symbol=symbol,
                             side=side,  # type: ignore[arg-type]
                             order_type=order.type.value,  # type: ignore[arg-type]
-                            quantity=exec_qty, price=order.price,
-                            ref_price=float(bar.close), fee_rate=_FEE_RATE,
+                            quantity=exec_qty,
+                            price=order.price,
+                            ref_price=float(bar.close),
+                            fee_rate=_FEE_RATE,
                         )
                 # 现货 BUY 购买力权威复检(事务内 FOR UPDATE 锁账户行):闭合 step 1.7
                 # 乐观预检与本 apply 跨事务的 TOCTOU——并发 run 各读旧余额双双过预检,
@@ -1222,16 +1261,19 @@ class LiveRunnerManager:
                         cur: Decimal(str(amt))
                         for cur, amt in (locked_acct.get("cash_balances") or {}).items()
                     }
-                    locked_available = await convert_cash_balances(
-                        offline_fx, locked_balances
-                    )
+                    locked_available = await convert_cash_balances(offline_fx, locked_balances)
                     locked_order_ccy = resolve_currency(venue, symbol)
-                    if violates_spot_buying_power(
-                        side=side, quantity=exec_qty, ref_price=float(bar.close),
-                        fee_rate=_FEE_RATE,
-                        order_ccy_rate=await offline_fx.rate(locked_order_ccy),
-                        available_cash_base=locked_available,
-                        trading_mode=run.get("trading_mode") or "spot",
+                    if (
+                        violates_spot_buying_power(
+                            side=side,
+                            quantity=exec_qty,
+                            ref_price=float(bar.close),
+                            fee_rate=_FEE_RATE,
+                            order_ccy_rate=await offline_fx.rate(locked_order_ccy),
+                            available_cash_base=locked_available,
+                            trading_mode=run.get("trading_mode") or "spot",
+                        )
+                        or offline_fx.warnings
                     ):
                         raise InsufficientCashError(
                             f"INSUFFICIENT_CASH: BUY 约 "
@@ -1253,8 +1295,12 @@ class LiveRunnerManager:
                     _close = float(bar.close)
                     _ccy = resolve_currency(venue, symbol)
                     _locked_pos = await positions_store.get(
-                        conn, account_id=account_id, venue=venue, symbol=symbol,
+                        conn,
+                        account_id=account_id,
+                        venue=venue,
+                        symbol=symbol,
                         for_update=True,
+                        run_id=run["id"],
                     )
                     _cur_qty = float(_locked_pos["quantity"]) if _locked_pos else 0.0
                     _signed = exec_qty if side == "BUY" else -exec_qty
@@ -1262,13 +1308,15 @@ class LiveRunnerManager:
                     _fee = exec_qty * _close * _FEE_RATE
                     _others_im = float(
                         await positions_store.sum_other_margin_used(
-                            conn, account_id, currency=_ccy,
-                            exclude_venue=venue, exclude_symbol=symbol,
+                            conn,
+                            account_id,
+                            currency=_ccy,
+                            exclude_venue=venue,
+                            exclude_symbol=symbol,
+                            run_id=run["id"],
                         )
                     )
-                    _wallet = float(
-                        (locked_acct.get("cash_balances") or {}).get(_ccy, 0) or 0
-                    )
+                    _wallet = float((locked_acct.get("cash_balances") or {}).get(_ccy, 0) or 0)
                     if _others_im + _im + _fee > _wallet:
                         raise perp_margin.InsufficientMarginError(
                             f"INSUFFICIENT_MARGIN: 其他仓已占 IM {_others_im:.2f} + "
@@ -1276,8 +1324,13 @@ class LiveRunnerManager:
                             f"超钱包 {_wallet:.2f} {_ccy}"
                         )
                 plan = await plans_store.create(
-                    conn, account_id=account_id, intent=intent, venue=venue, symbol=symbol,
-                    order_params=order_params, rationale=rationale,
+                    conn,
+                    account_id=account_id,
+                    intent=intent,
+                    venue=venue,
+                    symbol=symbol,
+                    order_params=order_params,
+                    rationale=rationale,
                     expire_in_seconds=_PLAN_EXPIRE_S,
                 )
                 plan_id = plan["plan_id"]
@@ -1285,31 +1338,50 @@ class LiveRunnerManager:
                     conn, account_id=account_id, plan_id=plan_id, approver=_LIVE_RUNNER_APPROVER
                 )
                 await plans_store.consume_approval(
-                    conn, account_id=account_id, plan_id=plan_id,
+                    conn,
+                    account_id=account_id,
+                    plan_id=plan_id,
                     approval_token=approved["approval_token"],
                 )
                 await orders_store.insert(
-                    conn, account_id=account_id, client_order_id=result["client_order_id"],
-                    venue=venue, symbol=symbol, side=side, order_type=order.type.value,
-                    quantity=exec_qty, price=order.price, status=result["status"],
+                    conn,
+                    account_id=account_id,
+                    client_order_id=result["client_order_id"],
+                    venue=venue,
+                    symbol=symbol,
+                    side=side,
+                    order_type=order.type.value,
+                    quantity=exec_qty,
+                    price=order.price,
+                    status=result["status"],
                     filled_quantity=result["filled_quantity"],
-                    avg_fill_price=result["avg_fill_price"], fee=result["fee"],
-                    notional=result["notional"], ts_event=result["ts_event"],
+                    avg_fill_price=result["avg_fill_price"],
+                    fee=result["fee"],
+                    notional=result["notional"],
+                    ts_event=result["ts_event"],
                     trade_plan_id=plan_id,
+                    run_id=run["id"],
                     trading_mode=run.get("trading_mode") or "spot",
                     leverage=int(run.get("leverage") or 1),
                 )
                 if result["status"] == "FILLED":
                     fill_qty_decimal = (
-                        clamped_fill if clamped_fill is not None
+                        clamped_fill
+                        if clamped_fill is not None
                         else Decimal(str(result["filled_quantity"]))
                     )
                     realized_pnl = await apply_fill_to_positions_and_cash(
-                        conn, account_id=account_id, venue=venue, symbol=symbol, side=side,
+                        conn,
+                        account_id=account_id,
+                        venue=venue,
+                        symbol=symbol,
+                        side=side,
                         quantity=fill_qty_decimal,
                         fill_price=Decimal(str(result["avg_fill_price"])),
                         fee=Decimal(str(result["fee"])),
-                        ts_event=result["ts_event"], order_id=result["client_order_id"],
+                        ts_event=result["ts_event"],
+                        order_id=result["client_order_id"],
+                        run_id=run["id"],
                         trading_mode=run.get("trading_mode") or "spot",
                         leverage=int(run.get("leverage") or 1),
                     )
@@ -1329,11 +1401,16 @@ class LiveRunnerManager:
                 rpnl_val = float(realized_pnl) if filled else 0.0
                 notional_val = float(result.get("notional") or 0)
                 cp_abs = Decimal(str(realized_pnl)) if (filled and abs(rpnl_val) > 1e-9) else None
-                cp_pct = (Decimal(str(rpnl_val)) / Decimal(str(notional_val)) * 100
-                          if (filled and abs(rpnl_val) > 1e-9 and notional_val > 1e-9)
-                          else None)
+                cp_pct = (
+                    Decimal(str(rpnl_val)) / Decimal(str(notional_val)) * 100
+                    if (filled and abs(rpnl_val) > 1e-9 and notional_val > 1e-9)
+                    else None
+                )
                 await self._record_decision(
-                    conn, run, order, bar,
+                    conn,
+                    run,
+                    order,
+                    bar,
                     outcome="filled" if filled else "rejected",
                     intent=intent,
                     plan_id=plan_id,
@@ -1351,16 +1428,25 @@ class LiveRunnerManager:
             # 事务内 FOR UPDATE 守门命中并发竞态：事务已回滚（无 plan/order/fill），
             # 补 session 拒单 + 决策日志（新连接，原事务已废）。
             session.reject_order(
-                order=order, strategy_id=strategy_id,
-                reason=e.message, ts_event=bar.ts_event,
+                order=order,
+                strategy_id=strategy_id,
+                reason=e.message,
+                ts_event=bar.ts_event,
             )
             async with get_conn() as conn:
                 await runs_store.append_log(
-                    conn, run_id, "warn",
+                    conn,
+                    run_id,
+                    "warn",
                     f"order rejected by spot guard (txn race): {e.message}",
                 )
                 await self._record_decision(
-                    conn, run, order, bar, outcome="rejected", intent=intent,
+                    conn,
+                    run,
+                    order,
+                    bar,
+                    outcome="rejected",
+                    intent=intent,
                     reason=e.message,
                 )
             return "rejected"
@@ -1368,16 +1454,25 @@ class LiveRunnerManager:
             # 现货 BUY 购买力权威复检命中并发竞态(另一 run/HTTP 单先扣了款):事务已
             # 回滚,补 session 拒单 + risk_rejected 决策行,不杀 run(下一根 bar 重估)。
             session.reject_order(
-                order=order, strategy_id=strategy_id,
-                reason=e.message, ts_event=bar.ts_event,
+                order=order,
+                strategy_id=strategy_id,
+                reason=e.message,
+                ts_event=bar.ts_event,
             )
             async with get_conn() as conn:
                 await runs_store.append_log(
-                    conn, run_id, "warn",
+                    conn,
+                    run_id,
+                    "warn",
                     f"order rejected by buying power (txn race): {e.message}",
                 )
                 await self._record_decision(
-                    conn, run, order, bar, outcome="risk_rejected", intent=intent,
+                    conn,
+                    run,
+                    order,
+                    bar,
+                    outcome="risk_rejected",
+                    intent=intent,
                     reason=e.message,
                 )
             return "risk_rejected"
@@ -1385,16 +1480,25 @@ class LiveRunnerManager:
             # perp 保证金权威复检命中并发竞态(另一笔先占走了保证金):事务已回滚,
             # 补 session 拒单 + rejected 决策行(与 1.6 乐观预检同 outcome),不杀 run。
             session.reject_order(
-                order=order, strategy_id=strategy_id,
-                reason=e.message, ts_event=bar.ts_event,
+                order=order,
+                strategy_id=strategy_id,
+                reason=e.message,
+                ts_event=bar.ts_event,
             )
             async with get_conn() as conn:
                 await runs_store.append_log(
-                    conn, run_id, "warn",
+                    conn,
+                    run_id,
+                    "warn",
                     f"order rejected by perp margin (txn race): {e.message}",
                 )
                 await self._record_decision(
-                    conn, run, order, bar, outcome="rejected", intent=intent,
+                    conn,
+                    run,
+                    order,
+                    bar,
+                    outcome="rejected",
+                    intent=intent,
                     reason=e.message,
                 )
             return "rejected"
@@ -1411,14 +1515,16 @@ class LiveRunnerManager:
         # 被静默吃掉」修复范围内，留作 follow-up。
         if result["status"] == "FILLED":
             session.confirm_fill(
-                order=order, strategy_id=strategy_id,
+                order=order,
+                strategy_id=strategy_id,
                 fill_qty=float(result["filled_quantity"]),
                 fill_price=float(result["avg_fill_price"]),
                 ts_event=bar.ts_event,
             )
             return "filled"
         session.reject_order(
-            order=order, strategy_id=strategy_id,
+            order=order,
+            strategy_id=strategy_id,
             reason=str(result.get("rejection_reason") or "not filled"),
             ts_event=bar.ts_event,
         )

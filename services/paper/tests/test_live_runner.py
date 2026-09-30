@@ -3,6 +3,7 @@
 直接喂一根 bar（不走轮询 / 不打网络），断言下单意图走完护栏内 plan/exec 链路：
 生成 plan（approved_by=system:live_runner）+ 落 orders / positions + 更新 run 进度。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,6 +31,7 @@ from inalpha_paper.storage import accounts as accounts_store
 from inalpha_paper.storage import closed_trades as closed_trades_store
 from inalpha_paper.storage import orders as orders_store
 from inalpha_paper.storage import positions as positions_store
+from inalpha_paper.storage import run_wallets as wallets_store
 from inalpha_paper.storage import strategy_candidates as candidates_store
 from inalpha_paper.storage import strategy_runs as runs_store
 from inalpha_paper.strategy.base import Strategy
@@ -68,19 +70,32 @@ async def _insert_run(account_id, candidate_id=None):  # type: ignore[no-untyped
     盖不住测试策略的 1 BTC@50000 买单。
     """
     async with get_conn() as conn:
-        await accounts_store.get_or_create(
-            conn, account_id, initial_cash=Decimal(str(_TEST_CASH))
-        )
+        await accounts_store.get_or_create(conn, account_id, initial_cash=Decimal(str(_TEST_CASH)))
         if candidate_id is None:
             # 结构可区分 salt 作 STRING 字面量（非注释）：结构指纹去重剥注释后会让
             # 注释-only / 注释-salt 候选全撞成同一个 → 同 candidate 第二次起跑 409。
             candidate_id, _ = await candidates_store.insert_candidate(
                 conn, code=f'"live-runner test candidate {uuid4().hex}"\n'
             )
-        return await runs_store.insert(
-            conn, candidate_id=candidate_id, account_id=account_id,
-            venue="binance", symbol="BTC/USDT", timeframe="1h", params={},
+        run = await runs_store.insert(
+            conn,
+            candidate_id=candidate_id,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            timeframe="1h",
+            params={},
+            allocation=Decimal(str(_TEST_CASH)),
         )
+        await wallets_store.create(
+            conn,
+            account_id,
+            run["id"],
+            Decimal(str(_TEST_CASH)),
+            quote_currency="USDT",
+            quote_rate=Decimal(1),
+        )
+        return await runs_store.get(conn, run["id"])
 
 
 async def test_process_bar_routes_through_plan_exec(app_with_lifespan: Any) -> None:
@@ -95,7 +110,7 @@ async def test_process_bar_routes_through_plan_exec(app_with_lifespan: Any) -> N
 
     async with get_conn() as conn:
         orders = await orders_store.list_by_account(conn, account_id)
-        positions = await positions_store.list_by_account(conn, account_id)
+        positions = await positions_store.list_by_account(conn, account_id, run_id=run["id"])
         cur = await conn.execute(
             "SELECT approved_by, rationale, status FROM trade_plans WHERE account_id = %s",
             (str(account_id),),
@@ -141,8 +156,12 @@ async def test_process_bar_unsupported_order_records_rejected_decision(
     """不支持单型（STOP_MARKET）：不落单、记一行 rejected 决策让运维可见（issue #43）、run 不挂。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     session = LiveEngineSession(
-        strategy_cls=_StopOrderStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
-        params={}, initial_cash=10_000.0, fee_rate=0.001,
+        strategy_cls=_StopOrderStrategy,
+        instrument_id=_INSTRUMENT,
+        timeframe="1h",
+        params={},
+        initial_cash=10_000.0,
+        fee_rate=0.001,
     )
     account_id = uuid4()
     run = await _insert_run(account_id)
@@ -172,7 +191,8 @@ async def test_process_bar_circuit_break_on_global_lock(
 
     async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
         raise ConflictError(
-            "account drawdown 15% exceeded", code="RISK_REJECTED",
+            "account drawdown 15% exceeded",
+            code="RISK_REJECTED",
             details={"lock_scope": "global", "rule_name": "MaxDrawdownRule"},
         )
 
@@ -203,7 +223,8 @@ async def test_process_bar_symbol_lock_does_not_circuit_break(
 
     async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
         raise ConflictError(
-            "cooldown active", code="RISK_REJECTED",
+            "cooldown active",
+            code="RISK_REJECTED",
             details={"lock_scope": "symbol", "rule_name": "CooldownRule"},
         )
 
@@ -217,15 +238,11 @@ async def test_process_bar_symbol_lock_does_not_circuit_break(
     assert circuit_break is False  # 局部锁不熔断
 
 
-async def test_run_loop_circuit_break_auto_stops(
-    app_with_lifespan: Any, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def test_run_loop_circuit_break_auto_stops(app_with_lifespan: Any, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """账户级熔断 → _run_loop auto-stop 置 stopped（非 errored），防僵尸 run（issue #44）。"""
     from inalpha_shared.errors import ConflictError
 
-    settings = get_paper_settings().model_copy(
-        update={"live_runner_require_risk_guard": False}
-    )
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
     run = await _insert_run(uuid4())
 
@@ -242,7 +259,8 @@ async def test_run_loop_circuit_break_auto_stops(
 
     async def fake_enforce(*_a, **_kw):  # type: ignore[no-untyped-def]
         raise ConflictError(
-            "account drawdown breached", code="RISK_REJECTED",
+            "account drawdown breached",
+            code="RISK_REJECTED",
             details={"lock_scope": "global"},
         )
 
@@ -251,7 +269,9 @@ async def test_run_loop_circuit_break_auto_stops(
     monkeypatch.setattr("inalpha_paper.live_runner.risk_guard_mod.enforce", fake_enforce)
     monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", lambda _s: asyncio.sleep(0))
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
+    await asyncio.wait_for(
+        manager._run_loop(run), timeout=30.0
+    )  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -292,9 +312,7 @@ async def test_process_bar_risk_rejected_records_decision(
     assert pos is None or pos.is_flat
 
 
-async def test_route_failure_cleans_up_ee_orphan(
-    app_with_lifespan: Any, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def test_route_failure_cleans_up_ee_orphan(app_with_lifespan: Any, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """护栏链路中途抛错 → reject_order 清 EE 孤儿单 + 异常上抛（CR medium）。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     session = _make_session()
@@ -324,7 +342,7 @@ async def test_route_failure_cleans_up_ee_orphan(
     assert pos is None or pos.is_flat  # 没有幽灵持仓
 
 
-async def test_stop_does_not_overwrite_errored(app_with_lifespan: Any) -> None:
+async def test_explicit_stop_acknowledges_errored_wallet(app_with_lifespan: Any) -> None:
     """stop 一个已 errored 的 run 不应把状态擦成 stopped（CR：保留崩溃痕迹）。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     run = await _insert_run(uuid4())
@@ -334,7 +352,7 @@ async def test_stop_does_not_overwrite_errored(app_with_lifespan: Any) -> None:
     await manager.stop(run["id"])
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
-    assert fresh["status"] == "errored"  # 未被覆盖成 stopped
+    assert fresh["status"] == "stopped"  # 显式确认停止后可释放空仓钱包
 
 
 class _CountingStrategy(Strategy):
@@ -355,13 +373,20 @@ class _CountingStrategy(Strategy):
 
 async def test_warmup_feeds_history_without_trading(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """_warmup_session 拉 N 根历史 bar 喂策略建立指标，丢弃 order、持仓保持空仓。"""
+
     # mock data /bars：返 5 根递增 close 的 bar dict（不打网络）
     async def fake_get_bars(self, **kwargs):  # type: ignore[no-untyped-def]
         return [
             {
-                "ts": f"2026-06-01T0{i}:00:00Z", "open": 100.0 + i, "high": 100.0 + i,
-                "low": 100.0 + i, "close": 100.0 + i, "volume": 1.0,
-                "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h",
+                "ts": f"2026-06-01T0{i}:00:00Z",
+                "open": 100.0 + i,
+                "high": 100.0 + i,
+                "low": 100.0 + i,
+                "close": 100.0 + i,
+                "volume": 1.0,
+                "venue": "binance",
+                "symbol": "BTC/USDT",
+                "timeframe": "1h",
             }
             for i in range(5)
         ]
@@ -370,8 +395,12 @@ async def test_warmup_feeds_history_without_trading(monkeypatch) -> None:  # typ
 
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     session = LiveEngineSession(
-        strategy_cls=_CountingStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
-        params={}, initial_cash=10_000.0, fee_rate=0.001,
+        strategy_cls=_CountingStrategy,
+        instrument_id=_INSTRUMENT,
+        timeframe="1h",
+        params={},
+        initial_cash=10_000.0,
+        fee_rate=0.001,
     )
     run = {"account_id": uuid4(), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"}
 
@@ -395,11 +424,17 @@ def test_closed_bars_skips_forming_bar() -> None:
     def _raw(open_dt: datetime, close: float) -> dict:  # type: ignore[type-arg]
         return {
             "ts": open_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "open": close, "high": close, "low": close, "close": close, "volume": 1.0,
-            "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h",
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 1.0,
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
         }
 
-    closed_open = now - timedelta(hours=2)   # open+1h <= now → 已收盘
+    closed_open = now - timedelta(hours=2)  # open+1h <= now → 已收盘
     forming_open = now - timedelta(minutes=20)  # open+1h > now → 未收盘
     raw = [_raw(closed_open, 100.0), _raw(forming_open, 999.0)]
 
@@ -465,9 +500,7 @@ async def test_run_loop_non_retryable_error_immediate_errored(
     from inalpha_shared.errors import ValidationError
 
     # require=False 让 factory=None 也能过 fail-closed 门进主循环；streak 用默认（≥2）
-    settings = get_paper_settings().model_copy(
-        update={"live_runner_require_risk_guard": False}
-    )
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     assert settings.live_max_error_streak >= 2  # 证明"立即"而非"攒够 streak"
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
     run = await _insert_run(uuid4())
@@ -481,7 +514,9 @@ async def test_run_loop_non_retryable_error_immediate_errored(
     monkeypatch.setattr(manager, "_build_session", fake_build)
     monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
+    await asyncio.wait_for(
+        manager._run_loop(run), timeout=30.0
+    )  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -512,7 +547,9 @@ async def test_run_loop_retryable_error_accumulates_to_errored(
     monkeypatch.setattr(manager, "_fetch_latest_bar", fake_fetch)
     monkeypatch.setattr("inalpha_paper.live_runner.asyncio.sleep", no_sleep)
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
+    await asyncio.wait_for(
+        manager._run_loop(run), timeout=30.0
+    )  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -522,13 +559,9 @@ async def test_run_loop_retryable_error_accumulates_to_errored(
     assert len(blips) >= 2
 
 
-async def test_run_loop_cancelled_clean_exit(
-    app_with_lifespan: Any, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def test_run_loop_cancelled_clean_exit(app_with_lifespan: Any, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """CancelledError（stop 触发）→ 干净退出、run 不置 errored。"""
-    settings = get_paper_settings().model_copy(
-        update={"live_runner_require_risk_guard": False}
-    )
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
     run = await _insert_run(uuid4())
 
@@ -549,9 +582,7 @@ async def test_run_loop_cancelled_clean_exit(
     assert fresh["status"] == "running"  # 干净退出，不标 errored
 
 
-async def test_done_callback_marks_loop_crashed(
-    app_with_lifespan: Any, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def test_done_callback_marks_loop_crashed(app_with_lifespan: Any, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """_run_loop 自己的错误处理路径写库失败 → done_callback 兜底置 errored（issue #67）。
 
     场景：build 抛不可重试错 → loop 走"立即 errored"写库，但第一次 set_status
@@ -560,9 +591,7 @@ async def test_done_callback_marks_loop_crashed(
     """
     from inalpha_shared.errors import ValidationError
 
-    settings = get_paper_settings().model_copy(
-        update={"live_runner_require_risk_guard": False}
-    )
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
     run = await _insert_run(uuid4())
 
@@ -579,14 +608,14 @@ async def test_done_callback_marks_loop_crashed(
         return await real_set_status(conn, rid, status, **kw)
 
     monkeypatch.setattr(manager, "_build_session", fake_build)
-    monkeypatch.setattr(
-        "inalpha_paper.live_runner.runs_store.set_status", flaky_set_status
-    )
+    monkeypatch.setattr("inalpha_paper.live_runner.runs_store.set_status", flaky_set_status)
 
     manager.start(run)
     task = manager._tasks[run["id"]]
     with pytest.raises(RuntimeError):  # 证明异常确实逃出了 _run_loop
-        await asyncio.wait_for(task, timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
+        await asyncio.wait_for(
+            task, timeout=30.0
+        )  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     # 兜底写库在 done_callback 另起的 task 里：轮询等它落库
     fresh = None
@@ -597,9 +626,7 @@ async def test_done_callback_marks_loop_crashed(
             break
         await asyncio.sleep(0.02)
     assert fresh is not None and fresh["status"] == "errored"
-    assert any(
-        "run loop crashed" in e.get("msg", "") for e in (fresh["run_log"] or [])
-    )
+    assert any("run loop crashed" in e.get("msg", "") for e in (fresh["run_log"] or []))
 
 
 async def test_build_errored_path_survives_log_write_failure(
@@ -609,9 +636,7 @@ async def test_build_errored_path_survives_log_write_failure(
     异常不再逃出 _run_loop 绕 done_callback 兜底（PR review）。"""
     from inalpha_shared.errors import ValidationError
 
-    settings = get_paper_settings().model_copy(
-        update={"live_runner_require_risk_guard": False}
-    )
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
     run = await _insert_run(uuid4())
 
@@ -622,11 +647,11 @@ async def test_build_errored_path_survives_log_write_failure(
         raise RuntimeError("db partial outage: error_log 永远写不进")
 
     monkeypatch.setattr(manager, "_build_session", fake_build)
-    monkeypatch.setattr(
-        "inalpha_paper.live_runner.runs_store.append_error_log", always_fail_append
-    )
+    monkeypatch.setattr("inalpha_paper.live_runner.runs_store.append_error_log", always_fail_append)
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)  # 不抛 = 异常没逃出
+    await asyncio.wait_for(
+        manager._run_loop(run), timeout=30.0
+    )  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)  # 不抛 = 异常没逃出
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -642,18 +667,14 @@ async def test_mark_loop_crashed_sets_errored_even_if_log_write_fails(
     （持续 DB 局部故障），savepoint 隔离保证 set_status 不被连带跳过——否则 run
     又卡回 running，与 #67 同根因。
     """
-    settings = get_paper_settings().model_copy(
-        update={"live_runner_require_risk_guard": False}
-    )
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
     run = await _insert_run(uuid4())
 
     async def always_fail_append(*_a, **_kw):  # type: ignore[no-untyped-def]
         raise RuntimeError("db partial outage: error_log 永远写不进")
 
-    monkeypatch.setattr(
-        "inalpha_paper.live_runner.runs_store.append_error_log", always_fail_append
-    )
+    monkeypatch.setattr("inalpha_paper.live_runner.runs_store.append_error_log", always_fail_append)
 
     await manager._mark_loop_crashed(run["id"], RuntimeError("boom"))
 
@@ -673,21 +694,15 @@ async def test_set_status_only_if_running_guards_terminal_state(
     run = await _insert_run(uuid4())
     async with get_conn() as conn:
         await runs_store.set_status(conn, run["id"], "errored")
-        res = await runs_store.set_status(
-            conn, run["id"], "stopped", only_if_status="running"
-        )
+        res = await runs_store.set_status(conn, run["id"], "stopped", only_if_status="running")
         fresh = await runs_store.get(conn, run["id"])
     assert res is None  # 守卫未命中
     assert fresh["status"] == "errored"  # crash 终态保住了
 
 
-async def test_done_callback_ignores_cancellation(
-    app_with_lifespan: Any, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def test_done_callback_ignores_cancellation(app_with_lifespan: Any, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """stop() 的正常取消路径 → done_callback 不触发 loop_crashed 兜底（issue #67 回归）。"""
-    settings = get_paper_settings().model_copy(
-        update={"live_runner_require_risk_guard": False}
-    )
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
     run = await _insert_run(uuid4())
 
@@ -708,22 +723,20 @@ async def test_done_callback_ignores_cancellation(
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
     assert fresh["status"] == "stopped"
-    assert not any(
-        "run loop crashed" in e.get("msg", "") for e in (fresh["run_log"] or [])
-    )
+    assert not any("run loop crashed" in e.get("msg", "") for e in (fresh["run_log"] or []))
 
 
 async def test_run_loop_build_session_failure_errored(app_with_lifespan: Any) -> None:
     """_build_session 失败（candidate 非法 / 未 promoted）→ run 置 errored。"""
-    settings = get_paper_settings().model_copy(
-        update={"live_runner_require_risk_guard": False}
-    )
+    settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
     # _insert_run 造的 candidate code 非合法 Strategy（裸 STRING 字面量）、status='candidate'
     # → _build_session 加载/审计/契约校验抛错
     run = await _insert_run(uuid4())
 
-    await asyncio.wait_for(manager._run_loop(run), timeout=30.0)  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
+    await asyncio.wait_for(
+        manager._run_loop(run), timeout=30.0
+    )  # 抗负载 flaky：墙钟超时只为抓真 hang，重负载下 2s 太短(#90)
 
     async with get_conn() as conn:
         fresh = await runs_store.get(conn, run["id"])
@@ -731,9 +744,7 @@ async def test_run_loop_build_session_failure_errored(app_with_lifespan: Any) ->
     assert any("build failed" in e.get("msg", "") for e in (fresh["run_log"] or []))
 
 
-async def test_process_bar_not_filled_rejects(
-    app_with_lifespan: Any, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def test_process_bar_not_filled_rejects(app_with_lifespan: Any, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """OrderExecutor 返非 FILLED（如 LIMIT 未成交）→ 落 rejected 决策 + reject_order，不建仓。"""
     from inalpha_paper.storage import positions as positions_store
 
@@ -752,9 +763,13 @@ async def test_process_bar_not_filled_rejects(
 
     def fake_execute(**_kw):  # type: ignore[no-untyped-def]
         return {
-            "client_order_id": unfilled_coid, "status": "REJECTED",
-            "filled_quantity": 0.0, "avg_fill_price": 0.0, "fee": 0.0,
-            "notional": 0.0, "ts_event": datetime.now(UTC),
+            "client_order_id": unfilled_coid,
+            "status": "REJECTED",
+            "filled_quantity": 0.0,
+            "avg_fill_price": 0.0,
+            "fee": 0.0,
+            "notional": 0.0,
+            "ts_event": datetime.now(UTC),
             "rejection_reason": "limit not crossed",
         }
 
@@ -774,7 +789,7 @@ async def test_process_bar_not_filled_rejects(
 
     async with get_conn() as conn:
         orders = await orders_store.list_by_account(conn, account_id)
-        positions = await positions_store.list_by_account(conn, account_id)
+        positions = await positions_store.list_by_account(conn, account_id, run_id=run["id"])
         decisions = await runs_store.list_decisions(conn, run["id"])
     assert len(orders) == 1 and orders[0]["status"] == "REJECTED"
     assert positions == []  # 未成交不建仓
@@ -816,17 +831,38 @@ async def test_compute_run_pnl_from_db_realized_plus_unrealized(
         await accounts_store.get_or_create(conn, account_id)  # base USD
         # 建持仓：BUY 1 @ 100（currency USDT）→ qty=1 avg=100
         await positions_store.apply_fill(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
-            side="BUY", fill_qty=Decimal("1"), fill_price=Decimal("100"),
-            ts_event=datetime.now(UTC), order_id="pnl-open", currency="USDT",
+            conn,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            side="BUY",
+            fill_qty=Decimal("1"),
+            fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC),
+            order_id="pnl-open",
+            currency="USDT",
+            run_id=run["id"],
         )
         # 已实现 50（一笔平仓，close_ts 在 run.started_at 之后）
         await closed_trades_store.insert_close(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", side="long",
-            open_ts=datetime.now(UTC), close_ts=datetime.now(UTC),
-            open_price=Decimal("100"), close_price=Decimal("150"), quantity=Decimal("1"),
-            close_profit_pct=0.5, close_profit_abs=50.0, exit_reason="signal",
-            open_order_id="x", close_order_id="y",
+            conn,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            side="long",
+            open_ts=datetime.now(UTC),
+            close_ts=datetime.now(UTC),
+            open_price=Decimal("100"),
+            close_price=Decimal("150"),
+            quantity=Decimal("1"),
+            close_profit_pct=0.5,
+            close_profit_abs=50.0,
+            exit_reason="signal",
+            open_order_id="x",
+            close_order_id="y",
+        )
+        await wallets_store.apply_delta(
+            conn, account_id, run["id"], Decimal("-50"), currency="USDT"
         )
         await conn.commit()
         run = await runs_store.get(conn, run["id"])
@@ -836,7 +872,7 @@ async def test_compute_run_pnl_from_db_realized_plus_unrealized(
         # 折算在连接上下文外做；这里同 _process_bar 的调用顺序。
         quote_total, currency, base = await manager._read_run_pnl_quote(conn, run, 120.0)
 
-    assert float(quote_total) == pytest.approx(70.0)
+    assert float(quote_total) == pytest.approx(_TEST_CASH + 70.0)
     pnl = await manager._convert_run_pnl_to_base(run, quote_total, currency, base)
     assert pnl is not None
     assert float(pnl) == pytest.approx(70.0)  # USDT→USD 本地 1.0
@@ -856,33 +892,74 @@ async def test_compute_run_pnl_deducts_fees(app_with_lifespan: Any) -> None:
         await accounts_store.get_or_create(conn, account_id)  # base USD
         # 持仓 BUY 1 @ 100 → mark=120 未实现 20；一笔平仓已实现 50 → 毛 = 70
         await positions_store.apply_fill(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
-            side="BUY", fill_qty=Decimal("1"), fill_price=Decimal("100"),
-            ts_event=datetime.now(UTC), order_id="fee-open", currency="USDT",
+            conn,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            side="BUY",
+            fill_qty=Decimal("1"),
+            fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC),
+            order_id="fee-open",
+            currency="USDT",
+            run_id=run["id"],
         )
         await closed_trades_store.insert_close(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", side="long",
-            open_ts=datetime.now(UTC), close_ts=datetime.now(UTC),
-            open_price=Decimal("100"), close_price=Decimal("150"), quantity=Decimal("1"),
-            close_profit_pct=0.5, close_profit_abs=50.0, exit_reason="signal",
-            open_order_id="x", close_order_id="y",
+            conn,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            side="long",
+            open_ts=datetime.now(UTC),
+            close_ts=datetime.now(UTC),
+            open_price=Decimal("100"),
+            close_price=Decimal("150"),
+            quantity=Decimal("1"),
+            close_profit_pct=0.5,
+            close_profit_abs=50.0,
+            exit_reason="signal",
+            open_order_id="x",
+            close_order_id="y",
         )
         # 两笔 FILLED 单手续费合计 5 → 净 = 70 - 5 = 65
         for oid, fee in (("fee-1", Decimal("2")), ("fee-2", Decimal("3"))):
             await orders_store.insert(
-                conn, account_id=account_id, client_order_id=f"{oid}-{account_id}",
-                venue="binance", symbol="BTC/USDT", side="BUY", order_type="MARKET",
-                quantity=Decimal("1"), price=None, status="FILLED",
-                filled_quantity=Decimal("1"), avg_fill_price=Decimal("100"),
-                fee=fee, notional=Decimal("100"), ts_event=datetime.now(UTC),
+                conn,
+                account_id=account_id,
+                client_order_id=f"{oid}-{account_id}",
+                venue="binance",
+                symbol="BTC/USDT",
+                side="BUY",
+                order_type="MARKET",
+                quantity=Decimal("1"),
+                price=None,
+                status="FILLED",
+                filled_quantity=Decimal("1"),
+                avg_fill_price=Decimal("100"),
+                fee=fee,
+                notional=Decimal("100"),
+                ts_event=datetime.now(UTC),
             )
         # REJECTED 单 fee=9 不应计入（sum_fees 只统计 status='FILLED'）
         await orders_store.insert(
-            conn, account_id=account_id, client_order_id=f"rej-1-{account_id}",
-            venue="binance", symbol="BTC/USDT", side="BUY", order_type="LIMIT",
-            quantity=Decimal("1"), price=Decimal("1"), status="REJECTED",
-            filled_quantity=Decimal("0"), avg_fill_price=None,
-            fee=Decimal("9"), notional=Decimal("0"), ts_event=datetime.now(UTC),
+            conn,
+            account_id=account_id,
+            client_order_id=f"rej-1-{account_id}",
+            venue="binance",
+            symbol="BTC/USDT",
+            side="BUY",
+            order_type="LIMIT",
+            quantity=Decimal("1"),
+            price=Decimal("1"),
+            status="REJECTED",
+            filled_quantity=Decimal("0"),
+            avg_fill_price=None,
+            fee=Decimal("9"),
+            notional=Decimal("0"),
+            ts_event=datetime.now(UTC),
+        )
+        await wallets_store.apply_delta(
+            conn, account_id, run["id"], Decimal("-55"), currency="USDT"
         )
         await conn.commit()
         run = await runs_store.get(conn, run["id"])
@@ -890,7 +967,7 @@ async def test_compute_run_pnl_deducts_fees(app_with_lifespan: Any) -> None:
         quote_total, _currency, _base = await manager._read_run_pnl_quote(conn, run, 120.0)
 
     # 毛 70 - FILLED 手续费 5 = 净 65；REJECTED 的 9 被过滤掉
-    assert float(quote_total) == pytest.approx(65.0)
+    assert float(quote_total) == pytest.approx(_TEST_CASH + 65.0)
 
 
 async def test_ttl_exceeded_stops_run(app_with_lifespan: Any) -> None:
@@ -937,9 +1014,7 @@ async def _noop_sleep(*_a: Any, **_kw: Any) -> None:
     """monkeypatch asyncio.sleep：build 退避测试里跳过真等待。"""
 
 
-async def test_build_non_retryable_errors_immediately(
-    app_with_lifespan: Any, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def test_build_non_retryable_errors_immediately(app_with_lifespan: Any, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """build 抛不可重试错（策略代码 RuntimeError）→ 立即 errored，error_log 带 code=strategy_error（#41）。"""
     settings = get_paper_settings().model_copy(update={"live_runner_require_risk_guard": False})
     manager = LiveRunnerManager(risk_guard_factory=None, settings=settings)
@@ -957,9 +1032,7 @@ async def test_build_non_retryable_errors_immediately(
     assert any(e.get("code") == "strategy_error" for e in (fresh["run_log"] or []))
 
 
-async def test_build_retryable_backs_off_then_errored(
-    app_with_lifespan: Any, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def test_build_retryable_backs_off_then_errored(app_with_lifespan: Any, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """build 可重试错（data 不可达 502）→ 退避攒 streak 到上限 → errored，code=infra_unavailable（#41）。"""
     from inalpha_paper.data_client import DataServiceError
 
@@ -993,19 +1066,25 @@ async def test_restore_position_from_db_brings_session_to_position(
     """resume 桥接（issue #37.2）：_restore_position 从 DB 读持仓 → 灌回 session。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     account_id = uuid4()
+    run = await _insert_run(account_id)
     async with get_conn() as conn:
         await positions_store.apply_fill(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
-            side="BUY", fill_qty=Decimal("2"), fill_price=Decimal("100"),
-            ts_event=datetime.now(UTC), order_id="restore-open", currency="USDT",
+            conn,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            side="BUY",
+            fill_qty=Decimal("2"),
+            fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC),
+            order_id="restore-open",
+            currency="USDT",
+            run_id=run["id"],
         )
         await conn.commit()
 
     session = _make_session()  # 起始空仓
-    run = {
-        "id": uuid4(), "account_id": account_id, "venue": "binance",
-        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
-    }
+
     await manager._restore_position(session, run)
 
     pos = session.portfolio.position(_INSTRUMENT)
@@ -1046,10 +1125,10 @@ async def test_restore_backfills_net_realized_to_session_wallet(
 async def test_convert_run_pnl_zero_short_circuits_no_network() -> None:
     """total_quote=0 → 直接返 Decimal(0)，不打 /fx（非 USD 币种也不需网络）。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
-    run = {"id": uuid4(), "account_id": uuid4()}
+    run = {"id": uuid4(), "account_id": uuid4(), "allocation": 10000}
     # EUR→USD 本需网络；若没短路会构造 DataClient 打 HTTP。0 应直接短路返 0。
     pnl = await manager._convert_run_pnl_to_base(run, Decimal(0), "EUR", "USD")
-    assert pnl == Decimal(0)
+    assert pnl == Decimal(-10000)
 
 
 async def test_restore_position_from_db_short_position(app_with_lifespan: Any) -> None:
@@ -1060,25 +1139,35 @@ async def test_restore_position_from_db_short_position(app_with_lifespan: Any) -
     """
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
     account_id = uuid4()
+    run = await _insert_run(account_id)
     async with get_conn() as conn:
         # SELL 2 @ 100 从空仓开空 → 有符号 qty = -2（storage 层纯有符号累积，不挡裸 short）
         row, _close = await positions_store.apply_fill(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
-            side="SELL", fill_qty=Decimal("2"), fill_price=Decimal("100"),
-            ts_event=datetime.now(UTC), order_id="restore-short-open", currency="USDT",
+            conn,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            side="SELL",
+            fill_qty=Decimal("2"),
+            fill_price=Decimal("100"),
+            ts_event=datetime.now(UTC),
+            order_id="restore-short-open",
+            currency="USDT",
+            run_id=run["id"],
         )
         await conn.commit()
     assert float(row["quantity"]) == -2.0  # DB 确实是空头
 
     # 用持仓追踪策略，验证策略视图也被 prime 成 short（on_position_opened 收到负 qty）
     session = LiveEngineSession(
-        strategy_cls=_PosTrackStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
-        params={}, initial_cash=10_000.0, fee_rate=0.001,
+        strategy_cls=_PosTrackStrategy,
+        instrument_id=_INSTRUMENT,
+        timeframe="1h",
+        params={},
+        initial_cash=10_000.0,
+        fee_rate=0.001,
     )
-    run = {
-        "id": uuid4(), "account_id": account_id, "venue": "binance",
-        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
-    }
+
     await manager._restore_position(session, run)
 
     pos = session.portfolio.position(_INSTRUMENT)
@@ -1090,11 +1179,10 @@ async def test_restore_position_from_db_short_position(app_with_lifespan: Any) -
 async def test_restore_position_skips_when_flat(app_with_lifespan: Any) -> None:
     """无持仓（DB 无该 symbol 行）→ _restore_position no-op，session 保持空仓。"""
     manager = LiveRunnerManager(risk_guard_factory=None, settings=get_paper_settings())
+    account_id = uuid4()
+    run = await _insert_run(account_id)
     session = _make_session()
-    run = {
-        "id": uuid4(), "account_id": uuid4(), "venue": "binance",
-        "symbol": "BTC/USDT", "last_bar_ts": datetime.now(UTC),
-    }
+
     await manager._restore_position(session, run)
     pos = session.portfolio.position(_INSTRUMENT)
     assert pos is None or pos.is_flat
@@ -1148,8 +1236,12 @@ class _SellOnceStrategy(Strategy):
 
 def _sell_session(sell_qty: float) -> LiveEngineSession:
     return LiveEngineSession(
-        strategy_cls=_SellOnceStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
-        params={"sell_qty": sell_qty}, initial_cash=10_000.0, fee_rate=0.001,
+        strategy_cls=_SellOnceStrategy,
+        instrument_id=_INSTRUMENT,
+        timeframe="1h",
+        params={"sell_qty": sell_qty},
+        initial_cash=10_000.0,
+        fee_rate=0.001,
     )
 
 
@@ -1167,7 +1259,7 @@ async def test_process_bar_naked_short_rejected(app_with_lifespan: Any) -> None:
 
     async with get_conn() as conn:
         orders = await orders_store.list_by_account(conn, account_id)
-        positions = await positions_store.list_by_account(conn, account_id)
+        positions = await positions_store.list_by_account(conn, account_id, run_id=run["id"])
         decisions = await runs_store.list_decisions(conn, run["id"])
         run_fresh = await runs_store.get(conn, run["id"])
 
@@ -1204,7 +1296,7 @@ async def test_process_bar_oversell_no_flip_to_short(app_with_lifespan: Any) -> 
 
     async with get_conn() as conn:
         pos = await positions_store.get(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT"
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", run_id=run["id"]
         )
     assert pos is not None
     assert Decimal(str(pos["quantity"])) == Decimal("1.0")  # 维持多仓，未翻空
@@ -1249,8 +1341,12 @@ class _ProtectiveSellStrategy(Strategy):
 
 def _protective_sell_session(sell_qty: float) -> LiveEngineSession:
     return LiveEngineSession(
-        strategy_cls=_ProtectiveSellStrategy, instrument_id=_INSTRUMENT, timeframe="1h",
-        params={"sell_qty": sell_qty}, initial_cash=10_000.0, fee_rate=0.001,
+        strategy_cls=_ProtectiveSellStrategy,
+        instrument_id=_INSTRUMENT,
+        timeframe="1h",
+        params={"sell_qty": sell_qty},
+        initial_cash=10_000.0,
+        fee_rate=0.001,
     )
 
 
@@ -1282,7 +1378,7 @@ async def test_protective_exit_clamps_to_position_on_divergence(
 
     async with get_conn() as conn:
         pos = await positions_store.get(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT"
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", run_id=run["id"]
         )
         orders = await orders_store.list_by_account(conn, account_id)
         decisions = await runs_store.list_decisions(conn, run["id"])
@@ -1293,7 +1389,8 @@ async def test_protective_exit_clamps_to_position_on_divergence(
     assert Decimal(str(pos["quantity"])) == Decimal("0")
     # 保护性出场单（bar3 收盘 49000 撮合）按钳后量 0.5 落账、成交
     guard_filled = [
-        o for o in orders
+        o
+        for o in orders
         if o["side"] == "SELL"
         and o["status"] == "FILLED"
         and Decimal(str(o["avg_fill_price"])) == Decimal("49000")
@@ -1334,7 +1431,7 @@ async def test_protective_exit_on_flat_position_still_rejected(
 
     async with get_conn() as conn:
         pos = await positions_store.get(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT"
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", run_id=run["id"]
         )
         decisions = await runs_store.list_decisions(conn, run["id"])
         run_fresh = await runs_store.get(conn, run["id"])
@@ -1366,9 +1463,17 @@ async def test_protective_exit_clamp_preserves_high_precision(
     async with get_conn() as conn, conn.transaction():
         await accounts_store.get_or_create(conn, account_id)
         await apply_fill_to_positions_and_cash(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT",
-            side="BUY", quantity=hi_qty, fill_price=Decimal("100"),
-            fee=Decimal("0"), ts_event=seed_ts, order_id="seed-hiprec",
+            conn,
+            account_id=account_id,
+            venue="binance",
+            symbol="BTC/USDT",
+            side="BUY",
+            quantity=hi_qty,
+            fill_price=Decimal("100"),
+            fee=Decimal("0"),
+            ts_event=seed_ts,
+            order_id="seed-hiprec",
+            run_id=run["id"],
         )
 
     # 保护性出场 SELL 2.0（> hi_qty）→ 钳到 hi_qty 全平
@@ -1378,7 +1483,7 @@ async def test_protective_exit_clamp_preserves_high_precision(
 
     async with get_conn() as conn:
         pos = await positions_store.get(
-            conn, account_id=account_id, venue="binance", symbol="BTC/USDT"
+            conn, account_id=account_id, venue="binance", symbol="BTC/USDT", run_id=run["id"]
         )
     # 精确归零：钳量走 Decimal(locked_qty)，无 float 往返微尘（旧 float 往返会留 ≠0 残差）
     assert pos is not None

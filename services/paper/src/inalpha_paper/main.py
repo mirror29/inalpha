@@ -2,6 +2,7 @@
 
 启动：``uvicorn inalpha_paper.main:app --port 8002``
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,6 +45,7 @@ from .execution.risk_rules.market_calendar import RoutingCalendar
 from .factor_patrol import FactorPatrol
 from .live_runner import LiveRunnerManager
 from .storage import strategy_runs as runs_store
+from .wallet_accounting import FundingWorker
 
 _settings = get_paper_settings()
 configure_logging(level=_settings.log_level, service_name=_settings.service_name)
@@ -81,8 +83,7 @@ async def _build_risk_guard_factory(pool: object) -> RiskGuardFactory | None:
     cfg_path = _resolve_config_path()
     if cfg_path is None:
         _logger.error(
-            "RiskGuardFactory: risk_rules.toml 未找到 (path=%s) — fail-open，"
-            "HTTP 下单不过风控",
+            "RiskGuardFactory: risk_rules.toml 未找到 (path=%s) — fail-open，HTTP 下单不过风控",
             _settings.risk_rules_config_path,
         )
         return None
@@ -139,6 +140,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         risk_guard_factory=app.state.risk_guard_factory,
         settings=_settings,
     )
+    app.state.funding_worker = FundingWorker(_settings)
+    if _settings.paper_funding_enabled:
+        app.state.funding_worker.start()
     app.state.evolution_forward_manager = EvolutionForwardManager(_settings)
     app.state.evolution_forward_manager.start()
     # D-12 因子衰减巡检（ADR-0047）：独立 task，失败只跳过本轮、绝不影响交易循环
@@ -164,6 +168,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await app.state.funding_worker.close()
         await app.state.evolution_forward_manager.close()
         await app.state.factor_patrol.stop()
         await app.state.live_runner_manager.stop_all()
