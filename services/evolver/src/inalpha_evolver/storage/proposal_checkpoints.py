@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
+from psycopg.types.json import Jsonb
 
 from ..hypothesis.models import HypothesisSpec
 from . import campaigns
@@ -27,6 +28,7 @@ async def get_proposal(
 async def commit_proposal(
     conn: AsyncConnection, *, campaign_id: UUID, generation: int,
     hypotheses: list[HypothesisSpec], lease_token: UUID, cost_usd: float, fallback_calls: int,
+    diagnostics: tuple[dict[str, Any], ...] = (),
 ) -> bool:
     """Replace scaffolds and book cost exactly once; an expired worker cannot commit."""
     if not math.isfinite(cost_usd) or cost_usd < 0 or len(hypotheses) != 8:
@@ -61,10 +63,11 @@ AND lease_expires_at>=clock_timestamp() FOR UPDATE""",
         await campaigns.add_llm_cost(conn, campaign_id, cost_usd, lease_token)
         cursor = await conn.execute(
             """INSERT INTO evolution_proposal_checkpoints(
-campaign_id,generation,content_sha256,cost_usd,fallback_calls)
-SELECT %s,%s,%s,%s,%s FROM evolution_campaigns
+campaign_id,generation,content_sha256,cost_usd,fallback_calls,diagnostics)
+SELECT %s,%s,%s,%s,%s,%s FROM evolution_campaigns
 WHERE campaign_id=%s AND lease_token=%s AND lease_expires_at>=clock_timestamp()""",
-            (campaign_id, generation, digest, cost_usd, fallback_calls, campaign_id, lease_token),
+            (campaign_id, generation, digest, cost_usd, fallback_calls,
+             Jsonb(list(diagnostics)), campaign_id, lease_token),
         )
         if cursor.rowcount != 1:
             raise RuntimeError("campaign proposal lease expired before commit")

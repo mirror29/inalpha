@@ -266,6 +266,7 @@ async def _execute_campaign(
                     conn, campaign_id=campaign["campaign_id"], generation=generation,
                     hypotheses=hypotheses, lease_token=lease_token,
                     cost_usd=proposed.cost_usd, fallback_calls=proposed.fallback_calls,
+                    diagnostics=getattr(proposed, "diagnostics", ()),
                 )
         scores = await _evaluate_generation(
             campaign=current,
