@@ -41,3 +41,21 @@ uv run pytest                       # 默认 fake LLM，不产生调用费用
 ```
 
 真实模型测试会产生费用，只应在显式设置 provider/key 并主动运行 integration 标记时执行。
+
+## 事件事实抽取
+
+`POST /event-facts/extract` 通过 Data 服务读取归档并追加事实，要求用途为
+`event_extract_request` 的 Research service token；这条确定性链路不调用 LLM。
+后台 worker 由 `EVENT_EXTRACTION_ENABLED` 控制，启用前应先核对来源与覆盖。
+
+`deterministic-event-extractor-v2` 保留结构化币种字段，补充 Bitcoin、Ethereum、Solana、
+Cardano、Dogecoin、Polkadot、Chainlink 与 Binance Coin 的全称识别；文本中的 ticker
+要求明确大写，避免将普通 `link` / `dot` 误认成资产。Bitcoin Cash / SV / Gold 与
+Ethereum Classic 不映射到 BTC / ETH。资产被提及只表示报道关联，不代表事件发生在该资产上。
+
+- 新版本用于新归档，不覆盖已有事实或不可变快照。旧事实修订仍须满足 Data 的版本与
+  `available_at` 约束；不能将重新抽取的结果回填成过去已知的信息。
+- 新闻策略 `first-seen-only-v1` 使用实际接收时间；发布时间不是系统当时已知的证据。
+- 真实来源验证要按 `(source, source_event_id)` 去重，统计原文版本数与独立原文数；开发库
+  的测试事实不能用于证明真实事件覆盖。快照 `coverage.complete` 也不代表统计样本充分。
+- 下一步与实际验证记录集中维护在 [当前状态文档](../../docs/04-current-state.md#未完成--下一步)。
