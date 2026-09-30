@@ -6,6 +6,14 @@ Repo: mirror29/inalpha
 Status: IMPLEMENTED IN MAIN (PR #159, 2026-08-25); deployment evidence tracked separately
 Mode: Builder
 
+> **现行状态核对（2026-09-30）**：本文是 2026-08-18 的关闭门设计记录，以下 E2 范围、
+> 待合并工作与执行次序保留为历史，不作为当前路线图。E1 冻结配置/定价、owner 密钥兑换
+> grant 与费用审计已在代码中落地；E2 已扩展为事件共演化及持久化 EvolutionLoop，见
+> [`e2-event-evolution-loop.md`](./e2-event-evolution-loop.md)。E1 每次新计费 run 仍需显式
+> 授权；E2 一次明确启动授权覆盖预算内自动迭代，最终采用仍需手动执行。代码和自动化测试
+> 不等于生产式成功候选证据；当前验证优先级以
+> [`04-current-state.md`](../04-current-state.md) 的“未完成 / 下一步”为准。
+
 ## Problem Statement
 
 E1 已验证真实异步状态机、失败路径、显式审批、幂等、owner 隔离和 Dashboard，但尚未在生产式环境产出一个成功候选。本地 Binance 上游不可达，当前分支还有 121 个文件差异，未经过完整代码审查、PR CI 和镜像实构建。此时进入 E2 会把基础链路问题和多代算法问题混在一起。
