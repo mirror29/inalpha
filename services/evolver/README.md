@@ -156,6 +156,21 @@ uv run ruff check .
 uv run pytest
 ```
 
+### 独立测试库验证持久化闭环
+
+从 `services/evolver` 执行：
+
+```bash
+uv run python scripts/validate_durable_loop.py
+uv run python scripts/validate_durable_loop.py --include-five-generations --evaluation-concurrency 4
+```
+
+脚本只接受本机 PostgreSQL 连接，使用 `DATABASE_URL`（环境变量优先，其次根 `.env`）
+创建随机命名的空测试库，迁移后运行恢复、重复请求、租约 fencing、阶段交接和预算测试，
+最后删除本次创建的测试库。数据库用户须有创建数据库权限；不会清空开发库或重启现有服务。
+日志与 JUnit 结果保存在根 `.tmp/loop-validation/`。五代检查使用真实评估引擎与合成数据，
+外部模型为离线替身，不产生 LLM 费用；它仍不能代替真实市场事件、付费模型或 Forward 验收。
+
 仓库级开发推荐直接运行 `bash scripts/dev.sh`。要在本地试用 E2，在根 `.env` 设置
 `EVENT_EVOLUTION_ENABLED=true`，并先导入历史事件，或同时启用 `EVENT_ARCHIVE_ENABLED=true`
 与 `EVENT_EXTRACTION_ENABLED=true`。重启服务后，登录并在策略、
