@@ -2,6 +2,7 @@
 
 stub ``manager.start`` 为 no-op，避免真起后台 task 打网络；只验 API/DB 契约。
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -85,7 +86,12 @@ async def test_start_requires_promoted_candidate(
     r = client.post(
         "/strategy_runs",
         headers=_headers(client),
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+        },
     )
     assert r.status_code == 422
     assert r.json()["code"] == "CANDIDATE_NOT_PROMOTED"
@@ -112,24 +118,34 @@ async def test_start_perp_on_non_crypto_rejected(
     r = client.post(
         "/strategy_runs",
         headers=_headers(client),
-        json={"candidate_id": str(cid), "venue": "yfinance", "symbol": "AAPL",
-              "timeframe": "1h", "trading_mode": "perp", "leverage": 2},
+        json={
+            "candidate_id": str(cid),
+            "venue": "yfinance",
+            "symbol": "AAPL",
+            "timeframe": "1h",
+            "trading_mode": "perp",
+            "leverage": 2,
+        },
     )
     assert r.status_code == 422
     assert r.json()["code"] == "PERP_NOT_ELIGIBLE"
 
 
-async def test_start_perp_eligible_carries_mode(
-    client: TestClient, app_with_lifespan: Any
-) -> None:
+async def test_start_perp_eligible_carries_mode(client: TestClient, app_with_lifespan: Any) -> None:
     """crypto 永续 perp run → 200,响应带 trading_mode=perp/leverage,且透传给 manager。"""
     started = _stub_manager_async(app_with_lifespan)
     cid = await _make_promoted_candidate()
     r = client.post(
         "/strategy_runs",
         headers=_headers(client),
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT:USDT",
-              "timeframe": "1h", "trading_mode": "perp", "leverage": 5},
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT:USDT",
+            "timeframe": "1h",
+            "trading_mode": "perp",
+            "leverage": 5,
+        },
     )
     assert r.status_code == 200, r.json()
     body = r.json()
@@ -151,8 +167,14 @@ async def test_start_perp_long_only_strategy_warns(
     r = client.post(
         "/strategy_runs",
         headers=_headers(client),
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT:USDT",
-              "timeframe": "1h", "trading_mode": "perp", "leverage": 3},
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT:USDT",
+            "timeframe": "1h",
+            "trading_mode": "perp",
+            "leverage": 3,
+        },
     )
     assert r.status_code == 200, r.json()
     async with get_conn() as conn:
@@ -170,12 +192,12 @@ async def test_start_requires_venue(client: TestClient, app_with_lifespan: Any) 
         headers=_headers(client),
         json={"candidate_id": str(cid), "symbol": "BTC/USDT", "timeframe": "1h"},  # 无 venue
     )
-    assert r.status_code == 400  # 请求体校验失败（本服务把 pydantic 校验映射成 400），不是 binance 静默兜底
+    assert (
+        r.status_code == 400
+    )  # 请求体校验失败（本服务把 pydantic 校验映射成 400），不是 binance 静默兜底
 
 
-async def test_start_happy_path_and_duplicate(
-    client: TestClient, app_with_lifespan: Any
-) -> None:
+async def test_start_happy_path_and_duplicate(client: TestClient, app_with_lifespan: Any) -> None:
     started = _stub_manager(app_with_lifespan)
     cid = await _make_promoted_candidate()
     headers = _headers(client)
@@ -183,7 +205,12 @@ async def test_start_happy_path_and_duplicate(
     r = client.post(
         "/strategy_runs",
         headers=headers,
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+        },
     )
     assert r.status_code == 200, r.json()
     body = r.json()
@@ -198,14 +225,19 @@ async def test_start_happy_path_and_duplicate(
     r2 = client.post(
         "/strategy_runs",
         headers=headers,
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "ETH/USDT",
-              "timeframe": "1h", "allocation": 1_000.0},
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "ETH/USDT",
+            "timeframe": "1h",
+            "allocation": 1_000.0,
+        },
     )
     assert r2.status_code == 409
     assert r2.json()["code"] == "STRATEGY_RUN_ALREADY_RUNNING"
 
 
-async def test_same_symbol_second_run_conflict(
+async def test_same_symbol_independent_runs_allowed(
     client: TestClient, app_with_lifespan: Any
 ) -> None:
     """同账户同 (venue, symbol) 第二个 run → 409 SYMBOL_RUN_CONFLICT(issue #108)。
@@ -216,26 +248,47 @@ async def test_same_symbol_second_run_conflict(
     headers = _headers(client)
     cid1 = await _make_promoted_candidate()
     r1 = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid1), "venue": "binance", "symbol": "SOL/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid1),
+            "venue": "binance",
+            "symbol": "SOL/USDT",
+            "timeframe": "1h",
+            "allocation": 2000,
+        },
     )
     assert r1.status_code == 200, r1.json()
 
     # 不同 candidate、同 venue+symbol → 被同标的守门拒
     cid2 = await _make_promoted_candidate()
     r2 = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid2), "venue": "binance", "symbol": "SOL/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid2),
+            "venue": "binance",
+            "symbol": "SOL/USDT",
+            "timeframe": "1h",
+            "allocation": 2000,
+        },
     )
-    assert r2.status_code == 409, r2.json()
-    assert r2.json()["code"] == "SYMBOL_RUN_CONFLICT"
+    assert r2.status_code == 200, r2.json()
+    assert r2.json()["id"] != r1.json()["id"]
 
     # 换 symbol 即可正常 start(守门只按标的,不锁账户)。显式 allocation:首个 run
     # 已把默认未分配额度(1 万)占满,自动额度会 422(见 allocation 扣减测试)。
+    cid3 = await _make_promoted_candidate()
     r3 = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid2), "venue": "binance", "symbol": "ETH/USDT",
-              "timeframe": "1h", "allocation": 2_000.0},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid3),
+            "venue": "binance",
+            "symbol": "ETH/USDT",
+            "timeframe": "1h",
+            "allocation": 2_000.0,
+        },
     )
     assert r3.status_code == 200, r3.json()
 
@@ -252,40 +305,62 @@ async def test_auto_allocation_deducts_running_runs(
     headers = _headers(client)
     cid1 = await _make_promoted_candidate()
     r1 = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid1), "venue": "binance", "symbol": "BTC/USDT",
-              "timeframe": "1h", "allocation": 4_000.0},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid1),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+            "allocation": 4_000.0,
+        },
     )
     assert r1.status_code == 200, r1.json()
 
     cid2 = await _make_promoted_candidate()
     r2 = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid2), "venue": "binance", "symbol": "ETH/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid2),
+            "venue": "binance",
+            "symbol": "ETH/USDT",
+            "timeframe": "1h",
+        },
     )
     assert r2.status_code == 200, r2.json()
     assert r2.json()["allocation"] == pytest.approx(6_000.0)
 
     cid3 = await _make_promoted_candidate()
     r3 = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid3), "venue": "binance", "symbol": "SOL/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid3),
+            "venue": "binance",
+            "symbol": "SOL/USDT",
+            "timeframe": "1h",
+        },
     )
     assert r3.status_code == 422, r3.json()
     assert r3.json()["code"] == "INSUFFICIENT_CASH_FOR_RUN"
-    assert float(r3.json()["details"]["already_allocated"]) == pytest.approx(10_000.0)
+    assert r3.json()["message"] == "No available main-account cash"
 
 
-async def test_explicit_allocation_recorded(
-    client: TestClient, app_with_lifespan: Any
-) -> None:
+async def test_explicit_allocation_recorded(client: TestClient, app_with_lifespan: Any) -> None:
     """显式 allocation 原样落库回显(可大于账户可用——下单时账户级硬底会拒单,start 不拦)。"""
     started = _stub_manager(app_with_lifespan)
     cid = await _make_promoted_candidate()
     r = client.post(
-        "/strategy_runs", headers=_headers(client),
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT",
-              "timeframe": "1h", "allocation": 2_500.0},
+        "/strategy_runs",
+        headers=_headers(client),
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+            "allocation": 2_500.0,
+        },
     )
     assert r.status_code == 200, r.json()
     assert r.json()["allocation"] == 2_500.0
@@ -303,18 +378,27 @@ async def test_list_invalid_status_rejected(client: TestClient, app_with_lifespa
 
 async def test_stop_and_list(client: TestClient, app_with_lifespan: Any) -> None:
     _stub_manager(app_with_lifespan)
+
     # stop 用 manager.stop —— 也 stub 掉（只改 DB 状态）
     async def _fake_stop(run_id: UUID) -> None:
         async with get_conn() as conn:
             from inalpha_paper.storage import strategy_runs as runs_store
+
             await runs_store.set_status(conn, run_id, "stopped")
+
     app_with_lifespan.state.live_runner_manager.stop = _fake_stop
 
     cid = await _make_promoted_candidate()
     headers = _headers(client)
     run = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+        },
     ).json()
 
     # list 能看到 running
@@ -332,8 +416,14 @@ async def test_list_decisions_and_ownership(client: TestClient, app_with_lifespa
     cid = await _make_promoted_candidate()
     headers = _headers(client)
     run = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+        },
     ).json()
 
     # 直接落库并固定 created_at，验证 API 返回最新决策且 limit 截取最新窗口。
@@ -345,10 +435,17 @@ async def test_list_decisions_and_ownership(client: TestClient, app_with_lifespa
     async with get_conn() as conn:
         for order_id, created_at in decision_times:
             await runs_store.insert_decision(
-                conn, run_id=UUID(run["id"]), bar_ts=created_at,
-                bar_close=Decimal("50000"), side="BUY", quantity=Decimal("0.01"),
-                order_type="MARKET", outcome="filled", fill_price=Decimal("50000"),
-                fee=Decimal("0.5"), order_id=order_id,
+                conn,
+                run_id=UUID(run["id"]),
+                bar_ts=created_at,
+                bar_close=Decimal("50000"),
+                side="BUY",
+                quantity=Decimal("0.01"),
+                order_type="MARKET",
+                outcome="filled",
+                fill_price=Decimal("50000"),
+                fee=Decimal("0.5"),
+                order_id=order_id,
             )
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -367,9 +464,7 @@ async def test_list_decisions_and_ownership(client: TestClient, app_with_lifespa
     assert body[0]["outcome"] == "filled"
     assert body[0]["side"] == "BUY"
 
-    latest = client.get(
-        f"/strategy_runs/{run['id']}/decisions?limit=2", headers=headers
-    )
+    latest = client.get(f"/strategy_runs/{run['id']}/decisions?limit=2", headers=headers)
     assert latest.status_code == 200, latest.json()
     assert [decision["order_id"] for decision in latest.json()] == ["ord-new", "ord-mid"]
 
@@ -383,8 +478,14 @@ async def test_stop_other_account_run_404(client: TestClient, app_with_lifespan:
     _stub_manager(app_with_lifespan)
     cid = await _make_promoted_candidate()
     run = client.post(
-        "/strategy_runs", headers=_headers(client),
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=_headers(client),
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+        },
     ).json()
     # 另一个用户来 stop
     r = client.post(f"/strategy_runs/{run['id']}/stop", headers=_headers(client))
@@ -400,8 +501,14 @@ async def test_start_other_account_candidate_forbidden(
     cid = await _make_promoted_candidate(owner_account_id=account_id_from_sub(owner_sub))
     # 另一个账户（_headers 每次新 token）来 start
     r = client.post(
-        "/strategy_runs", headers=_headers(client),
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=_headers(client),
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+        },
     )
     assert r.status_code == 403
     assert r.json()["code"] == "CANDIDATE_NOT_OWNED"
@@ -413,22 +520,32 @@ async def test_start_own_candidate_ok(client: TestClient, app_with_lifespan: Any
     sub, token = fresh_account_token("owner")
     cid = await _make_promoted_candidate(owner_account_id=account_id_from_sub(sub))
     r = client.post(
-        "/strategy_runs", headers={"Authorization": f"Bearer {token}"},
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+        },
     )
     assert r.status_code == 200, r.json()
     assert len(started) == 1
 
 
-async def test_start_legacy_null_owner_allowed(
-    client: TestClient, app_with_lifespan: Any
-) -> None:
+async def test_start_legacy_null_owner_allowed(client: TestClient, app_with_lifespan: Any) -> None:
     """pre-migration 老数据 owner_account_id=NULL → 放行（有界 fail-open，issue #36.1）。"""
     _stub_manager(app_with_lifespan)
     cid = await _make_promoted_candidate()  # 不传 owner → NULL
     r = client.post(
-        "/strategy_runs", headers=_headers(client),
-        json={"candidate_id": str(cid), "venue": "binance", "symbol": "BTC/USDT", "timeframe": "1h"},
+        "/strategy_runs",
+        headers=_headers(client),
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+        },
     )
     assert r.status_code == 200, r.json()
 
@@ -440,9 +557,7 @@ async def test_per_account_run_cap(client: TestClient, app_with_lifespan: Any) -
     acct = account_id_from_sub(sub)
     headers = {"Authorization": f"Bearer {token}"}
     # 把上限压到 2（dependency override，函数级 fixture 不泄漏）
-    small = get_paper_settings().model_copy(
-        update={"live_max_running_runs_per_account": 2}
-    )
+    small = get_paper_settings().model_copy(update={"live_max_running_runs_per_account": 2})
     app_with_lifespan.dependency_overrides[get_paper_settings] = lambda: small
 
     # 起满 2 个（不同 candidate + 不同 symbol 避开同标的守门;显式 allocation 避开
@@ -450,18 +565,74 @@ async def test_per_account_run_cap(client: TestClient, app_with_lifespan: Any) -
     for symbol in ("BTC/USDT", "ETH/USDT"):
         cid = await _make_promoted_candidate(owner_account_id=acct)
         r = client.post(
-            "/strategy_runs", headers=headers,
-            json={"candidate_id": str(cid), "venue": "binance", "symbol": symbol,
-                  "timeframe": "1h", "allocation": 3_000.0},
+            "/strategy_runs",
+            headers=headers,
+            json={
+                "candidate_id": str(cid),
+                "venue": "binance",
+                "symbol": symbol,
+                "timeframe": "1h",
+                "allocation": 3_000.0,
+            },
         )
         assert r.status_code == 200, r.json()
 
     # 第 3 个 → 429
     cid3 = await _make_promoted_candidate(owner_account_id=acct)
     r = client.post(
-        "/strategy_runs", headers=headers,
-        json={"candidate_id": str(cid3), "venue": "binance", "symbol": "SOL/USDT",
-              "timeframe": "1h", "allocation": 3_000.0},
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid3),
+            "venue": "binance",
+            "symbol": "SOL/USDT",
+            "timeframe": "1h",
+            "allocation": 3_000.0,
+        },
     )
     assert r.status_code == 429
     assert r.json()["code"] == "TOO_MANY_RUNNING_RUNS"
+
+
+async def test_resume_preserves_book_without_reallocating_and_rejects_released(
+    client: TestClient, app_with_lifespan: Any
+) -> None:
+    from inalpha_paper.account_id import account_id_from_sub
+    from inalpha_paper.storage import accounts, run_wallets
+
+    from .conftest import fresh_account_token
+
+    sub, token = fresh_account_token("resume")
+    owner = account_id_from_sub(sub)
+    headers = {"Authorization": f"Bearer {token}"}
+    started = _stub_manager(app_with_lifespan)
+    cid = await _make_promoted_candidate(owner)
+    response = client.post(
+        "/strategy_runs",
+        headers=headers,
+        json={
+            "candidate_id": str(cid),
+            "venue": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+            "allocation": 1000,
+        },
+    )
+    assert response.status_code == 200, response.json()
+    rid = UUID(response.json()["id"])
+    assert client.post(f"/strategy_runs/{rid}/stop", headers=headers).status_code == 200
+    async with get_conn() as conn:
+        before = await accounts.get(conn, owner)
+        wallet_before = await run_wallets.get(conn, owner, rid)
+    resumed = client.post(f"/strategy_runs/{rid}/resume", headers=headers)
+    assert resumed.status_code == 200, resumed.json()
+    assert len(started) == 2
+    assert client.post(f"/strategy_runs/{rid}/resume", headers=headers).status_code == 409
+    async with get_conn() as conn:
+        assert (await accounts.get(conn, owner))["cash_balances"] == before["cash_balances"]
+        assert (await run_wallets.get(conn, owner, rid))["cash_balances"] == wallet_before[
+            "cash_balances"
+        ]
+    assert client.post(f"/strategy_runs/{rid}/stop", headers=headers).status_code == 200
+    assert client.post(f"/strategy_runs/{rid}/release_capital", headers=headers).status_code == 200
+    assert client.post(f"/strategy_runs/{rid}/resume", headers=headers).status_code == 409

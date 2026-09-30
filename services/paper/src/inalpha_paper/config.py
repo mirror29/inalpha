@@ -3,6 +3,7 @@
 继承 ``inalpha_shared.Settings``，加 ``DATA_SERVICE_URL`` 字段（跨服务调用 data 用）
 + Swarm S1（ADR-0025）的 ProcessPool 配置。
 """
+
 from __future__ import annotations
 
 import os
@@ -32,6 +33,8 @@ class PaperSettings(BaseSettings):
         alias="DATA_SERVICE_URL",
         description="data-service 的 base URL，paper 拉 K 线时走这里。",
     )
+
+    paper_funding_enabled: bool = Field(default=True, alias="PAPER_FUNDING_ENABLED")
 
     paper_service_port: int = Field(default=8002, alias="PAPER_SERVICE_PORT")
 

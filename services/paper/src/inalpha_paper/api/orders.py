@@ -11,6 +11,7 @@ D-8b 升级：
 撮合细节没变（[OrderExecutor](../execution/order_executor.py)）：
 - ``ref_price`` optional，省略时服务端调 data /ticker 自取最新价
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -52,6 +53,7 @@ from ..storage import accounts as accounts_store
 from ..storage import closed_trades as closed_trades_store
 from ..storage import orders as orders_store
 from ..storage import positions as positions_store
+from ..storage import run_wallets as wallets_store
 from ..storage import strategy_runs as runs_store
 
 router = APIRouter(tags=["orders"])
@@ -88,8 +90,10 @@ async def post_submit_order(
     # perp 资格硬 gate(trading_mode=perp 须 crypto + USDT-M 永续标的 + 杠杆 1..20,
     # 否则 422 PERP_NOT_ELIGIBLE;spot 放行)。不静默降级。
     perp_margin.validate_perp_eligibility(
-        venue=req.venue, symbol=req.symbol,
-        trading_mode=req.trading_mode, leverage=req.leverage,
+        venue=req.venue,
+        symbol=req.symbol,
+        trading_mode=req.trading_mode,
+        leverage=req.leverage,
     )
 
     # D-9 风控前置闸门：违规 → 409 RISK_REJECTED + risk_locks 表写新行
@@ -107,8 +111,11 @@ async def post_submit_order(
 
     # 单笔 notional 硬上限（无状态前置校验，issue #42）；超限 → 409 RISK_REJECTED
     risk_guard_mod.check_order_notional(
-        factory, quantity=req.quantity, ref_price=ref_price,
-        venue=req.venue, symbol=req.symbol,
+        factory,
+        quantity=req.quantity,
+        ref_price=ref_price,
+        venue=req.venue,
+        symbol=req.symbol,
     )
 
     # 算成交（纯函数，不依赖 DB）
@@ -176,7 +183,10 @@ async def post_submit_order(
             # perp 只动保证金和已实现盈亏,不应被现货搭配坑(ADR-0061)。
             perp_wallet = max(Decimal(0), wallet)
             cur_pos = await positions_store.get(
-                db, account_id=account_id, venue=req.venue, symbol=req.symbol,
+                db,
+                account_id=account_id,
+                venue=req.venue,
+                symbol=req.symbol,
                 for_update=True,
             )
             cur_qty = float(cur_pos["quantity"]) if cur_pos else 0.0
@@ -185,16 +195,23 @@ async def post_submit_order(
             im = Decimal(str(prospective_qty * ref_price / req.leverage))
             fee_amt = Decimal(str(req.quantity * ref_price * req.fee_rate))
             others_im = await positions_store.sum_other_margin_used(
-                db, account_id, currency=currency,
-                exclude_venue=req.venue, exclude_symbol=req.symbol,
+                db,
+                account_id,
+                currency=currency,
+                exclude_venue=req.venue,
+                exclude_symbol=req.symbol,
             )
             if others_im + im + fee_amt > perp_wallet:
                 raise perp_margin.InsufficientMarginError(
                     f"perp 保证金不足:其他仓已占 IM {others_im} + 本笔目标 IM {im} "
                     f"+ fee {fee_amt} 超 perp 钱包 {perp_wallet} {currency}",
-                    details={"im": str(im), "others_im": str(others_im),
-                             "fee": str(fee_amt),
-                             "perp_wallet": str(perp_wallet), "currency": currency},
+                    details={
+                        "im": str(im),
+                        "others_im": str(others_im),
+                        "fee": str(fee_amt),
+                        "perp_wallet": str(perp_wallet),
+                        "currency": currency,
+                    },
                 )
 
         # 现货 BUY 购买力守门（与回测 Portfolio.can_afford_buy 同口径,账户聚合层落地）：
@@ -205,32 +222,34 @@ async def post_submit_order(
         # DB 连接与账户行锁。锁内出现预取未覆盖的币种桶按排除处理(fail-closed)。
         if req.trading_mode != "perp" and req.side == "BUY":
             balances = {
-                cur: Decimal(str(amt))
-                for cur, amt in (acct.get("cash_balances") or {}).items()
+                cur: Decimal(str(amt)) for cur, amt in (acct.get("cash_balances") or {}).items()
             }
             base_ccy = acct["base_currency"]
             order_ccy = spot_buy_order_ccy or resolve_currency(req.venue, req.symbol)
             # 锁内复用预取 converter:核对 base 一致(缓存命中,零 HTTP),不一致则重建
             # (理论只在并发中途账户 base 被改的极端情形,防御性处理)。
-            lock_converter = spot_buy_converter.offline_copy() if spot_buy_converter is not None else None
+            lock_converter = (
+                spot_buy_converter.offline_copy() if spot_buy_converter is not None else None
+            )
             if lock_converter is not None and lock_converter.base != base_ccy:
                 lock_converter = BaseCurrencyConverter(base_ccy, None)
             converter = lock_converter or BaseCurrencyConverter(base_ccy, None)
             available = await convert_cash_balances(converter, balances)
             order_ccy_rate = await converter.rate(order_ccy)
-            if violates_spot_buying_power(
-                side=req.side,
-                quantity=req.quantity,
-                ref_price=ref_price,
-                fee_rate=req.fee_rate,
-                order_ccy_rate=order_ccy_rate,
-                available_cash_base=available,
-                trading_mode=req.trading_mode,
+            if (
+                violates_spot_buying_power(
+                    side=req.side,
+                    quantity=req.quantity,
+                    ref_price=ref_price,
+                    fee_rate=req.fee_rate,
+                    order_ccy_rate=order_ccy_rate,
+                    available_cash_base=available,
+                    trading_mode=req.trading_mode,
+                )
+                or converter.warnings
             ):
                 fx_note = (
-                    f"; FX warnings: {'; '.join(converter.warnings)}"
-                    if converter.warnings
-                    else ""
+                    f"; FX warnings: {'; '.join(converter.warnings)}" if converter.warnings else ""
                 )
                 raise InsufficientCashError(
                     f"BUY 所需资金超过账户可用现金:约 {req.quantity * ref_price:.2f} "
@@ -254,19 +273,28 @@ async def post_submit_order(
         # （TOCTOU）→ 把持仓打成负仓。raise 触发事务回滚 → 不落单/不落账（409 不变）。
         if req.side == "SELL":
             cur_pos = await positions_store.get(
-                db, account_id=account_id, venue=req.venue, symbol=req.symbol,
+                db,
+                account_id=account_id,
+                venue=req.venue,
+                symbol=req.symbol,
                 for_update=True,
             )
             current_qty = Decimal(str(cur_pos["quantity"])) if cur_pos else Decimal(0)
             if violates_spot_long_only(
-                side=req.side, quantity=req.quantity, current_qty=current_qty,
+                side=req.side,
+                quantity=req.quantity,
+                current_qty=current_qty,
                 trading_mode=req.trading_mode,
             ):
                 raise InsufficientPositionError(
                     f"SELL {req.quantity} exceeds current position {current_qty} "
                     "(spot long-only: short-selling not permitted)",
-                    details={"venue": req.venue, "symbol": req.symbol,
-                             "requested": req.quantity, "current_qty": str(current_qty)},
+                    details={
+                        "venue": req.venue,
+                        "symbol": req.symbol,
+                        "requested": req.quantity,
+                        "current_qty": str(current_qty),
+                    },
                 )
 
         await orders_store.insert(
@@ -363,11 +391,17 @@ async def get_my_account(
     估值,总权益基本恒等于初始资金、不反映浮盈)。
     """
     account_id = account_id_from_user(user)
-    acct = await accounts_store.get_or_create(db, account_id)
+    await accounts_store.get_or_create(db, account_id)
+    # Main cash and all wallet books share one MVCC snapshot, including transfers.
+    acct = await (
+        await db.execute(
+            "SELECT a.*, COALESCE((SELECT jsonb_agg(w) FROM strategy_run_wallets w WHERE w.account_id=a.account_id),'[]') run_books, COALESCE((SELECT jsonb_agg(to_jsonb(p) || jsonb_build_object('quantity',p.quantity::text,'avg_open_price',p.avg_open_price::text,'margin_used',p.margin_used::text)) FROM positions p WHERE p.account_id=a.account_id AND p.run_id IS NULL),'[]') main_positions FROM accounts a WHERE a.account_id=%s",
+            (account_id,),
+        )
+    ).fetchone()
+    books = acct.pop("run_books")
     base_currency = acct["base_currency"]
-
-    # 持仓行只用于市值(mark-to-market);已实现盈亏改从 closed_trades 汇总(见下)。
-    pos_rows = await positions_store.list_by_account(db, account_id, include_flat=True)
+    pos_rows = positions_store.normalize_rows(acct.pop("main_positions"))
 
     # 原始按币种桶
     cash_balances: dict[str, Decimal] = {
@@ -377,8 +411,7 @@ async def get_my_account(
     has_open_position = False
     for p in pos_rows:
         pos_ccys.add(
-            p.get("currency")
-            or resolve_currency(p["venue"], p["symbol"], default=base_currency)
+            p.get("currency") or resolve_currency(p["venue"], p["symbol"], default=base_currency)
         )
         if Decimal(p["quantity"]) != 0:
             has_open_position = True
@@ -393,8 +426,8 @@ async def get_my_account(
     realized_pnl_by_ccy: dict[str, Decimal] = {}
     for r in realized_rows:
         ccy = resolve_currency(r["venue"], r["symbol"], default=base_currency)
-        realized_pnl_by_ccy[ccy] = (
-            realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(str(r["realized"]))
+        realized_pnl_by_ccy[ccy] = realized_pnl_by_ccy.get(ccy, Decimal(0)) + Decimal(
+            str(r["realized"])
         )
 
     # 胜率统计（自最近一次 reset 起算）
@@ -409,9 +442,7 @@ async def get_my_account(
 
     # DataClient 在两种情况下才开：FX 有非本地可解析币种,或有持仓要取 mark
     # （无持仓的单币种 / crypto-USD 账户保持零网络）。
-    all_ccys = (
-        set(cash_balances) | pos_ccys | set(flows_by_ccy) | set(realized_pnl_by_ccy)
-    )
+    all_ccys = set(cash_balances) | pos_ccys | set(flows_by_ccy) | set(realized_pnl_by_ccy)
     # token 实际上必非空：get_current_user 依赖已保证 Bearer header 合法，否则先行 401；
     # 这里 token=None 分支是防御性的（理论不可达），保留以防未来调用方绕过 auth。
     token = (
@@ -512,6 +543,27 @@ async def get_my_account(
         if data_client is not None:
             await data_client.close()
 
+    books_equity = Decimal(0)
+    for book in books:
+        if isinstance(book["valuation_at"], str):
+            book["valuation_at"] = datetime.fromisoformat(book["valuation_at"])
+        if book["released_at"] is None:
+            if book["last_equity"] is not None:
+                books_equity += Decimal(str(book["last_equity"]))
+            else:
+                fx_warnings.append(f"Run {book['run_id']}: no trusted wallet valuation")
+            fx_warnings.extend(book["valuation_warnings"])
+            if (
+                book["valuation_at"] is None
+                or (
+                    datetime.now(book["valuation_at"].tzinfo) - book["valuation_at"]
+                ).total_seconds()
+                > 120
+            ):
+                fx_warnings.append(
+                    f"Run {book['run_id']}: retained valuation as of {book['valuation_at']}"
+                )
+
     return AccountSnapshot(
         account_id=str(acct["account_id"]),
         base_currency=base_currency,
@@ -520,7 +572,10 @@ async def get_my_account(
         cash_balances={cur: float(amt) for cur, amt in cash_balances.items()},
         positions_value=float(positions_base),
         perp_margin_locked=float(perp_margin_base),
-        total_equity=float(cash_base + positions_base),
+        main_equity=float(cash_base + positions_base),
+        run_wallets_equity=float(books_equity),
+        run_wallets=books,
+        total_equity=float(cash_base + positions_base + books_equity),
         realized_pnl=float(realized_pnl_base),
         net_external_flows=float(net_flows_base),
         win_rate=win_rate_pct,
@@ -560,8 +615,13 @@ async def deposit_to_my_account(
             db, account_id, amount, currency=currency
         )
         flow = await accounts_store.record_cash_flow(
-            db, account_id, kind="deposit", currency=currency,
-            amount=amount, balance_after=new_balance, note=req.note,
+            db,
+            account_id,
+            kind="deposit",
+            currency=currency,
+            amount=amount,
+            balance_after=new_balance,
+            note=req.note,
         )
     return _row_to_cash_flow(flow)
 
@@ -584,7 +644,7 @@ async def reset_my_account(
     async with db.transaction():
         acct = await accounts_store.get_or_create(db, account_id, for_update=True)
         running = await runs_store.count_running_by_account(db, account_id)
-        if running > 0:
+        if running > 0 or await wallets_store.has_unreleased(db, account_id):
             raise AccountHasRunningRunsError(
                 f"account has {running} running strategy_runs; stop them before reset "
                 "(a running runner would immediately re-open positions)",
@@ -597,8 +657,7 @@ async def reset_my_account(
             else Decimal(str(acct["initial_cash"]))
         )
         old_balances = {
-            cur: Decimal(str(amt))
-            for cur, amt in (acct.get("cash_balances") or {}).items()
+            cur: Decimal(str(amt)) for cur, amt in (acct.get("cash_balances") or {}).items()
         }
         # 旧总额只做流水 amount 的近似口径(本地汇率,拿不到的桶排除);精确旧桶
         # 明细原样进 note,审计不失真。
@@ -614,8 +673,12 @@ async def reset_my_account(
             + f"; 新基准 {new_initial} {base_ccy}"
         )
         flow = await accounts_store.record_cash_flow(
-            db, account_id, kind="reset", currency=base_ccy,
-            amount=new_initial - old_total, balance_after=new_initial,
+            db,
+            account_id,
+            kind="reset",
+            currency=base_ccy,
+            amount=new_initial - old_total,
+            balance_after=new_initial,
             note=f"{note_auto}; {req.note}" if req.note else note_auto,
         )
     return _row_to_cash_flow(flow)
@@ -691,9 +754,7 @@ def _row_to_order_record(row: dict[str, Any]) -> OrderRecord:
         ),
         fee=float(row["fee"]) if row.get("fee") is not None else None,
         notional=float(row["notional"]) if row.get("notional") is not None else None,
-        realized_pnl=(
-            float(row["realized_pnl"]) if row.get("realized_pnl") is not None else None
-        ),
+        realized_pnl=(float(row["realized_pnl"]) if row.get("realized_pnl") is not None else None),
         ts_event=row["ts_event"],
         ts_init=row["ts_init"],
         trade_plan_id=str(row["trade_plan_id"]) if row.get("trade_plan_id") else None,

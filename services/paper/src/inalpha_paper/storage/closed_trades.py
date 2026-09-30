@@ -10,6 +10,7 @@ D-9.1a：写入路径已接入 HTTP 订单流
 （``api/orders._apply_fill_to_positions_and_cash`` → ``positions.apply_fill``
 检测平仓 → 同事务写入 ``closed_trades``）。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -37,6 +38,7 @@ async def insert_close(
     exit_reason: str,
     open_order_id: str | None = None,
     close_order_id: str | None = None,
+    run_id: UUID | None = None,
 ) -> int:
     """写一条 close trade。返回新 id。
 
@@ -51,20 +53,31 @@ async def insert_close(
                 account_id, venue, symbol, side,
                 open_ts, close_ts, open_price, close_price, quantity,
                 close_profit_pct, close_profit_abs, exit_reason,
-                open_order_id, close_order_id
+                open_order_id, close_order_id, run_id
             ) VALUES (
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
-                %s, %s
+                %s, %s, %s
             )
             RETURNING id
             """,
             (
-                str(account_id), venue, symbol, side,
-                open_ts, close_ts, open_price, close_price, quantity,
-                close_profit_pct, close_profit_abs, exit_reason,
-                open_order_id, close_order_id,
+                str(account_id),
+                venue,
+                symbol,
+                side,
+                open_ts,
+                close_ts,
+                open_price,
+                close_price,
+                quantity,
+                close_profit_pct,
+                close_profit_abs,
+                exit_reason,
+                open_order_id,
+                close_order_id,
+                run_id,
             ),
         )
         row = await cur.fetchone()
@@ -185,8 +198,7 @@ async def count_by_account(
     """统计窗口内 close trade 数量（监控 / debug 用）。"""
     async with conn.cursor() as cur:
         await cur.execute(
-            "SELECT COUNT(*) AS cnt FROM closed_trades "
-            "WHERE account_id = %s AND close_ts >= %s",
+            "SELECT COUNT(*) AS cnt FROM closed_trades WHERE account_id = %s AND close_ts >= %s",
             (str(account_id), close_after),
         )
         row = await cur.fetchone()

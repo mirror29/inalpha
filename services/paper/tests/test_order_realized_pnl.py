@@ -21,7 +21,7 @@ pytestmark = pytest.mark.integration
 async def _truncate(app_with_lifespan):  # type: ignore[no-untyped-def]
     async with get_conn() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("TRUNCATE TABLE closed_trades RESTART IDENTITY")
+            await cur.execute("TRUNCATE TABLE closed_trades, paper_legacy_attributions RESTART IDENTITY")
             await cur.execute("TRUNCATE TABLE positions RESTART IDENTITY CASCADE")
             await cur.execute("TRUNCATE TABLE orders RESTART IDENTITY CASCADE")
             await cur.execute("TRUNCATE TABLE accounts RESTART IDENTITY CASCADE")

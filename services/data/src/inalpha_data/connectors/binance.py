@@ -1,4 +1,5 @@
 """Binance CCXT async 包装 —— 模块级 singleton，跟 db pool 同样模式。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -86,9 +87,7 @@ class BinanceConnector:
         mark = fr.get("markPrice")
         rate = fr.get("fundingRate")
         if mark is None or rate is None:
-            raise ValueError(
-                f"binance funding rate for {symbol} missing markPrice/fundingRate"
-            )
+            raise ValueError(f"binance funding rate for {symbol} missing markPrice/fundingRate")
         ts_ms = fr.get("timestamp")
         next_ms = fr.get("fundingTimestamp")
         return {
@@ -101,11 +100,35 @@ class BinanceConnector:
                 else datetime.now(UTC)
             ),
             "next_funding_ts": (
-                datetime.fromtimestamp(int(next_ms) / 1000, tz=UTC)
-                if next_ms is not None
-                else None
+                datetime.fromtimestamp(int(next_ms) / 1000, tz=UTC) if next_ms is not None else None
             ),
         }
+
+    async def fetch_perp_funding_history(
+        self, symbol: str, from_ts: datetime, to_ts: datetime
+    ) -> list[dict[str, Any]]:
+        """Read published settlement rates and marks; never substitute current funding."""
+        ex = self._futures()
+        await ex.load_markets()
+        market = ex.market(symbol)
+        rows = await ex.fapiPublicGetFundingRate(
+            {
+                "symbol": market["id"],
+                "startTime": int(from_ts.timestamp() * 1000) + 1,
+                "endTime": int(to_ts.timestamp() * 1000),
+                "limit": 1000,
+            }
+        )
+        if len(rows) >= 1000:
+            raise ValueError("Funding history truncated")
+        return [
+            {
+                "ts": datetime.fromtimestamp(int(r["fundingTime"]) / 1000, tz=UTC),
+                "funding_rate": float(r["fundingRate"]),
+                "mark_price": float(r["markPrice"]),
+            }
+            for r in rows
+        ]
 
     async def fetch_bars(
         self,
@@ -139,9 +162,7 @@ class BinanceConnector:
             since=since.isoformat(),
             limit=limit,
         )
-        raw = await self._exchange.fetch_ohlcv(
-            fetch_symbol, timeframe, since=since_ms, limit=limit
-        )
+        raw = await self._exchange.fetch_ohlcv(fetch_symbol, timeframe, since=since_ms, limit=limit)
         return [
             (
                 datetime.fromtimestamp(ts_ms / 1000, tz=UTC),
