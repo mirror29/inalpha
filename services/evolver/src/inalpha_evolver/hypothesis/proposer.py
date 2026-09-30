@@ -9,10 +9,12 @@ from typing import Any
 from uuid import uuid4
 
 from inalpha_shared_llm.types import MutationRequest  # type: ignore[import-untyped]
+from openai import APIConnectionError, APIStatusError, APITimeoutError
+from pydantic import ValidationError
 
 from ..exceptions import LoopControlError
 from ..mutator import Mutator
-from .models import HypothesisSpec
+from .models import _EVENT_TYPES, HypothesisSpec
 
 _SYSTEM_PROMPT = """You are Inalpha's crypto strategy-hypothesis proposer.
 Return only a JSON array of exactly four objects. Propose falsifiable event reaction mechanisms,
@@ -34,6 +36,10 @@ _ALLOWED_FIELDS = {
 }
 
 
+class _PromptBudgetExceeded(ValueError):
+    """Reject a prompt locally before any provider call."""
+
+
 @dataclass(frozen=True, slots=True)
 class ProposalResult:
     """Two-call proposal output plus measured provider cost."""
@@ -41,6 +47,7 @@ class ProposalResult:
     hypotheses: tuple[HypothesisSpec, ...]
     cost_usd: float
     fallback_calls: int
+    diagnostics: tuple[dict[str, Any], ...] = ()
 
 
 async def propose_generation(
@@ -71,17 +78,21 @@ async def propose_generation(
     hypotheses: list[HypothesisSpec] = []
     cost = 0.0
     fallback_calls = 0
+    diagnostics: list[dict[str, Any]] = []
     for index, result in enumerate(results):
         fallback = scaffolds[index * 4 : index * 4 + 4]
         if isinstance(result, Exception):
             hypotheses.extend(fallback)
             fallback_calls += 1
+            diagnostics.append({"batch": index, **_request_failure(result)})
         else:
-            batch, batch_cost, used_fallback = result
+            batch, batch_cost, reason = result
             hypotheses.extend(batch)
             cost += batch_cost
-            fallback_calls += int(used_fallback)
-    return ProposalResult(tuple(hypotheses), cost, fallback_calls)
+            fallback_calls += int(reason is not None)
+            if reason is not None:
+                diagnostics.append({"batch": index, **reason})
+    return ProposalResult(tuple(hypotheses), cost, fallback_calls, tuple(diagnostics))
 
 
 async def _propose_four(
@@ -91,8 +102,10 @@ async def _propose_four(
     scaffolds: list[HypothesisSpec],
     feedback: list[dict[str, Any]],
     frozen_facts: list[dict[str, Any]],
-) -> tuple[list[HypothesisSpec], float, bool]:
-    evidence_ids = {evidence.split(":", 1)[0] for item in scaffolds for evidence in item.evidence_ids}
+) -> tuple[list[HypothesisSpec], float, dict[str, Any] | None]:
+    evidence_ids = {
+        evidence.split(":", 1)[0] for item in scaffolds for evidence in item.evidence_ids
+    }
     projected_facts = [
         _project_fact(item)
         for item in frozen_facts
@@ -103,13 +116,14 @@ async def _propose_four(
             "generation": generation,
             "slots": [item.model_dump(mode="json") for item in scaffolds],
             "aggregate_feedback": feedback,
+            "output_contract": _output_contract(),
             "frozen_event_facts": projected_facts,
         },
         ensure_ascii=False,
         separators=(",", ":"),
     )
     if len(prompt.encode()) + len(_SYSTEM_PROMPT.encode()) > mutator.max_input_utf8_bytes:
-        raise ValueError("hypothesis proposer prompt exceeds frozen input budget")
+        raise _PromptBudgetExceeded("hypothesis proposer prompt exceeds frozen input budget")
     response = await mutator.llm_client.mutate(
         MutationRequest(
             system_prompt=_SYSTEM_PROMPT,
@@ -121,11 +135,11 @@ async def _propose_four(
     try:
         payload = _parse_json_array(response.content)
         if len(payload) != 4:
-            raise ValueError("hypothesis proposer must return exactly four objects")
+            return scaffolds, cost, {"code": "wrong_batch_size"}
         proposals: list[HypothesisSpec] = []
-        for scaffold, update in zip(scaffolds, payload, strict=True):
+        for slot, (scaffold, update) in enumerate(zip(scaffolds, payload, strict=True)):
             if not isinstance(update, dict):
-                raise ValueError("hypothesis proposal entries must be objects")
+                return scaffolds, cost, {"code": "entry_not_object", "slot": slot}
             safe_update = {key: value for key, value in update.items() if key in _ALLOWED_FIELDS}
             # Evidence, lineage, lane and compiler identity are platform-owned and cannot
             # be fabricated or changed by the model.
@@ -144,10 +158,105 @@ async def _propose_four(
             )
             base = scaffold.model_dump(mode="json")
             base.update(safe_update)
-            proposals.append(HypothesisSpec.model_validate(base))
-    except (ValueError, TypeError, json.JSONDecodeError):
-        return scaffolds, cost, True
-    return proposals, cost, False
+            try:
+                proposals.append(HypothesisSpec.model_validate(base))
+            except ValidationError as exc:
+                return (
+                    scaffolds,
+                    cost,
+                    {
+                        "code": "dsl_validation_failed",
+                        "slot": slot,
+                        "fields": sorted(
+                            {
+                                str(error["loc"][0])
+                                if error["loc"] and error["loc"][0] in _ALLOWED_FIELDS
+                                else "contract"
+                                for error in exc.errors(include_input=False, include_context=False)
+                            }
+                        ),
+                        "violations": sorted(
+                            {
+                                error["type"]
+                                if error["type"]
+                                in {
+                                    "missing",
+                                    "extra_forbidden",
+                                    "model_type",
+                                    "float_parsing",
+                                    "int_parsing",
+                                    "literal_error",
+                                    "greater_than",
+                                    "greater_than_equal",
+                                    "less_than",
+                                    "less_than_equal",
+                                    "string_too_short",
+                                    "string_too_long",
+                                    "list_type",
+                                    "string_type",
+                                    "float_type",
+                                    "int_type",
+                                    "bool_parsing",
+                                    "too_short",
+                                    "too_long",
+                                    "value_error",
+                                }
+                                else "contract_error"
+                                for error in exc.errors(include_input=False, include_context=False)
+                            }
+                        ),
+                    },
+                )
+    except json.JSONDecodeError:
+        return scaffolds, cost, {"code": "invalid_json_array", "kind": "syntax"}
+    except (ValueError, TypeError):
+        return (
+            scaffolds,
+            cost,
+            {
+                "code": "invalid_json_array",
+                "kind": "empty" if not response.content.strip() else "missing_array",
+            },
+        )
+    return proposals, cost, None
+
+
+def _request_failure(error: Exception) -> dict[str, Any]:
+    """Classify provider failures without retaining messages, URLs or response bodies."""
+    if isinstance(error, _PromptBudgetExceeded):
+        return {"code": "input_budget_exceeded"}
+    if isinstance(error, (APITimeoutError, TimeoutError)):
+        return {"code": "provider_timeout"}
+    if isinstance(error, APIStatusError):
+        return {"code": "provider_http_error", "status": int(error.status_code)}
+    if isinstance(error, APIConnectionError):
+        return {"code": "provider_connection_error"}
+    return {"code": "request_failed"}
+
+
+def _output_contract() -> dict[str, Any]:
+    """Supply the exact mutable DSL schema; evidence and identity stay platform-owned."""
+    schema = HypothesisSpec.model_json_schema()
+    schema["properties"]["event_types"]["items"]["enum"] = sorted(_EVENT_TYPES)
+    return {
+        "type": "array",
+        "minItems": 4,
+        "maxItems": 4,
+        "$defs": schema["$defs"],
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                key: value for key, value in schema["properties"].items() if key in _ALLOWED_FIELDS
+            },
+        },
+        "instructions": (
+            "Return compact valid JSON only, no commentary. Each item updates its corresponding slot. "
+            "Omit unchanged fields. Nested objects must use exactly the schema's field names and types. "
+            "Direct triggers are allowed only for listing/delisting/exploit/chain_halt. "
+            "Do not output evidence, assets, lineage, identity or executable code."
+        ),
+    }
 
 
 def _project_fact(fact: dict[str, Any]) -> dict[str, Any]:
