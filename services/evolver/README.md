@@ -7,8 +7,10 @@ owner 授权的 LLM 生成 unified diff 或结构化假设，在受限加载器�
 ## 安全与产品边界
 
 - E1 计费 run 需要可信 UI 显式审批；E2 以 owner 点击或明确说“开始进化”作为整次 campaign
-  的授权，不逐代审批。两者都使用最长 30 小时、绑定 owner/operation/purpose/request digest
-  的 Ed25519 credential grant，幂等键稳定标识同一操作。
+  的授权，不逐代审批。E1 与 E2 启动时验证签名授权，并使用绑定
+  owner/operation/purpose/request digest 的短时 Ed25519 credential grant（最长 30 小时）。
+  E2 loop 启动后持久化 owner-bound 授权、冻结模型和费用上限（授权有效期 90 天）；后续
+  调用通过该授权签发短时凭据，不依赖最初聊天 turn 的凭据持续存活。幂等键标识同一操作。
 - bars、数据 manifest/hash、种子源码、非密钥 LLM 配置和定价摘要在执行前冻结；baseline、
   seed 与候选使用同一份 frozen bars。
 - 用户 LLM API key 只在执行时通过 Dashboard 内部路由按 owner/config_id 获取，不进入 run
@@ -51,6 +53,17 @@ E2 自动闭环：
   → Forward 通过后消费唯一 sealed holdout attempt
   → adoption_ready → 用户手动采用为不可运行的实验性策略资产
 ```
+
+### 持久化恢复与验证状态（2026-09-30 核对）
+
+- Loop baseline 与 campaign dispatcher 使用数据库租约、心跳和 fencing；过期 worker 不得
+  写入结果。重启后重新领取可执行任务，复用冻结 snapshot、proposal checkpoint 与已落盘步骤。
+- E1 baseline → E2 campaign 的交接在同事务内关联唯一 campaign 和 UI 状态事件；重复触发
+  复用当前 owner + target 的活动 loop，恢复不得重新取得授权或突破原费用上限。
+- 费用按调用先预留再结算，授权到期/撤销或预算不足会阻止继续产生计费调用。Forward 证据和一次性
+  holdout 门禁仍由服务端管理，最终采用必须手动执行，候选保持 `runner_eligible=false`。
+- 仓库已有恢复、预算、租约、五代和交接相关测试；真实运行与重启验证尚需记录证据。
+  优先级统一见[当前状态文档](../../docs/04-current-state.md#未完成--下一步)。
 
 核心目录：
 

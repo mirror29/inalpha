@@ -117,7 +117,9 @@ E1 已拆出 `services/evolver:8005`：真实 frozen bars、单代 unified-diff 
 owner-scoped 状态、显式逐次审批与可复现实验元数据。E2 在 feature flag 后增加双时态事件
 snapshot、HypothesisSpec 确定性编译、五代 8×3 共演化、单冠军 Forward、一次性 holdout 与
 `runner_eligible=false` 的人工实验性采用；不会自动 promote、启动策略或下单。
-下一步是在小流量运行中校准事件覆盖与信用分配；MAP-Elites / Island Model 继续后置。
+2026-09-30 代码核对：持久化 EvolutionLoop、重复触发复用、租约恢复与原子阶段交接已落地；
+已有自动化测试，真实运行验证仍待完成。下一步优先真实 E2 链路与重启幂等验证，
+再校准事件覆盖、费用与评估；优先级统一见 `docs/04-current-state.md`「未完成 / 下一步」。
 详见 [`docs/04-current-state.md`](docs/04-current-state.md) / `CLAUDE.md` §3 /
 仓库根 `README.md`。
 

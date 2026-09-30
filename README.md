@@ -51,6 +51,13 @@ The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha*
 
 ---
 
+
+> Code checked on **2026-09-30**: owner-scoped EvolutionLoop reuse, durable dispatch with
+> leases/checkpoints, atomic stage handoffs, and bounded loop authorization/cost accounting
+> are implemented. Automated tests cover recovery and gate behavior; complete real-environment
+> runs and restart validation still need recorded evidence. Final adoption remains manual and
+> experimental candidates remain Runner-ineligible. See the [current state and next steps](docs/04-current-state.md#未完成--下一步).
+
 ## The Operator Console
 
 The **Operator Console** (`apps/dashboard`) is the home base — a runtime dashboard that surfaces everything you'd otherwise have to ask the agent for, with a docked agent chat on the right. The shots below are the live console, running locally.
