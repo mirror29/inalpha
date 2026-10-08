@@ -1,0 +1,69 @@
+{
+  "observed_date": "2026-10-08",
+  "purpose": "prospective source coverage; not a positive E2 acceptance receipt",
+  "deployment_status": "not_deployed",
+  "server_probe": {
+    "method": "existing RssFeedProvider with default TLS verification; read only; no archive writes",
+    "providers": [
+      {
+        "source": "bitcoin_core_announcements",
+        "url": "https://bitcoincore.org/en/announcements.xml",
+        "status": "ok",
+        "items": 5,
+        "dated_items": 5
+      },
+      {
+        "source": "cointelegraph",
+        "url": "https://cointelegraph.com/rss",
+        "status": "ok",
+        "items": 30,
+        "dated_items": 30
+      }
+    ]
+  },
+  "changes": {
+    "archive_limit": "50 per selected provider",
+    "public_news_limit": "unchanged global request limit",
+    "logging": "provider status, fetched/filtered counts, completed ingestion and up to six code locations; no exception contents, source lines or absolute paths",
+    "first_seen_policy": "unchanged first-seen-only-v1",
+    "new_sources_scope": "archive only; public news provider set unchanged",
+    "cross_source_duplicates": "canonical URL deduplication after bounded source batches, official precedence and alternative source merging; no global truncation",
+    "source_failure": "failed source transaction rolls back, logs provider and code locations, and later batches continue"
+  },
+  "acceptance_boundaries": {
+    "original_readiness_source_scope": "unchanged coindesk and kraken_blog",
+    "window": "unchanged natural 60/20/20",
+    "independence_hours": 24,
+    "positive_e2_passed": false,
+    "new_model_calls": 0,
+    "new_cost_usd": 0
+  },
+  "verification": {
+    "isolated_database": {
+      "migration": "new empty database upgraded through 0058 wallet to 0059 diagnostics; owned disposable database removed",
+      "tests_passed": 46,
+      "failed": 0,
+      "additional_coverage": [
+        "failed source transaction rollback",
+        "healthy later source ingestion",
+        "repeated tick raw/outbox idempotency",
+        "service cancellation propagation",
+        "cross-source canonical URL deduplication with official precedence and alternative sources"
+      ]
+    },
+    "ruff": "passed",
+    "mypy": "3 existing provider coverage declaration errors reproduced on origin/main; no new errors in changed paths",
+    "initial_shared_development_database_test": "1 integration test failed because pre-existing queued jobs filled its 100-job claim; repeated successfully in a fresh isolated database",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "review_followup": {
+    "public_news_crowding": "new feeds are archive-only; regression verifies original public provider set and coverage capabilities",
+    "failure_diagnosis": "redacted code-location frames restore file/function/line context without exposing exception payloads",
+    "source_failure_starvation": "isolated batch failure handling verified with real PostgreSQL rollback and idempotent subsequent ingestion",
+    "cross_provider_duplicates": "cross-batch deduplication preserves previous canonical URL precedence and alternative source linkage"
+  }
+}
