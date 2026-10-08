@@ -24,8 +24,9 @@
   "changes": {
     "archive_limit": "50 per selected provider",
     "public_news_limit": "unchanged global request limit",
-    "logging": "provider status, fetched/filtered counts and completed ingestion; no raw exceptions",
-    "first_seen_policy": "unchanged first-seen-only-v1"
+    "logging": "provider status, fetched/filtered counts, completed ingestion and up to six code locations; no exception contents, source lines or absolute paths",
+    "first_seen_policy": "unchanged first-seen-only-v1",
+    "new_sources_scope": "archive only; public news provider set unchanged"
   },
   "acceptance_boundaries": {
     "original_readiness_source_scope": "unchanged coindesk and kraken_blog",
@@ -38,7 +39,7 @@
   "verification": {
     "isolated_database": {
       "migration": "new empty database upgraded through 0058 wallet to 0059 diagnostics; owned disposable database removed",
-      "tests_passed": 41,
+      "tests_passed": 43,
       "failed": 0
     },
     "ruff": "passed",
@@ -49,5 +50,9 @@
       "failed": 0,
       "existing_warnings": 12
     }
+  },
+  "review_followup": {
+    "public_news_crowding": "new feeds are archive-only; regression verifies original public provider set and coverage capabilities",
+    "failure_diagnosis": "redacted code-location frames restore file/function/line context without exposing exception payloads"
   }
 }
