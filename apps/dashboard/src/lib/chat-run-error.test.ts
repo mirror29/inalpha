@@ -49,7 +49,9 @@ describe("chat failure subscriber", () => {
     subscriber.onRunFailed({ error: new Error("cancelled") });
     stopping = false;
     subscriber.onRunErrorEvent({ event: { message: "BodyStreamBuffer was aborted" } });
+    subscriber.onRunFailed({ error: new Error("same stream teardown") });
     expect(onError).not.toHaveBeenCalled();
+    subscriber.onRunInitialized();
     subscriber.onRunFailed({ error: new DOMException("unexpected timeout abort", "AbortError") });
     expect(onError).toHaveBeenLastCalledWith("Failed (CHAT_REQUEST_FAILED)");
     subscriber.onRunErrorEvent({ event: { code: "INCOMPLETE_STREAM" } });
