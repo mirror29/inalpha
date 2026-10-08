@@ -382,3 +382,42 @@ async def test_new_feeds_are_archive_only_and_public_scope_is_unchanged(
         assert await router.fetch_archive_batches(NewsQuery(market="crypto", symbol="BTC")) == []
     finally:
         await router.close()
+
+
+async def test_archive_merges_cross_source_links_without_global_truncation() -> None:
+    """同链接保留官方赢家及替代来源，去重后不重新施加全局条数限制。"""
+    ts = datetime(2026, 7, 28, tzinfo=UTC)
+
+    class Provider:
+        coverage = "snapshot_only"
+
+        def __init__(self, name, items):
+            self.name = name
+            self.items = items
+
+        def supports(self, query):
+            return True
+
+        async def fetch(self, query):
+            return ProviderResult(self.name, "ok", items=self.items)
+
+    media = NewsItem(title="copy", link="https://event.test/a?utm_source=media",
+                     source_name="media", source_id="media-1", published_at=ts,
+                     source_tier="professional_media")
+    official = NewsItem(title="original", link="https://event.test/a",
+                        source_name="official", source_id="official-1", published_at=ts,
+                        source_tier="official")
+    unrelated = NewsItem(title="unrelated", link="https://event.test/b",
+                         source_name="other", published_at=ts)
+    router = NewsRouter([
+        Provider("rss:media", [media]), Provider("rss:official", [official]),
+        Provider("rss:other", [unrelated]),
+    ])
+    batches = await router.fetch_archive_batches(NewsQuery(market="crypto", limit=1))
+    assert batches[0].items == []
+    assert len(batches[1].items) == len(batches[2].items) == 1
+    winner = batches[1].items[0]
+    assert winner.source_id == "official-1"
+    assert winner.alternative_sources == ["media", "official"]
+    assert winner.published_at == ts
+    assert media.alternative_sources == official.alternative_sources == []

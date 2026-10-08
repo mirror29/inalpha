@@ -87,6 +87,15 @@ class NewsRouter:
                     not (query.as_of or query.since) or provider.coverage == "complete"
                 ),
             ))
+        merged = filter_and_dedupe(
+            [item for batch in batches for item in batch.items],
+            query,
+            fetched_at=fetched_at,
+            apply_limit=False,
+        )
+        for batch in batches:
+            sources = {item.source_name for item in batch.items}
+            batch.items = [item for item in merged if item.source_name in sources]
         return batches
 
     def _select(

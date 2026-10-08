@@ -12,7 +12,8 @@ _TIER_WEIGHT = {"official": 3, "professional_media": 2, "aggregator": 1}
 
 
 def filter_and_dedupe(
-    items: list[NewsItem], query: NewsQuery, *, fetched_at: datetime | None = None
+    items: list[NewsItem], query: NewsQuery, *, fetched_at: datetime | None = None,
+    apply_limit: bool = True,
 ) -> list[NewsItem]:
     """按时间窗、类型过滤并跨 provider 去重。"""
     filtered = [item for item in items if _visible(item, query, fetched_at)]
@@ -34,9 +35,8 @@ def filter_and_dedupe(
                 update={"alternative_sources": _sources(current, item)},
             )
     epoch = datetime.min.replace(tzinfo=UTC)
-    return sorted(winners.values(), key=lambda item: item.published_at or epoch, reverse=True)[
-        : query.limit
-    ]
+    ranked = sorted(winners.values(), key=lambda item: item.published_at or epoch, reverse=True)
+    return ranked[: query.limit] if apply_limit else ranked
 
 
 def canonical_url(url: str) -> str:
