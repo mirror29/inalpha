@@ -33,17 +33,17 @@ export function createChatErrorSubscriber(options: {
   onError: (message: string) => void;
   messages: ChatRunErrorMessages;
 }) {
-  /** Ignore a user-requested cancellation without hiding real failures. */
-  const cancelled = (message = "", code = "") => options.isStopping()
-    || /abort|BodyStreamBuffer|signal is aborted/i.test(`${message} ${code}`);
+  let reportedSpecificError = false;
 
   return {
+    onRunInitialized: () => { reportedSpecificError = false; },
     onRunErrorEvent: ({ event }: { event?: ChatRunErrorEvent }) => {
-      if (cancelled(event?.message, event?.code)) return;
+      if (options.isStopping()) return;
+      reportedSpecificError = Boolean(event?.code || event?.message);
       options.onError(formatChatRunError(event ?? {}, options.messages));
     },
-    onRunFailed: ({ error }: { error: Error }) => {
-      if (cancelled(error.message, error.name)) return;
+    onRunFailed: (_params: { error: Error }) => {
+      if (options.isStopping() || reportedSpecificError) return;
       options.onError(formatChatRunError({ code: "CHAT_REQUEST_FAILED" }, options.messages));
     },
   };

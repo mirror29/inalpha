@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { createRequire } from "node:module";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createChatErrorSubscriber, formatChatRunError } from "./chat-run-error";
 
@@ -47,9 +48,45 @@ describe("chat failure subscriber", () => {
       messages: { generic: "Failed", incompleteStream: "Incomplete" } });
     subscriber.onRunFailed({ error: new Error("cancelled") });
     stopping = false;
-    subscriber.onRunFailed({ error: new DOMException("aborted", "AbortError") });
     expect(onError).not.toHaveBeenCalled();
+    subscriber.onRunFailed({ error: new DOMException("unexpected timeout abort", "AbortError") });
+    expect(onError).toHaveBeenLastCalledWith("Failed (CHAT_REQUEST_FAILED)");
     subscriber.onRunErrorEvent({ event: { code: "INCOMPLETE_STREAM" } });
     expect(onError).toHaveBeenCalledWith("Incomplete (INCOMPLETE_STREAM)");
+  });
+});
+
+
+/** Load the real client used by the installed adapter without duplicating its dependency. */
+const adapterRequire = createRequire(createRequire(import.meta.url).resolve("@ag-ui/mastra"));
+const { HttpAgent } = adapterRequire("@ag-ui/client");
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+describe("AG-UI failure lifecycle", () => {
+  it("subscribed HttpAgent reports HTTP 400 and ends its running state", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("Invalid request body", { status: 400 })));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const onError = vi.fn();
+    const agent = new HttpAgent({ url: "http://chat.test/run", threadId: "test-thread",
+      initialMessages: [{ id: "user-1", role: "user", content: "Continue" }] });
+    agent.subscribe(createChatErrorSubscriber({ isStopping: () => false, onError,
+      messages: { generic: "Request failed", incompleteStream: "Incomplete" } }));
+    await expect(agent.runAgent()).rejects.toBeDefined();
+    expect(onError).toHaveBeenCalledWith("Request failed (CHAT_REQUEST_FAILED)");
+    expect(agent.isRunning).toBe(false);
+  });
+
+  it("preserves specific errors and resets precedence for the next run", () => {
+    const onError = vi.fn();
+    const subscriber = createChatErrorSubscriber({ isStopping: () => false, onError,
+      messages: { generic: "Failed", incompleteStream: "Incomplete" } });
+    subscriber.onRunInitialized();
+    subscriber.onRunErrorEvent({ event: { code: "INCOMPLETE_STREAM" } });
+    subscriber.onRunFailed({ error: new Error("connection reset") });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenLastCalledWith("Incomplete (INCOMPLETE_STREAM)");
+    subscriber.onRunInitialized();
+    subscriber.onRunFailed({ error: new Error("connection reset") });
+    expect(onError).toHaveBeenLastCalledWith("Failed (CHAT_REQUEST_FAILED)");
   });
 });

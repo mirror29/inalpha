@@ -180,7 +180,7 @@ export function ChatThread({
         generic: t("errorGeneric"),
         incompleteStream: t("errorIncompleteStream"),
       },
-    }) as Parameters<typeof agent.subscribe>[0]);
+    }));
     return () => sub.unsubscribe();
   }, [hook.agent, t]);
 
