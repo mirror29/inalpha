@@ -8,5 +8,260 @@
   "date": "2026-10-08",
   "production_issue": "old Data PID 1 sh -> uv -> uvicorn; SIGTERM then SIGKILL after 120 seconds, exit 137",
   "implementation": "exec the installed .venv/bin/uvicorn so it becomes PID 1; preserve module/port/worker configuration; no dependency synchronization at runtime",
-  "production_validation": "pending merge and deployment"
+  "production_validation": "PR #191 merged and Data ee655f39 deployed healthy with PID 1 uvicorn; isolated full Data application on server stopped exit 0 in 1.57 seconds. In-use production container itself has not been stopped again solely for validation.",
+  "server_full_application_probe": {
+    "image": "ghcr.io/mirror29/inalpha-data:ee655f3929d26ae4de9f86723258df4bf745a5b3",
+    "scope": "isolated real Data application, two workers, no published ports, event collection disabled, production DB pool startup/health only; no user requests or E2 writes",
+    "pid1": "uvicorn",
+    "workers": 2,
+    "health": "ok",
+    "db_health": "ok",
+    "exit_code": 0,
+    "stop_seconds": 1.57
+  },
+  "deployment": {
+    "image": "ghcr.io/mirror29/inalpha-data:ee655f3929d26ae4de9f86723258df4bf745a5b3",
+    "container": "e61ae92b2019",
+    "healthy": true,
+    "pid1": "uvicorn",
+    "created": "2026-10-08T09:43:15.663744504Z",
+    "started": "2026-10-08T09:45:17.086349531Z",
+    "backup": "infra/.env.prod.before-data-20261008T094315Z",
+    "other_container_ids_unchanged": 9,
+    "build_run": 37758484706
+  },
+  "source_logs": [
+    {
+      "event": "event_archive_started",
+      "timestamp": "2026-10-08T09:45:39.825108Z"
+    },
+    {
+      "event": "event_archive_started",
+      "timestamp": "2026-10-08T09:45:39.837302Z"
+    },
+    {
+      "event": "event_archive_tick_skipped",
+      "timestamp": "2026-10-08T09:45:39.867460Z",
+      "reason": "another_worker_collecting"
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T09:45:40.765368Z",
+      "provider": "rss:coindesk",
+      "status": "ok",
+      "fetched_items": 25,
+      "archive_items": 25
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T09:45:40.928884Z",
+      "provider": "rss:coindesk",
+      "archive_items": 25
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T09:45:40.929004Z",
+      "provider": "rss:kraken_blog",
+      "status": "ok",
+      "fetched_items": 10,
+      "archive_items": 10
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T09:45:40.956091Z",
+      "provider": "rss:kraken_blog",
+      "archive_items": 10
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T09:45:40.956218Z",
+      "provider": "rss:bitcoin_core_announcements",
+      "status": "ok",
+      "fetched_items": 5,
+      "archive_items": 5
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T09:45:40.963091Z",
+      "provider": "rss:bitcoin_core_announcements",
+      "archive_items": 5
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T09:45:40.963665Z",
+      "provider": "rss:cointelegraph",
+      "status": "ok",
+      "fetched_items": 30,
+      "archive_items": 30
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T09:45:40.998957Z",
+      "provider": "rss:cointelegraph",
+      "archive_items": 30
+    }
+  ],
+  "database": {
+    "migration": [
+      {
+        "version_num": "0059"
+      }
+    ],
+    "raw_provenance": [
+      {
+        "source": "bitcoin_core_announcements",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 5,
+        "independent_articles": 5,
+        "earliest": "2026-10-08 08:46:15.940372+00:00",
+        "latest": "2026-10-08 08:46:16.088879+00:00"
+      },
+      {
+        "source": "coindesk",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 165,
+        "independent_articles": 131,
+        "earliest": "2026-09-30 10:36:41.830484+00:00",
+        "latest": "2026-10-08 09:45:40.807973+00:00"
+      },
+      {
+        "source": "cointelegraph",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 31,
+        "independent_articles": 30,
+        "earliest": "2026-10-08 08:46:16.126359+00:00",
+        "latest": "2026-10-08 09:01:17.317074+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 18,
+        "independent_articles": 18,
+        "earliest": "2026-09-30 10:51:42.231319+00:00",
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "facts": [
+      {
+        "source": "bitcoin_core_announcements",
+        "versions": 5,
+        "independent_articles": 5,
+        "btc_facts": 5,
+        "latest": "2026-10-08 08:46:16.088879+00:00"
+      },
+      {
+        "source": "coindesk",
+        "versions": 165,
+        "independent_articles": 131,
+        "btc_facts": 66,
+        "latest": "2026-10-08 09:45:40.807973+00:00"
+      },
+      {
+        "source": "cointelegraph",
+        "versions": 31,
+        "independent_articles": 30,
+        "btc_facts": 10,
+        "latest": "2026-10-08 09:01:17.317074+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "versions": 18,
+        "independent_articles": 18,
+        "btc_facts": 0,
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "extraction_jobs": [
+      {
+        "status": "completed",
+        "count": 219
+      }
+    ],
+    "loops": [],
+    "campaigns": [],
+    "forward": [],
+    "runner_status": [
+      {
+        "status": "stopped",
+        "count": 15
+      }
+    ],
+    "runs": [],
+    "holdout": [],
+    "readiness": {
+      "1h": {
+        "checked_at": "2026-10-08T09:46:13.454369+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 823,
+        "timeframe": "1h",
+        "bars_fresh": false,
+        "first_bar_ts": "2026-09-04T00:00:00+00:00",
+        "last_bar_ts": "2026-10-08T06:00:00+00:00",
+        "last_bar_close_ts": "2026-10-08T07:00:00+00:00",
+        "last_bar_close_age_seconds": 9973.454369,
+        "freshness_limit_seconds": 7200.0,
+        "freshness_policy": "Advisory cache preflight: less than two bar intervals since close; runtime backfills and requires the expected latest closed bar.",
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T14:00:00+00:00",
+        "selection_end": "2026-10-01T10:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      },
+      "4h": {
+        "checked_at": "2026-10-08T09:46:13.503726+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 205,
+        "timeframe": "4h",
+        "bars_fresh": true,
+        "first_bar_ts": "2026-09-04T00:00:00+00:00",
+        "last_bar_ts": "2026-10-08T00:00:00+00:00",
+        "last_bar_close_ts": "2026-10-08T04:00:00+00:00",
+        "last_bar_close_age_seconds": 20773.503726,
+        "freshness_limit_seconds": 28800.0,
+        "freshness_policy": "Advisory cache preflight: less than two bar intervals since close; runtime backfills and requires the expected latest closed bar.",
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T16:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      }
+    }
+  },
+  "new_e2_model_calls": 0,
+  "new_e2_cost_usd": 0,
+  "positive_e2_passed": false
 }
