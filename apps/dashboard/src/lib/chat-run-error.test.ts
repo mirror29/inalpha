@@ -41,7 +41,7 @@ describe("chat failure subscriber", () => {
     expect(onError).toHaveBeenCalledWith("Request failed; retry (CHAT_REQUEST_FAILED)");
   });
 
-  it("keeps stop and abort silent, then reports a genuine subsequent failure", () => {
+  it("silences requested stops and reports unexpected aborts", () => {
     const onError = vi.fn();
     let stopping = true;
     const subscriber = createChatErrorSubscriber({ isStopping: () => stopping, onError,
@@ -73,6 +73,26 @@ describe("AG-UI failure lifecycle", () => {
       messages: { generic: "Request failed", incompleteStream: "Incomplete" } }));
     await expect(agent.runAgent()).rejects.toBeDefined();
     expect(onError).toHaveBeenCalledWith("Request failed (CHAT_REQUEST_FAILED)");
+    expect(agent.isRunning).toBe(false);
+  });
+
+  it("real HttpAgent resets a specific protocol error before a later HTTP failure", async () => {
+    const events = [
+      { type: "RUN_STARTED", threadId: "test-thread", runId: "run-1" },
+      { type: "RUN_ERROR", message: "Interrupted", code: "INCOMPLETE_STREAM" },
+    ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(events, { headers: { "Content-Type": "text/event-stream" } }))
+      .mockResolvedValueOnce(new Response("Invalid request body", { status: 400 })));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const onError = vi.fn();
+    const agent = new HttpAgent({ url: "http://chat.test/run", threadId: "test-thread" });
+    agent.subscribe(createChatErrorSubscriber({ isStopping: () => false, onError,
+      messages: { generic: "Failed", incompleteStream: "Incomplete" } }));
+    await agent.runAgent({ runId: "run-1" }).catch(() => {});
+    expect(onError).toHaveBeenLastCalledWith("Interrupted (INCOMPLETE_STREAM)");
+    await expect(agent.runAgent({ runId: "run-2" })).rejects.toBeDefined();
+    expect(onError).toHaveBeenLastCalledWith("Failed (CHAT_REQUEST_FAILED)");
     expect(agent.isRunning).toBe(false);
   });
 
