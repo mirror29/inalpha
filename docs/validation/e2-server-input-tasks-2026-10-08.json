@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-10-08T07:42:09.227467+00:00",
+  "checked_at": "2026-10-08T07:47:34.475769+00:00",
   "scope": "User-requested real server input replenishment tasks; not a paid search or full positive E2 acceptance",
   "diagnostic": {
     "checked_at": "2026-10-08T07:39:47.396921+00:00",
@@ -158,5 +158,28 @@
     "No service restart, manual SQL writes, synthetic facts, changed available_at, changed search window, reduced thresholds, Runner start, orders or holdout execution.",
     "Tasks use existing service code. Extraction uses normal service identity, outbox leases and fencing.",
     "Latest ledger type counts are diagnostics only, not independent selection coverage or matched-control/FDR validation."
-  ]
+  ],
+  "alternative_asset_diagnostic": {
+    "checked_at": "2026-10-08T07:47:34.475769+00:00",
+    "scope": "Alternative-asset input diagnostic only; unchanged natural windows and qualification, no task/search start.",
+    "assets": {
+      "asset:BTC": {
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false
+      }
+    }
+  }
 }
