@@ -38,7 +38,8 @@ export function createChatErrorSubscriber(options: {
   return {
     onRunInitialized: () => { reportedSpecificError = false; },
     onRunErrorEvent: ({ event }: { event?: ChatRunErrorEvent }) => {
-      if (options.isStopping()) return;
+      if (options.isStopping()
+        || /abort|BodyStreamBuffer|signal is aborted/i.test(`${event?.message ?? ""} ${event?.code ?? ""}`)) return;
       reportedSpecificError = Boolean(event?.code || event?.message);
       options.onError(formatChatRunError(event ?? {}, options.messages));
     },
