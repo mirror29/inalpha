@@ -1,0 +1,12 @@
+{
+  "workers_started": 2,
+  "workers_stopped": 2,
+  "pid1": "uvicorn",
+  "exit_code": 0,
+  "stop_seconds": 0.8,
+  "probe": "isolated FastAPI lifespan, existing local Data dependency image with exact patched CMD; not production acceptance",
+  "date": "2026-10-08",
+  "production_issue": "old Data PID 1 sh -> uv -> uvicorn; SIGTERM then SIGKILL after 120 seconds, exit 137",
+  "implementation": "exec the installed .venv/bin/uvicorn so it becomes PID 1; preserve module/port/worker configuration; no dependency synchronization at runtime",
+  "production_validation": "pending merge and deployment"
+}
