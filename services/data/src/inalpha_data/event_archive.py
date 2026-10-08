@@ -10,7 +10,9 @@ from pathlib import Path
 
 from inalpha_shared import get_logger
 from inalpha_shared.db import get_conn
+from psycopg import AsyncConnection
 
+from .config import get_data_settings
 from .connectors.news import get_router
 from .event_models import RawEventIngestRequest
 from .news_models import NewsQuery, NewsResponse
@@ -58,6 +60,23 @@ class EventArchiveScheduler:
             await asyncio.sleep(self._interval_s)
 
     async def _tick(self) -> None:
+        """用独立连接持有采集锁，避免多个 HTTP worker 同时请求来源。"""
+        url = get_data_settings().database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+        async with await AsyncConnection.connect(
+            url, autocommit=True, connect_timeout=5
+        ) as lease:
+            cursor = await lease.execute(
+                "SELECT pg_try_advisory_lock(hashtextextended(%s, 0))",
+                ("inalpha:event-archive:forward",),
+            )
+            acquired = await cursor.fetchone()
+            if not acquired or not acquired[0]:
+                _logger.info("event_archive_tick_skipped", reason="another_worker_collecting")
+                return
+            await self._collect_once()
+
+    async def _collect_once(self) -> None:
+        """执行一个有界采集轮次，来源写入各自使用短事务。"""
         batches = await get_router().fetch_archive_batches(NewsQuery(market="crypto", limit=50))
         for response in batches:
             status = response.providers[0]

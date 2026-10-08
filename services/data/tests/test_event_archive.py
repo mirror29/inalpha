@@ -46,7 +46,7 @@ async def test_archive_ingests_each_source_and_preserves_first_observation(
     monkeypatch.setattr(event_archive, "get_conn", connection)
     monkeypatch.setattr(event_archive.store, "ingest_raw_event", ingest)
     started = datetime.now(UTC)
-    await event_archive.EventArchiveScheduler(enabled=True, interval_s=900)._tick()
+    await event_archive.EventArchiveScheduler(enabled=True, interval_s=900)._collect_once()
     assert [request.source for request in ingested] == ["busy", "official"]
     for request in ingested:
         assert request.first_seen_at == observed
@@ -185,5 +185,68 @@ async def test_source_write_cancellation_stops_remaining_batches(
     monkeypatch.setattr(event_archive, "get_router", lambda: Router())
     monkeypatch.setattr(scheduler, "_ingest_batch", cancel)
     with pytest.raises(asyncio.CancelledError):
-        await scheduler._tick()
+        await scheduler._collect_once()
     assert len(calls) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures("db_pool")
+async def test_concurrent_workers_poll_once_and_next_worker_can_take_over(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """真实数据库锁隔离并发轮询，正常关闭连接后另一 worker 可接手。"""
+    import asyncio
+
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    class Router:
+        async def fetch_archive_batches(self, query):
+            calls.append(query)
+            entered.set()
+            await release.wait()
+            return []
+
+    monkeypatch.setattr(event_archive, "get_router", lambda: Router())
+    first = event_archive.EventArchiveScheduler(enabled=True, interval_s=900)
+    second = event_archive.EventArchiveScheduler(enabled=True, interval_s=900)
+    owner = asyncio.create_task(first._tick())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        await asyncio.wait_for(second._tick(), timeout=5)
+        assert len(calls) == 1
+    finally:
+        release.set()
+        await owner
+    await asyncio.wait_for(second._tick(), timeout=5)
+    assert len(calls) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures("db_pool")
+async def test_cancelled_collector_releases_lock_for_next_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """取消持锁采集后，数据库连接释放锁，不遗留采集阻塞。"""
+    import asyncio
+
+    entered = asyncio.Event()
+    calls = []
+
+    class Router:
+        async def fetch_archive_batches(self, query):
+            calls.append(query)
+            if len(calls) == 1:
+                entered.set()
+                await asyncio.Event().wait()
+            return []
+
+    monkeypatch.setattr(event_archive, "get_router", lambda: Router())
+    scheduler = event_archive.EventArchiveScheduler(enabled=True, interval_s=900)
+    owner = asyncio.create_task(scheduler._tick())
+    await asyncio.wait_for(entered.wait(), timeout=5)
+    owner.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+    await asyncio.wait_for(scheduler._tick(), timeout=5)
+    assert len(calls) == 2
