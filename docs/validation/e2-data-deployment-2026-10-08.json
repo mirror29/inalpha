@@ -1,0 +1,321 @@
+{
+  "checked_at": "2026-10-08T08:48:38.950060+00:00",
+  "deployment": {
+    "repository_sha": "33e430f6692e107fe8e9f7f26f8024f5d94e1f9d",
+    "merged_prs": [
+      187,
+      188
+    ],
+    "data_image": "ghcr.io/mirror29/inalpha-data:33e430f6692e107fe8e9f7f26f8024f5d94e1f9d",
+    "created_at": "2026-10-08T08:43:43.339135678Z",
+    "started_at": "2026-10-08T08:45:45.284220615Z",
+    "health": "healthy",
+    "established_data_connections_before_replacement": 0,
+    "configured_shutdown_timeout_seconds": 120,
+    "graceful_shutdown_success_verified": false,
+    "configuration_backup": "infra/.env.prod.before-data-20261008T084342Z",
+    "changed_containers": [
+      "inalpha-data"
+    ],
+    "all_other_container_ids_unchanged": true
+  },
+  "server_evidence": {
+    "migration": [
+      {
+        "version_num": "0059"
+      }
+    ],
+    "raw_provenance": [
+      {
+        "source": "bitcoin_core_announcements",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 5,
+        "independent_articles": 5,
+        "earliest": "2026-10-08 08:46:15.940372+00:00",
+        "latest": "2026-10-08 08:46:16.088879+00:00"
+      },
+      {
+        "source": "coindesk",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 162,
+        "independent_articles": 129,
+        "earliest": "2026-09-30 10:36:41.830484+00:00",
+        "latest": "2026-10-08 08:43:36.997064+00:00"
+      },
+      {
+        "source": "cointelegraph",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 30,
+        "independent_articles": 30,
+        "earliest": "2026-10-08 08:46:16.126359+00:00",
+        "latest": "2026-10-08 08:46:16.391600+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 18,
+        "independent_articles": 18,
+        "earliest": "2026-09-30 10:51:42.231319+00:00",
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "facts": [
+      {
+        "source": "bitcoin_core_announcements",
+        "versions": 5,
+        "independent_articles": 5,
+        "btc_facts": 5,
+        "latest": "2026-10-08 08:46:16.088879+00:00"
+      },
+      {
+        "source": "coindesk",
+        "versions": 162,
+        "independent_articles": 129,
+        "btc_facts": 66,
+        "latest": "2026-10-08 08:43:36.997064+00:00"
+      },
+      {
+        "source": "cointelegraph",
+        "versions": 30,
+        "independent_articles": 30,
+        "btc_facts": 10,
+        "latest": "2026-10-08 08:46:16.391600+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "versions": 18,
+        "independent_articles": 18,
+        "btc_facts": 0,
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "extraction_jobs": [
+      {
+        "status": "completed",
+        "count": 215
+      }
+    ],
+    "loops": [],
+    "campaigns": [],
+    "forward": [],
+    "runner_status": [
+      {
+        "status": "stopped",
+        "count": 15
+      }
+    ],
+    "runs": [],
+    "holdout": [],
+    "readiness": {
+      "1h": {
+        "checked_at": "2026-10-08T08:48:38.950060+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 823,
+        "timeframe": "1h",
+        "bars_fresh": true,
+        "first_bar_ts": "2026-09-04T00:00:00+00:00",
+        "last_bar_ts": "2026-10-08T06:00:00+00:00",
+        "last_bar_close_ts": "2026-10-08T07:00:00+00:00",
+        "last_bar_close_age_seconds": 6518.95006,
+        "freshness_limit_seconds": 7200.0,
+        "freshness_policy": "Advisory cache preflight: less than two bar intervals since close; runtime backfills and requires the expected latest closed bar.",
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T14:00:00+00:00",
+        "selection_end": "2026-10-01T10:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      },
+      "4h": {
+        "checked_at": "2026-10-08T08:48:39.010768+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 205,
+        "timeframe": "4h",
+        "bars_fresh": true,
+        "first_bar_ts": "2026-09-04T00:00:00+00:00",
+        "last_bar_ts": "2026-10-08T00:00:00+00:00",
+        "last_bar_close_ts": "2026-10-08T04:00:00+00:00",
+        "last_bar_close_age_seconds": 17319.010768,
+        "freshness_limit_seconds": 28800.0,
+        "freshness_policy": "Advisory cache preflight: less than two bar intervals since close; runtime backfills and requires the expected latest closed bar.",
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T16:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      }
+    }
+  },
+  "archive_logs": [
+    {
+      "event": "event_archive_started",
+      "timestamp": "2026-10-08T08:46:15.053368Z"
+    },
+    {
+      "event": "event_archive_started",
+      "timestamp": "2026-10-08T08:46:15.062132Z"
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T08:46:15.884199Z",
+      "provider": "rss:coindesk",
+      "status": "ok",
+      "fetched_items": 25,
+      "archive_items": 25
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T08:46:15.922732Z",
+      "provider": "rss:coindesk",
+      "archive_items": 25
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T08:46:15.922829Z",
+      "provider": "rss:kraken_blog",
+      "status": "ok",
+      "fetched_items": 10,
+      "archive_items": 10
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T08:46:15.940178Z",
+      "provider": "rss:kraken_blog",
+      "archive_items": 10
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T08:46:15.940274Z",
+      "provider": "rss:bitcoin_core_announcements",
+      "status": "ok",
+      "fetched_items": 5,
+      "archive_items": 5
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T08:46:16.020571Z",
+      "provider": "rss:coindesk",
+      "status": "ok",
+      "fetched_items": 25,
+      "archive_items": 25
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T08:46:16.062216Z",
+      "provider": "rss:coindesk",
+      "archive_items": 25
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T08:46:16.062315Z",
+      "provider": "rss:kraken_blog",
+      "status": "rate_limited",
+      "fetched_items": 0,
+      "archive_items": 0
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T08:46:16.062568Z",
+      "provider": "rss:kraken_blog",
+      "archive_items": 0
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T08:46:16.062677Z",
+      "provider": "rss:bitcoin_core_announcements",
+      "status": "ok",
+      "fetched_items": 5,
+      "archive_items": 5
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T08:46:16.125777Z",
+      "provider": "rss:bitcoin_core_announcements",
+      "archive_items": 5
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T08:46:16.125916Z",
+      "provider": "rss:cointelegraph",
+      "status": "ok",
+      "fetched_items": 30,
+      "archive_items": 30
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T08:46:16.131967Z",
+      "provider": "rss:bitcoin_core_announcements",
+      "archive_items": 5
+    },
+    {
+      "event": "event_archive_source_fetched",
+      "timestamp": "2026-10-08T08:46:16.132060Z",
+      "provider": "rss:cointelegraph",
+      "status": "ok",
+      "fetched_items": 30,
+      "archive_items": 30
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T08:46:16.408126Z",
+      "provider": "rss:cointelegraph",
+      "archive_items": 30
+    },
+    {
+      "event": "event_archive_source_completed",
+      "timestamp": "2026-10-08T08:46:16.456682Z",
+      "provider": "rss:cointelegraph",
+      "archive_items": 30
+    }
+  ],
+  "acceptance": {
+    "new_sources_raw_articles": 35,
+    "new_sources_facts": 35,
+    "new_sources_completed_extractions": 35,
+    "total_independent_articles": 182,
+    "total_raw_versions": 215,
+    "total_completed_extractions": 215,
+    "original_readiness_source_scope_unchanged": true,
+    "positive_e2_passed": false,
+    "new_e2_model_calls": 0,
+    "new_e2_cost_usd": 0
+  },
+  "open_findings": [
+    "Two Data workers both poll sources; one Kraken startup poll was rate_limited, while the other succeeded. Source coordination remains to fix.",
+    "Configured 120-second graceful stop timeout does not prove graceful shutdown completed.",
+    "Original natural selection windows still contain only one qualifying independent macro event; matched controls/FDR/champion/Forward/holdout remain unverified."
+  ]
+}
