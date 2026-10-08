@@ -60,7 +60,10 @@
       ],
       "file": "scripts/tests/test_e2_readiness.py",
       "result": "verified partial fast-forward files restored, generated fonts backed up, ownership corrected to repository owner, fast-forward completed; preexisting untracked files preserved"
-    }
+    },
+    "dashboard_created_at": "2026-10-08T04:49:08.898354305Z",
+    "dashboard_started_at": "2026-10-08T04:49:11.19896635Z",
+    "timeline_source": "Docker targeted Created and State.StartedAt inspection during follow-up; no container recreation."
   },
   "http_probes": {
     "data": {
@@ -426,6 +429,137 @@
     "Owner-authenticated strategy flow, orchestration grant exchange, champion, Forward and holdout were not tested in this server smoke.",
     "Backend containers retained because runtime code is unchanged; this is not a full-stack restart/recovery acceptance.",
     "Mastra /api returns 404 as expected for the existing process-only health probe; the actual /permissions/pending route returned 401 without authentication.",
-    "Public non-browser urllib login request was rejected with HTTP 403; no protection was bypassed. Public browser pages loaded; font HTTP/hash checks used the internal Dashboard endpoint."
-  ]
+    "Public non-browser urllib login request was rejected with HTTP 403; no protection was bypassed. Public browser pages loaded; font HTTP/hash checks used the internal Dashboard endpoint.",
+    "At follow-up 06:06 UTC, 1h cached bars exceeded the 7200-second close-age threshold; 4h remained within 28800 seconds. Normal authenticated Data API refresh remains required before any search; no user JWT was fabricated."
+  ],
+  "timestamp_semantics": "checked_at is receipt aggregation time, not deployment time; before/after readiness timestamps bracket Dashboard container creation and start.",
+  "followup": {
+    "migration": [
+      {
+        "version_num": "0059"
+      }
+    ],
+    "raw_provenance": [
+      {
+        "source": "coindesk",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 159,
+        "independent_articles": 126,
+        "earliest": "2026-09-30 10:36:41.830484+00:00",
+        "latest": "2026-10-08 05:43:35.140130+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 18,
+        "independent_articles": 18,
+        "earliest": "2026-09-30 10:51:42.231319+00:00",
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "facts": [
+      {
+        "source": "coindesk",
+        "versions": 159,
+        "independent_articles": 126,
+        "btc_facts": 66,
+        "latest": "2026-10-08 05:43:35.140130+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "versions": 18,
+        "independent_articles": 18,
+        "btc_facts": 0,
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "extraction_jobs": [
+      {
+        "status": "completed",
+        "count": 177
+      }
+    ],
+    "loops": [],
+    "campaigns": [],
+    "forward": [],
+    "runner_status": [
+      {
+        "status": "stopped",
+        "count": 15
+      }
+    ],
+    "runs": [],
+    "holdout": [],
+    "readiness": {
+      "1h": {
+        "checked_at": "2026-10-08T06:06:03.620554+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 820,
+        "timeframe": "1h",
+        "bars_fresh": false,
+        "first_bar_ts": "2026-09-04T00:00:00+00:00",
+        "last_bar_ts": "2026-10-08T03:00:00+00:00",
+        "last_bar_close_ts": "2026-10-08T04:00:00+00:00",
+        "last_bar_close_age_seconds": 7563.620554,
+        "freshness_limit_seconds": 7200.0,
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T13:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      },
+      "4h": {
+        "checked_at": "2026-10-08T06:06:03.671206+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 205,
+        "timeframe": "4h",
+        "bars_fresh": true,
+        "first_bar_ts": "2026-09-04T00:00:00+00:00",
+        "last_bar_ts": "2026-10-08T00:00:00+00:00",
+        "last_bar_close_ts": "2026-10-08T04:00:00+00:00",
+        "last_bar_close_age_seconds": 7563.671206,
+        "freshness_limit_seconds": 28800.0,
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T16:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      }
+    }
+  },
+  "followup_readiness_tool_sha256": "81d566cd8ffb12a69d546d7f8811ca13af805d75f9b921de85e09a0496c4d2ba",
+  "followup_execution": "Updated local read-only preflight supplied via stdin to existing Evolver interpreter; no server code deployment or database direct writes.",
+  "historical_freshness_evidence_limit": "Original snapshots retained only computed freshness booleans; original first/last bar timestamps were not recorded. Follow-up contains measured timestamps and age; it is not a reconstruction of historical observations."
 }
