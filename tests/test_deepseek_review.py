@@ -22,6 +22,7 @@ def _load_module():
         raise RuntimeError(f"cannot load {SCRIPT_PATH}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module.STATUS_PATH = os.devnull
     return module
 
 
@@ -97,6 +98,8 @@ class DeepSeekReviewTest(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer secret-value")
         self.assertEqual(payload["model"], "deepseek-flash")
         self.assertEqual(payload["max_tokens"], 32768)
+        self.assertEqual(payload["thinking"], {"type": "enabled"})
+        self.assertEqual(payload["reasoning_effort"], "low")
         self.assertIn("Write the review in English", payload["messages"][0]["content"])
         self.assertIn(
             "## 项目规则（CLAUDE.md）\nproject rules", payload["messages"][1]["content"]
@@ -129,6 +132,19 @@ class DeepSeekReviewTest(unittest.TestCase):
             "return the final review in English now",
             retry_payload["messages"][-1]["content"],
         )
+
+    def test_reasoning_exhaustion_retries_without_another_reasoning_budget(self):
+        module = _load_module()
+        with patch.object(
+            module.urllib.request,
+            "urlopen",
+            side_effect=[_FakeResponse("", finish_reason="length"), _FakeResponse()],
+        ) as urlopen:
+            result = module._call_deepseek("key", "title", "diff", "rules")
+        self.assertEqual(result, _review_json())
+        retry = json.loads(urlopen.call_args_list[1].args[0].data)
+        self.assertEqual(retry["thinking"], {"type": "disabled"})
+        self.assertNotIn("reasoning_effort", retry)
 
     def test_empty_content_retries_then_returns_review(self) -> None:
         module = _load_module()
@@ -260,7 +276,13 @@ class DeepSeekReviewTest(unittest.TestCase):
         module = _load_module()
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            for attr in ("DIFF_PATH", "TITLE_PATH", "RULES_PATH", "OUT_PATH"):
+            for attr in (
+                "DIFF_PATH",
+                "TITLE_PATH",
+                "RULES_PATH",
+                "OUT_PATH",
+                "STATUS_PATH",
+            ):
                 setattr(module, attr, str(root / attr))
             for attr in ("DIFF_PATH", "TITLE_PATH", "RULES_PATH"):
                 Path(getattr(module, attr)).write_text("input")
@@ -270,6 +292,7 @@ class DeepSeekReviewTest(unittest.TestCase):
             ):
                 module.main()
             rendered = Path(module.OUT_PATH).read_text()
+            self.assertEqual(Path(module.STATUS_PATH).read_text(), "completed")
         self.assertIn("No medium-or-higher issues", rendered)
         self.assertNotIn('"findings"', rendered)
 
@@ -277,10 +300,13 @@ class DeepSeekReviewTest(unittest.TestCase):
         module = _load_module()
         with tempfile.TemporaryDirectory() as tmpdir:
             module.OUT_PATH = str(Path(tmpdir) / "review.md")
+            module.STATUS_PATH = str(Path(tmpdir) / "status.txt")
             with patch.dict(os.environ, {}, clear=True):
                 with self.assertRaisesRegex(SystemExit, "0"):
                     module.main()
             body = Path(module.OUT_PATH).read_text()
+
+            self.assertEqual(Path(module.STATUS_PATH).read_text(), "incomplete")
 
         self.assertIn("DeepSeek V4 Pro PR Review", body)
         self.assertIn("DEEPSEEK_API_KEY is not configured", body)

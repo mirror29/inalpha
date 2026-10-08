@@ -71,10 +71,10 @@ jobs:
       - name: Log review status
         if: always()
         run: |
-          if [ "${{ steps.review.outcome }}" = "success" ]; then
+          if [ -f /tmp/review_status.txt ] && [ "$(cat /tmp/review_status.txt)" = "completed" ]; then
             echo "DeepSeek review completed successfully"
           else
-            echo "DeepSeek review skipped or failed (non-blocking) — outcome: ${{ steps.review.outcome }}"
+            echo "DeepSeek review incomplete or skipped (non-blocking) — step outcome: ${{ steps.review.outcome }}"
           fi
 
       - name: Post/Update sticky comment

@@ -33,6 +33,7 @@ DIFF_PATH = "/tmp/pr_diff.txt"
 TITLE_PATH = "/tmp/pr_title.txt"
 RULES_PATH = "CLAUDE.md"
 OUT_PATH = "/tmp/review_body.txt"
+STATUS_PATH = "/tmp/review_status.txt"
 
 BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
@@ -114,6 +115,8 @@ def _fail(msg: str) -> None:
         f.write(
             f"## 🤖 DeepSeek V4 Pro PR Review\n\n⚠️ Review could not be completed: {msg}\n"
         )
+    with open(STATUS_PATH, "w") as f:
+        f.write("incomplete")
     sys.exit(0)
 
 
@@ -242,6 +245,8 @@ def _call_deepseek(api_key: str, title: str, diff: str, rules: str) -> str:
             },
         ],
         "temperature": 0.1,
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "low",
         # V4 Pro 会把 reasoning tokens 计入 completion；大 diff 下 16384 也可能在正文前耗尽。
         "max_tokens": 32768,
     }
@@ -278,6 +283,10 @@ def _call_deepseek(api_key: str, title: str, diff: str, rules: str) -> str:
             file=sys.stderr,
         )
         if attempt + 1 < MAX_ATTEMPTS:
+            if choice.get("finish_reason") == "length" and not content:
+                # Do not spend a second full reasoning budget without producing a review.
+                payload["thinking"] = {"type": "disabled"}
+                payload.pop("reasoning_effort", None)
             payload["messages"].append(
                 {
                     "role": "user",
@@ -322,6 +331,8 @@ def main() -> None:
     body = _render_review(content)
     with open(OUT_PATH, "w") as f:
         f.write(body)
+    with open(STATUS_PATH, "w") as f:
+        f.write("completed")
     print(f"deepseek_review: done, {len(body)} chars → {OUT_PATH}")
 
 
