@@ -131,6 +131,9 @@ def test_readiness_records_freshness_evidence_and_rejects_exact_limit(monkeypatc
         assert result["last_bar_close_age_seconds"] == age_seconds
         assert result["freshness_limit_seconds"] == 7200
         assert result["bars_fresh"] is expected
+        assert result["bars_fresh"] == (
+            result["last_bar_close_age_seconds"] < result["freshness_limit_seconds"]
+        )
         assert result["ready_to_attempt_search"] is False
 
     bars.clear()

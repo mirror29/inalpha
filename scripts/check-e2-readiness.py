@@ -111,7 +111,10 @@ ORDER BY available_at,source,source_event_id""",
             (as_of, as_of, list(SUPPORTED_EVENT_TYPES), start, end),
         ).fetchall()
         selection = summarize_selection(facts)
-        fresh = as_of - (rows[-1]["ts"] + duration) < duration * 2
+        last_bar_close = rows[-1]["ts"] + duration
+        close_age_seconds = (as_of - last_bar_close).total_seconds()
+        freshness_limit_seconds = (duration * 2).total_seconds()
+        fresh = close_age_seconds < freshness_limit_seconds
         contiguous = all(b["ts"] - a["ts"] == duration for a, b in pairwise(rows))
         return {
             "checked_at": as_of.isoformat(),
@@ -121,11 +124,13 @@ ORDER BY available_at,source,source_event_id""",
             "bars_fresh": fresh,
             "first_bar_ts": rows[0]["ts"].isoformat(),
             "last_bar_ts": rows[-1]["ts"].isoformat(),
-            "last_bar_close_ts": (rows[-1]["ts"] + duration).isoformat(),
-            "last_bar_close_age_seconds": (
-                as_of - (rows[-1]["ts"] + duration)
-            ).total_seconds(),
-            "freshness_limit_seconds": (duration * 2).total_seconds(),
+            "last_bar_close_ts": last_bar_close.isoformat(),
+            "last_bar_close_age_seconds": close_age_seconds,
+            "freshness_limit_seconds": freshness_limit_seconds,
+            "freshness_policy": (
+                "Advisory cache preflight: less than two bar intervals since close; "
+                "runtime backfills and requires the expected latest closed bar."
+            ),
             "bars_contiguous": contiguous,
             "selection_start": start.isoformat(),
             "selection_end": end.isoformat(),
