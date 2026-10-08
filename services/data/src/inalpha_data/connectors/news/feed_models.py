@@ -28,6 +28,14 @@ DEFAULT_CRYPTO_FEEDS = (
     FeedDefinition(
         "kraken_blog", "Kraken Blog", "https://blog.kraken.com/feed", "official", "en"
     ),
+    FeedDefinition(
+        "bitcoin_core_announcements", "Bitcoin Core", "https://bitcoincore.org/en/announcements.xml",
+        "official", "en"
+    ),
+    FeedDefinition(
+        "cointelegraph", "Cointelegraph", "https://cointelegraph.com/rss",
+        "professional_media", "en"
+    ),
 )
 
 
