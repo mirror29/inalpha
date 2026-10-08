@@ -1,0 +1,297 @@
+{
+  "date": "2026-10-08",
+  "checked_at": "2026-10-08T09:20:04.371375+00:00",
+  "pr": 189,
+  "merge_sha": "c0c7eecdfadf909bfceb2b55b8719e924d08d025",
+  "image_build_run": 37755363051,
+  "deployment": {
+    "service": "data",
+    "image": "ghcr.io/mirror29/inalpha-data:c0c7eecdfadf909bfceb2b55b8719e924d08d025",
+    "container": "86c83aea6783",
+    "healthy": true,
+    "created": "2026-10-08T09:17:08.279061971Z",
+    "started": "2026-10-08T09:19:09.243149198Z",
+    "config_backup": "infra/.env.prod.before-data-20261008T091707Z",
+    "other_container_ids_unchanged": 9,
+    "established_http_connections_before": 0
+  },
+  "shutdown": {
+    "graceful": false,
+    "timeout_seconds": 120,
+    "exit_code": 137,
+    "events": [
+      {
+        "action": "kill",
+        "time": 1791451028,
+        "signal": "15",
+        "exitCode": null
+      },
+      {
+        "action": "kill",
+        "time": 1791451148,
+        "signal": "9",
+        "exitCode": null
+      },
+      {
+        "action": "stop",
+        "time": 1791451148,
+        "signal": null,
+        "exitCode": null
+      },
+      {
+        "action": "die",
+        "time": 1791451148,
+        "signal": null,
+        "exitCode": "137"
+      },
+      {
+        "action": "destroy",
+        "time": 1791451149,
+        "signal": null,
+        "exitCode": null
+      }
+    ],
+    "followup": "Diagnose Data shutdown separately; no repeated production restart solely for diagnosis."
+  },
+  "coordination": {
+    "http_workers_started": 2,
+    "competitor_skips": 1,
+    "source_fetches_per_provider": 1,
+    "first_round_provider_status": "all four ok",
+    "source_logs": [
+      {
+        "event": "event_archive_started",
+        "timestamp": "2026-10-08T09:19:35.491203Z"
+      },
+      {
+        "event": "event_archive_started",
+        "timestamp": "2026-10-08T09:19:35.498678Z"
+      },
+      {
+        "event": "event_archive_tick_skipped",
+        "timestamp": "2026-10-08T09:19:35.528141Z",
+        "reason": "another_worker_collecting"
+      },
+      {
+        "event": "event_archive_source_fetched",
+        "timestamp": "2026-10-08T09:19:36.497547Z",
+        "provider": "rss:coindesk",
+        "status": "ok",
+        "fetched_items": 25,
+        "archive_items": 25
+      },
+      {
+        "event": "event_archive_source_completed",
+        "timestamp": "2026-10-08T09:19:36.714389Z",
+        "provider": "rss:coindesk",
+        "archive_items": 25
+      },
+      {
+        "event": "event_archive_source_fetched",
+        "timestamp": "2026-10-08T09:19:36.714516Z",
+        "provider": "rss:kraken_blog",
+        "status": "ok",
+        "fetched_items": 10,
+        "archive_items": 10
+      },
+      {
+        "event": "event_archive_source_completed",
+        "timestamp": "2026-10-08T09:19:36.755675Z",
+        "provider": "rss:kraken_blog",
+        "archive_items": 10
+      },
+      {
+        "event": "event_archive_source_fetched",
+        "timestamp": "2026-10-08T09:19:36.756236Z",
+        "provider": "rss:bitcoin_core_announcements",
+        "status": "ok",
+        "fetched_items": 5,
+        "archive_items": 5
+      },
+      {
+        "event": "event_archive_source_completed",
+        "timestamp": "2026-10-08T09:19:36.763970Z",
+        "provider": "rss:bitcoin_core_announcements",
+        "archive_items": 5
+      },
+      {
+        "event": "event_archive_source_fetched",
+        "timestamp": "2026-10-08T09:19:36.764074Z",
+        "provider": "rss:cointelegraph",
+        "status": "ok",
+        "fetched_items": 30,
+        "archive_items": 30
+      },
+      {
+        "event": "event_archive_source_completed",
+        "timestamp": "2026-10-08T09:19:36.802731Z",
+        "provider": "rss:cointelegraph",
+        "archive_items": 30
+      }
+    ],
+    "scope": "Startup round only; next scheduled round and real failover still need observation."
+  },
+  "database": {
+    "migration": [
+      {
+        "version_num": "0059"
+      }
+    ],
+    "raw_provenance": [
+      {
+        "source": "bitcoin_core_announcements",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 5,
+        "independent_articles": 5,
+        "earliest": "2026-10-08 08:46:15.940372+00:00",
+        "latest": "2026-10-08 08:46:16.088879+00:00"
+      },
+      {
+        "source": "coindesk",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 163,
+        "independent_articles": 130,
+        "earliest": "2026-09-30 10:36:41.830484+00:00",
+        "latest": "2026-10-08 09:19:36.497807+00:00"
+      },
+      {
+        "source": "cointelegraph",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 31,
+        "independent_articles": 30,
+        "earliest": "2026-10-08 08:46:16.126359+00:00",
+        "latest": "2026-10-08 09:01:17.317074+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 18,
+        "independent_articles": 18,
+        "earliest": "2026-09-30 10:51:42.231319+00:00",
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "facts": [
+      {
+        "source": "bitcoin_core_announcements",
+        "versions": 5,
+        "independent_articles": 5,
+        "btc_facts": 5,
+        "latest": "2026-10-08 08:46:16.088879+00:00"
+      },
+      {
+        "source": "coindesk",
+        "versions": 163,
+        "independent_articles": 130,
+        "btc_facts": 66,
+        "latest": "2026-10-08 09:19:36.497807+00:00"
+      },
+      {
+        "source": "cointelegraph",
+        "versions": 31,
+        "independent_articles": 30,
+        "btc_facts": 10,
+        "latest": "2026-10-08 09:01:17.317074+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "versions": 18,
+        "independent_articles": 18,
+        "btc_facts": 0,
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "extraction_jobs": [
+      {
+        "status": "completed",
+        "count": 217
+      }
+    ],
+    "loops": [],
+    "campaigns": [],
+    "forward": [],
+    "runner_status": [
+      {
+        "status": "stopped",
+        "count": 15
+      }
+    ],
+    "runs": [],
+    "holdout": [],
+    "readiness": {
+      "1h": {
+        "checked_at": "2026-10-08T09:20:04.320674+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 823,
+        "timeframe": "1h",
+        "bars_fresh": false,
+        "first_bar_ts": "2026-09-04T00:00:00+00:00",
+        "last_bar_ts": "2026-10-08T06:00:00+00:00",
+        "last_bar_close_ts": "2026-10-08T07:00:00+00:00",
+        "last_bar_close_age_seconds": 8404.320674,
+        "freshness_limit_seconds": 7200.0,
+        "freshness_policy": "Advisory cache preflight: less than two bar intervals since close; runtime backfills and requires the expected latest closed bar.",
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T14:00:00+00:00",
+        "selection_end": "2026-10-01T10:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      },
+      "4h": {
+        "checked_at": "2026-10-08T09:20:04.371375+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 205,
+        "timeframe": "4h",
+        "bars_fresh": true,
+        "first_bar_ts": "2026-09-04T00:00:00+00:00",
+        "last_bar_ts": "2026-10-08T00:00:00+00:00",
+        "last_bar_close_ts": "2026-10-08T04:00:00+00:00",
+        "last_bar_close_age_seconds": 19204.371375,
+        "freshness_limit_seconds": 28800.0,
+        "freshness_policy": "Advisory cache preflight: less than two bar intervals since close; runtime backfills and requires the expected latest closed bar.",
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T16:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      }
+    }
+  },
+  "new_e2_model_calls": 0,
+  "new_e2_cost_usd": 0,
+  "positive_e2_passed": false
+}
