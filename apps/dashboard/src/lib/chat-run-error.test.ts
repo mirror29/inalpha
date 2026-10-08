@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { formatChatRunError } from "./chat-run-error";
+import { createChatErrorSubscriber, formatChatRunError } from "./chat-run-error";
 
 describe("formatChatRunError", () => {
   const messages = {
@@ -27,5 +27,29 @@ describe("formatChatRunError", () => {
     expect(formatChatRunError({ message: "[object Object]" }, messages)).toBe(
       "generic failure",
     );
+  });
+});
+
+
+describe("chat failure subscriber", () => {
+  it("shows a rejected HTTP run without requiring a RUN_ERROR event", () => {
+    const onError = vi.fn();
+    const subscriber = createChatErrorSubscriber({ isStopping: () => false, onError,
+      messages: { generic: "Request failed; retry", incompleteStream: "Incomplete" } });
+    subscriber.onRunFailed({ error: new Error("HTTP 400: private request details") });
+    expect(onError).toHaveBeenCalledWith("Request failed; retry (CHAT_REQUEST_FAILED)");
+  });
+
+  it("keeps stop and abort silent, then reports a genuine subsequent failure", () => {
+    const onError = vi.fn();
+    let stopping = true;
+    const subscriber = createChatErrorSubscriber({ isStopping: () => stopping, onError,
+      messages: { generic: "Failed", incompleteStream: "Incomplete" } });
+    subscriber.onRunFailed({ error: new Error("cancelled") });
+    stopping = false;
+    subscriber.onRunFailed({ error: new DOMException("aborted", "AbortError") });
+    expect(onError).not.toHaveBeenCalled();
+    subscriber.onRunErrorEvent({ event: { code: "INCOMPLETE_STREAM" } });
+    expect(onError).toHaveBeenCalledWith("Incomplete (INCOMPLETE_STREAM)");
   });
 });

@@ -25,3 +25,26 @@ export function formatChatRunError(
   }
   return code ? `${messages.generic} (${code})` : messages.generic;
 }
+
+
+/** Handle both AG-UI error events and failed HTTP/transport runs. */
+export function createChatErrorSubscriber(options: {
+  isStopping: () => boolean;
+  onError: (message: string) => void;
+  messages: ChatRunErrorMessages;
+}) {
+  /** Ignore a user-requested cancellation without hiding real failures. */
+  const cancelled = (message = "", code = "") => options.isStopping()
+    || /abort|BodyStreamBuffer|signal is aborted/i.test(`${message} ${code}`);
+
+  return {
+    onRunErrorEvent: ({ event }: { event?: ChatRunErrorEvent }) => {
+      if (cancelled(event?.message, event?.code)) return;
+      options.onError(formatChatRunError(event ?? {}, options.messages));
+    },
+    onRunFailed: ({ error }: { error: Error }) => {
+      if (cancelled(error.message, error.name)) return;
+      options.onError(formatChatRunError({ code: "CHAT_REQUEST_FAILED" }, options.messages));
+    },
+  };
+}
