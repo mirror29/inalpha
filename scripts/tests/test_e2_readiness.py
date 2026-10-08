@@ -92,3 +92,43 @@ def test_catch_all_cannot_top_up_seven_typed_independent_events():
         {"event_type": "macro", "independent_events": 7}
     ]
     assert result["coverage_sufficient"] is False
+
+
+def test_readiness_records_freshness_evidence_and_rejects_exact_limit(monkeypatch):
+    module = runpy.run_path(str(Path(__file__).parents[1] / "check-e2-readiness.py"))
+    start = datetime(2026, 9, 30, tzinfo=UTC)
+    bars = [{"ts": start + timedelta(hours=index)} for index in range(10)]
+
+    class Result:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, query, params=None):
+            if "SELECT ts FROM bars" in query:
+                return Result(bars)
+            return Result([])
+
+    monkeypatch.setattr(module["psycopg"], "connect", lambda *a, **k: Connection())
+    for age_seconds, expected in ((7199, True), (7200, False)):
+        as_of = start + timedelta(hours=10, seconds=age_seconds)
+        result = module["check_readiness"](
+            "postgresql://unused", from_ts=start, as_of=as_of, timeframe="1h"
+        )
+        assert result["first_bar_ts"] == start.isoformat()
+        assert result["last_bar_ts"] == (start + timedelta(hours=9)).isoformat()
+        assert result["last_bar_close_ts"] == (start + timedelta(hours=10)).isoformat()
+        assert result["checked_at"] == as_of.isoformat()
+        assert result["last_bar_close_age_seconds"] == age_seconds
+        assert result["freshness_limit_seconds"] == 7200
+        assert result["bars_fresh"] is expected
+        assert result["ready_to_attempt_search"] is False

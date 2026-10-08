@@ -119,6 +119,13 @@ ORDER BY available_at,source,source_event_id""",
             "closed_bars": len(rows),
             "timeframe": timeframe,
             "bars_fresh": fresh,
+            "first_bar_ts": rows[0]["ts"].isoformat(),
+            "last_bar_ts": rows[-1]["ts"].isoformat(),
+            "last_bar_close_ts": (rows[-1]["ts"] + duration).isoformat(),
+            "last_bar_close_age_seconds": (
+                as_of - (rows[-1]["ts"] + duration)
+            ).total_seconds(),
+            "freshness_limit_seconds": (duration * 2).total_seconds(),
             "bars_contiguous": contiguous,
             "selection_start": start.isoformat(),
             "selection_end": end.isoformat(),
