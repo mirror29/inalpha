@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-10-08T04:57:35.221136+00:00",
+  "checked_at": "2026-10-08T06:24:18.484834+00:00",
   "scope": "Merged PR 186 selective Dashboard deployment and real server smoke; full positive E2 not accepted",
   "deployment": {
     "repository_commit": "f2c4a5d73713f5985c60ccb80930a087dc7927c3",
@@ -430,9 +430,10 @@
     "Backend containers retained because runtime code is unchanged; this is not a full-stack restart/recovery acceptance.",
     "Mastra /api returns 404 as expected for the existing process-only health probe; the actual /permissions/pending route returned 401 without authentication.",
     "Public non-browser urllib login request was rejected with HTTP 403; no protection was bypassed. Public browser pages loaded; font HTTP/hash checks used the internal Dashboard endpoint.",
-    "At follow-up 06:06 UTC, 1h cached bars exceeded the 7200-second close-age threshold; 4h remained within 28800 seconds. Normal authenticated Data API refresh remains required before any search; no user JWT was fabricated."
+    "At follow-up 06:06 UTC, 1h cached bars exceeded the 7200-second close-age threshold; 4h remained within 28800 seconds. Normal authenticated Data API refresh remains required before any search; no user JWT was fabricated.",
+    "The cache preflight threshold is advisory and unchanged; FrozenBarsLoader always backfills and prepare_frozen_bars requires the exact expected latest closed bar. The reported cache boolean is not runtime data acceptance."
   ],
-  "timestamp_semantics": "checked_at is receipt aggregation time, not deployment time; before/after readiness timestamps bracket Dashboard container creation and start.",
+  "timestamp_semantics": "checked_at is the latest observation included in this aggregate receipt. initial_receipt_aggregated_at records the original 04:57 aggregation; followup_checked_at and authenticated_followup.checked_at identify subsequent captures. Deployment creation/start are separate.",
   "followup": {
     "migration": [
       {
@@ -561,5 +562,159 @@
   },
   "followup_readiness_tool_sha256": "81d566cd8ffb12a69d546d7f8811ca13af805d75f9b921de85e09a0496c4d2ba",
   "followup_execution": "Updated local read-only preflight supplied via stdin to existing Evolver interpreter; no server code deployment or database direct writes.",
-  "historical_freshness_evidence_limit": "Original snapshots retained only computed freshness booleans; original first/last bar timestamps were not recorded. Follow-up contains measured timestamps and age; it is not a reconstruction of historical observations."
+  "historical_freshness_evidence_limit": "Original snapshots retained only computed freshness booleans; original first/last bar timestamps were not recorded. Follow-up contains measured timestamps and age; it is not a reconstruction of historical observations.",
+  "initial_receipt_aggregated_at": "2026-10-08T04:57:35.221136+00:00",
+  "followup_checked_at": "2026-10-08T06:06:03.671206+00:00",
+  "authenticated_followup": {
+    "checked_at": "2026-10-08T06:24:18.484834+00:00",
+    "session": "Existing Chrome session accepted by fresh Dashboard lab and evolution navigation; no password submitted or tokens extracted.",
+    "data_refresh": "Normal GET /api/bars through the logged-in BFF; Data backfill uses normal backendFetch identity. No direct database writes.",
+    "venue": "binance",
+    "symbol": "BTC/USDT:USDT",
+    "timeframe": "1h",
+    "requested_limit": 3,
+    "capabilities": {
+      "event_evolution_enabled": true,
+      "durable_loop_enabled": true,
+      "max_generations": 5,
+      "hypotheses_per_generation": 8,
+      "implementations_per_hypothesis": 3,
+      "automatic_stage_approval": true,
+      "automatic_promotion": false,
+      "runner_eligible": false
+    },
+    "real_evidence": {
+      "migration": [
+        {
+          "version_num": "0059"
+        }
+      ],
+      "raw_provenance": [
+        {
+          "source": "coindesk",
+          "collector_version": "selected-news-forward@1",
+          "policy_version": "first-seen-only-v1",
+          "versions": 160,
+          "independent_articles": 127,
+          "earliest": "2026-09-30 10:36:41.830484+00:00",
+          "latest": "2026-10-08 06:24:02.958749+00:00"
+        },
+        {
+          "source": "kraken_blog",
+          "collector_version": "selected-news-forward@1",
+          "policy_version": "first-seen-only-v1",
+          "versions": 18,
+          "independent_articles": 18,
+          "earliest": "2026-09-30 10:51:42.231319+00:00",
+          "latest": "2026-10-07 13:43:25.570508+00:00"
+        }
+      ],
+      "facts": [
+        {
+          "source": "coindesk",
+          "versions": 160,
+          "independent_articles": 127,
+          "btc_facts": 66,
+          "latest": "2026-10-08 06:24:02.958749+00:00"
+        },
+        {
+          "source": "kraken_blog",
+          "versions": 18,
+          "independent_articles": 18,
+          "btc_facts": 0,
+          "latest": "2026-10-07 13:43:25.570508+00:00"
+        }
+      ],
+      "extraction_jobs": [
+        {
+          "status": "completed",
+          "count": 178
+        }
+      ],
+      "loops": [],
+      "campaigns": [],
+      "forward": [],
+      "runner_status": [
+        {
+          "status": "stopped",
+          "count": 15
+        }
+      ],
+      "runs": [],
+      "holdout": [],
+      "readiness": {
+        "1h": {
+          "checked_at": "2026-10-08T06:24:18.404033+00:00",
+          "from_ts": "2026-09-04T00:00:00+00:00",
+          "closed_bars": 822,
+          "timeframe": "1h",
+          "bars_fresh": true,
+          "first_bar_ts": "2026-09-04T00:00:00+00:00",
+          "last_bar_ts": "2026-10-08T05:00:00+00:00",
+          "last_bar_close_ts": "2026-10-08T06:00:00+00:00",
+          "last_bar_close_age_seconds": 1458.404033,
+          "freshness_limit_seconds": 7200.0,
+          "freshness_policy": "Advisory cache preflight: less than two bar intervals since close; runtime backfills and requires the expected latest closed bar.",
+          "bars_contiguous": true,
+          "selection_start": "2026-09-24T14:00:00+00:00",
+          "selection_end": "2026-10-01T09:00:00+00:00",
+          "independent_events_by_type": [
+            {
+              "event_type": "macro",
+              "independent_events": 1
+            }
+          ],
+          "qualifying_independent_events_by_type": [
+            {
+              "event_type": "macro",
+              "independent_events": 1
+            }
+          ],
+          "direct_independent_events_by_type": [],
+          "minimum_matched_event_pairs": 8,
+          "coverage_sufficient": false,
+          "ready_to_attempt_search": false,
+          "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+        },
+        "4h": {
+          "checked_at": "2026-10-08T06:24:18.484834+00:00",
+          "from_ts": "2026-09-04T00:00:00+00:00",
+          "closed_bars": 205,
+          "timeframe": "4h",
+          "bars_fresh": true,
+          "first_bar_ts": "2026-09-04T00:00:00+00:00",
+          "last_bar_ts": "2026-10-08T00:00:00+00:00",
+          "last_bar_close_ts": "2026-10-08T04:00:00+00:00",
+          "last_bar_close_age_seconds": 8658.484834,
+          "freshness_limit_seconds": 28800.0,
+          "freshness_policy": "Advisory cache preflight: less than two bar intervals since close; runtime backfills and requires the expected latest closed bar.",
+          "bars_contiguous": true,
+          "selection_start": "2026-09-24T16:00:00+00:00",
+          "selection_end": "2026-10-01T08:00:00+00:00",
+          "independent_events_by_type": [
+            {
+              "event_type": "macro",
+              "independent_events": 1
+            }
+          ],
+          "qualifying_independent_events_by_type": [
+            {
+              "event_type": "macro",
+              "independent_events": 1
+            }
+          ],
+          "direct_independent_events_by_type": [],
+          "minimum_matched_event_pairs": 8,
+          "coverage_sufficient": false,
+          "ready_to_attempt_search": false,
+          "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+        }
+      }
+    },
+    "preflight_source_sha256": "f7892eeb5350acb73ee2d95b249935186205e598eaf1d32a30caa30c15d7a8c9",
+    "stdin_probe_sha256": "c871cf7d118d83b1ca367f6a0faaf27572940711a90ace7a0d51d5a5afced08d",
+    "grant_exchange_verified": false,
+    "new_model_calls": 0,
+    "new_model_cost_usd": 0
+  }
 }
