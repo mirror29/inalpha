@@ -65,3 +65,30 @@ def test_eight_independent_confirmed_events_satisfy_necessary_coverage_only():
     result = module["summarize_selection"](facts)
     assert result["coverage_sufficient"] is True
     assert result["direct_independent_events_by_type"] == []
+
+
+def test_catch_all_events_are_diagnostic_only_even_with_sufficient_count():
+    module = runpy.run_path(str(Path(__file__).parents[1] / "check-e2-readiness.py"))
+    start = datetime(2026, 9, 30, tzinfo=UTC)
+    facts = [
+        {"event_type": "other", "available_at": start + timedelta(days=day)}
+        for day in range(8)
+    ]
+    result = module["summarize_selection"](facts)
+    assert result["independent_events_by_type"][0]["independent_events"] == 8
+    assert result["qualifying_independent_events_by_type"] == []
+    assert result["coverage_sufficient"] is False
+
+
+def test_catch_all_cannot_top_up_seven_typed_independent_events():
+    module = runpy.run_path(str(Path(__file__).parents[1] / "check-e2-readiness.py"))
+    start = datetime(2026, 9, 30, tzinfo=UTC)
+    facts = [
+        {"event_type": "macro", "available_at": start + timedelta(days=day)}
+        for day in range(7)
+    ] + [{"event_type": "other", "available_at": start}]
+    result = module["summarize_selection"](facts)
+    assert result["qualifying_independent_events_by_type"] == [
+        {"event_type": "macro", "independent_events": 7}
+    ]
+    assert result["coverage_sufficient"] is False

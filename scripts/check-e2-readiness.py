@@ -26,15 +26,22 @@ DIRECT_EVENT_TYPES = {"listing", "delisting", "exploit", "chain_halt"}
 
 
 def summarize_selection(facts: list[dict]) -> dict:
-    """Count every supported hypothesis type while retaining direct-only diagnostics."""
+    """Count typed evidence for readiness while retaining catch-all diagnostics."""
     counts = independent_counts(facts)
+    qualifying = [
+        row
+        for row in counts
+        if row["event_type"] in SUPPORTED_EVENT_TYPES and row["event_type"] != "other"
+    ]
     return {
         "independent_events_by_type": counts,
+        "qualifying_independent_events_by_type": qualifying,
         "direct_independent_events_by_type": [
             row for row in counts if row["event_type"] in DIRECT_EVENT_TYPES
         ],
         "minimum_matched_event_pairs": 8,
-        "coverage_sufficient": sum(row["independent_events"] for row in counts) >= 8,
+        "coverage_sufficient": sum(row["independent_events"] for row in qualifying)
+        >= 8,
     }
 
 

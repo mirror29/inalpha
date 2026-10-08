@@ -835,6 +835,11 @@ E2 搜索；部署成功不代表正向链路通过，Forward 仍需至少真实
   这只是 DSL 的直接触发白名单。已有模型还支持监管、宏观、升级等 confirmed / hybrid 假设，
   因此不能把四类事件为 0 描述为全部事件为 0。预检现统计同一 HypothesisSpec 类型集合，
   并单独保留 `direct_independent_events_by_type`；类型集合与正式模型契约由回归测试核对。
+  CR 后补充区分：`other` 继续出现在诊断计数中，但不进入 `qualifying_independent_events_by_type`，
+  无论质量分数多高都不能凑够预检门槛；至少 8 个具名类型独立事件也仅是必要条件。
+  输入工具测试使用 Evolver 的已同步环境：在 `services/evolver` 执行
+  `uv run pytest -q ../../scripts/tests/test_e2_readiness.py ../../scripts/tests/test_e2_archive_replay.py`，
+  与 CI 命令一致，不跳过正式模型契约测试。此次输入工具回归 28 项通过。
 - **真实复核仍不就绪**：同一数据、同一窗口和相同 severity≥0.5 / confidence≥0.6 门槛下，
   1h 选择窗口有 13 条 BTC 最新事实，其中 11 条为 `other`，两条宏观事实按 24h 合并为 1 个独立事件；
   4h 窗口有 12 条 BTC 最新事实，其中 11 条为 `other`，另有 1 个独立宏观事件。
