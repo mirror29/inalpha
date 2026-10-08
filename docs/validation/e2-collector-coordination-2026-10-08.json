@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-08",
+  "trigger": "real production startup showed two Data workers polling the same sources; one Kraken poll rate_limited",
+  "implementation": "dedicated short-lived PostgreSQL connection owns a session advisory lock for the bounded polling round; other workers skip concurrent polls; source transactions continue to use the separate pool",
+  "schema_change": false,
+  "http_worker_count_changed": false,
+  "automatic_tests": {
+    "isolated_migration": "0058 wallet -> 0059 diagnostics",
+    "passed": 48,
+    "failed": 0,
+    "concurrency": "contending worker skips without fetching; a later worker acquires after owner connection closes",
+    "cancellation": "cancelled collection closes owning connection; next worker can poll",
+    "ruff": "passed",
+    "module_mypy": "passed"
+  },
+  "production_validation": "pending merge and deployment",
+  "positive_e2_passed": false
+}
