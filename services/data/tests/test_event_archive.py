@@ -75,7 +75,16 @@ async def test_failed_tick_logs_code_locations_without_exception_data(
         def warning(self, event, **fields):
             logs.append((event, fields))
 
-    monkeypatch.setattr(scheduler, "_tick", fail_tick)
+    class Lease:
+        async def execute(self, query):
+            pass
+
+    @asynccontextmanager
+    async def acquire():
+        yield Lease()
+
+    monkeypatch.setattr(event_archive, "_collection_lease", acquire)
+    monkeypatch.setattr(scheduler, "_collect_once", fail_tick)
     monkeypatch.setattr(event_archive, "_logger", Logger())
     monkeypatch.setattr(event_archive.asyncio, "sleep", stop_after_tick)
     with pytest.raises(asyncio.CancelledError):
@@ -249,4 +258,63 @@ async def test_cancelled_collector_releases_lock_for_next_worker(
     with pytest.raises(asyncio.CancelledError):
         await owner
     await asyncio.wait_for(scheduler._tick(), timeout=5)
+    assert len(calls) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures("db_pool")
+async def test_round_timeout_releases_lock_for_another_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """整轮期限中止迟滞采集，并释放真实数据库锁供下一 worker 接手。"""
+    import asyncio
+
+    calls = []
+
+    class Router:
+        async def fetch_archive_batches(self, query):
+            calls.append(query)
+            if len(calls) == 1:
+                await asyncio.Event().wait()
+            return []
+
+    monkeypatch.setattr(event_archive, "get_router", lambda: Router())
+    owner = event_archive.EventArchiveScheduler(enabled=True, interval_s=1)
+    next_worker = event_archive.EventArchiveScheduler(enabled=True, interval_s=900)
+    with pytest.raises(TimeoutError):
+        await owner._tick()
+    await asyncio.wait_for(next_worker._tick(), timeout=5)
+    assert len(calls) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures("db_pool")
+async def test_background_owner_keeps_lease_between_rounds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """后台采集者在轮询间隔也持锁，错开启动的 worker 不会重复抓取。"""
+    import asyncio
+
+    entered = asyncio.Event()
+    calls = []
+
+    class Router:
+        async def fetch_archive_batches(self, query):
+            calls.append(query)
+            entered.set()
+            return []
+
+    monkeypatch.setattr(event_archive, "get_router", lambda: Router())
+    first = event_archive.EventArchiveScheduler(enabled=True, interval_s=900)
+    second = event_archive.EventArchiveScheduler(enabled=True, interval_s=900)
+    owner = asyncio.create_task(first._loop())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        await asyncio.wait_for(second._tick(), timeout=5)
+        assert len(calls) == 1
+    finally:
+        owner.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await owner
+    await asyncio.wait_for(second._tick(), timeout=5)
     assert len(calls) == 2
