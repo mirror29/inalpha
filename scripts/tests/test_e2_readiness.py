@@ -132,3 +132,13 @@ def test_readiness_records_freshness_evidence_and_rejects_exact_limit(monkeypatc
         assert result["freshness_limit_seconds"] == 7200
         assert result["bars_fresh"] is expected
         assert result["ready_to_attempt_search"] is False
+
+    bars.clear()
+    empty = module["check_readiness"](
+        "postgresql://unused", from_ts=start, as_of=as_of, timeframe="1h"
+    )
+    assert empty == {
+        "ready_to_attempt_search": False,
+        "reason": "closed_bars_unavailable",
+        "closed_bars": 0,
+    }
