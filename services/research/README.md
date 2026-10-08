@@ -107,5 +107,7 @@ python scripts/replay-e2-archive.py \
 
 确认任务完成后，用 `scripts/check-e2-readiness.py --env-file <目标库的本地环境文件>`
 核对选择窗口；默认 BTC 永续 4h，`--timeframe 1h` 可检查一小时行情。
+就绪检查统计与 HypothesisSpec 相同的支持类型，包括 confirmed / hybrid 事件，
+并单列四类直接触发事件；质量门槛和 24 小时独立性规则不变。
 就绪检查只证明必要输入覆盖，匹配对照、FDR、收益和 Forward 仍需正式链路验证。
 模型预算、当前真实证据与下一步清单以 [当前状态文档](../../docs/04-current-state.md#未完成--下一步) 为准。
