@@ -1,0 +1,431 @@
+{
+  "checked_at": "2026-10-08T04:57:35.221136+00:00",
+  "scope": "Merged PR 186 selective Dashboard deployment and real server smoke; full positive E2 not accepted",
+  "deployment": {
+    "repository_commit": "f2c4a5d73713f5985c60ccb80930a087dc7927c3",
+    "dashboard_image": "ghcr.io/mirror29/inalpha-dashboard:f2c4a5d73713f5985c60ccb80930a087dc7927c3",
+    "dashboard_registry_digest": "sha256:2540d131dad91a4b3293b8951b30f0e95834391ea5821769145b406ba95f8f4c",
+    "image_build_run": 37728626990,
+    "merged_ci_run": 37728626905,
+    "method": "pull immutable SHA image; compose up --no-deps dashboard",
+    "backend_image_commit": "1d8494dd077c731a1d7e507035f6d3998b7ccefb",
+    "backend_runtime_diff_since_image": "none; research README only",
+    "container_comparison": {
+      "inalpha-dashboard": {
+        "container_unchanged": false,
+        "image": "ghcr.io/mirror29/inalpha-dashboard:f2c4a5d73713f5985c60ccb80930a087dc7927c3"
+      },
+      "inalpha-evolver": {
+        "container_unchanged": true,
+        "image": "ghcr.io/mirror29/inalpha-evolver:1d8494dd077c731a1d7e507035f6d3998b7ccefb"
+      },
+      "inalpha-data": {
+        "container_unchanged": true,
+        "image": "ghcr.io/mirror29/inalpha-data:1d8494dd077c731a1d7e507035f6d3998b7ccefb"
+      },
+      "inalpha-research": {
+        "container_unchanged": true,
+        "image": "ghcr.io/mirror29/inalpha-research:1d8494dd077c731a1d7e507035f6d3998b7ccefb"
+      },
+      "inalpha-mastra": {
+        "container_unchanged": true,
+        "image": "ghcr.io/mirror29/inalpha-mastra:1d8494dd077c731a1d7e507035f6d3998b7ccefb"
+      },
+      "inalpha-factor": {
+        "container_unchanged": true,
+        "image": "ghcr.io/mirror29/inalpha-factor:1d8494dd077c731a1d7e507035f6d3998b7ccefb"
+      },
+      "inalpha-paper": {
+        "container_unchanged": true,
+        "image": "ghcr.io/mirror29/inalpha-paper:1d8494dd077c731a1d7e507035f6d3998b7ccefb"
+      },
+      "inalpha-redis": {
+        "container_unchanged": true,
+        "image": "redis:8-alpine"
+      },
+      "inalpha-cloudflared": {
+        "container_unchanged": true,
+        "image": "cloudflare/cloudflared:2026.6.0"
+      },
+      "inalpha-postgres": {
+        "container_unchanged": true,
+        "image": "timescale/timescaledb:2.27.2-pg17"
+      }
+    },
+    "configuration_backed_up": true,
+    "ownership_repair": {
+      "directories": [
+        "docs/validation",
+        "scripts/tests"
+      ],
+      "file": "scripts/tests/test_e2_readiness.py",
+      "result": "verified partial fast-forward files restored, generated fonts backed up, ownership corrected to repository owner, fast-forward completed; preexisting untracked files preserved"
+    }
+  },
+  "http_probes": {
+    "data": {
+      "status_code": 200,
+      "status": "ok",
+      "db": "ok"
+    },
+    "paper": {
+      "status_code": 200,
+      "status": "ok"
+    },
+    "research": {
+      "status_code": 200,
+      "status": "ok"
+    },
+    "factor": {
+      "status_code": 200,
+      "status": "ok"
+    },
+    "evolver": {
+      "status_code": 200,
+      "status": "ok"
+    },
+    "mastra": {
+      "status_code": 404
+    },
+    "dashboard": {
+      "status_code": 200
+    },
+    "unauthenticated_boundaries": {
+      "dashboard/api/evolution/loops": 401,
+      "dashboard/api/overview": 401,
+      "evolver/api/v1/evolution-loops": 401,
+      "data/events/coverage": 401,
+      "mastra/permissions/pending": 401
+    }
+  },
+  "public_browser_checks": {
+    "origin": "https://dashboard.inalpha.dev",
+    "authenticated_session_available": false,
+    "english_login_rendered": true,
+    "chinese_login_from_zh_rendered": true,
+    "password_toggle": {
+      "en": {
+        "shown_type": "text",
+        "hidden_type": "password",
+        "accessible_labels": "Show password / Hide password"
+      },
+      "zh": {
+        "shown_type": "text",
+        "hidden_type": "password",
+        "accessible_labels": "显示密码 / 隐藏密码"
+      }
+    },
+    "test_password_cleared": true,
+    "login_submitted": false,
+    "trial_link_and_chinese_form_rendered": true,
+    "trial_form_submitted": false,
+    "mobile_viewport": {
+      "width": 390,
+      "height": 844,
+      "document_width": 390,
+      "horizontal_overflow": false
+    },
+    "viewport_reset": true,
+    "console_errors_observed": 0,
+    "computed_brand_font": "fraunces"
+  },
+  "font_asset_probe": {
+    "transport": "internal Dashboard HTTP; public browser render checked separately",
+    "login_status": 200,
+    "stylesheet_count": 1,
+    "google_font_reference_present": false,
+    "fonts": [
+      {
+        "path": "/_next/static/media/Fraunces_Italic-s.p.1c29gks52nkd0.ttf",
+        "status_code": 200,
+        "bytes": 414904,
+        "bundled_fraunces_file": "Fraunces-Italic.ttf",
+        "sha256": "b24448c43702fac4ee856781d461a0dfba8d8e594b6e8e190234b75fed2c0e01"
+      },
+      {
+        "path": "/_next/static/media/Fraunces_Regular-s.p.24tivhgkz9rhh.ttf",
+        "status_code": 200,
+        "bytes": 360440,
+        "bundled_fraunces_file": "Fraunces-Regular.ttf",
+        "sha256": "177ff6c0f14e5550a3c624247cd1189611d4eb65d000b14944c63d967958abbb"
+      },
+      {
+        "path": "/_next/static/media/GeistMono_Variable.p.3ms9vq719j3f8.woff2",
+        "status_code": 200,
+        "bytes": 71368,
+        "bundled_fraunces_file": null,
+        "sha256": "fba8f577f38a2bbcbe818efa6348dd58f36303a10b8737c42fefad275be563ab"
+      },
+      {
+        "path": "/_next/static/media/Geist_Variable-s.p.0mrjj4bg00-he.woff2",
+        "status_code": 200,
+        "bytes": 69652,
+        "bundled_fraunces_file": null,
+        "sha256": "a369fcf5628ea2aa4e1b9e2ec6a5b3624e365bda588e1f0f2f12b564f728fbb8"
+      }
+    ]
+  },
+  "source_probe": {
+    "checked_at": "2026-10-08T04:54:46.139062+00:00",
+    "providers": {
+      "coindesk": {
+        "status": "ok",
+        "returned_items": 25
+      },
+      "kraken_blog": {
+        "status": "ok",
+        "returned_items": 10
+      }
+    }
+  },
+  "real_evidence_before": {
+    "migration": [
+      {
+        "version_num": "0059"
+      }
+    ],
+    "raw_provenance": [
+      {
+        "source": "coindesk",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 158,
+        "independent_articles": 125,
+        "earliest": "2026-09-30 10:36:41.830484+00:00",
+        "latest": "2026-10-08 04:24:01.550011+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 18,
+        "independent_articles": 18,
+        "earliest": "2026-09-30 10:51:42.231319+00:00",
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "facts": [
+      {
+        "source": "coindesk",
+        "versions": 158,
+        "independent_articles": 125,
+        "btc_facts": 65,
+        "latest": "2026-10-08 04:24:01.550011+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "versions": 18,
+        "independent_articles": 18,
+        "btc_facts": 0,
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "extraction_jobs": [
+      {
+        "status": "completed",
+        "count": 176
+      }
+    ],
+    "loops": [],
+    "campaigns": [],
+    "forward": [],
+    "runner_status": [
+      {
+        "status": "stopped",
+        "count": 15
+      }
+    ],
+    "runs": [],
+    "holdout": [],
+    "readiness": {
+      "1h": {
+        "checked_at": "2026-10-08T04:45:49.208743+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 820,
+        "timeframe": "1h",
+        "bars_fresh": true,
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T13:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      },
+      "4h": {
+        "checked_at": "2026-10-08T04:45:49.368141+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 205,
+        "timeframe": "4h",
+        "bars_fresh": true,
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T16:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      }
+    }
+  },
+  "real_evidence_after": {
+    "migration": [
+      {
+        "version_num": "0059"
+      }
+    ],
+    "raw_provenance": [
+      {
+        "source": "coindesk",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 158,
+        "independent_articles": 125,
+        "earliest": "2026-09-30 10:36:41.830484+00:00",
+        "latest": "2026-10-08 04:24:01.550011+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "collector_version": "selected-news-forward@1",
+        "policy_version": "first-seen-only-v1",
+        "versions": 18,
+        "independent_articles": 18,
+        "earliest": "2026-09-30 10:51:42.231319+00:00",
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "facts": [
+      {
+        "source": "coindesk",
+        "versions": 158,
+        "independent_articles": 125,
+        "btc_facts": 65,
+        "latest": "2026-10-08 04:24:01.550011+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "versions": 18,
+        "independent_articles": 18,
+        "btc_facts": 0,
+        "latest": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "extraction_jobs": [
+      {
+        "status": "completed",
+        "count": 176
+      }
+    ],
+    "loops": [],
+    "campaigns": [],
+    "forward": [],
+    "runner_status": [
+      {
+        "status": "stopped",
+        "count": 15
+      }
+    ],
+    "runs": [],
+    "holdout": [],
+    "readiness": {
+      "1h": {
+        "checked_at": "2026-10-08T04:50:04.038358+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 820,
+        "timeframe": "1h",
+        "bars_fresh": true,
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T13:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      },
+      "4h": {
+        "checked_at": "2026-10-08T04:50:04.090960+00:00",
+        "from_ts": "2026-09-04T00:00:00+00:00",
+        "closed_bars": 205,
+        "timeframe": "4h",
+        "bars_fresh": true,
+        "bars_contiguous": true,
+        "selection_start": "2026-09-24T16:00:00+00:00",
+        "selection_end": "2026-10-01T08:00:00+00:00",
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false,
+        "ready_to_attempt_search": false,
+        "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+      }
+    }
+  },
+  "readiness_tool": {
+    "path": "scripts/check-e2-readiness.py",
+    "server_and_local_sha256": "376256c831ee26d83c7196fdf8d8543fd137984bb9c9e01e80de25a8e974a23f",
+    "queries": "SET TRANSACTION READ ONLY; SET LOCAL statement_timeout=15s",
+    "from_ts": "2026-09-04T00:00:00Z",
+    "split": "natural 60/20/20 closed bars",
+    "independence": "24h per BTC event type",
+    "other": "diagnostic only, excluded from qualifying coverage"
+  },
+  "model_calls_started_by_this_acceptance": 0,
+  "model_cost_added_by_this_acceptance_usd": 0,
+  "limitations": [
+    "Selection windows contain one qualifying independent macro event each, below eight minimum matched pairs; independent counts do not prove matched controls or FDR.",
+    "Owner-authenticated strategy flow, orchestration grant exchange, champion, Forward and holdout were not tested in this server smoke.",
+    "Backend containers retained because runtime code is unchanged; this is not a full-stack restart/recovery acceptance.",
+    "Mastra /api returns 404 as expected for the existing process-only health probe; the actual /permissions/pending route returned 401 without authentication.",
+    "Public non-browser urllib login request was rejected with HTTP 403; no protection was bypassed. Public browser pages loaded; font HTTP/hash checks used the internal Dashboard endpoint."
+  ]
+}
