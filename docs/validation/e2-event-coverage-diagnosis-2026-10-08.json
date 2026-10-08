@@ -1,0 +1,179 @@
+{
+  "migration": [
+    {
+      "version_num": "0059"
+    }
+  ],
+  "raw_provenance": [
+    {
+      "source": "coindesk",
+      "collector_version": "selected-news-forward@1",
+      "policy_version": "first-seen-only-v1",
+      "versions": 156,
+      "independent_articles": 123,
+      "earliest": "2026-09-30 10:36:41.830484+00:00",
+      "latest": "2026-10-08 00:38:58.646914+00:00"
+    },
+    {
+      "source": "kraken_blog",
+      "collector_version": "selected-news-forward@1",
+      "policy_version": "first-seen-only-v1",
+      "versions": 18,
+      "independent_articles": 18,
+      "earliest": "2026-09-30 10:51:42.231319+00:00",
+      "latest": "2026-10-07 13:43:25.570508+00:00"
+    }
+  ],
+  "facts": [
+    {
+      "source": "coindesk",
+      "versions": 156,
+      "independent_articles": 123,
+      "btc_facts": 64,
+      "latest": "2026-10-08 00:38:58.646914+00:00"
+    },
+    {
+      "source": "kraken_blog",
+      "versions": 18,
+      "independent_articles": 18,
+      "btc_facts": 0,
+      "latest": "2026-10-07 13:43:25.570508+00:00"
+    }
+  ],
+  "extraction_jobs": [
+    {
+      "status": "completed",
+      "count": 174
+    }
+  ],
+  "loops": [],
+  "campaigns": [],
+  "forward": [],
+  "holdout": [],
+  "readiness": {
+    "1h": {
+      "checked_at": "2026-10-08T03:32:24.942126+00:00",
+      "from_ts": "2026-09-04T00:00:00+00:00",
+      "closed_bars": 819,
+      "timeframe": "1h",
+      "bars_fresh": true,
+      "bars_contiguous": true,
+      "selection_start": "2026-09-24T12:00:00+00:00",
+      "selection_end": "2026-10-01T07:00:00+00:00",
+      "independent_events_by_type": [
+        {
+          "event_type": "macro",
+          "independent_events": 1
+        }
+      ],
+      "direct_independent_events_by_type": [],
+      "minimum_matched_event_pairs": 8,
+      "coverage_sufficient": false,
+      "ready_to_attempt_search": false,
+      "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+    },
+    "4h": {
+      "checked_at": "2026-10-08T03:32:24.992152+00:00",
+      "from_ts": "2026-09-04T00:00:00+00:00",
+      "closed_bars": 204,
+      "timeframe": "4h",
+      "bars_fresh": true,
+      "bars_contiguous": true,
+      "selection_start": "2026-09-24T12:00:00+00:00",
+      "selection_end": "2026-10-01T04:00:00+00:00",
+      "independent_events_by_type": [
+        {
+          "event_type": "macro",
+          "independent_events": 1
+        }
+      ],
+      "direct_independent_events_by_type": [],
+      "minimum_matched_event_pairs": 8,
+      "coverage_sufficient": false,
+      "ready_to_attempt_search": false,
+      "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+    }
+  },
+  "coverage_diagnosis": {
+    "overall_counts_only": {
+      "latest_facts": 143,
+      "btc_facts": 43,
+      "quality_btc_facts": 5,
+      "btc_types": {
+        "other": 38,
+        "exploit": 1,
+        "regulatory": 1,
+        "macro": 3
+      },
+      "quality_btc_types": {
+        "exploit": 1,
+        "regulatory": 1,
+        "macro": 3
+      },
+      "quality_independent_events_by_type": [
+        {
+          "event_type": "exploit",
+          "independent_events": 1
+        },
+        {
+          "event_type": "macro",
+          "independent_events": 2
+        },
+        {
+          "event_type": "regulatory",
+          "independent_events": 1
+        }
+      ]
+    },
+    "extractor_versions": {
+      "deterministic-event-extractor-v2": 143
+    },
+    "selection": {
+      "1h": {
+        "latest_facts": 48,
+        "btc_facts": 13,
+        "quality_btc_facts": 2,
+        "btc_types": {
+          "other": 11,
+          "macro": 2
+        },
+        "quality_btc_types": {
+          "macro": 2
+        },
+        "quality_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ]
+      },
+      "4h": {
+        "latest_facts": 46,
+        "btc_facts": 12,
+        "quality_btc_facts": 1,
+        "btc_types": {
+          "other": 11,
+          "macro": 1
+        },
+        "quality_btc_types": {
+          "macro": 1
+        },
+        "quality_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ]
+      }
+    },
+    "bitcoin_text_without_btc": 0
+  },
+  "diagnostic_scope": "Supported hypothesis taxonomy, original temporal split and default quality gates; counts only, no sealed returns",
+  "model_calls_started": 0,
+  "model_cost_added_usd": 0,
+  "original_preflight_direct_only_counts": {
+    "1h": 0,
+    "4h": 0
+  },
+  "formal_evaluator_modified": false
+}

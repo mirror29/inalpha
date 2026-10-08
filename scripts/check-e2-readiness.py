@@ -9,6 +9,41 @@ import psycopg
 from dotenv import dotenv_values
 from psycopg.rows import dict_row
 
+SUPPORTED_EVENT_TYPES = (
+    "listing",
+    "delisting",
+    "exploit",
+    "chain_halt",
+    "regulatory",
+    "upgrade",
+    "unlock",
+    "burn",
+    "partnership",
+    "macro",
+    "other",
+)
+DIRECT_EVENT_TYPES = {"listing", "delisting", "exploit", "chain_halt"}
+
+
+def summarize_selection(facts: list[dict]) -> dict:
+    """Count typed evidence for readiness while retaining catch-all diagnostics."""
+    counts = independent_counts(facts)
+    qualifying = [
+        row
+        for row in counts
+        if row["event_type"] in SUPPORTED_EVENT_TYPES and row["event_type"] != "other"
+    ]
+    return {
+        "independent_events_by_type": counts,
+        "qualifying_independent_events_by_type": qualifying,
+        "direct_independent_events_by_type": [
+            row for row in counts if row["event_type"] in DIRECT_EVENT_TYPES
+        ],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": sum(row["independent_events"] for row in qualifying)
+        >= 8,
+    }
+
 
 def independent_counts(facts: list[dict]) -> list[dict]:
     """Mirror evaluator/event_study.py's 24-hour BTC/type independence window."""
@@ -70,15 +105,14 @@ SELECT event_type,available_at
 FROM latest WHERE NOT retracted AND 'asset:BTC'=ANY(asset_ids)
 AND source IN ('coindesk','kraken_blog')
 AND collector_version='selected-news-forward@1' AND policy_version='first-seen-only-v1'
-AND event_type IN ('listing','delisting','exploit','chain_halt')
+AND event_type=ANY(%s)
 AND severity>=0.5 AND confidence>=0.6 AND available_at>=%s AND available_at<=%s
 ORDER BY available_at,source,source_event_id""",
-            (as_of, as_of, start, end),
+            (as_of, as_of, list(SUPPORTED_EVENT_TYPES), start, end),
         ).fetchall()
-        counts = independent_counts(facts)
+        selection = summarize_selection(facts)
         fresh = as_of - (rows[-1]["ts"] + duration) < duration * 2
         contiguous = all(b["ts"] - a["ts"] == duration for a, b in pairwise(rows))
-        sufficient = sum(row["independent_events"] for row in counts) >= 8
         return {
             "checked_at": as_of.isoformat(),
             "from_ts": from_ts.isoformat(),
@@ -88,9 +122,10 @@ ORDER BY available_at,source,source_event_id""",
             "bars_contiguous": contiguous,
             "selection_start": start.isoformat(),
             "selection_end": end.isoformat(),
-            "independent_events_by_type": counts,
-            "minimum_matched_event_pairs": 8,
-            "ready_to_attempt_search": sufficient and fresh and contiguous,
+            **selection,
+            "ready_to_attempt_search": selection["coverage_sufficient"]
+            and fresh
+            and contiguous,
             "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified.",
         }
 

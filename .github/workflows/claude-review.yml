@@ -9,7 +9,7 @@ name: DeepSeek PR Review
 # 本 workflow 不会阻止 PR 合并。review 评论是锦上添花，不是门禁。
 # Auth: DeepSeek API key 存在 GitHub Actions Secret DEEPSEEK_API_KEY
 #
-# 保留原始 review prompt 和 sticky 评论编排，只替换底层模型。
+# 模型返回经过校验的 JSON，由脚本统一渲染摘要和问题详情。
 
 on:
   pull_request:
@@ -53,14 +53,13 @@ jobs:
         run: |
           gh pr diff "$PR_NUMBER" --color never > /tmp/pr_diff.txt
           echo "diff_lines=$(wc -l < /tmp/pr_diff.txt)" >> $GITHUB_OUTPUT
+          gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid > /tmp/pr_head.txt
           gh pr view "$PR_NUMBER" --json title,body,headRefName,baseRefName --jq '"\(.title) | \(.headRefName) → \(.baseRefName)"' > /tmp/pr_title.txt
 
       - name: Test review script
-        continue-on-error: true
         run: python3 -m unittest tests/test_deepseek_review.py -v
 
       - name: DeepSeek V4 Pro · review
-        if: always()
         id: review
         # 内层 step 也 continue-on-error，防止 Python 抛异常
         continue-on-error: true
@@ -72,10 +71,10 @@ jobs:
       - name: Log review status
         if: always()
         run: |
-          if [ "${{ steps.review.outcome }}" = "success" ]; then
+          if [ -f /tmp/review_status.txt ] && [ "$(cat /tmp/review_status.txt)" = "completed" ]; then
             echo "DeepSeek review completed successfully"
           else
-            echo "DeepSeek review skipped or failed (non-blocking) — outcome: ${{ steps.review.outcome }}"
+            echo "DeepSeek review incomplete or skipped (non-blocking) — step outcome: ${{ steps.review.outcome }}"
           fi
 
       - name: Post/Update sticky comment
@@ -83,8 +82,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
         run: |
-          BODY=$(cat /tmp/review_body.txt)
-          MARKER="<!-- claude-review -->"
-          SHA=$(git rev-parse --short HEAD)
-          FULL_BODY="${MARKER}\nReview base: ${SHA}\n\n${BODY}"
-          gh pr comment "$PR_NUMBER" --edit-last --create-if-none --body "$(echo -e "$FULL_BODY")"
+          python3 - <<'PY'
+          from pathlib import Path
+          sha = Path("/tmp/pr_head.txt").read_text().strip()
+          body = Path("/tmp/review_body.txt").read_text()
+          Path("/tmp/review_comment.md").write_text(
+              f"<!-- claude-review -->\nReviewed PR head: `{sha[:12]}`\n\n{body}"
+          )
+          PY
+          gh pr comment "$PR_NUMBER" --edit-last --create-if-none --body-file /tmp/review_comment.md
