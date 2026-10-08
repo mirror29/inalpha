@@ -54,6 +54,11 @@ Kraken Blog、Bitcoin Core 官方公告和 Cointelegraph RSS。每个来源独�
 源码行、绝对路径、原始响应或凭据。抽取继续通过持久化 outbox 和正常 Research
 worker 执行。不同来源可能报道同一事件，原文数量不能直接作为独立事件数量。
 
+多 HTTP worker 通过独立 PostgreSQL session advisory lock 连接协调后台采集。采集者在
+轮询间隔也持锁，避免错开启动的 worker 重复轮询；取消或故障时关闭连接释放锁，其他 worker
+可接手。每轮先检查持锁连接，并以采集间隔作为整轮期限；锁查询最多等待 5 秒。连接不占用
+写入池，用户请求处理 worker 数不变，来源写入仍各自使用短事务。
+
 这些 RSS 属于 `snapshot_only`。旧公告在首次采到时才进入可见集合，发布日期不能回溯
 `accepted_at`，也不能补齐旧验收窗口。新增来源的未来覆盖需要另行观察，既有验收口径不随
 来源扩展静默改变。真实验收与下一步统一见 [当前状态](../../docs/04-current-state.md#未完成--下一步)。

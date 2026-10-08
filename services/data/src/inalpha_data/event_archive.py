@@ -5,12 +5,16 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 from inalpha_shared import get_logger
 from inalpha_shared.db import get_conn
+from psycopg import AsyncConnection
 
+from .config import get_data_settings
 from .connectors.news import get_router
 from .event_models import RawEventIngestRequest
 from .news_models import NewsQuery, NewsResponse
@@ -50,7 +54,13 @@ class EventArchiveScheduler:
     async def _loop(self) -> None:
         while True:
             try:
-                await self._tick()
+                async with _collection_lease() as lease:
+                    if lease is not None:
+                        while True:
+                            async with asyncio.timeout(self._interval_s):
+                                await lease.execute("SELECT 1")
+                                await self._collect_once()
+                            await asyncio.sleep(self._interval_s)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -58,6 +68,14 @@ class EventArchiveScheduler:
             await asyncio.sleep(self._interval_s)
 
     async def _tick(self) -> None:
+        """有界的单次正常采集；已有后台持锁采集者时跳过。"""
+        async with asyncio.timeout(self._interval_s):
+            async with _collection_lease() as lease:
+                if lease is not None:
+                    await self._collect_once()
+
+    async def _collect_once(self) -> None:
+        """执行一个有界采集轮次，来源写入各自使用短事务。"""
         batches = await get_router().fetch_archive_batches(NewsQuery(market="crypto", limit=50))
         for response in batches:
             status = response.providers[0]
@@ -115,6 +133,24 @@ class EventArchiveScheduler:
                     source_tier=item.source_tier,
                 )
                 await store.ingest_raw_event(conn, request)
+
+
+@asynccontextmanager
+async def _collection_lease() -> AsyncIterator[AsyncConnection | None]:
+    """独立连接持有 session 锁，关闭时释放；不占用写入连接池。"""
+    url = get_data_settings().database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+    async with await AsyncConnection.connect(url, autocommit=True, connect_timeout=5) as lease:
+        async with asyncio.timeout(5):
+            cursor = await lease.execute(
+                "SELECT pg_try_advisory_lock(hashtextextended(%s, 0))",
+                ("inalpha:event-archive:forward",),
+            )
+            acquired = await cursor.fetchone()
+        if acquired and acquired[0]:
+            yield lease
+        else:
+            _logger.info("event_archive_tick_skipped", reason="another_worker_collecting")
+            yield None
 
 
 def _log_failure(event: str, exc: Exception, *, provider: str | None = None) -> None:
