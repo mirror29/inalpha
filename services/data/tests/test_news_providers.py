@@ -350,3 +350,35 @@ async def test_archive_timeout_preserves_healthy_source_and_cached_observation()
     assert batches[1].is_partial is True
     assert batches[1].providers[0].status == "timeout"
     assert batches[1].items == []
+
+
+async def test_new_feeds_are_archive_only_and_public_scope_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新增来源进入归档，但不改变公共列表、覆盖判断及标的能力边界。"""
+    from unittest.mock import AsyncMock
+
+    from inalpha_data.connectors.news.feed_models import DEFAULT_CRYPTO_FEEDS
+
+    providers = [RssFeedProvider(feed, timeout_s=1) for feed in DEFAULT_CRYPTO_FEEDS]
+    for provider in providers:
+        monkeypatch.setattr(provider, "fetch", AsyncMock(return_value=ProviderResult(
+            provider.name, "ok", items=[NewsItem(
+                title=provider.definition.id, source_name=provider.definition.id,
+                published_at=datetime(2026, 7, 28, tzinfo=UTC),
+            )],
+        )))
+    try:
+        router = NewsRouter(providers)
+        query = NewsQuery(market="crypto", limit=50)
+        public = await router.fetch(query)
+        assert {item.source_name for item in public.items} == {"coindesk", "kraken_blog"}
+        assert {batch.items[0].source_name for batch in await router.fetch_archive_batches(query)} == {
+            "coindesk", "kraken_blog", "bitcoin_core_announcements", "cointelegraph",
+        }
+        archive_router = NewsRouter([p for p in providers if p.archive_only])
+        assert archive_router.has_coverage(query) is False
+        assert (await archive_router.fetch(query)).items == []
+        assert await router.fetch_archive_batches(NewsQuery(market="crypto", symbol="BTC")) == []
+    finally:
+        await router.close()

@@ -18,6 +18,7 @@ class FeedDefinition:
     url: str
     tier: SourceTier
     language: str
+    archive_only: bool = False
 
 
 DEFAULT_CRYPTO_FEEDS = (
@@ -30,11 +31,11 @@ DEFAULT_CRYPTO_FEEDS = (
     ),
     FeedDefinition(
         "bitcoin_core_announcements", "Bitcoin Core", "https://bitcoincore.org/en/announcements.xml",
-        "official", "en"
+        "official", "en", archive_only=True
     ),
     FeedDefinition(
         "cointelegraph", "Cointelegraph", "https://cointelegraph.com/rss",
-        "professional_media", "en"
+        "professional_media", "en", archive_only=True
     ),
 )
 

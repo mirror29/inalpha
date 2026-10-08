@@ -65,7 +65,7 @@ class NewsRouter:
     async def fetch_archive_batches(self, query: NewsQuery) -> list[NewsResponse]:
         """为持续归档保留每个来源的有界批次，避免全局排序挤掉较慢来源。"""
         fetched_at = datetime.now(UTC)
-        selected = self._select(query)
+        selected = self._select(query, include_archive_only=True)
         results = await asyncio.gather(
             *(self._fetch_with_timeout(provider, query) for provider in selected)
         )
@@ -89,7 +89,9 @@ class NewsRouter:
             ))
         return batches
 
-    def _select(self, query: NewsQuery) -> list[NewsProvider]:
+    def _select(
+        self, query: NewsQuery, *, include_archive_only: bool = False
+    ) -> list[NewsProvider]:
         """按市场初选来源，再按 provider capability 排除无覆盖组合。"""
         names: set[str]
         if query.market == "cn":
@@ -118,6 +120,7 @@ class NewsRouter:
                 provider.name in names
                 or ("rss" in names and provider.name.startswith("rss:"))
             )
+            and (include_archive_only or not getattr(provider, "archive_only", False))
             and provider.supports(query)
         ]
 
