@@ -128,6 +128,8 @@ class DeepSeekReviewTest(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         retry_request = urlopen.call_args_list[1].args[0]
         retry_payload = json.loads(retry_request.data)
+        self.assertEqual(retry_payload["thinking"], {"type": "disabled"})
+        self.assertNotIn("reasoning_effort", retry_payload)
         self.assertIn(
             "return the final review in English now",
             retry_payload["messages"][-1]["content"],

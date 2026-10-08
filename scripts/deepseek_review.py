@@ -283,7 +283,7 @@ def _call_deepseek(api_key: str, title: str, diff: str, rules: str) -> str:
             file=sys.stderr,
         )
         if attempt + 1 < MAX_ATTEMPTS:
-            if choice.get("finish_reason") == "length" and not content:
+            if choice.get("finish_reason") == "length":
                 # Do not spend a second full reasoning budget without producing a review.
                 payload["thinking"] = {"type": "disabled"}
                 payload.pop("reasoning_effort", None)
