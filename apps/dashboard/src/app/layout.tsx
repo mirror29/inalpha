@@ -3,16 +3,17 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
-import { Fraunces } from "next/font/google";
+import localFont from "next/font/local";
 
 /**
  * 编辑体 display serif —— 与官网一致,仅用于 section 序号/标题。
  */
-const fraunces = Fraunces({
+const fraunces = localFont({
   variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-  style: ["normal", "italic"],
+  src: [
+    { path: "./fonts/Fraunces-Regular.ttf", weight: "300 600", style: "normal" },
+    { path: "./fonts/Fraunces-Italic.ttf", weight: "300 600", style: "italic" },
+  ],
   display: "swap",
 });
 

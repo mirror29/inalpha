@@ -78,6 +78,8 @@
 | Mono | **Geist Mono**（`--font-mono`，`.tnum`） | **一切数字**、状态码、序号、时间——终端语感 |
 
 规则：金融数字一律 `font-mono` + `tabular-nums` 保证列对齐；序号 / 状态标签用 mono 大写 +
+Fraunces 正体与斜体随仓库提供（`src/app/fonts/`，SIL OFL），经 `next/font/local` 加载；生产构建无需下载 Google Fonts。
+
 字距 `tracking-[0.16em]`；标题用 Fraunces 斜体序号 + 正体标题。
 
 **CJK 回退（硬性）**：三个角色全是纯拉丁字体，中文统一回退到 `--font-cjk`
