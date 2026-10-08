@@ -1,18 +1,24 @@
 {
   "date": "2026-10-08",
   "trigger": "real production startup showed two Data workers polling the same sources; one Kraken poll rate_limited",
-  "implementation": "dedicated short-lived PostgreSQL connection owns a session advisory lock for the bounded polling round; other workers skip concurrent polls; source transactions continue to use the separate pool",
+  "implementation": "dedicated PostgreSQL session advisory lock connection owns background collection across rounds and their sleep intervals; competitors skip; cancellation or failure closes the connection; each round checks the connection and has a polling-interval deadline; acquisition SQL deadline 5 seconds; write pool remains separate",
   "schema_change": false,
   "http_worker_count_changed": false,
   "automatic_tests": {
     "isolated_migration": "0058 wallet -> 0059 diagnostics",
-    "passed": 48,
+    "passed": 50,
     "failed": 0,
     "concurrency": "contending worker skips without fetching; a later worker acquires after owner connection closes",
     "cancellation": "cancelled collection closes owning connection; next worker can poll",
     "ruff": "passed",
-    "module_mypy": "passed"
+    "module_mypy": "passed",
+    "round_deadline": "timeout closes owning connection and a subsequent worker acquires the lock",
+    "between_rounds": "background owner retains lock while sleeping; staggered workers do not poll again"
   },
   "production_validation": "pending merge and deployment",
-  "positive_e2_passed": false
+  "positive_e2_passed": false,
+  "review_disposition": {
+    "dsn_drift": "unsupported driver scenario: current supported plain PostgreSQL and postgresql+psycopg normalization is identical to the shared pool; no new SQLAlchemy dependency or driver contract change",
+    "round_timeout": "overall deadline added in addition to existing provider HTTP deadlines"
+  }
 }
