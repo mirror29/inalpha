@@ -44,10 +44,12 @@ uv run pytest
 
 `EVENT_ARCHIVE_ENABLED=true` 时，归档任务按 `EVENT_ARCHIVE_INTERVAL_S` 轮询 CoinDesk、
 Kraken Blog、Bitcoin Core 官方公告和 Cointelegraph RSS。每个来源独立保留最多 50 条，
-避免高频新闻挤掉低频公告；新增两源仅用于归档，不改变公共 `/news` 的来源集合、全局上限与去重。
+避免高频新闻挤掉低频公告。跨批次同链接仍优先保留官方来源并合并 `alternative_sources`，
+不会重新施加全局条数上限；新增两源仅用于归档，不改变公共 `/news` 的来源集合、全局上限与去重。
 
 日志 `event_archive_source_fetched` 给出来源、状态、返回数及过滤后条目数；
-`event_archive_source_completed` 表示该批条目已完成幂等写入，**不表示新增条目数**。
+某一来源写入失败会回滚该批事务并记录 `event_archive_source_failed`，继续写入其他来源；
+服务取消仍立即传播。`event_archive_source_completed` 表示该批条目已完成幂等写入，**不表示新增条目数**。
 错误日志保留异常类型与最近六个代码位置（文件名、函数、行号），不记录异常原文、
 源码行、绝对路径、原始响应或凭据。抽取继续通过持久化 outbox 和正常 Research
 worker 执行。不同来源可能报道同一事件，原文数量不能直接作为独立事件数量。
