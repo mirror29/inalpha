@@ -54,3 +54,38 @@ async def test_archive_ingests_each_source_and_preserves_first_observation(
         assert request.accepted_at > request.source_valid_at
         assert request.collector_version == "selected-news-forward@1"
         assert request.policy_version == "first-seen-only-v1"
+
+
+async def test_failed_tick_logs_code_locations_without_exception_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """故障保留文件/函数/行号，但不泄漏异常内容、源码行或绝对路径。"""
+    import asyncio
+
+    scheduler = event_archive.EventArchiveScheduler(enabled=True, interval_s=900)
+    logs = []
+
+    async def fail_tick():
+        raise RuntimeError("private-upstream-payload-and-credential")
+
+    async def stop_after_tick(seconds):
+        raise asyncio.CancelledError
+
+    class Logger:
+        def warning(self, event, **fields):
+            logs.append((event, fields))
+
+    monkeypatch.setattr(scheduler, "_tick", fail_tick)
+    monkeypatch.setattr(event_archive, "_logger", Logger())
+    monkeypatch.setattr(event_archive.asyncio, "sleep", stop_after_tick)
+    with pytest.raises(asyncio.CancelledError):
+        await scheduler._loop()
+    event, fields = logs[0]
+    assert event == "event_archive_tick_failed"
+    assert fields["error_type"] == "RuntimeError"
+    assert fields["code_locations"][-1]["function"] == "fail_tick"
+    assert fields["code_locations"][-1]["file"] == "test_event_archive.py"
+    assert fields["code_locations"][-1]["line"] > 0
+    assert "private-upstream-payload-and-credential" not in repr(logs)
+    assert all("/" not in frame["file"] for frame in fields["code_locations"])
+    assert all(set(frame) == {"file", "function", "line"} for frame in fields["code_locations"])

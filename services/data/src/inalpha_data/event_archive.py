@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import traceback
 from datetime import UTC, datetime
+from pathlib import Path
 
 from inalpha_shared import get_logger
 from inalpha_shared.db import get_conn
@@ -52,7 +54,19 @@ class EventArchiveScheduler:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                _logger.warning("event_archive_tick_failed", error_type=type(exc).__name__)
+                frames = [
+                    {
+                        "file": Path(frame.f_code.co_filename).name,
+                        "function": frame.f_code.co_name,
+                        "line": line,
+                    }
+                    for frame, line in traceback.walk_tb(exc.__traceback__)
+                ]
+                _logger.warning(
+                    "event_archive_tick_failed",
+                    error_type=type(exc).__name__,
+                    code_locations=frames[-6:],
+                )
             await asyncio.sleep(self._interval_s)
 
     async def _tick(self) -> None:
