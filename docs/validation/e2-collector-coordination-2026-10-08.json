@@ -15,7 +15,7 @@
     "round_deadline": "timeout closes owning connection and a subsequent worker acquires the lock",
     "between_rounds": "background owner retains lock while sleeping; staggered workers do not poll again"
   },
-  "production_validation": "pending merge and deployment",
+  "production_validation": "PR #189 merged and Data c0c7eecd deployed; first production round has one collector and one competitor skip, four sources ok. See e2-collector-production-2026-10-08.json; later rounds and failover not yet accepted.",
   "positive_e2_passed": false,
   "review_disposition": {
     "dsn_drift": "unsupported driver scenario: current supported plain PostgreSQL and postgresql+psycopg normalization is identical to the shared pool; no new SQLAlchemy dependency or driver contract change",
