@@ -52,43 +52,57 @@ class EventArchiveScheduler:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                _logger.warning("event_archive_tick_failed", error=str(exc))
+                _logger.warning("event_archive_tick_failed", error_type=type(exc).__name__)
             await asyncio.sleep(self._interval_s)
 
     async def _tick(self) -> None:
-        response = await get_router().fetch(NewsQuery(market="crypto", limit=50))
-        async with get_conn() as conn:
-            for item in response.items:
-                observed_at = item.accepted_at or item.fetched_at or response.fetched_at
-                source_event_id = (
-                    item.source_id
-                    or item.link
-                    or hashlib.sha256(
-                        f"{item.source_name}\0{item.title}\0{item.published_at}".encode()
-                    ).hexdigest()
-                )
-                request = RawEventIngestRequest(
-                    source=item.source_name or item.publisher or "crypto_news",
-                    source_event_id=source_event_id,
-                    title=item.title,
-                    content=item.summary,
-                    url=item.link or None,
-                    raw_payload={
-                        "kind": item.kind,
-                        "market": item.market,
-                        "symbols": item.symbols,
-                        "alternative_sources": item.alternative_sources,
-                    },
-                    source_valid_at=item.published_at,
-                    claimed_published_at=item.published_at,
-                    first_seen_at=observed_at,
-                    fetched_at=item.fetched_at or response.fetched_at,
-                    accepted_at=max(observed_at, datetime.now(UTC)),
-                    collector_version="selected-news-forward@1",
-                    policy_version="first-seen-only-v1",
-                    source_tier=item.source_tier,
-                )
-                await store.ingest_raw_event(conn, request)
+        batches = await get_router().fetch_archive_batches(NewsQuery(market="crypto", limit=50))
+        for response in batches:
+            status = response.providers[0]
+            _logger.info(
+                "event_archive_source_fetched",
+                provider=status.provider,
+                status=status.status,
+                fetched_items=status.item_count,
+                archive_items=len(response.items),
+            )
+            async with get_conn() as conn:
+                for item in response.items:
+                    observed_at = item.accepted_at or item.fetched_at or response.fetched_at
+                    source_event_id = (
+                        item.source_id
+                        or item.link
+                        or hashlib.sha256(
+                            f"{item.source_name}\0{item.title}\0{item.published_at}".encode()
+                        ).hexdigest()
+                    )
+                    request = RawEventIngestRequest(
+                        source=item.source_name or item.publisher or "crypto_news",
+                        source_event_id=source_event_id,
+                        title=item.title,
+                        content=item.summary,
+                        url=item.link or None,
+                        raw_payload={
+                            "kind": item.kind,
+                            "market": item.market,
+                            "symbols": item.symbols,
+                            "alternative_sources": item.alternative_sources,
+                        },
+                        source_valid_at=item.published_at,
+                        claimed_published_at=item.published_at,
+                        first_seen_at=observed_at,
+                        fetched_at=item.fetched_at or response.fetched_at,
+                        accepted_at=max(observed_at, datetime.now(UTC)),
+                        collector_version="selected-news-forward@1",
+                        policy_version="first-seen-only-v1",
+                        source_tier=item.source_tier,
+                    )
+                    await store.ingest_raw_event(conn, request)
+            _logger.info(
+                "event_archive_source_completed",
+                provider=status.provider,
+                archive_items=len(response.items),
+            )
 
 
 __all__ = ["EventArchiveScheduler"]

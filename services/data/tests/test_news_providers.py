@@ -284,3 +284,69 @@ def test_dedupe_prefers_official_source_without_mutating_inputs() -> None:
     assert "wire" in result[0].alternative_sources
     assert media.alternative_sources == []
     assert official.alternative_sources == []
+
+
+async def test_archive_retains_slow_source_when_newer_source_fills_global_limit() -> None:
+    """归档按来源限制；正常新闻 API 仍按全局限制，且拒绝未来条目。"""
+    class Provider:
+        coverage = "snapshot_only"
+
+        def __init__(self, name: str, titles: list[str], timestamp: datetime) -> None:
+            self.name = name
+            self.titles = titles
+            self.timestamp = timestamp
+
+        def supports(self, query: NewsQuery) -> bool:
+            return True
+
+        async def fetch(self, query: NewsQuery) -> ProviderResult:
+            return ProviderResult(self.name, "ok", items=[
+                NewsItem(title=title, source_name=self.name, published_at=self.timestamp)
+                for title in self.titles
+            ])
+
+    router = NewsRouter([
+        Provider("rss:busy", ["new-1", "new-2"], datetime(2026, 7, 29, tzinfo=UTC)),
+        Provider("rss:official", ["older"], datetime(2026, 7, 28, tzinfo=UTC)),
+        Provider("rss:future", ["future"], datetime(2099, 7, 28, tzinfo=UTC)),
+    ])
+    query = NewsQuery(market="crypto", limit=2)
+    public = await router.fetch(query)
+    archived = await router.fetch_archive_batches(query)
+    assert [item.title for item in public.items] == ["new-1", "new-2"]
+    assert [[item.title for item in batch.items] for batch in archived] == [
+        ["new-1", "new-2"], ["older"], [],
+    ]
+
+
+async def test_archive_timeout_preserves_healthy_source_and_cached_observation() -> None:
+    """来源超时不丢健康条目；缓存观测时间不能更新成当前首次可见时间。"""
+    observed = datetime(2026, 7, 28, tzinfo=UTC)
+
+    class Provider:
+        coverage = "snapshot_only"
+
+        def __init__(self, name: str, *, slow: bool = False) -> None:
+            self.name = name
+            self.slow = slow
+
+        def supports(self, query: NewsQuery) -> bool:
+            return True
+
+        async def fetch(self, query: NewsQuery) -> ProviderResult:
+            if self.slow:
+                await asyncio.sleep(1)
+            return ProviderResult(self.name, "ok", items=[
+                NewsItem(title="visible", published_at=observed, fetched_at=observed,
+                         source_name=self.name),
+            ])
+
+    router = NewsRouter([
+        Provider("rss:healthy"), Provider("rss:slow", slow=True),
+    ], timeout_s=0.01)
+    batches = await router.fetch_archive_batches(NewsQuery(market="crypto"))
+    assert batches[0].items[0].fetched_at == observed
+    assert batches[0].is_partial is False
+    assert batches[1].is_partial is True
+    assert batches[1].providers[0].status == "timeout"
+    assert batches[1].items == []
