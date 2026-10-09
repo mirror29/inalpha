@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local specialist fixes and isolated rendered UI checks; not deployed",
+  "commits": {
+    "mixed_version_roots": "a9300813",
+    "immutable_e1_preparation_audit": "5c0aef10",
+    "small_costs": "c3ee2dce",
+    "lineage_translation": "d7c348bc",
+    "partial_failures": "ae29c1ad"
+  },
+  "schema_head": "0065",
+  "checks": {
+    "dashboard_tests_passed": 174,
+    "orchestration_tests_passed": 605,
+    "orchestration_database_tests_default_skipped": 7,
+    "evolver_tests_passed": 244,
+    "evolver_database_tests_default_skipped": 62,
+    "existing_test_jwt_warnings": 3,
+    "dedicated_evolver_database_tests_passed": 27,
+    "dedicated_orchestration_database_tests_passed": 7,
+    "migration_tests_passed": 8,
+    "typechecks": "passed",
+    "dashboard_build": "passed",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "specialist_findings_fixed": [
+    "Legacy insert after migration uses its own run_id as the experiment root",
+    "Expired identical approval replacement retains immutable E1 operation preparation provenance",
+    "Missing trusted preparation receipt rolls back E1 approval atomically",
+    "Known small cost is shown below the display precision rather than as zero"
+  ],
+  "isolated_browser_checks": [
+    "Actual campaign component parent button switches from generation 2 to generation 1 and highlights the parent",
+    "Chinese overview with completed BTC/ETH/SOL E1 fixtures shows 3 loaded tasks despite campaign API failure",
+    "390x844 page width stays 390; table uses its own horizontal overflow",
+    "English campaign shows insufficient evidence, no champion, no Forward, sealed holdout and zero adoption separately",
+    "Final 390px viewport: page width 390px, internal table width 768px and first cell about 167px; labels remain readable"
+  ],
+  "browser_limits": [
+    "A separate local fixture harness served actual components with synthetic read-only responses",
+    "Normal production JWT, real approvals, persistence recovery, full app shell and deployment are not verified by this fixture"
+  ],
+  "temporary_database_removed": true,
+  "production_modified": false,
+  "pending": [
+    "Final cross-boundary red-team review",
+    "PR CI/CR and coordinated migration/deployment",
+    "Actual owner approval, retry, restart and production result visibility",
+    "Real E2 Forward/holdout acceptance and provider cost reconciliation"
+  ]
+}
