@@ -43,6 +43,7 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "scheduler.create_job",
     "scheduler.set_enabled",
     "scheduler.trigger_job",
+    "evolver.get_retry_plan",
     "evolver.get_evolution",
     "evolver.get_candidate",
     "evolver.get_event_campaign",

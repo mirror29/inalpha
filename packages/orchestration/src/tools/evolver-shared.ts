@@ -34,7 +34,7 @@ export async function getEvolverClient(ctx?: ToolRequestContext): Promise<Evolve
 }
 
 export async function getApprovedEvolutionRunContext(
-  input: { budget?: number; seedStrategyId?: string; preparation?: EvolutionPreparation; config: EvolutionConfig },
+  input: { budget?: number; seedStrategyId?: string; retryOfRunId?: string; preparation?: EvolutionPreparation; config: EvolutionConfig },
   ctx?: ToolRequestContext,
 ): Promise<{
   client: EvolverClient;

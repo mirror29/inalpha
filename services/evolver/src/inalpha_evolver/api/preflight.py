@@ -13,6 +13,7 @@ from ..data import FrozenBarsLoader
 from ..data.manifest import DatasetManifest
 from ..governor.seed_resolver import resolve_seed
 from .request_hash import approval_request_digest
+from .retry import retry_parent, retry_seed
 from .schemas import EvolutionPreparation, StartRunRequest
 
 
@@ -39,7 +40,11 @@ async def preflight_run(
     owner = account_id_from_user(user)
     # Release the database connection before potentially slow connector preparation.
     async with get_conn() as conn:
-        seed = await resolve_seed(conn, body.seed_strategy_id, owner)
+        if body.retry_of_run_id is None:
+            seed = await resolve_seed(conn, body.seed_strategy_id, owner)
+        else:
+            parent = await retry_parent(conn, body.retry_of_run_id, owner)
+            seed = retry_seed(body, parent)
     settings = get_evolver_settings()
     async with DataClient(settings.data_service_url, authorization.split(" ", 1)[1]) as client:
         dataset = await FrozenBarsLoader(client).load(

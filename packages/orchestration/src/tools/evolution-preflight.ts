@@ -11,6 +11,7 @@ import { evolutionConfigSchema, getEvolverClient, type ToolRequestContext } from
 const inputSchema = z.object({
   budget: z.number().int().min(1).max(20).default(4),
   seedStrategyId: z.string().min(1).max(128).default("sma_cross_v1"),
+  retryOfRunId: z.string().uuid().optional(),
   config: evolutionConfigSchema,
 });
 

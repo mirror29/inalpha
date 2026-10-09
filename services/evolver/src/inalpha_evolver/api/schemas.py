@@ -263,6 +263,7 @@ class EvolutionPreparation(BaseModel):
 
 
 class StartRunRequest(BaseModel):
+    retry_of_run_id: UUID | None = None
     preparation: EvolutionPreparation | None = None
     seed_strategy_id: str = Field(default="sma_cross_v1", max_length=128)
     budget: int = Field(default=4, ge=1, le=24)
@@ -296,6 +297,10 @@ class CandidateResponse(BaseModel):
 
 class RunStatusResponse(BaseModel):
     run_id: UUID
+    experiment_id: UUID | None = None
+    retry_of_run_id: UUID | None = None
+    attempt_number: int = 1
+    retry_allowed: bool = False
     seed_strategy_id: str
     budget: int
     config: dict[str, Any]

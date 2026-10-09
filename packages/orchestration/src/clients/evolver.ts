@@ -30,6 +30,7 @@ export type EvolutionStartRequest = {
   config: Required<EvolutionConfig>;
   llm: EvolutionLLMSnapshot;
   preparation?: EvolutionPreparation;
+  retry_of_run_id?: string;
 };
 
 export type EvolutionLoopStartRequest = {
@@ -202,11 +203,13 @@ export function eventCampaignRequestDigest(request: EventCampaignRequest): strin
 export function buildEvolutionStartRequest(options: {
   budget?: number;
   seedStrategyId?: string;
+  retryOfRunId?: string;
   preparation?: EvolutionPreparation;
   config: EvolutionConfig;
   llmSnapshot: EvolutionLLMSnapshot;
 }): EvolutionStartRequest {
   return {
+    ...(options.retryOfRunId ? { retry_of_run_id: options.retryOfRunId } : {}),
     ...(options.preparation ? { preparation: options.preparation } : {}),
     budget: options.budget ?? 4,
     seed_strategy_id: options.seedStrategyId ?? "sma_cross_v1",
@@ -249,6 +252,7 @@ export function evolutionRequestDigest(request: EvolutionStartRequest): string {
   if (request.preparation) canonical.push([
     "preparation-v1", request.preparation.seed_source_hash, request.preparation.dataset_content_sha256,
   ]);
+  if (request.retry_of_run_id) canonical.push(["retry-v1", request.retry_of_run_id.toLowerCase()]);
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
@@ -411,6 +415,13 @@ export class EvolverClient {
 
   async listRuns(limit = 20): Promise<RunListResult> {
     return await this.http.get<RunListResult>("/api/v1/runs", { limit });
+  }
+
+  /** Obtain the original owned experiment intent for an explicit, separately approved retry. */
+  async getRetryPlan(runId: string): Promise<{
+    retryOfRunId: string; seedStrategyId: string; budget: number; config: EvolutionConfig;
+  }> {
+    return await this.http.get(`/api/v1/runs/${runId}/retry-plan`);
   }
 
   async getRun(runId: string): Promise<RunStatusResult> {

@@ -147,6 +147,7 @@ export const evolverRunEvolutionTool = createTool({
   inputSchema: z.object({
     budget: z.number().int().min(1).max(20).default(4),
     seedStrategyId: z.string().min(1).max(128).default("sma_cross_v1"),
+    retryOfRunId: z.string().uuid().optional().describe("显式重试已失败或中止的 E1；先取 retry plan，保持原种子/窗口/参数/候选数"),
     config: evolutionConfigSchema,
     preparation: z.object({
       seed_source_hash: z.string().regex(/^[0-9a-f]{64}$/),
@@ -164,6 +165,14 @@ export const evolverRunEvolutionTool = createTool({
       credentialGrant: approved.credentialGrant,
     });
   },
+});
+
+export const evolverGetRetryPlanTool = createTool({
+  id: "evolver.get_retry_plan",
+  description: "读取本人失败或中止 E1 的原始重试参数；修复数据后要重试时用。无需模型费用审批，不用它重试 E2 内部阶段。坑：不得改 as_of 或参数，提交新尝试仍须正常费用审批。",
+  inputSchema: z.object({ runId: z.string().uuid() }),
+  execute: async (inputData, ctx) =>
+    await (await getEvolverClient(ctx?.requestContext as ToolRequestContext | undefined)).getRetryPlan(inputData.runId),
 });
 
 export const evolverGetEvolutionTool = createTool({
@@ -199,6 +208,7 @@ export const evolverTools = [
   evolverRunEventCampaignTool,
   evolverGetEventCampaignTool,
   evolverRunEvolutionTool,
+  evolverGetRetryPlanTool,
   evolverGetEvolutionTool,
   evolverGetCandidateTool,
   evolverAbortEvolutionTool,

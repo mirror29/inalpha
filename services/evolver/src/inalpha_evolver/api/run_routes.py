@@ -18,6 +18,7 @@ from .approval import verify_evolution_approval
 from .cursor import decode_cursor, encode_cursor
 from .presenters import run_response
 from .request_hash import approval_request_digest, normalized_request
+from .retry import retry_parent, retry_seed
 from .schemas import RunListResponse, RunStatusResponse, StartRunRequest
 
 router = APIRouter()
@@ -57,8 +58,22 @@ async def start_run(
         )
     async with db.transaction():
         await db.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (str(owner),))
+        existing = await runs.find_idempotent(db, owner, idempotency_key)
+        if existing is not None:
+            if existing["request_hash"] != request_hash:
+                raise ConflictError("idempotency key reused", code="IDEMPOTENCY_KEY_REUSED")
+            return run_response(existing)
         active = await run_queries.count_active(db, owner)
-        seed = await resolve_seed(db, body.seed_strategy_id, owner)
+        parent = None
+        if body.retry_of_run_id is None:
+            seed = await resolve_seed(db, body.seed_strategy_id, owner)
+        else:
+            parent = await retry_parent(db, body.retry_of_run_id, owner)
+            seed = retry_seed(body, parent)
+            async with db.cursor() as cur:
+                await cur.execute("SELECT 1 FROM strategy_evo_runs WHERE experiment_id=%s AND status IN ('queued','running','cancelling')", (parent["experiment_id"],))
+                if await cur.fetchone() is not None:
+                    raise ConflictError("experiment already has an active attempt", code="EVOLUTION_RETRY_ACTIVE")
         if body.preparation is not None and seed.source_hash != body.preparation.seed_source_hash:
             raise ConflictError(
                 "seed changed since preparation; prepare and approve the new input",
@@ -78,6 +93,7 @@ async def start_run(
             llm_snapshot=body.llm.model_dump(mode="json"),
             llm_credential_grant=evolution_credential,
             queued_at=datetime.now(UTC),
+            retry_parent=parent,
         )
         if not created and row["request_hash"] != request_hash:
             raise ConflictError("idempotency key reused", code="IDEMPOTENCY_KEY_REUSED")

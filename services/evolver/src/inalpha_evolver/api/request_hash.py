@@ -16,6 +16,8 @@ def normalized_request(request: StartRunRequest) -> tuple[dict[str, Any], str]:
     payload = request.model_dump(mode="json")
     if request.preparation is None:
         payload.pop("preparation")
+    if request.retry_of_run_id is None:
+        payload.pop("retry_of_run_id")
     config = payload["config"]
     if request.preparation is not None:
         config["preparation"] = request.preparation.model_dump()
@@ -52,6 +54,8 @@ def approval_request_digest(request: StartRunRequest) -> str:
             "preparation-v1", request.preparation.seed_source_hash,
             request.preparation.dataset_content_sha256,
         ])
+    if request.retry_of_run_id is not None:
+        canonical.append(["retry-v1", str(request.retry_of_run_id)])
     return hashlib.sha256(
         json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
