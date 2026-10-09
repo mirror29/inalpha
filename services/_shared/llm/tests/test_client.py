@@ -131,3 +131,17 @@ async def test_mutate_preserves_provider_truncation_reason() -> None:
     result = await client.mutate(MutationRequest(system_prompt="s", user_prompt="u"))
     assert result.finish_reason == "length"
     assert result.cache_metrics.output_tokens == 50
+
+
+@pytest.mark.asyncio
+async def test_missing_usage_is_distinct_from_explicit_zero_receipt() -> None:
+    client = LLMClient()
+    completion = _make_mock_completion("diff", prompt_tokens=0, completion_tokens=0)
+    client._client = AsyncMock()
+    client._client.chat.completions.create.return_value = completion
+    request = MutationRequest(system_prompt="s", user_prompt="u")
+    assert (await client.mutate(request)).usage_known is True
+    completion.usage = None
+    response = await client.mutate(request)
+    assert response.usage_known is False
+    assert response.cache_metrics.input_tokens == 0

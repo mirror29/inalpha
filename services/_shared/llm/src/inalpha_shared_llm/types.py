@@ -72,3 +72,6 @@ class MutationResponse:
     role: MutationRole = MutationRole.MUTATE
     finish_reason: str | None = None
     """Provider completion reason, when supplied by the API."""
+
+    usage_known: bool | None = None
+    """Whether the provider supplied token usage; None preserves legacy adapters."""

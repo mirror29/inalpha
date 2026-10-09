@@ -89,6 +89,7 @@ class LLMClient:
             content=content,
             cache_metrics=cache_metrics,
             finish_reason=finish_reason if isinstance(finish_reason, str) else None,
+            usage_known=usage is not None,
         )
 
     async def close(self) -> None:
