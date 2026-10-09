@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local implementation and isolated PostgreSQL checks; not production acceptance",
+  "implementation": {
+    "backend_commit": "88482b0a",
+    "dashboard_commit": "73dc5daf",
+    "migration": "0060",
+    "parent_revision": "0059"
+  },
+  "database": {
+    "target": "Fresh randomly named local dedicated test database",
+    "migration_chain": "0001 -> 0058 isolated wallets -> 0059 proposal diagnostics -> 0060 attempt lineage",
+    "evolver_integration_tests_passed": 16,
+    "migration_tests_passed": 3,
+    "temporary_database_removed": true,
+    "existing_databases_modified": false
+  },
+  "checks": {
+    "dashboard_tests_passed": 141,
+    "orchestration_tests_passed": 575,
+    "dashboard_typecheck": "passed",
+    "orchestration_typecheck": "passed",
+    "evolver_tests_passed": 227,
+    "evolver_tests_skipped_without_test_database": 51,
+    "evolver_existing_test_secret_warnings": 3,
+    "consistency_passed": 19,
+    "consistency_failed": 0,
+    "consistency_existing_warnings": 12
+  },
+  "verified": [
+    "Original source, window, evaluation parameters and candidate count preserved",
+    "Retry parent bound in cross-language signed digest",
+    "Duplicate operation reuses same attempt",
+    "One active attempt per experiment enforced by PostgreSQL",
+    "Attempt numbering and parent lineage retained",
+    "Foreign owner, active parent and automatic E2 baseline retries rejected",
+    "Old run data and recorded cost preserved across migration",
+    "Audit-destructive downgrade rejected once retry lineage exists",
+    "Header exposes retry only when allowed by server and links previous attempt"
+  ],
+  "pending": [
+    "Production migration and deployment",
+    "Desktop and mobile rendered-page checks",
+    "Real owner-approved retry after repairing data",
+    "Restart and old-worker isolation under production conditions",
+    "Reliable direct approval submission, mutation quality, comparative results and complete cost attribution"
+  ],
+  "production_e2_acceptance": "Not established by these tests",
+  "model_cost_scope": "Tests use isolated fixtures and model substitutes; no new production model calls were made in this validation"
+}
