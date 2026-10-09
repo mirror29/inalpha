@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local per-call normalization only; no runtime ledger or production acceptance",
+  "commit": "25bc8c44",
+  "checks": {
+    "targeted_tests_passed": 6,
+    "orchestration_typecheck": "passed"
+  },
+  "evidence": [
+    "Missing receipts are unknown, not zero",
+    "Explicit zero remains known",
+    "Invalid or partial counts cannot generate a cost",
+    "Known tokens may have unknown price",
+    "Small estimates retain twelve decimal places",
+    "Arbitrary response content is not retained"
+  ],
+  "pending": [
+    "Persist before model calls and settle individual step usage",
+    "Verified owner and invocation association with approvals and experiment lineage",
+    "Real processor and isolated database integration tests",
+    "Production deployment and acceptance"
+  ]
+}
