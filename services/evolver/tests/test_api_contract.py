@@ -351,6 +351,7 @@ def test_legacy_unprepared_internal_request_keeps_its_idempotency_identity():
 
 def test_retry_parent_is_bound_to_cross_language_approval_digest():
     from uuid import UUID
+
     from inalpha_evolver.api.schemas import EvolutionPreparation
 
     request = _request()
