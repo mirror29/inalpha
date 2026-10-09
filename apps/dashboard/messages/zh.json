@@ -903,6 +903,45 @@
         "macro": "宏观事件",
         "other": "其他事件"
       }
+    },
+    "comparison": {
+      "title": "这次演化改善了吗？",
+      "seed": "原策略",
+      "best": "最佳通过候选",
+      "benchmark": "市场基准 · 买入持有",
+      "bestLink": "查看候选 #{slot} 的变更和评估",
+      "unavailable": "尚无完整评估报告，无法比较。",
+      "scopeMismatch": "评估窗口或执行口径不同，仅供参考，不据此判断改善。",
+      "evidenceBoundary": "执行完成、候选通过和优于原策略是不同结论。当前为 E1 历史实验，尚不具备采用证据。",
+      "scope": "完整评估窗口：{start} → {end} · {bars} 根行情 · 每次成交费率 {fee}",
+      "selectionHint": "最佳候选按本次适应度排序。这里展示完整历史窗口，不是独立 Forward 或一次性 holdout；仍需检查验证区间、交易样本和过拟合风险。",
+      "verdict": {
+        "unfinished": "运行尚未完成，结果暂供观察",
+        "noPassedCandidate": "运行已完成，没有候选通过评估",
+        "comparisonUnavailable": "已有候选通过，尚无法确认是否改善",
+        "improved": "最佳候选的适应度高于原策略",
+        "notImproved": "候选通过评估，但适应度没有高于原策略"
+      },
+      "metrics": {
+        "fitness": "适应度",
+        "total_return_pct": "净收益率",
+        "max_drawdown_pct": "最大回撤",
+        "sharpe": "夏普比率",
+        "num_trades": "交易次数",
+        "total_fees": "交易费用（资金计价）"
+      },
+      "validationTitle": "最佳候选 · 窗口内一致性检查",
+      "train": "前段（训练）",
+      "holdout": "后段（验证，非盲测）",
+      "segmentSummary": "{bars} 根行情 · {trades} 次成交 · 净收益 {result}%",
+      "validationUnavailable": "缺少时间切分检查，不能确认跨区间稳定性。",
+      "risk": "记录的过拟合风险：{value}",
+      "risks": {
+        "high": "高",
+        "medium": "中",
+        "low": "低",
+        "unknown": "未知"
+      }
     }
   },
   "backtests": {

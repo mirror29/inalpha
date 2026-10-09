@@ -903,6 +903,45 @@
         "macro": "Macro",
         "other": "Other"
       }
+    },
+    "comparison": {
+      "title": "Did this evolution improve the strategy?",
+      "seed": "Original strategy",
+      "best": "Best evaluated candidate",
+      "benchmark": "Market benchmark · buy and hold",
+      "bestLink": "Inspect candidate #{slot} changes and evaluation",
+      "unavailable": "A complete evaluation report is unavailable.",
+      "scopeMismatch": "Different evaluation window or execution basis; reference only, not evidence of improvement.",
+      "evidenceBoundary": "Completion, passing evaluation and improvement are separate conclusions. This E1 historical experiment does not establish adoption readiness.",
+      "scope": "Full evaluation window: {start} → {end} · {bars} bars · Fee per fill {fee}",
+      "selectionHint": "The best candidate is ranked by this run’s fitness. These are full historical-window results, not independent Forward or one-time holdout evidence. Review validation, trade samples and overfitting risk.",
+      "verdict": {
+        "unfinished": "Run incomplete; results are provisional",
+        "noPassedCandidate": "Run completed; no candidate passed evaluation",
+        "comparisonUnavailable": "A candidate passed; improvement remains unconfirmed",
+        "improved": "Best candidate fitness exceeds the original",
+        "notImproved": "Candidate passed; fitness did not exceed the original"
+      },
+      "metrics": {
+        "fitness": "Fitness",
+        "total_return_pct": "Net return",
+        "max_drawdown_pct": "Maximum drawdown",
+        "sharpe": "Sharpe ratio",
+        "num_trades": "Trades",
+        "total_fees": "Trading fees (cash denomination)"
+      },
+      "validationTitle": "Best candidate · within-window consistency",
+      "train": "Earlier segment (training)",
+      "holdout": "Later segment (validation, not blind)",
+      "segmentSummary": "{bars} bars · {trades} fills · Net return {result}%",
+      "validationUnavailable": "No temporal consistency check is available. Stability across segments is unconfirmed.",
+      "risk": "Recorded overfitting risk: {value}",
+      "risks": {
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low",
+        "unknown": "Unknown"
+      }
     }
   },
   "backtests": {

@@ -87,24 +87,24 @@ export function EvolutionRunData({ run }: { run: EvolutionRun }) {
               ]}
             />
           </Panel>
+          <Panel title={t("seedReport")}>
+            <ObjectRows
+              value={reportMetrics(run.seed_report_snapshot)}
+              empty={t("notAvailable")}
+              preferred={Object.keys(labels)}
+              labels={labels}
+            />
+          </Panel>
+          <Panel title={t("baseline")}>
+            <ObjectRows
+              value={reportMetrics(run.baseline_snapshot)}
+              empty={t("notAvailable")}
+              preferred={Object.keys(labels)}
+              labels={labels}
+            />
+          </Panel>
         </div>
       </details>
-      <Panel title={t("seedReport")}>
-        <ObjectRows
-          value={reportMetrics(run.seed_report_snapshot)}
-          empty={t("notAvailable")}
-          preferred={Object.keys(labels)}
-          labels={labels}
-        />
-      </Panel>
-      <Panel title={t("baseline")}>
-        <ObjectRows
-          value={reportMetrics(run.baseline_snapshot)}
-          empty={t("notAvailable")}
-          preferred={Object.keys(labels)}
-          labels={labels}
-        />
-      </Panel>
     </div>
   );
 }
