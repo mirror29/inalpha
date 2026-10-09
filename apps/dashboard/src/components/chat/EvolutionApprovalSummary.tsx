@@ -12,12 +12,19 @@ export function EvolutionApprovalSummary({ envelope }: { envelope: unknown }) {
   const unavailable = t("unavailable");
   const seed = summary.label ?? (summary.kind === "evolution" && summary.slot !== null
     ? t("evolutionSlot", { slot: summary.slot + 1 }) : t(`seed.${summary.kind}`));
+  const trainPercent = summary.validationSplit === null ? null
+    : Number((summary.validationSplit * 100).toFixed(2));
   const rows = [
     [t("seedLabel"), seed],
     [t("market"), `${summary.market || unavailable} · ${summary.mode ? t(summary.mode) : unavailable} · ${summary.timeframe ?? unavailable}`],
     [t("simulation"), summary.initialCash !== null && summary.feeRate !== null && summary.leverage !== null
       ? t("simulationValue", { cash: summary.initialCash, fee: Number((summary.feeRate * 100).toFixed(4)), leverage: summary.leverage }) : unavailable],
-    [t("validation"), summary.validationSplit === null ? unavailable : t("validationValue", { percent: Number((summary.validationSplit * 100).toFixed(2)) })],
+    [t("validation"), summary.validationSplit === null || trainPercent === null ? unavailable : summary.validationSplit === 0
+      ? t("validationDisabled") : trainPercent === 0
+        ? t("validationPrecise", { trainPercent: String(summary.validationSplit * 100) }) : t("validationValue", {
+        trainPercent,
+        validationPercent: Number((100 - trainPercent).toFixed(2)),
+      })],
     [t("window"), summary.from && summary.to ? `${summary.from} → ${summary.to}` : unavailable],
     [t("data"), summary.bars === null ? unavailable : t("bars", { count: summary.bars })],
     [t("latestBar"), summary.latestBar ?? unavailable],

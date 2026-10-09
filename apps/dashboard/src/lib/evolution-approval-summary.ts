@@ -21,7 +21,16 @@ export function evolutionApprovalSummary(envelope: unknown) {
     timeframe: text(config.timeframe), mode: config.trading_mode === "perp" ? "perp" : config.trading_mode === "spot" ? "spot" : null,
     from: timestamp(config.from_ts), to: timestamp(config.as_of),
     budget: integer(request.budget, 1, 20), bars: integer(dataset.bar_count, 2, 10000),
-    latestBar: timestamp(dataset.latest_bar_ts), validationSplit: fraction(config.validation_split, 0.5),
+    latestBar: timestamp(dataset.latest_bar_ts),
+    /**
+     * Training fraction, not holdout: services/paper/src/inalpha_paper/evaluation_metrics.py
+     * validation_from_report slices train at int(len(curve) * split); remainder is holdout.
+     * Keep the E1 API domain [0, 0.5] from services/evolver/src/inalpha_evolver/api/schemas.py
+     * EvolutionConfig.validation_split; zero disables validation (evaluation_metrics.py:45
+     * returns None and paper/tests/test_api_backtest.py:test_backtest_validation_split_zero_disables
+     * asserts the API validation is null). E2 uses a separate config.
+     */
+    validationSplit: fraction(config.validation_split, 0.5),
     initialCash: number(config.initial_cash), feeRate: fraction(config.fee_rate, 0.1), leverage: integer(config.leverage, 1, 20),
     model: [text(model.provider), text(model.model)].filter(Boolean).join(" / "),
     estimatedCost: number(preparation.estimated_max_cost_usd),
