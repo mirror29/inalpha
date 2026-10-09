@@ -1,3 +1,4 @@
+import { clearChatInvocation, registerChatInvocation } from "./chat-invocation-scope.js";
 import { randomUUID } from "node:crypto";
 import { verifyToken } from "../../auth.js";
 import type { InputProcessor, OutputProcessor } from "@mastra/core/processors";
@@ -45,8 +46,10 @@ export function createChatUsageProcessor(store: ChatUsageStore): InputProcessor 
         configId: snapshot?.config_id ?? config?.id ?? null,
         ...(snapshot ? { pricing: { ...snapshot.pricing } } : {}),
       };
+      clearChatInvocation(requestContext!);
       await store.begin(call);
       state.activeCall = call;
+      if (source === "chat") registerChatInvocation(requestContext!, invocationId, authSub);
       return { modelSettings: { ...modelSettings, maxRetries: 0 } };
     },
     async processOutputStep({ state, stepNumber, usage, messages }) {

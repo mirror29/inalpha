@@ -299,7 +299,16 @@ class CandidateResponse(BaseModel):
     updated_at: datetime | None = None
 
 
+class ChatPreparationCosts(BaseModel):
+    linked: bool
+    call_count: int | None = None
+    known_cost_usd: float | None = None
+    unknown_cost_count: int | None = None
+    shared_approval_count: int | None = None
+
+
 class RunStatusResponse(BaseModel):
+    chat_preparation_costs: ChatPreparationCosts | None = None
     known_cost_usd: float = 0
     unknown_usage_count: int = 0
     run_id: UUID

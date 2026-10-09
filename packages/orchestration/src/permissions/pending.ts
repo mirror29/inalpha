@@ -20,6 +20,7 @@ export interface PendingApprovalView {
   inputDigest: string;
   createdAt: string;
   deadline: string;
+  chatInvocationId?: string;
 }
 
 export interface PendingRequestArgs {
@@ -28,6 +29,7 @@ export interface PendingRequestArgs {
   approvalInput: unknown;
   sessionId: string;
   authSub: string;
+  chatInvocationId?: string;
   timeoutMs?: number;
 }
 
@@ -141,6 +143,7 @@ export class PendingApprovalsStore {
       approvalInput: structuredClone(args.approvalInput),
       sessionId: args.sessionId,
       authSub: args.authSub,
+      ...(args.chatInvocationId ? { chatInvocationId: args.chatInvocationId } : {}),
       inputDigest: approvalInputDigest(args.approvalInput),
       status: "pending",
       createdAt: createdAt.toISOString(),
@@ -521,8 +524,11 @@ export class PendingApprovalsStore {
   }
 
   private toView(record: PendingApprovalRecord): PendingApprovalView {
-    const { requestId, toolName, toolInput, sessionId, inputDigest, createdAt, deadline } = record;
-    return structuredClone({ requestId, toolName, toolInput, sessionId, inputDigest, createdAt, deadline });
+    const { requestId, toolName, toolInput, sessionId, inputDigest, createdAt, deadline, chatInvocationId } = record;
+    return structuredClone({
+      requestId, toolName, toolInput, sessionId, inputDigest, createdAt, deadline,
+      ...(chatInvocationId ? { chatInvocationId } : {}),
+    });
   }
 
   private persist(fn: (persistence: ApprovalPersistence) => Promise<void>): void {

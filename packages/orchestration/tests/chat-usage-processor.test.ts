@@ -3,6 +3,7 @@ import { RequestContext } from "@mastra/core/request-context";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
+import { trustedChatInvocation } from "../src/mastra/llm/chat-invocation-scope.js";
 import { mintServiceToken } from "../src/auth.js";
 import { ScriptedModel } from "../src/evals/scripted-model.js";
 import { AUTH_SUB_KEY } from "../src/hooks/with-hooks.js";
@@ -53,6 +54,8 @@ describe("real Agent per-call usage processing", () => {
     expect(f.calls[0].callId).not.toBe(f.calls[1].callId);
     expect(f.calls.map((call) => call.stepNumber)).toEqual([0, 1]);
     expect(f.calls[0].invocationId).not.toBe("untrusted-client-value");
+    expect(trustedChatInvocation(f.requestContext, "owner-test")).toBe(f.calls[0].invocationId);
+    expect(trustedChatInvocation(f.requestContext, "other-owner")).toBeUndefined();
     expect(f.receipts[0]).toMatchObject({ usageStatus: "known", estimatedCostUsd: 0.0000015 });
     expect(JSON.stringify(f.calls)).not.toContain("SECRET");
   });

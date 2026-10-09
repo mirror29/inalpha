@@ -1,3 +1,4 @@
+import { trustedChatInvocation } from "../mastra/llm/chat-invocation-scope.js";
 /**
  * ``withHooks`` —— Mastra tool execute 中间件。
  *
@@ -275,7 +276,11 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
             const approvalViewInput = llmSnapshot
               ? { request: effectiveInput, llm_snapshot: llmSnapshot, preparation }
               : effectiveInput;
+            const chatInvocationId = trustedChatInvocation(
+              (ctx as { requestContext?: unknown } | undefined)?.requestContext, authSub,
+            );
             const pending = store.request({
+              ...(chatInvocationId ? { chatInvocationId } : {}),
               authSub,
               sessionId,
               toolName,

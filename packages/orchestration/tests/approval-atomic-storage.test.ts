@@ -26,7 +26,7 @@ function command(sessionId = randomUUID()): ApprovedExecutionCommand {
   return { approvalInput, view: { requestId: randomUUID(), toolName: "evolver.run_evolution",
     toolInput: { request: { seedStrategyId: "seed", budget: 4 }, llm_snapshot: { config_id: "owned-model" } },
     inputDigest: approvalInputDigest(approvalInput), sessionId,
-    createdAt: new Date().toISOString(), deadline: new Date(Date.now() + 30_000).toISOString() } };
+    chatInvocationId: randomUUID(), createdAt: new Date().toISOString(), deadline: new Date(Date.now() + 30_000).toISOString() } };
 }
 
 afterAll(async () => { setPool(undefined); await pool?.end(); });
