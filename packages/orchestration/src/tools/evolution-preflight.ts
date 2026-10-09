@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { HttpClientError } from "../clients/http.js";
-import { buildEvolutionStartRequest } from "../clients/evolver.js";
+import { buildEvolutionStartRequest, evolutionRequestDigest } from "../clients/evolver.js";
 import {
   getRequestContextValue,
   USER_LLM_SNAPSHOT_KEY,
@@ -22,9 +22,22 @@ export async function evolutionApprovalPreflight(toolName: string, input: unknow
   const requestContext = (ctx as { requestContext?: ToolRequestContext } | undefined)?.requestContext;
   const client = await getEvolverClient(requestContext);
   try {
-    return await client.preflightRun(buildEvolutionStartRequest({
-      ...inputSchema.parse(input), llmSnapshot: snapshot,
+    const parsed = inputSchema.parse(input);
+    const summary = await client.preflightRun(buildEvolutionStartRequest({
+      ...parsed, llmSnapshot: snapshot,
     }));
+    const preparation = z.object({
+      seed_source_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      dataset_content_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    }).parse({
+      seed_source_hash: summary.seed_source_hash,
+      dataset_content_sha256: summary.dataset_manifest.content_sha256,
+    });
+    const request = buildEvolutionStartRequest({ ...parsed, preparation, llmSnapshot: snapshot });
+    if (summary.request_digest !== evolutionRequestDigest(request)) {
+      throw new Error("EVOLUTION_PREPARATION_INVALID: preparation does not match the requested input");
+    }
+    return { input: { ...parsed, preparation }, summary };
   } catch (error) {
     if (!(error instanceof HttpClientError)) throw error;
     const missing = error.details.missing_count;

@@ -146,7 +146,7 @@ export type WithHooksOptions = {
   /** ask 路径 store 超时毫秒数；缺省 30_000（30 秒）。0 / 负数视作默认。 */
   askTimeoutMs?: number;
   /** Validate preparation after identity checks and before creating or consuming approval. */
-  approvalPreflight?: (toolName: string, input: unknown, ctx: unknown) => Promise<unknown>;
+  approvalPreflight?: (toolName: string, input: unknown, ctx: unknown) => Promise<{ input: unknown; summary?: unknown } | undefined>;
 };
 
 /**
@@ -192,7 +192,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           };
         }
 
-        const effectiveInput = pre.updatedInput !== undefined ? pre.updatedInput : input;
+        let effectiveInput = pre.updatedInput !== undefined ? pre.updatedInput : input;
 
         // 2. permission engine（hook 没 override 时才查）
         let permDecision: "allow" | "ask" | "deny" = pre.permissionOverride ?? "allow";
@@ -210,14 +210,10 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
 
         if (permDecision === "ask") {
           const store = opts.pendingApprovals ?? defaultPendingApprovals;
-          const projectedInput = projectApprovalInput(toolName, effectiveInput);
           const durableEvolutionApproval = DURABLE_EVOLUTION_APPROVAL_TOOLS.has(toolName);
           const llmSnapshot = durableEvolutionApproval
             ? getRequestContextValue<EvolutionLLMSnapshot>(ctx, USER_LLM_SNAPSHOT_KEY)
             : undefined;
-          const approvalInput = llmSnapshot
-            ? { request: projectedInput, llm_snapshot: llmSnapshot }
-            : projectedInput;
           if (!authSub || !sessionId || (durableEvolutionApproval && !llmSnapshot)) {
             return {
               isError: true,
@@ -234,7 +230,11 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
 
           let preparation: unknown;
           try {
-            preparation = await opts.approvalPreflight?.(toolName, effectiveInput, ctx);
+            const prepared = await opts.approvalPreflight?.(toolName, effectiveInput, ctx);
+            if (prepared) {
+              effectiveInput = prepared.input;
+              preparation = prepared.summary;
+            }
           } catch (error) {
             return {
               isError: true,
@@ -244,6 +244,10 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
             };
           }
 
+          const projectedInput = projectApprovalInput(toolName, effectiveInput);
+          const approvalInput = llmSnapshot
+            ? { request: projectedInput, llm_snapshot: llmSnapshot }
+            : projectedInput;
           const operationId = await store.consumeApproved({
             authSub,
             sessionId,
@@ -257,7 +261,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           });
           if (!operationId) {
             const approvalViewInput = llmSnapshot
-              ? { request: effectiveInput, llm_snapshot: llmSnapshot }
+              ? { request: effectiveInput, llm_snapshot: llmSnapshot, preparation }
               : effectiveInput;
             const pending = store.request({
               authSub,

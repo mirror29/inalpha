@@ -31,3 +31,19 @@ describe("approval preparation ordering", () => {
     expect(approvalPreflight).not.toHaveBeenCalled();
   });
 });
+
+/** Approval identity and execution must use the server-prepared input, not model-provided hashes. */
+it("projects prepared input into approval and executes that exact input", async () => {
+  const preparedInput = { seedStrategyId: "candidate:owned", preparation: { seed_source_hash: "verified" } };
+  const consumeApproved = vi.fn().mockResolvedValue("operation");
+  const execute = vi.fn().mockResolvedValue({ run_id: "run" });
+  const tool = withHooks({ id: "test.costful", execute }, {
+    runner: new HookRunner(), permissionResolver: () => "ask",
+    getAuthSub: () => "owner", getSessionId: () => "thread",
+    pendingApprovals: { consumeApproved } as unknown as PendingApprovalsStore,
+    approvalPreflight: async () => ({ input: preparedInput }),
+  });
+  await tool.execute({ preparation: "untrusted" });
+  expect(consumeApproved).toHaveBeenCalledWith(expect.objectContaining({ approvalInput: preparedInput }));
+  expect(execute).toHaveBeenCalledWith(preparedInput, undefined);
+});

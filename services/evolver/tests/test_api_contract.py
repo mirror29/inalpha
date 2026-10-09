@@ -324,3 +324,26 @@ def test_run_dto_exposes_manifest_cutoff_and_lag() -> None:
         "data_epoch",
         "backfill",
     } <= required
+
+
+def test_preparation_is_bound_to_cross_language_approval_digest_and_storage():
+    from inalpha_evolver.api.schemas import EvolutionPreparation
+
+    request = _request()
+    request.preparation = EvolutionPreparation(seed_source_hash="a" * 64, dataset_content_sha256="b" * 64)
+    assert approval_request_digest(request) == "6ed7ff34b286ff1f3849286be3bce66a39cf31bff09f2dac1291f88a79bbfc07"
+    config, first_hash = normalized_request(request)
+    assert config["preparation"] == request.preparation.model_dump()
+    request.preparation = EvolutionPreparation(seed_source_hash="a" * 64, dataset_content_sha256="c" * 64)
+    assert approval_request_digest(request) != "6ed7ff34b286ff1f3849286be3bce66a39cf31bff09f2dac1291f88a79bbfc07"
+    assert normalized_request(request)[1] != first_hash
+
+
+def test_legacy_unprepared_internal_request_keeps_its_idempotency_identity():
+    import hashlib
+    import json
+
+    request = _request()
+    legacy_payload = request.model_dump(mode="json", exclude={"preparation"})
+    expected = hashlib.sha256(json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert normalized_request(request)[1] == expected

@@ -254,7 +254,16 @@ def _number_text(value: int | float) -> str:
     return text or "0"
 
 
+class EvolutionPreparation(BaseModel):
+    """Approved immutable source/data identities, never user credentials."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    seed_source_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    dataset_content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class StartRunRequest(BaseModel):
+    preparation: EvolutionPreparation | None = None
     seed_strategy_id: str = Field(default="sma_cross_v1", max_length=128)
     budget: int = Field(default=4, ge=1, le=24)
     config: EvolutionConfig

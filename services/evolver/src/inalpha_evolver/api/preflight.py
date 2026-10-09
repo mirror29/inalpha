@@ -13,7 +13,7 @@ from ..data import FrozenBarsLoader
 from ..data.manifest import DatasetManifest
 from ..governor.seed_resolver import resolve_seed
 from .request_hash import approval_request_digest
-from .schemas import StartRunRequest
+from .schemas import EvolutionPreparation, StartRunRequest
 
 
 class RunPreflightResponse(BaseModel):
@@ -49,10 +49,14 @@ async def preflight_run(
             from_ts=body.config.from_ts,
             as_of=body.config.as_of,
         )
+    prepared = body.model_copy(update={"preparation": EvolutionPreparation(
+        seed_source_hash=seed.source_hash,
+        dataset_content_sha256=dataset.manifest.content_sha256,
+    )})
     return RunPreflightResponse(
         seed_strategy_id=seed.reference,
         seed_source_hash=seed.source_hash,
-        request_digest=approval_request_digest(body),
+        request_digest=approval_request_digest(prepared),
         dataset_manifest=dataset.manifest,
         estimated_max_cost_usd=body.budget * body.llm.pricing.estimated_max_usd_per_candidate,
     )

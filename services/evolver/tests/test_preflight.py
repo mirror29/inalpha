@@ -86,4 +86,8 @@ async def test_successful_preflight_reports_real_manifest_and_estimate_without_r
     assert response.dataset_manifest.bar_count == 3
     assert response.dataset_manifest.requested_from == body.config.from_ts
     assert response.estimated_max_cost_usd == body.budget * body.llm.pricing.estimated_max_usd_per_candidate
+    body.preparation = preflight.EvolutionPreparation(
+        seed_source_hash=response.seed_source_hash,
+        dataset_content_sha256=response.dataset_manifest.content_sha256,
+    )
     assert response.request_digest == preflight.approval_request_digest(body)

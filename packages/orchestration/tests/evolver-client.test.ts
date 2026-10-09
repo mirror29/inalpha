@@ -479,3 +479,16 @@ describe("EvolverClient", () => {
     expect(nonRetryable).toHaveBeenCalledTimes(1);
   });
 });
+
+/** Keep the signed preparation identity identical to the Python API contract. */
+it("binds seed and dataset preparation in the cross-language request digest", () => {
+  const request = buildEvolutionStartRequest({
+    config: { venue: "binance", symbol: "BTCUSDT", timeframe: "1h",
+      from_ts: "2026-07-13T12:00:00Z", as_of: "2026-08-12T12:00:00Z" },
+    llmSnapshot: snapshot,
+    preparation: { seed_source_hash: "a".repeat(64), dataset_content_sha256: "b".repeat(64) },
+  });
+  expect(evolutionRequestDigest(request)).toBe("6ed7ff34b286ff1f3849286be3bce66a39cf31bff09f2dac1291f88a79bbfc07");
+  request.preparation!.dataset_content_sha256 = "c".repeat(64);
+  expect(evolutionRequestDigest(request)).not.toBe("6ed7ff34b286ff1f3849286be3bce66a39cf31bff09f2dac1291f88a79bbfc07");
+});

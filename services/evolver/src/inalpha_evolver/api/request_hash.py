@@ -14,7 +14,11 @@ _UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 def normalized_request(request: StartRunRequest) -> tuple[dict[str, Any], str]:
     payload = request.model_dump(mode="json")
+    if request.preparation is None:
+        payload.pop("preparation")
     config = payload["config"]
+    if request.preparation is not None:
+        config["preparation"] = request.preparation.model_dump()
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -43,6 +47,11 @@ def approval_request_digest(request: StartRunRequest) -> str:
         canonical.append(_canonical_params(config.params))
     if config.funding_rate:
         canonical.append(["funding_rate", _float64_hex(config.funding_rate)])
+    if request.preparation is not None:
+        canonical.append([
+            "preparation-v1", request.preparation.seed_source_hash,
+            request.preparation.dataset_content_sha256,
+        ])
     return hashlib.sha256(
         json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()

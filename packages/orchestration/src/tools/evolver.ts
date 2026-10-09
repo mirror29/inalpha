@@ -148,6 +148,10 @@ export const evolverRunEvolutionTool = createTool({
     budget: z.number().int().min(1).max(20).default(4),
     seedStrategyId: z.string().min(1).max(128).default("sma_cross_v1"),
     config: evolutionConfigSchema,
+    preparation: z.object({
+      seed_source_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      dataset_content_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    }).optional().describe("系统预检填充，不由模型生成"),
   }),
   execute: async (inputData, ctx) => {
     const approved = await getApprovedEvolutionRunContext(

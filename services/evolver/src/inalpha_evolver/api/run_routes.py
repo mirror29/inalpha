@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request, status
 from inalpha_paper.account_id import account_id_from_user
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
-from inalpha_shared.errors import ConflictError, RateLimitedError
+from inalpha_shared.errors import ConflictError, RateLimitedError, ValidationError
 
 from ..config import get_evolver_settings
 from ..governor.seed_resolver import resolve_seed
@@ -50,10 +50,20 @@ async def start_run(
         grant_purpose="e1_run",
         settings=settings,
     )
+    if body.preparation is None:
+        raise ValidationError(
+            "prepare the seed and data before approving a paid run",
+            code="EVOLUTION_PREPARATION_REQUIRED",
+        )
     async with db.transaction():
         await db.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (str(owner),))
         active = await run_queries.count_active(db, owner)
         seed = await resolve_seed(db, body.seed_strategy_id, owner)
+        if body.preparation is not None and seed.source_hash != body.preparation.seed_source_hash:
+            raise ConflictError(
+                "seed changed since preparation; prepare and approve the new input",
+                code="EVOLUTION_PREPARATION_CHANGED",
+            )
         row, created = await runs.insert_run(
             db,
             owner_account_id=owner,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from uuid import uuid4
 
 import jwt
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from inalpha_evolver.api.request_hash import approval_request_digest
 from inalpha_evolver.api.schemas import StartRunRequest
 from inalpha_evolver.config import get_evolver_settings
+from inalpha_evolver.governor.seed import SEED_STRATEGY_CODE
 from inalpha_evolver.main import app
 
 from .llm_snapshot_fixtures import (
@@ -69,6 +71,10 @@ def _payload() -> dict:
     return {
         "seed_strategy_id": "sma_cross_v1",
         "budget": 1,
+        "preparation": {
+            "seed_source_hash": sha256(SEED_STRATEGY_CODE.encode()).hexdigest(),
+            "dataset_content_sha256": "a" * 64,
+        },
         "config": {
             "venue": "binance",
             "symbol": "BTCUSDT",

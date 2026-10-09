@@ -19,11 +19,17 @@ export type EvolutionConfig = {
   funding_rate?: number;
 };
 
+export type EvolutionPreparation = {
+  seed_source_hash: string;
+  dataset_content_sha256: string;
+};
+
 export type EvolutionStartRequest = {
   budget: number;
   seed_strategy_id: string;
   config: Required<EvolutionConfig>;
   llm: EvolutionLLMSnapshot;
+  preparation?: EvolutionPreparation;
 };
 
 export type EvolutionLoopStartRequest = {
@@ -196,10 +202,12 @@ export function eventCampaignRequestDigest(request: EventCampaignRequest): strin
 export function buildEvolutionStartRequest(options: {
   budget?: number;
   seedStrategyId?: string;
+  preparation?: EvolutionPreparation;
   config: EvolutionConfig;
   llmSnapshot: EvolutionLLMSnapshot;
 }): EvolutionStartRequest {
   return {
+    ...(options.preparation ? { preparation: options.preparation } : {}),
     budget: options.budget ?? 4,
     seed_strategy_id: options.seedStrategyId ?? "sma_cross_v1",
     config: {
@@ -238,6 +246,9 @@ export function evolutionRequestDigest(request: EvolutionStartRequest): string {
   ];
   if (Object.keys(config.params ?? {}).length) canonical.push(canonicalParams(config.params));
   if (config.funding_rate) canonical.push(["funding_rate", float64Hex(config.funding_rate)]);
+  if (request.preparation) canonical.push([
+    "preparation-v1", request.preparation.seed_source_hash, request.preparation.dataset_content_sha256,
+  ]);
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
