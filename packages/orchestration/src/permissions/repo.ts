@@ -23,6 +23,7 @@ import { Pool, type PoolConfig } from "pg";
 
 import { getSettings } from "../config.js";
 import { maskSensitive } from "../redact.js";
+import { openExecution, sealExecution } from "./execution-envelope.js";
 import type {
   EvolutionOperationScope,
   ApprovedExecutionCommand,
@@ -167,7 +168,7 @@ export async function rememberEvolutionOperation(
       args.toolName,
       args.inputDigest,
       expiresAt,
-      args.execution ? JSON.stringify(maskSensitive(args.execution)) : null,
+      args.execution ? JSON.stringify(sealExecution(args.execution, { authSub: args.authSub, operationId: args.operationId, sessionId: args.sessionId, toolName: args.toolName, inputDigest: args.inputDigest })) : null,
     ],
   );
   const row = result.rows[0];
@@ -224,7 +225,7 @@ export async function approveEvolutionExecution(args: {
          expires_at=EXCLUDED.expires_at,execution_input=EXCLUDED.execution_input
        WHERE evolution_approval_operations.expires_at<=NOW()
        RETURNING expires_at`,
-      [view.requestId, args.authSub, view.sessionId, view.toolName, view.inputDigest, args.retentionMs, JSON.stringify(maskSensitive(args.command))],
+      [view.requestId, args.authSub, view.sessionId, view.toolName, view.inputDigest, args.retentionMs, JSON.stringify(sealExecution(args.command, { authSub: args.authSub, operationId: view.requestId, sessionId: view.sessionId, toolName: view.toolName, inputDigest: view.inputDigest }))],
     );
     if (result.rowCount !== 1) throw new Error("approved operation already exists");
     if (view.chatInvocationId) {
@@ -252,11 +253,13 @@ export async function findApprovedExecution(operationId: string, authSub: string
   const pool = getPoolOrNull();
   if (!pool) return undefined;
   const result = await pool.query(
-    `SELECT execution_input FROM evolution_approval_operations
+    `SELECT execution_input,session_id,tool_name,input_digest FROM evolution_approval_operations
      WHERE operation_id=$1 AND auth_sub=$2 AND tool_name='evolver.run_evolution'
        AND expires_at>NOW() AND execution_input IS NOT NULL`, [operationId, authSub],
   );
-  return result.rows[0]?.execution_input as ApprovedExecutionCommand | undefined;
+  const row = result.rows[0];
+  return row ? openExecution(row.execution_input, { authSub, operationId, sessionId: row.session_id,
+    toolName: row.tool_name, inputDigest: row.input_digest }) : undefined;
 }
 
 /** Atomically consume one unexpired recovery entitlement. */

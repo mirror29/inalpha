@@ -22,9 +22,10 @@ function database(): Pool {
 }
 
 function command(sessionId = randomUUID()): ApprovedExecutionCommand {
-  const approvalInput = { request: { seedStrategyId: "seed", budget: 4 } };
+  const request = { seedStrategyId: "seed", budget: 4, config: { params: { token: "BTC", wallet: 3 } } };
+  const approvalInput = { request };
   return { approvalInput, view: { requestId: randomUUID(), toolName: "evolver.run_evolution",
-    toolInput: { request: { seedStrategyId: "seed", budget: 4 }, llm_snapshot: { config_id: "owned-model" } },
+    toolInput: { request, llm_snapshot: { config_id: "owned-model" } },
     inputDigest: approvalInputDigest(approvalInput), sessionId,
     chatInvocationId: randomUUID(), createdAt: new Date().toISOString(), deadline: new Date(Date.now() + 30_000).toISOString() } };
 }
@@ -68,9 +69,16 @@ describe.skipIf(!enabled)("atomic owner approval storage", () => {
     expect(await store.respondTrusted(view.requestId, "allow", "alice")).toBe(true);
     const row = await db.query("SELECT status FROM pending_approvals WHERE request_id=$1", [view.requestId]);
     expect(row.rows[0].status).toBe("allowed");
+    const stored = await db.query("SELECT execution_input FROM evolution_approval_operations WHERE operation_id=$1", [view.requestId]);
+    expect(stored.rows[0].execution_input.format).toBe("inalpha-approved-execution-v1");
+    expect(JSON.stringify(stored.rows[0].execution_input)).not.toContain("BTC");
+    const audit = await db.query("SELECT tool_input FROM pending_approvals WHERE request_id=$1", [view.requestId]);
+    expect(audit.rows[0].tool_input.request.config.params.token).toBe("[REDACTED]");
     store.clearAll();
     const restarted = new PendingApprovalsStore(() => {}, { approveEvolutionExecution, findApprovedExecution,
       findEvolutionOperation, insertPending, markResolved, rememberEvolutionOperation });
+    const recovered = await findApprovedExecution(view.requestId, "alice");
+    expect(recovered?.approvalInput).toEqual(original.approvalInput);
     const calls: string[] = [];
     restarted.registerApprovedExecution("evolver.run_evolution", async (saved) => { calls.push(saved.view.requestId); return { run_id: "same-run" }; });
     expect(await restarted.status(view.requestId, "bob")).toEqual({ status: "unavailable" });
