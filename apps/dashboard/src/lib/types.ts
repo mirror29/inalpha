@@ -626,6 +626,10 @@ export interface EvolutionCandidateSummary {
 
 export interface EvolutionRunSummary {
   run_id: string;
+  experiment_id?: string | null;
+  retry_of_run_id?: string | null;
+  attempt_number?: number;
+  retry_allowed?: boolean;
   seed_strategy_id: string;
   budget: number;
   config: Record<string, unknown>;

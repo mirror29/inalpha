@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl";
 
+import { Link } from "@/i18n/navigation";
 import { evolutionMarket } from "@/lib/evolution-presentation";
 import type { EvolutionRun } from "@/lib/types";
 import { evolutionTone, isEvolutionActive } from "@/lib/evolution";
@@ -42,8 +43,30 @@ export function EvolutionRunHeader({
         <p className="mt-2 font-mono text-xs text-fg-muted">
           {evolutionMarket(run.config) || w("marketUnavailable")}
         </p>
+        {(run.attempt_number ?? 1) > 1 && (
+          <p className="mt-2 text-xs text-fg-muted">
+            {t("retryAttempt", { number: run.attempt_number ?? 1 })}
+            {run.retry_of_run_id && (
+              <Link href={`/evolution/${run.retry_of_run_id}`} className="ml-2 text-cyan hover:underline">
+                {t("previousAttempt")}
+              </Link>
+            )}
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-3">
+        {run.retry_allowed && !active && (
+          <button
+            type="button"
+            title={t("retryHint")}
+            onClick={() => window.dispatchEvent(new CustomEvent("inalpha:evolution-start", {
+              detail: { prompt: t("retryPrompt", { runId: run.run_id }) },
+            }))}
+            className="rounded-md border border-seal/40 bg-seal/10 px-3 py-1.5 font-mono text-xs text-seal hover:bg-seal/20"
+          >
+            {t("retry")}
+          </button>
+        )}
         {active && (
           <button
             type="button"
