@@ -16,6 +16,11 @@ def test_0060_preserves_legacy_run_and_retains_retry_audit(migration_db_url):
     with psycopg.connect(db_url(migration_db_url)) as conn:
         assert conn.execute("SELECT experiment_id,retry_of_run_id,attempt_number FROM strategy_evo_runs WHERE run_id=%s", (run_id,)).fetchone() == (run_id, None, 1)
         assert conn.execute("SELECT seed_strategy_id,budget,config,status,llm_cost_usd FROM strategy_evo_runs WHERE run_id=%s", (run_id,)).fetchone() == before
+    legacy_after_upgrade = uuid4()
+    with psycopg.connect(db_url(migration_db_url)) as conn:
+        conn.execute("""INSERT INTO strategy_evo_runs(run_id,owner_account_id,requested_by_sub,idempotency_key,request_hash,queued_at,seed_strategy_id,budget,config,status)
+        VALUES (%s,%s,'test',%s,'old-writer',NOW(),'legacy-seed',4,'{}','failed')""", (legacy_after_upgrade,owner,str(legacy_after_upgrade)))
+        assert conn.execute("SELECT experiment_id FROM strategy_evo_runs WHERE run_id=%s", (legacy_after_upgrade,)).fetchone() == (legacy_after_upgrade,)
     alembic(migration_db_url, "downgrade", "0059")
     alembic(migration_db_url, "upgrade", "0060")
     with psycopg.connect(db_url(migration_db_url)) as conn:
