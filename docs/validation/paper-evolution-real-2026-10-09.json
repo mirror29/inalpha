@@ -1,0 +1,153 @@
+{
+  "date": "2026-10-09",
+  "budget": "User explicitly removed prior budget limit",
+  "paper_runs": [
+    {
+      "symbol": "BTC/USDT",
+      "allocation_base_usd": 500,
+      "initial_quote_usdt": 500,
+      "observed_status": "running",
+      "last_bar_ts": null,
+      "accounting_status": "verified",
+      "verification": "Production read-only SQL at 2026-10-09T06:27Z; creation verified, first processed bar pending",
+      "run_id_prefix": "8ec05df8"
+    },
+    {
+      "symbol": "ETH/USDT",
+      "allocation_base_usd": 500,
+      "initial_quote_usdt": 500,
+      "observed_status": "running",
+      "last_bar_ts": null,
+      "accounting_status": "verified",
+      "verification": "Production read-only SQL at 2026-10-09T06:27Z; creation verified, first processed bar pending",
+      "run_id_prefix": "33ef02a0"
+    },
+    {
+      "symbol": "SOL/USDT",
+      "allocation_base_usd": 500,
+      "initial_quote_usdt": 500,
+      "observed_status": "running",
+      "last_bar_ts": null,
+      "accounting_status": "verified",
+      "verification": "Production read-only SQL at 2026-10-09T06:27Z; creation verified, first processed bar pending",
+      "run_id_prefix": "7c09cdb0"
+    }
+  ],
+  "actual_model_cost_usd": null,
+  "evolution_runs": [
+    {
+      "symbol": "BTC/USDT",
+      "status": "failed",
+      "failure_code": "EVOLUTION_DATA_GAP_INVALID",
+      "stage": "loading_data",
+      "reported_evolution_cost_usd": 0,
+      "note": "Chat costs separate; seed reference fixed via candidate: prefix. Normal data backfill pending.",
+      "run_id_prefix": "5f133310",
+      "reported_missing_bar_samples": 20
+    },
+    {
+      "symbol": "BTC/USDT",
+      "status": "failed",
+      "failure_code": "EVOLUTION_DATA_GAP_INVALID",
+      "stage": "loading_data",
+      "reported_missing_bar_samples": 20,
+      "reported_evolution_cost_usd": 0,
+      "note": "Missing timestamps shown by API are capped samples, not total gap count.",
+      "run_id_prefix": "d31c3972"
+    },
+    {
+      "symbol": "BTC/USDT",
+      "status": "completed",
+      "active_stage": "completed",
+      "bar_count": 8760,
+      "warnings": [],
+      "freshness_lag_seconds": 0,
+      "succeeded": 1,
+      "rejected": 3,
+      "llm_cost_usd": "0.0232",
+      "verification": "Dashboard detail plus production read-only slot query",
+      "slot_outcomes": [
+        "diff_failed",
+        "diff_failed",
+        "succeeded",
+        "diff_failed"
+      ],
+      "input_tokens": [
+        2134,
+        2135,
+        2135,
+        2132
+      ],
+      "output_tokens": [
+        3875,
+        1905,
+        3192,
+        8192
+      ],
+      "run_id_prefix": "680ac835"
+    },
+    {
+      "symbol": "ETH/USDT",
+      "status": "completed",
+      "active_stage": "completed",
+      "bar_count": 8760,
+      "warnings": [],
+      "succeeded": 1,
+      "rejected": 3,
+      "llm_cost_usd": "0.0297",
+      "slot_outcomes": [
+        "no_change",
+        "diff_failed",
+        "succeeded",
+        "no_change"
+      ],
+      "run_id_prefix": "8f7ff8f4"
+    },
+    {
+      "symbol": "SOL/USDT",
+      "status": "completed",
+      "active_stage": "completed",
+      "bar_count": 8760,
+      "warnings": [],
+      "succeeded": 1,
+      "rejected": 3,
+      "llm_cost_usd": "0.0271",
+      "slot_outcomes": [
+        "diff_failed",
+        "ast_rejected",
+        "succeeded",
+        "diff_failed"
+      ],
+      "run_id_prefix": "7a143d1d"
+    }
+  ],
+  "market_data_audit": {
+    "window_start": "2025-10-09T06:00:00Z",
+    "window_end_exclusive": "2026-10-09T06:00:00Z",
+    "timeframe": "1h",
+    "venue": "binance",
+    "method": "production read-only database expected grid anti-join after normal Data API backfill",
+    "symbols": {
+      "BTC/USDT": {
+        "expected_bars": 8760,
+        "missing_after": 0,
+        "precise_backfill_inserted": 155
+      },
+      "ETH/USDT": {
+        "expected_bars": 8760,
+        "missing_after": 0,
+        "precise_backfill_inserted": 28
+      },
+      "SOL/USDT": {
+        "expected_bars": 8760,
+        "missing_after": 0,
+        "precise_backfill_inserted": 219
+      }
+    }
+  },
+  "completed_evolution_cost_usd": "0.0800",
+  "cost_scope": "Sum of three completed E1 run records; excludes agent chat calls and earlier diagnostic usage, which are not reconciled here.",
+  "no_evolution_output_promoted": true,
+  "e2_acceptance": "Not established: these are single-generation E1 tests, not E2 champion/Forward/holdout validation.",
+  "identifier_policy": "Only eight-character run prefixes are public; complete IDs remain in the local operational receipt."
+}
