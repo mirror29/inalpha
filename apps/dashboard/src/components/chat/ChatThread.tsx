@@ -20,6 +20,7 @@ import {
 
 import { cn } from "@/lib/cn";
 import { createChatErrorSubscriber } from "@/lib/chat-run-error";
+import { compactChatRequest } from "@/lib/chat-request-context";
 import {
   buildPageContextEnvelope,
   evolutionTargetFromPage,
@@ -139,6 +140,7 @@ export function ChatThread({
           : (input as Request).url;
       } catch { /* ignore */ }
       if (url.includes("/api/copilotkit")) {
+        init = compactChatRequest(init);
         const ctrl = new AbortController();
         const signal = init?.signal;
         if (signal) signal.addEventListener("abort", () => ctrl.abort());
