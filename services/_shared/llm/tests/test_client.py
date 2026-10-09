@@ -120,3 +120,14 @@ async def test_empty_content() -> None:
         MutationRequest(system_prompt="s", user_prompt="u")
     )
     assert response.content == ""
+
+@pytest.mark.asyncio
+async def test_mutate_preserves_provider_truncation_reason() -> None:
+    client = LLMClient()
+    completion = _make_mock_completion("partial diff")
+    completion.choices[0].finish_reason = "length"
+    client._client = AsyncMock()
+    client._client.chat.completions.create.return_value = completion
+    result = await client.mutate(MutationRequest(system_prompt="s", user_prompt="u"))
+    assert result.finish_reason == "length"
+    assert result.cache_metrics.output_tokens == 50
