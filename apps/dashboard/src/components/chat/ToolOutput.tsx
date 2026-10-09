@@ -20,7 +20,7 @@ import { compact, shortTimestamp } from "./tool-views/format";
  * 解析失败(非 JSON)原样显示纯文本。容量护栏:深度 / 表格行列 / chip 数均有上限,
  * 截断处显式标注剩余条数 —— 完整数据由 ToolChip 的 raw 切换兜底。
  */
-export function ToolOutput({ raw }: { raw: string }) {
+export function ToolOutput({ raw, onApprovalTerminal }: { raw: string; onApprovalTerminal?: () => void }) {
   const parsed = useMemo(() => {
     try {
       return JSON.parse(raw) as unknown;
@@ -38,7 +38,7 @@ export function ToolOutput({ raw }: { raw: string }) {
   }
 
   if (isApprovalEnvelope(parsed)) {
-    return <ChatApprovalActions requestId={parsed.requestId} />;
+    return <ChatApprovalActions requestId={parsed.requestId} onTerminal={onApprovalTerminal} />;
   }
 
   // mastra 工具报错封套:红标头 + 直接展开 output(不让用户先点开一层 isError)。
@@ -72,9 +72,13 @@ function isApprovalEnvelope(
 }
 
 /** Complete the trusted approval in-place, then resume the same chat operation. */
-function ChatApprovalActions({ requestId }: { requestId: string }) {
+function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onTerminal?: () => void }) {
   const t = useTranslations("activity.approval");
   const [state, setState] = useState<"checking" | "idle" | "allow" | "deny" | "approved" | "denied" | "expired" | "failed">("checking");
+
+  useEffect(() => {
+    if (state === "expired" || state === "denied" || state === "approved") onTerminal?.();
+  }, [state, onTerminal]);
 
   useEffect(() => {
     let active = true;
@@ -95,9 +99,16 @@ function ChatApprovalActions({ requestId }: { requestId: string }) {
           return;
         }
         setState("idle");
-        timer = setTimeout(() => {
-          setState((current) => current === "idle" || current === "failed" ? "expired" : current);
-        }, Math.min(remaining, 2_147_483_647));
+        const deadline = Date.parse(result.deadline!);
+        const checkDeadline = () => {
+          const delay = deadline - Date.now();
+          if (delay > 0) {
+            timer = setTimeout(checkDeadline, Math.min(delay, 2_147_483_647));
+          } else {
+            setState((current) => current === "idle" || current === "failed" ? "expired" : current);
+          }
+        };
+        checkDeadline();
       } catch {
         if (active) setState("failed");
       }
