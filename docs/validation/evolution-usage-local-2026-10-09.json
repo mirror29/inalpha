@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local usage accounting and recovery checks; not production acceptance",
+  "commits": {
+    "provider_receipt": "43eb6a49",
+    "evolver_usage": "e9cf14be"
+  },
+  "migration": "0061",
+  "policy": [
+    "Explicit zero-token provider receipts differ from absent usage",
+    "Persist unknown liability before a provider call",
+    "Do not replay uncertain pending slots on recovery",
+    "Retain legacy recorded amounts without asserting complete token receipts",
+    "Separate known subtotal from unknown usage count in owned run responses",
+    "Failed candidate costs remain visible even before final run cost is updated"
+  ],
+  "checks": {
+    "evolver_tests_passed": 244,
+    "skipped_without_database": 53,
+    "existing_test_secret_warnings": 3,
+    "shared_llm_tests_passed": 9,
+    "isolated_database_tests_passed": 18,
+    "migration_tests_passed": 4,
+    "touched_evolver_ruff": "passed"
+  },
+  "database": {
+    "chain": "0001 -> 0058 wallet -> 0059 diagnostics -> 0060 attempts -> 0061 usage receipts",
+    "temporary_database_removed": true,
+    "existing_databases_modified": false
+  },
+  "pending": [
+    "Cost and lineage presentation",
+    "Chat generation cost attribution; historical unknown costs remain unknown",
+    "Production migration and deployment",
+    "Real restart and fencing acceptance",
+    "Reliable approval execution and rendered-page validation",
+    "E2 positive-chain acceptance remains incomplete"
+  ]
+}
