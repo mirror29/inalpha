@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   claimEvolutionOperation,
   findApprovedExecution,
+  approveEvolutionExecution,
   findEvolutionOperation,
   insertPending,
   markResolved,
@@ -70,6 +71,7 @@ const defaultPendingTelemetrySink: PendingTelemetrySink = (record) => {
 };
 
 export interface ApprovalPersistence {
+  approveEvolutionExecution?(args: { authSub: string; command: ApprovedExecutionCommand; retentionMs: number }): Promise<{ expiresAt: string } | undefined>;
   findApprovedExecution?(operationId: string, authSub: string): Promise<ApprovedExecutionCommand | undefined>;
   insertPending(view: PendingApprovalView, authSub?: string): Promise<void>;
   markResolved(
@@ -107,6 +109,7 @@ export function approvalInputDigest(input: unknown): string {
 /** Stores pending and approved decisions until one matching tool call consumes them. */
 export class PendingApprovalsStore {
   private readonly executionHandlers = new Map<string, ApprovedExecutionHandler>();
+  private readonly resolving = new Map<string, Promise<boolean>>();
   private readonly dispatching = new Map<string, Promise<unknown>>();
   private readonly executionCommands = new Map<string, { authSub: string; command: ApprovedExecutionCommand; expiresAt: number }>();
   private readonly records = new Map<string, PendingApprovalRecord>();
@@ -164,6 +167,48 @@ export class PendingApprovalsStore {
   registerApprovedExecution(toolName: string, handler: ApprovedExecutionHandler): void {
     if (toolName !== "evolver.run_evolution") throw new Error("direct approval execution is limited to E1");
     this.executionHandlers.set(toolName, handler);
+  }
+
+  /** Atomically records E1 consent and its frozen command before allowing submission. */
+  async respondTrusted(requestId: string, decision: PendingDecision, authSub: string): Promise<boolean> {
+    const key = `${authSub}\u0000${requestId}`;
+    const active = this.resolving.get(key);
+    if (active) { await active; return await this.respondTrusted(requestId, decision, authSub); }
+    const record = this.records.get(requestId);
+    if (!record || record.authSub !== authSub || record.status !== "pending") return false;
+    if (decision !== "allow" || record.toolName !== "evolver.run_evolution" || !this.persistence?.approveEvolutionExecution) {
+      return this.respond(requestId, decision, authSub);
+    }
+    if (Date.now() >= Date.parse(record.deadline)) return false;
+    const command = { view: this.toView(record), approvalInput: structuredClone(record.approvalInput) };
+    const run = (async () => {
+      const persisted = await this.persistence!.approveEvolutionExecution!({ authSub, command, retentionMs: EVOLUTION_OPERATION_RETENTION_MS });
+      if (!persisted) throw new Error("approval persistence unavailable");
+      this.remove(record);
+      this.cacheConsumed(this.identityKey(authSub, record.sessionId, record.toolName, record.inputDigest), {
+        operationId: requestId, expiresAt: persisted.expiresAt,
+      });
+      this.executionCommands.set(requestId, { authSub, command, expiresAt: Date.parse(persisted.expiresAt) });
+      this.telemetry({ event: "ask_pending_resolved", requestId, toolName: record.toolName,
+        sessionId: record.sessionId, authSub, decision, via: "user", ts: new Date().toISOString() });
+      return true;
+    })();
+    this.resolving.set(key, run);
+    try { return await run; } finally { if (this.resolving.get(key) === run) this.resolving.delete(key); }
+  }
+
+  /** Returns only owner-scoped availability; this read never executes a task. */
+  async status(requestId: string, authSub: string): Promise<{ status: "pending"; deadline: string; remainingMs: number } | { status: "approved" | "unavailable" }> {
+    const record = this.records.get(requestId);
+    if (record) {
+      if (record.authSub !== authSub || Date.now() >= Date.parse(record.deadline)) return { status: "unavailable" };
+      if (record.status === "pending") return { status: "pending", deadline: record.deadline, remainingMs: Math.max(0, Date.parse(record.deadline) - Date.now()) };
+      return { status: record.toolName === "evolver.run_evolution" ? "approved" : "unavailable" };
+    }
+    const cached = this.executionCommands.get(requestId);
+    if (cached?.authSub === authSub && cached.expiresAt > Date.now()) return { status: "approved" };
+    const command = await this.persistence?.findApprovedExecution?.(requestId, authSub);
+    return { status: command && command.view.requestId === requestId && command.view.toolName === "evolver.run_evolution" ? "approved" : "unavailable" };
   }
 
   /** Executes an approved frozen command under a fresh verified owner's request context. */
@@ -424,9 +469,8 @@ export class PendingApprovalsStore {
   private remove(record: PendingApprovalRecord): void {
     clearTimeout(record.timer);
     this.records.delete(record.requestId);
-    this.identityIndex.delete(
-      this.identityKey(record.authSub, record.sessionId, record.toolName, record.inputDigest),
-    );
+    const identity = this.identityKey(record.authSub, record.sessionId, record.toolName, record.inputDigest);
+    if (this.identityIndex.get(identity) === record.requestId) this.identityIndex.delete(identity);
   }
 
   private removeConsumed(identity: string): void {
@@ -511,4 +555,5 @@ export const pendingApprovals = new PendingApprovalsStore(undefined, {
   findEvolutionOperation,
   claimEvolutionOperation,
   findApprovedExecution,
+  approveEvolutionExecution,
 });

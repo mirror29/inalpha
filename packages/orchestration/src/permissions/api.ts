@@ -77,7 +77,12 @@ const respondPending: Handler = async (c: Context) => {
   }
   const authSub = getAuthSub(c);
   if (!authSub) return c.json({ error: "unauthorized" }, 401);
-  const ok = pendingApprovals.respond(id, decision, authSub);
+  let ok: boolean;
+  try {
+    ok = await pendingApprovals.respondTrusted(id, decision, authSub);
+  } catch {
+    return c.json({ error: "approval_persistence_unavailable", requestId: id }, 503);
+  }
   if (decision === "allow") {
     try {
       const execution = await pendingApprovals.dispatchApproved(id, authSub, { requestContext: c.get("requestContext") });
@@ -92,8 +97,20 @@ const respondPending: Handler = async (c: Context) => {
   return c.json({ ok: true, decision, requestId: id });
 };
 
+/** Exposes recovery availability without leaking the frozen command or running it. */
+const approvalStatus: Handler = async (c: Context) => {
+  const authSub = getAuthSub(c);
+  if (!authSub) return c.json({ error: "unauthorized" }, 401);
+  try {
+    return c.json(await pendingApprovals.status(c.req.param("id") ?? "", authSub));
+  } catch {
+    return c.json({ error: "approval_status_unavailable" }, 503);
+  }
+};
+
 export const permissionsApiRoutes: ApiRouteSpec[] = [
   { path: "/permissions/pending", method: "GET", handler: listPending },
+  { path: "/permissions/:id/status", method: "GET", handler: approvalStatus },
   { path: "/permissions/history", method: "GET", handler: listApprovalHistory },
   { path: "/permissions/:id/respond", method: "POST", handler: respondPending },
 ];

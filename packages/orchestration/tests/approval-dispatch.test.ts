@@ -111,3 +111,19 @@ it("recovers the same non-secret command and operation after a store restart", a
   expect(persistence.rememberEvolutionOperation).toHaveBeenCalledTimes(1);
   expect(execute).toHaveBeenCalledTimes(1);
 });
+
+
+it("does not report consent as accepted when the atomic commit fails", async () => {
+  const persistence = { insertPending: vi.fn(async () => {}), markResolved: vi.fn(async () => {}),
+    findEvolutionOperation: vi.fn(async () => undefined), rememberEvolutionOperation: vi.fn(async () => undefined),
+    approveEvolutionExecution: vi.fn(async () => { throw new Error("commit failed"); }) };
+  const store = new PendingApprovalsStore(() => {}, persistence);
+  stores.push(store);
+  const execute = vi.fn();
+  store.registerApprovedExecution("evolver.run_evolution", execute);
+  const view = store.request({ authSub: "alice", sessionId: "thread", toolName: "evolver.run_evolution", toolInput: {}, approvalInput: {} });
+  await expect(store.respondTrusted(view.requestId, "allow", "alice")).rejects.toThrow("commit failed");
+  expect(await store.status(view.requestId, "alice")).toMatchObject({ status: "pending" });
+  expect(await store.dispatchApproved(view.requestId, "alice", {})).toBeUndefined();
+  expect(execute).not.toHaveBeenCalled();
+});
