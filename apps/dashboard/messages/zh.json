@@ -300,7 +300,41 @@
       "submitted": "演化任务已提交。",
       "viewTask": "查看演化任务",
       "recoveryAvailable": "此任务已批准，可恢复交接或获取任务记录。",
-      "recoverTask": "获取已批准任务"
+      "recoverTask": "获取已批准任务",
+      "preparation": {
+        "title": "确认本次单代演化",
+        "unavailable": "未提供",
+        "seedLabel": "原策略",
+        "market": "市场与周期",
+        "window": "评估窗口",
+        "data": "数据准备",
+        "bars": "已校验 {count} 根闭合行情",
+        "latestBar": "最近闭合行情",
+        "simulation": "模拟资金与成本",
+        "simulationValue": "初始资金 {cash} · 手续费 {fee}% · 杠杆 {leverage}×",
+        "validation": "窗口内验证",
+        "validationValue": "后 {percent}% 的窗口用于验证",
+        "budget": "候选名额",
+        "slots": "最多 {count} 个（修复占用已有名额）",
+        "model": "冻结模型",
+        "estimatedCost": "本次模型费用上限估算",
+        "scope": "批准后直接提交此冻结任务。窗口内验证不等于独立 Forward；完成演化不会自动采用、启动模拟盘或下单。模型费用估算不含聊天费用。",
+        "warnings": "数据准备保留 {count} 项提示，可在任务详情查看。",
+        "audit": "复现与诊断信息",
+        "reference": "种子引用",
+        "sourceHash": "源码指纹",
+        "dataHash": "数据指纹",
+        "requestHash": "请求指纹",
+        "spot": "现货",
+        "perp": "永续",
+        "evolutionSlot": "演化候选 #{slot}",
+        "seed": {
+          "builtin": "内置均线交叉策略",
+          "candidate": "本人策略候选",
+          "evolution": "已评估演化候选",
+          "retry": "原实验的显式重试"
+        }
+      }
     },
     "source": {
       "scheduler": "定时任务",

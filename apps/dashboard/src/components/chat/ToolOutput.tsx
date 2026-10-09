@@ -9,6 +9,8 @@ import { approvalExecutionReceipt } from "@/lib/approval-execution";
 
 import { cn } from "@/lib/cn";
 
+import { EvolutionApprovalSummary } from "./EvolutionApprovalSummary";
+
 import { compact, shortTimestamp } from "./tool-views/format";
 
 /**
@@ -41,7 +43,7 @@ export function ToolOutput({ raw, onApprovalTerminal }: { raw: string; onApprova
   }
 
   if (isApprovalEnvelope(parsed)) {
-    return <ChatApprovalActions requestId={parsed.requestId} onTerminal={onApprovalTerminal} />;
+    return <><EvolutionApprovalSummary envelope={parsed} /><ChatApprovalActions requestId={parsed.requestId} onTerminal={onApprovalTerminal} /></>;
   }
 
   // mastra 工具报错封套:红标头 + 直接展开 output(不让用户先点开一层 isError)。

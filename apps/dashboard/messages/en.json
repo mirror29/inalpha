@@ -300,7 +300,41 @@
       "submitted": "Evolution task submitted.",
       "viewTask": "View evolution task",
       "recoveryAvailable": "This task is approved. Recover submission or retrieve its task record.",
-      "recoverTask": "Retrieve approved task"
+      "recoverTask": "Retrieve approved task",
+      "preparation": {
+        "title": "Confirm this single-generation experiment",
+        "unavailable": "Unavailable",
+        "seedLabel": "Original strategy",
+        "market": "Market and timeframe",
+        "window": "Evaluation window",
+        "data": "Data preparation",
+        "bars": "{count} validated closed bars",
+        "latestBar": "Latest closed bar",
+        "simulation": "Simulation capital and costs",
+        "simulationValue": "Initial cash {cash} · fee {fee}% · leverage {leverage}×",
+        "validation": "In-window validation",
+        "validationValue": "The last {percent}% of this window is used for validation",
+        "budget": "Candidate slots",
+        "slots": "Up to {count} (repair uses an existing slot)",
+        "model": "Frozen model",
+        "estimatedCost": "Estimated model cost ceiling",
+        "scope": "Approval submits this frozen task directly. In-window validation is not independent Forward evidence; completion does not adopt a strategy, start a paper runner or trade. This estimate excludes chat costs.",
+        "warnings": "Preparation retained {count} notices; inspect them in the task details.",
+        "audit": "Reproduction and diagnostics",
+        "reference": "Seed reference",
+        "sourceHash": "Source fingerprint",
+        "dataHash": "Dataset fingerprint",
+        "requestHash": "Request fingerprint",
+        "spot": "Spot",
+        "perp": "Perpetual",
+        "evolutionSlot": "Evolution candidate #{slot}",
+        "seed": {
+          "builtin": "Built-in moving average crossover",
+          "candidate": "Your strategy candidate",
+          "evolution": "Evaluated evolution candidate",
+          "retry": "Explicit retry of the original experiment"
+        }
+      }
     },
     "source": {
       "scheduler": "Scheduler",
