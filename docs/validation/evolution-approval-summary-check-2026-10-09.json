@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-09",
+  "scope": "Normal-owner E1 preflight and approval summary correction; execution remains pending",
+  "production_business_sha": "93ec6b2848c6670a529cacbada450f0bf8c92489",
+  "owner_preflight": {
+    "source": "Owned accepted BTC evolution candidate #3",
+    "candidate_budget": 1,
+    "bars": 8760,
+    "validation_split": 0.3,
+    "estimated_generation_max_usd": 0.0170304,
+    "approval_state": "pending; not approved during this check",
+    "normal_chat_call_submitted": true,
+    "chat_cost": "Not yet reconciled; do not assume zero",
+    "new_e1_generation_started": false
+  },
+  "finding": {
+    "cause": "Approval copy treated validation_split as holdout fraction; evaluator uses it as the initial training fraction",
+    "actual_semantics": "First 30% training; remaining 70% within-window validation",
+    "resolution": "Correct bilingual summary and explicitly display disabled validation for split zero; evaluator, frozen parameters and historical results unchanged"
+  },
+  "local_validation": {
+    "regression_before_fix": "Two new tests failed",
+    "dashboard_tests": 176,
+    "typecheck": "passed",
+    "build": "passed",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "deployment": "Correction not deployed yet",
+  "pending": [
+    "CI and review of summary correction",
+    "Dashboard-only deployment and normal-owner approval",
+    "Actual generation, refresh/recovery/retry/fencing checks",
+    "Usage reconciliation",
+    "Qualified E2 champion and real Forward/holdout evidence"
+  ]
+}
