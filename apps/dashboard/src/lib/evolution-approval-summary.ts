@@ -26,7 +26,9 @@ export function evolutionApprovalSummary(envelope: unknown) {
      * Training fraction, not holdout: services/paper/src/inalpha_paper/evaluation_metrics.py
      * validation_from_report slices train at int(len(curve) * split); remainder is holdout.
      * Keep the E1 API domain [0, 0.5] from services/evolver/src/inalpha_evolver/api/schemas.py
-     * EvolutionConfig.validation_split; zero disables validation. E2 uses a separate config.
+     * EvolutionConfig.validation_split; zero disables validation (evaluation_metrics.py:45
+     * returns None and paper/tests/test_api_backtest.py:test_backtest_validation_split_zero_disables
+     * asserts the API validation is null). E2 uses a separate config.
      */
     validationSplit: fraction(config.validation_split, 0.5),
     initialCash: number(config.initial_cash), feeRate: fraction(config.fee_rate, 0.1), leverage: integer(config.leverage, 1, 20),

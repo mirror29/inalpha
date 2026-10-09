@@ -60,6 +60,17 @@ describe("readable frozen approval summary", () => {
       }
     }
   });
+  it("keeps displayed fractions complementary and does not round tiny training shares to zero", () => {
+    locale = "en";
+    const value = envelope();
+    value.toolInput.request.config.validation_split = 0.05785;
+    let html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: value }));
+    expect(html).toContain("first 5.78% is training; the remaining 94.22% is within-window validation");
+    value.toolInput.request.config.validation_split = 0.00004;
+    html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: value }));
+    expect(html).not.toContain("0% is training");
+    expect(html).not.toContain("validation is disabled");
+  });
   it("does not invent metadata for old generic approvals", () => {
     expect(evolutionApprovalSummary({ requiresApproval: true, toolInput: {} })).toBeNull();
     expect(renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: {} }))).toBe("");
