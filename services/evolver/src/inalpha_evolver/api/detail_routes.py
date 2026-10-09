@@ -10,7 +10,7 @@ from inalpha_paper.account_id import account_id_from_user
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 
-from ..storage import candidates, chat_costs, run_queries, runs
+from ..storage import candidates, chat_costs, lineage, run_queries, runs
 from .presenters import candidate_response, run_response
 from .retry import retry_parent
 from .schemas import CandidateResponse, EvolutionConfig, RunStatusResponse
@@ -32,6 +32,7 @@ async def get_run(
         async with db.cursor() as cur:
             await cur.execute("SELECT 1 FROM evolution_loops WHERE e1_run_id=%s", (run_id,))
             row["retry_allowed"] = (await cur.fetchone() is None and isinstance(row.get("seed_source_snapshot"), str) and isinstance(row.get("seed_source_hash"), str))
+    row["lineage"] = await lineage.for_run(db, run_id, owner)
     row["chat_preparation_costs"] = await chat_costs.for_run(db, run_id, owner)
     slots = await candidates.list_candidates(db, run_id, owner)
     summary = await candidates.summarize(db, run_id)

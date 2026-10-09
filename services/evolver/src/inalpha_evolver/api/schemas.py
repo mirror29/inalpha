@@ -308,6 +308,7 @@ class ChatPreparationCosts(BaseModel):
 
 
 class RunStatusResponse(BaseModel):
+    lineage: dict[str, Any] | None = None
     chat_preparation_costs: ChatPreparationCosts | None = None
     known_cost_usd: float = 0
     unknown_usage_count: int = 0
@@ -463,6 +464,7 @@ class ImplementationResponse(BaseModel):
 
 
 class CampaignResponse(BaseModel):
+    lineage: dict[str, Any] | None = None
     chat_preparation_costs: ChatPreparationCosts | None = None
     campaign_id: UUID
     owner_account_id: UUID
@@ -560,6 +562,7 @@ class EvolutionLoopBudgetUsage(BaseModel):
 class EvolutionLoopResponse(BaseModel):
     """Compact durable workflow projection; heavy campaign details remain lazy."""
 
+    lineage: dict[str, Any] | None = None
     chat_preparation_costs: ChatPreparationCosts | None = None
     loop_id: UUID
     owner_account_id: UUID
