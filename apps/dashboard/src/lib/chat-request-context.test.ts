@@ -51,4 +51,20 @@ describe("persisted chat request context", () => {
     expect(compactChatRequest({ body: new FormData(), signal })?.signal).toBe(signal);
     expect(compactChatRequest()).toBeUndefined();
   });
+
+  it("keeps an earlier declaring tool turn when an approval result follows a new user message", () => {
+    const messages = [
+      { role: "user", content: "old archive" },
+      { role: "assistant", content: "old response" },
+      { role: "user", content: "prepare approval" },
+      { role: "assistant", toolCalls: [{ id: "approval" }] },
+      { role: "user", content: "approved" },
+      { role: "tool", toolCallId: "approval", content: "ok" },
+    ];
+    const init = { body: JSON.stringify({ method: "agent/run", params: { agentId: "orchestrator" }, body: { threadId: "t", messages } }) };
+    expect(JSON.parse(compactChatRequest(init)!.body as string).body.messages).toEqual(messages.slice(2));
+    messages[5].toolCallId = "unknown";
+    const orphan = { body: JSON.stringify({ method: "agent/run", params: { agentId: "orchestrator" }, body: { threadId: "t", messages } }) };
+    expect(compactChatRequest(orphan)).toBe(orphan);
+  });
 });

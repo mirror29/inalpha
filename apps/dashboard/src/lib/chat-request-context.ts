@@ -24,6 +24,29 @@ export function compactChatRequest(init?: RequestInit): RequestInit | undefined 
       const message = messages[index];
       if (isRecord(message) && message.role === "user") { start = index; break; }
     }
+    /** Extend the turn for interleaved approval results; never emit an orphan tool. */
+    for (let index = messages.length - 1; index >= start && start > 0; index--) {
+      const message = messages[index];
+      if (!isRecord(message) || message.role !== "tool") continue;
+      let declaringCall = -1;
+      for (let callIndex = index - 1; callIndex >= 0; callIndex--) {
+        const call = messages[callIndex];
+        if (isRecord(call) && call.role === "assistant" && Array.isArray(call.toolCalls)
+          && call.toolCalls.some((tool) => isRecord(tool) && tool.id === message.toolCallId)) {
+          declaringCall = callIndex;
+          break;
+        }
+      }
+      if (declaringCall < 0) return init;
+      if (declaringCall < start) {
+        start = declaringCall;
+        while (start > 0) {
+          const preceding = messages[start];
+          if (isRecord(preceding) && preceding.role === "user") break;
+          start--;
+        }
+      }
+    }
     if (start <= 0) return init;
     return {
       ...init,
