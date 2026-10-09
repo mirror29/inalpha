@@ -7,7 +7,8 @@ from inalpha_shared.errors import ConflictError, NotFoundError
 from psycopg.errors import UniqueViolation
 
 from inalpha_evolver.api.retry import retry_parent
-from inalpha_evolver.storage import loops, runs
+from inalpha_evolver.runtime.repair import prepare_repair
+from inalpha_evolver.storage import candidates, loops, runs
 
 from .llm_snapshot_fixtures import llm_snapshot
 from .test_loop_storage import create_baseline, loop_database  # noqa: F401
@@ -57,3 +58,31 @@ async def test_retry_rejects_foreign_active_and_automatic_baseline(database):
     with pytest.raises(ConflictError) as error:
         await retry_parent(database, args["e1_run_id"], args["owner_account_id"])
     assert error.value.code == "EVOLUTION_RETRY_NOT_ALLOWED"
+
+
+@pytest.mark.asyncio
+async def test_mutation_repair_link_survives_database_reload_and_is_owner_scoped(database):
+    args = await create_baseline(database, uuid4())
+    run = {"run_id": args["e1_run_id"], "owner_account_id": args["owner_account_id"]}
+    first = await candidates.insert_slot(database, run["run_id"], 0, "initial")
+    await candidates.update_slot(
+        database, run["run_id"], 0, stage="completed", outcome="diff_failed",
+        error_code="MUTATION_CONTEXT_MISMATCH", unified_diff="failed artifact",
+        llm_cost_usd=0.01, input_tokens=100, output_tokens=20,
+    )
+    second = await candidates.insert_slot(database, run["run_id"], 1, "ordinary")
+    hint = await prepare_repair(database, run, second)
+    reloaded = await candidates.list_candidates(database, run["run_id"], run["owner_account_id"])
+    assert reloaded[1]["parent_id"] == first["candidate_id"]
+    assert await prepare_repair(database, run, reloaded[1]) == hint
+    await candidates.update_slot(
+        database, run["run_id"], 1, stage="completed", outcome="diff_failed",
+        error_code="MUTATION_DIFF_INVALID", llm_cost_usd=0.02,
+    )
+    third = await candidates.insert_slot(database, run["run_id"], 2, "ordinary")
+    assert await prepare_repair(database, run, third) == "ordinary"
+    rows = await candidates.list_candidates(database, run["run_id"], run["owner_account_id"])
+    assert sum(row["parent_id"] is not None for row in rows) == 1
+    assert await candidates.list_candidates(database, run["run_id"], uuid4()) == []
+    assert rows[0]["unified_diff"] == "failed artifact"
+    assert float((await candidates.summarize(database, run["run_id"]))["llm_cost_usd"]) == pytest.approx(0.03)

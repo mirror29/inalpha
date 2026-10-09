@@ -272,6 +272,7 @@ class StartRunRequest(BaseModel):
 
 
 class CandidateResponse(BaseModel):
+    parent_id: UUID | None = None
     candidate_id: UUID
     run_id: UUID
     slot: int
