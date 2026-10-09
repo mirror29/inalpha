@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useTranslations } from "next-intl";
 
+import { Link } from "@/i18n/navigation";
+import { approvalExecutionReceipt } from "@/lib/approval-execution";
+
 import { cn } from "@/lib/cn";
 
 import { compact, shortTimestamp } from "./tool-views/format";
@@ -71,15 +74,16 @@ function isApprovalEnvelope(
   );
 }
 
-/** Complete the trusted approval in-place, then resume the same chat operation. */
+/** Submit a trusted approval and link directly submitted E1 tasks without another model turn. */
 function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onTerminal?: () => void }) {
   const t = useTranslations("activity.approval");
-  const [state, setState] = useState<"checking" | "statusFailed" | "idle" | "allow" | "deny" | "approved" | "denied" | "expired" | "failed">("checking");
+  const [state, setState] = useState<"checking" | "statusFailed" | "idle" | "allow" | "deny" | "approved" | "submitted" | "denied" | "expired" | "failed">("checking");
 
   const [statusAttempt, setStatusAttempt] = useState(0);
+  const [submittedRunId, setSubmittedRunId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (state === "expired" || state === "denied" || state === "approved") onTerminal?.();
+    if (state === "expired" || state === "denied" || state === "approved" || state === "submitted") onTerminal?.();
   }, [state, onTerminal]);
 
   useEffect(() => {
@@ -137,8 +141,15 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
       }
       if (!response.ok) throw new Error(`approval failed (${response.status})`);
       if (decision === "allow") {
-        setState("approved");
-        window.dispatchEvent(new CustomEvent("inalpha:approval-resume"));
+        const receipt = approvalExecutionReceipt(await response.json());
+        if (receipt.kind === "failed") throw new Error("approved task submission failed");
+        if (receipt.kind === "submitted") {
+          setSubmittedRunId(receipt.runId);
+          setState("submitted");
+        } else {
+          setState("approved");
+          window.dispatchEvent(new CustomEvent("inalpha:approval-resume"));
+        }
       } else {
         setState("denied");
       }
@@ -156,6 +167,13 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
 
   if (state === "expired" || state === "denied" || state === "checking") {
     return <p role="status" className="px-2.5 py-2 text-xs text-fg-muted">{t(state)}</p>;
+  }
+
+  if (state === "submitted" && submittedRunId) {
+    return <div role="status" className="flex items-center gap-3 px-2.5 py-2 text-xs text-bull">
+      <span>{t("submitted")}</span>
+      <Link href={`/evolution/${submittedRunId}`} className="underline">{t("viewTask")}</Link>
+    </div>;
   }
 
   if (state === "approved") {

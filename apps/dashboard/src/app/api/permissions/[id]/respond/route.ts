@@ -22,7 +22,7 @@ export async function POST(
     const result = await backendFetch<unknown>(
       "mastra",
       `/permissions/${encodeURIComponent(requestId)}/respond`,
-      { method: "POST", body: { decision }, timeoutMs: 5_000 },
+      { method: "POST", body: { decision }, timeoutMs: 70_000 },
     );
     return NextResponse.json(result);
   } catch (error) {

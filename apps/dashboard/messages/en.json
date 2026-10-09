@@ -296,7 +296,9 @@
       "allow": "Approve",
       "deny": "Deny",
       "failed": "Retry",
-      "working": "Saving…"
+      "working": "Saving…",
+      "submitted": "Evolution task submitted.",
+      "viewTask": "View evolution task"
     },
     "source": {
       "scheduler": "Scheduler",
