@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local implementation and dedicated PostgreSQL verification; not production acceptance",
+  "commits": {
+    "atomic_consent": "3f977095",
+    "refresh_recovery": "ef01003c"
+  },
+  "schema_head": "0063",
+  "checks": {
+    "orchestration_tests_passed": 581,
+    "database_tests_skipped_in_default_run": 3,
+    "atomic_database_tests_run_separately_passed": 3,
+    "evolver_database_tests_passed": 18,
+    "migration_tests_passed": 6,
+    "dashboard_tests_passed": 162,
+    "typechecks": "passed",
+    "dashboard_build": "passed"
+  },
+  "evidence": [
+    "Consent and frozen command commit in the same transaction",
+    "Operation identity conflict rolls back consent",
+    "Expired and wrong-owner decisions do not grant execution",
+    "After commit and before submission a new store recovers the same command",
+    "Owner status reads do not execute tasks",
+    "Refresh exposes retrieval of an already approved task without asking a model to regenerate input"
+  ],
+  "database": {
+    "temporary_database_removed": true,
+    "existing_databases_modified": false
+  },
+  "pending": [
+    "Real full-service restart and lost response acceptance",
+    "Rendered desktop/mobile normal owner approval and refresh checks",
+    "Production migration and deployment",
+    "Chat cost attribution and complete experiment lineage"
+  ]
+}
