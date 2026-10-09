@@ -47,9 +47,18 @@
   "temporary_database_removed": true,
   "production_modified": false,
   "pending": [
+    "Fix verified red-team issue: recursive redaction mutates legal config.params names and breaks persisted approval digest after restart",
     "Final cross-boundary red-team review",
     "PR CI/CR and coordinated migration/deployment",
     "Actual owner approval, retry, restart and production result visibility",
     "Real E2 Forward/holdout acceptance and provider cost reconciliation"
-  ]
+  ],
+  "red_team_finding": {
+    "severity": "P2",
+    "path": "packages/orchestration/src/permissions/repo.ts",
+    "line": 227,
+    "trigger": "A legal strategy parameter such as token=BTC or wallet=3 is redacted in execution_input; recovered command fails original input_digest verification",
+    "status": "verified by read-only in-memory recovery reproduction; not fixed",
+    "boundary": "Preserve credential protection and digest validation while saving an executable command without loss"
+  }
 }
