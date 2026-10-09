@@ -1,5 +1,5 @@
 import { Agent, type AgentConfig } from "@mastra/core/agent";
-import { TokenLimiterProcessor } from "@mastra/core/processors";
+import { TokenLimiterProcessor, type InputProcessor } from "@mastra/core/processors";
 
 import { buildInstructions } from "./instructions/index.js";
 
@@ -12,6 +12,8 @@ export type CreateOrchestratorOptions = Pick<
 > & {
   /** 可选 memory；评测省略时保持完全无状态。 */
   memory?: BaseAgentConfig["memory"];
+  /** 可选输入处理器；生产用量账本由入口注入。 */
+  inputProcessors?: InputProcessor[];
   /** 可选输出处理器；评测省略时不连接后端服务。 */
   outputProcessors?: BaseAgentConfig["outputProcessors"];
   /** 单次 Agent 循环的最大步骤数。 */
@@ -30,10 +32,12 @@ export function createOrchestrator(options: CreateOrchestratorOptions): Agent {
     name: "orchestrator",
     instructions: buildInstructions,
     model: options.model,
+    maxRetries: 0,
     tools: options.tools,
     ...(options.memory === undefined ? {} : { memory: options.memory }),
     inputProcessors: [
       new TokenLimiterProcessor({ limit: 500_000, trimMode: "contiguous" }),
+      ...(options.inputProcessors ?? []),
     ],
     ...(options.outputProcessors === undefined
       ? {}

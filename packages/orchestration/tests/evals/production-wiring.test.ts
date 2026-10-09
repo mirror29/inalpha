@@ -42,7 +42,7 @@ describe("production Orchestrator wiring", () => {
       (await orchestrator.listConfiguredOutputProcessors()).map(
         (processor) => processor.id,
       ),
-    ).toEqual(["pending-plan-notice"]);
+    ).toEqual(["chat-usage-receipts", "pending-plan-notice"]);
 
     const tools = await orchestrator.listTools();
     expect(mocks.loadMcp).toHaveBeenCalledOnce();
