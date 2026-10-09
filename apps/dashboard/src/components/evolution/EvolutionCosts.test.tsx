@@ -1,10 +1,11 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { EvolutionRun, EvolutionCandidateSummary } from "@/lib/types";
+import type { EvolutionRun, EvolutionRunSummary, EvolutionCandidateSummary } from "@/lib/types";
 import en from "../../../messages/en.json";
 import zh from "../../../messages/zh.json";
 import { EvolutionCandidateDetailClient } from "./EvolutionCandidateDetailClient";
+import { EvolutionRunTable } from "./EvolutionRunTable";
 import { EvolutionCosts } from "./EvolutionCosts";
 import { EvolutionCandidates } from "./EvolutionCandidates";
 
@@ -20,6 +21,7 @@ vi.mock("swr", () => ({
 }));
 vi.mock("@/components/ui/LiveStrip", () => ({ LiveStrip: () => null }));
 vi.mock("next-intl", () => ({
+  useLocale: () => locale,
   useTranslations: (namespace: string) => {
     const messages = locale === "zh" ? zh : en;
     const dictionary = namespace
@@ -164,4 +166,19 @@ describe("evolution cost and repair evidence", () => {
     expect(html).not.toContain("undefined");
   });
 
+});
+
+it("does not round a known small list cost to zero", () => {
+  locale = "zh";
+  const html = renderToStaticMarkup(createElement(EvolutionRunTable, { runs: [{
+    run_id: "owned", status: "completed", config: { symbol: "BTC/USDT" }, budget: 1,
+    succeeded: 1, rejected: 0, llm_cost_usd: 0.0000003, unknown_usage_count: 0,
+    finished_at: "2026-10-09T00:00:00Z", queued_at: "2026-10-09T00:00:00Z",
+    started_at: null, seed_strategy_id: "sma_cross_v1", llm_snapshot: null,
+    llm_config_digest: null, active_stage: null, dataset_manifest: null,
+    seed_report_snapshot: null, baseline_snapshot: null, failure_code: null,
+    failure_message: null, attempted: 1,
+  } satisfies EvolutionRunSummary], hasMore: false, isLoadingMore: false, onLoadMore: () => {} }));
+  expect(html).toContain("&lt;$0.0001");
+  expect(html).not.toContain(">$0.0000<");
 });
