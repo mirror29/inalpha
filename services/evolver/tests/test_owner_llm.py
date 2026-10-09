@@ -86,6 +86,7 @@ async def test_owner_mutator_uses_frozen_snapshot_and_credential_reference(
     assert "api_key" not in run["llm_snapshot"]
     client = await mutator.llm_client._ensure_client()
     assert type(client).__name__ == "AsyncOpenAI"
+    assert client.max_retries == 0
     await mutator.close()
 
 
