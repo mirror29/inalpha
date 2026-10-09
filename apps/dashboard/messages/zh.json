@@ -850,9 +850,17 @@
         "succeeded": "已完成评估",
         "failed": "评估失败",
         "rejected": "未通过安全检查",
-        "pending": "等待评估",
+        "pending": "等待执行",
         "queued": "等待评估",
-        "running": "评估中"
+        "running": "评估中",
+        "diff_failed": "补丁应用失败",
+        "mutation_failed": "模型调用失败",
+        "no_change": "未产生改动",
+        "ast_rejected": "源码审计拒绝",
+        "contract_rejected": "策略契约拒绝",
+        "evaluation_failed": "回测失败",
+        "duplicate": "重复候选",
+        "cancelled": "已取消"
       },
       "states": {
         "queued": "等待执行",
@@ -942,6 +950,26 @@
         "low": "低",
         "unknown": "未知"
       }
+    },
+    "costs": {
+      "title": "模型费用与用量凭据 · USD",
+      "known": "已确认用量费用小计",
+      "recorded": "保留的账面金额",
+      "unknown": "用量待确认调用",
+      "unavailable": "尚未确认",
+      "receiptHint": "已确认小计与账面金额不是两笔费用，不相加。用量未知的请求可能已产生费用；历史金额保留，但不代表完整账单。 费用按冻结费率及返回的 token 用量估算，最终账单以供应商记录为准。",
+      "generation": "候选生成",
+      "repair": "有界补丁修复",
+      "phase": "{calls} 条调用记录 · 已确认 {known} · {unknown} 条用量待确认",
+      "failed": "失败 / 拒绝候选包含已确认费用 {known}，另有 {unknown} 次用量待确认；这些金额已包含在上方，不重复相加。",
+      "chatScope": "这里仅统计本次候选生成与修复。Agent 对话费用尚未关联到实验；历史未知费用不按零处理。",
+      "notCalled": "尚未请求模型",
+      "knownState": "用量已确认",
+      "unknownState": "用量待确认",
+      "repairParent": "修复自候选 #{slot}",
+      "repairParentLink": "查看原失败候选",
+      "inputTokens": "输入 token",
+      "outputTokens": "输出 token"
     }
   },
   "backtests": {

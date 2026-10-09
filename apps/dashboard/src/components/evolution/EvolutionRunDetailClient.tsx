@@ -15,6 +15,7 @@ import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { Panel } from "@/components/ui/Panel";
 import { EvolutionAbortDialog } from "./EvolutionAbortDialog";
 import { EvolutionComparison } from "./EvolutionComparison";
+import { EvolutionCosts } from "./EvolutionCosts";
 import { EvolutionCandidates } from "./EvolutionCandidates";
 import { EvolutionRunData } from "./EvolutionRunData";
 import { EvolutionRunHeader } from "./EvolutionRunHeader";
@@ -69,6 +70,7 @@ export function EvolutionRunDetailClient({ runId }: { runId: string }) {
       />
       {actionError && <p role="alert" className="rounded-lg border border-fox-red/30 bg-fox-red/10 px-3 py-2 text-sm text-fox-red">{actionError}</p>}
       <EvolutionComparison run={run} />
+      <EvolutionCosts run={run} />
       <EvolutionRunData run={run} />
       <Panel title={t("candidates")} aside={<span className="font-mono text-xs text-fg-muted">{run.attempted}/{run.budget}</span>}>
         <EvolutionCandidates candidates={run.candidates} />

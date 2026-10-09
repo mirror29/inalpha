@@ -850,9 +850,17 @@
         "succeeded": "Evaluation completed",
         "failed": "Evaluation failed",
         "rejected": "Safety checks failed",
-        "pending": "Awaiting evaluation",
+        "pending": "Pending",
         "queued": "Awaiting evaluation",
-        "running": "Evaluating"
+        "running": "Evaluating",
+        "diff_failed": "Patch rejected",
+        "mutation_failed": "Model call failed",
+        "no_change": "No change",
+        "ast_rejected": "Source audit rejected",
+        "contract_rejected": "Strategy contract rejected",
+        "evaluation_failed": "Backtest failed",
+        "duplicate": "Duplicate candidate",
+        "cancelled": "Cancelled"
       },
       "states": {
         "queued": "Queued",
@@ -942,6 +950,26 @@
         "low": "Low",
         "unknown": "Unknown"
       }
+    },
+    "costs": {
+      "title": "Model costs and usage receipts · USD",
+      "known": "Confirmed usage subtotal",
+      "recorded": "Retained recorded amount",
+      "unknown": "Calls with unconfirmed usage",
+      "unavailable": "Unconfirmed",
+      "receiptHint": "The subtotal and recorded amount are overlapping views, not separate charges. Unconfirmed calls may have been billed. Legacy amounts remain, but do not establish a complete bill. Costs are estimated from returned token usage and frozen rates; provider records determine the final bill.",
+      "generation": "Candidate generation",
+      "repair": "Bounded patch repair",
+      "phase": "{calls} call records · Confirmed {known} · {unknown} unconfirmed",
+      "failed": "Failed / rejected candidates include confirmed cost {known} and {unknown} unconfirmed calls. These amounts are included above; do not add them again.",
+      "chatScope": "Only this run’s candidate generation and repair are included. Agent chat costs are not yet attributed to the experiment; historical unknown costs are not treated as zero.",
+      "notCalled": "Model not requested",
+      "knownState": "Usage confirmed",
+      "unknownState": "Usage unconfirmed",
+      "repairParent": "Repair of candidate #{slot}",
+      "repairParentLink": "Inspect original failed candidate",
+      "inputTokens": "Input tokens",
+      "outputTokens": "Output tokens"
     }
   },
   "backtests": {

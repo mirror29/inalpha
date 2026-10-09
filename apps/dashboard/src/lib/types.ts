@@ -602,6 +602,10 @@ export interface EvolutionLLMSnapshot {
 }
 
 export interface EvolutionCandidateSummary {
+  parent_id?: string | null;
+  usage_status?: "not_called" | "known" | "unknown" | "legacy_unknown";
+  input_tokens?: number | null;
+  output_tokens?: number | null;
   candidate_id: string;
   run_id: string;
   slot: number;
@@ -625,6 +629,8 @@ export interface EvolutionCandidateSummary {
 }
 
 export interface EvolutionRunSummary {
+  known_cost_usd?: number;
+  unknown_usage_count?: number;
   run_id: string;
   experiment_id?: string | null;
   retry_of_run_id?: string | null;

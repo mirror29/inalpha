@@ -100,6 +100,7 @@ export function EvolutionRunTable({
 
 function RunRow({ run, locale }: { run: EvolutionRunSummary; locale: string }) {
   const t = useTranslations("evolution.workflow");
+  const c = useTranslations("evolution.costs");
   const ago = fmtRelative(
     run.finished_at ?? run.started_at ?? run.queued_at,
     Date.now(),
@@ -137,7 +138,10 @@ function RunRow({ run, locale }: { run: EvolutionRunSummary; locale: string }) {
         {run.rejected}
       </Td>
       <Td right mono muted>
-        ${run.llm_cost_usd.toFixed(4)}
+        <span title={c("recorded")}>${run.llm_cost_usd.toFixed(4)}</span>
+        {(run.unknown_usage_count === undefined || run.unknown_usage_count > 0) && (
+          <span className="mt-1 block text-[10px] text-gold">{c("unknownState")}</span>
+        )}
       </Td>
       <Td>
         <span className="font-mono text-[11px] text-fg-muted/70">{ago}</span>
