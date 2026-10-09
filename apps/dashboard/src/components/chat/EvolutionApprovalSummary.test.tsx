@@ -38,6 +38,28 @@ describe("readable frozen approval summary", () => {
       expect(html).toContain(language === "zh" ? "直接提交" : "submits this frozen task");
     }
   });
+  it("explains the inherited evaluator training fraction and remaining validation window", () => {
+    for (const language of ["zh", "en"] as const) {
+      locale = language;
+      const html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: envelope() }));
+      expect(html).toContain(language === "zh" ? "前 30% 为训练，后 70% 为窗口内验证" : "first 30% is training; the remaining 70% is within-window validation");
+    }
+  });
+  it("shows validation as disabled for a zero split and unavailable for invalid splits", () => {
+    for (const language of ["zh", "en"] as const) {
+      locale = language;
+      const value = envelope();
+      value.toolInput.request.config.validation_split = 0;
+      let html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: value }));
+      expect(html).toContain(language === "zh" ? "未启用窗口内验证" : "Within-window validation is disabled");
+      expect(html).not.toContain("100%");
+      for (const split of [Number.NaN, 0.6]) {
+        value.toolInput.request.config.validation_split = split;
+        html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: value }));
+        expect(html).not.toContain(language === "zh" ? "为训练" : "is training");
+      }
+    }
+  });
   it("does not invent metadata for old generic approvals", () => {
     expect(evolutionApprovalSummary({ requiresApproval: true, toolInput: {} })).toBeNull();
     expect(renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: {} }))).toBe("");
