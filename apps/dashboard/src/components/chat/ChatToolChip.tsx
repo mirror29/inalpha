@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 
 import { cn } from "@/lib/cn";
 import { ToolOutput } from "./ToolOutput";
@@ -43,6 +44,7 @@ export function ChatToolChip({
   state: ToolState;
   stateLabel: string;
 }) {
+  const t = useTranslations("activity.approval");
   const [showRaw, setShowRaw] = useState(false);
   const { Icon, color, expandable, pulse } = TOOL_STATE_MAP[state];
 
@@ -71,7 +73,7 @@ export function ChatToolChip({
           color,
         )}
       >
-        {stateLabel}
+        {state === "approval-requested" ? t("record") : stateLabel}
       </span>
     </>
   );

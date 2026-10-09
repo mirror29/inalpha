@@ -31,3 +31,22 @@ export async function POST(
     return NextResponse.json({ error: "approval_failed" }, { status });
   }
 }
+
+/** Check live owner-scoped availability before rendering historical approval controls. */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const requestId = (await params).id;
+  try {
+    const result = await backendFetch<{ pending: { requestId: string; deadline: string }[] }>(
+      "mastra", "/permissions/pending", { timeoutMs: 5_000 },
+    );
+    const pending = result.pending.find((item) => item.requestId === requestId);
+    return NextResponse.json(pending
+      ? { status: "pending", deadline: pending.deadline }
+      : { status: "unavailable" }, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return NextResponse.json({ error: "approval_status_unavailable" }, { status: 503 });
+  }
+}

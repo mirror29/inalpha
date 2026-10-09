@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useTranslations } from "next-intl";
 
@@ -74,7 +74,36 @@ function isApprovalEnvelope(
 /** Complete the trusted approval in-place, then resume the same chat operation. */
 function ChatApprovalActions({ requestId }: { requestId: string }) {
   const t = useTranslations("activity.approval");
-  const [state, setState] = useState<"idle" | "allow" | "deny" | "approved" | "failed">("idle");
+  const [state, setState] = useState<"checking" | "idle" | "allow" | "deny" | "approved" | "denied" | "expired" | "failed">("checking");
+
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    setState("checking");
+    void (async () => {
+      try {
+        const response = await fetch(`/api/permissions/${encodeURIComponent(requestId)}/respond`, {
+          cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("approval status unavailable");
+        const result = await response.json() as { status: string; deadline?: string };
+        if (!active) return;
+        const remaining = Date.parse(result.deadline ?? "") - Date.now();
+        if (result.status !== "pending" || !Number.isFinite(remaining) || remaining <= 0) {
+          setState("expired");
+          return;
+        }
+        setState("idle");
+        timer = setTimeout(() => {
+          setState((current) => current === "idle" || current === "failed" ? "expired" : current);
+        }, Math.min(remaining, 2_147_483_647));
+      } catch {
+        if (active) setState("failed");
+      }
+    })();
+    return () => { active = false; controller.abort(); if (timer) clearTimeout(timer); };
+  }, [requestId]);
 
   const respond = async (decision: "allow" | "deny") => {
     setState(decision);
@@ -84,17 +113,25 @@ function ChatApprovalActions({ requestId }: { requestId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision }),
       });
+      if (response.status === 404 || response.status === 410) {
+        setState("expired");
+        return;
+      }
       if (!response.ok) throw new Error(`approval failed (${response.status})`);
       if (decision === "allow") {
         setState("approved");
         window.dispatchEvent(new CustomEvent("inalpha:approval-resume"));
       } else {
-        setState("idle");
+        setState("denied");
       }
     } catch {
       setState("failed");
     }
   };
+
+  if (state === "expired" || state === "denied" || state === "checking") {
+    return <p role="status" className="px-2.5 py-2 text-xs text-fg-muted">{t(state)}</p>;
+  }
 
   if (state === "approved") {
     return <p className="px-2.5 py-2 font-mono text-[11px] text-bull">{t("working")}</p>;
