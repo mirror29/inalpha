@@ -14,7 +14,7 @@ export function EvolutionLineage({
 }) {
   const t = useTranslations("evolution.lineage");
   const w = useTranslations("evolution.workflow");
-  const l = useTranslations("evolution.loops");
+  const l = useTranslations("evolution.loop");
   const state = (status: string) =>
     w.has(`states.${status}`)
       ? w(`states.${status}`)

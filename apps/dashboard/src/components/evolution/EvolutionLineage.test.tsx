@@ -103,6 +103,7 @@ it("keeps champion, Forward, sealed results and human records distinct", () => {
     createElement(EvolutionLineage, { lineage }),
   );
   expect(html).toContain("One candidate locked");
+  expect(html).toContain(en.evolution.loop.states.waiting_forward);
   expect(html).toContain("Insufficient Forward evidence");
   expect(html).toContain("Not consumed");
   expect(html).toContain("0 adoption records");
