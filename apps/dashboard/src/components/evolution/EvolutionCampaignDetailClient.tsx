@@ -1,5 +1,8 @@
 "use client";
 
+import { EvolutionHypothesisLineage } from "./EvolutionHypothesisLineage";
+import { EvolutionLineage } from "./EvolutionLineage";
+
 import { EvolutionChatCosts } from "./EvolutionChatCosts";
 
 import { useEffect, useMemo, useState } from "react";
@@ -13,6 +16,7 @@ import { jsonFetcher } from "@/lib/fetcher";
 import { fmtRelative } from "@/lib/format";
 import type {
   EvolutionCampaignDetailPayload,
+  EvolutionHypothesis,
   EvolutionImplementation,
   EvolutionImplementationPage,
 } from "@/lib/types";
@@ -44,6 +48,9 @@ export function EvolutionCampaignDetailClient({
     null,
   );
   const [adopting, setAdopting] = useState(false);
+  const [focusedHypothesis, setFocusedHypothesis] = useState<string | null>(
+    null,
+  );
   const [implementationOffset, setImplementationOffset] = useState(0);
   const [loadedImplementations, setLoadedImplementations] = useState<
     EvolutionImplementation[]
@@ -61,6 +68,17 @@ export function EvolutionCampaignDetailClient({
   const campaign = data?.campaign;
   const shownGeneration =
     selectedGeneration ?? campaign?.active_generation ?? 1;
+  useEffect(() => {
+    if (focusedHypothesis)
+      document
+        .getElementById(`hypothesis-${focusedHypothesis}`)
+        ?.scrollIntoView({ block: "center" });
+  }, [focusedHypothesis, shownGeneration]);
+  function inspectHypothesis(hypothesis: EvolutionHypothesis) {
+    setFocusedHypothesis(hypothesis.hypothesis_id);
+    setSelectedGeneration(hypothesis.generation);
+    setImplementationOffset(0);
+  }
   const implementationKey = !campaign
     ? null
     : `/api/evolution/campaigns/${campaignId}/implementations?generation=${shownGeneration}&limit=24&offset=${implementationOffset}`;
@@ -148,7 +166,6 @@ export function EvolutionCampaignDetailClient({
       {error && (
         <ErrorState message={l("refreshFailed")} onRetry={() => mutate()} />
       )}
-      <EvolutionChatCosts costs={campaign.chat_preparation_costs} />
       <Panel title={w("conclusion")}>
         <div className="p-5">
           <h2 className="text-xl">
@@ -159,6 +176,8 @@ export function EvolutionCampaignDetailClient({
           </p>
         </div>
       </Panel>
+      <EvolutionLineage lineage={campaign.lineage} />
+      <EvolutionChatCosts costs={campaign.chat_preparation_costs} />
       <Panel
         title={w("rounds")}
         aside={
@@ -259,7 +278,8 @@ export function EvolutionCampaignDetailClient({
             .map((hypothesis) => (
               <article
                 key={hypothesis.hypothesis_id}
-                className="rounded-lg border border-border-subtle p-3"
+                id={`hypothesis-${hypothesis.hypothesis_id}`}
+                className={`rounded-lg border p-3 ${focusedHypothesis === hypothesis.hypothesis_id ? "border-cyan/50 bg-cyan/5" : "border-border-subtle"}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-mono text-xs text-cyan">
@@ -284,6 +304,11 @@ export function EvolutionCampaignDetailClient({
                     </span>
                   ))}
                 </div>
+                <EvolutionHypothesisLineage
+                  hypothesis={hypothesis}
+                  hypotheses={campaign.hypotheses}
+                  onInspect={inspectHypothesis}
+                />
                 <div className="mt-2 font-mono text-[10px] text-fg-muted">
                   {w("credit")} {formatMetric(hypothesis.upper_credit)} ·{" "}
                   {w("novelty")} {formatMetric(hypothesis.novelty_score)}
@@ -314,7 +339,17 @@ export function EvolutionCampaignDetailClient({
               {implementations
                 .filter((item) => item.generation === shownGeneration)
                 .map((item) => (
-                  <ImplementationRow key={item.implementation_id} item={item} />
+                  <ImplementationRow
+                    key={item.implementation_id}
+                    item={item}
+                    hypothesis={campaign.hypotheses.find(
+                      (value) =>
+                        value.hypothesis_id === item.hypothesis_id &&
+                        value.campaign_id === item.campaign_id &&
+                        value.generation === item.generation,
+                    )}
+                    onInspect={inspectHypothesis}
+                  />
                 ))}
             </tbody>
           </table>
@@ -404,7 +439,16 @@ export function EvolutionCampaignDetailClient({
 }
 
 /** Render one lower-level implementation without exposing source code in the aggregate view. */
-function ImplementationRow({ item }: { item: EvolutionImplementation }) {
+function ImplementationRow({
+  item,
+  hypothesis,
+  onInspect,
+}: {
+  item: EvolutionImplementation;
+  hypothesis?: EvolutionHypothesis;
+  onInspect: (hypothesis: EvolutionHypothesis) => void;
+}) {
+  const t = useTranslations("evolution.lineage");
   const w = useTranslations("evolution.workflow");
   const eventMetrics = objectValue(item.event_metrics);
   return (
@@ -414,6 +458,15 @@ function ImplementationRow({ item }: { item: EvolutionImplementation }) {
         {w.has(`profiles.${item.profile}`)
           ? w(`profiles.${item.profile}`)
           : item.profile}
+        {hypothesis && (
+          <button
+            type="button"
+            onClick={() => onInspect(hypothesis)}
+            className="mt-1 block text-xs hover:underline"
+          >
+            {t("hypothesis", { number: hypothesis.slot + 1 })} →
+          </button>
+        )}
       </td>
       <td className="p-3">
         <StatusBadge

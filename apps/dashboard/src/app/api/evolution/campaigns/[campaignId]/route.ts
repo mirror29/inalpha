@@ -1,3 +1,4 @@
+import { withLineageOrigin } from "@/lib/evolution-display-target";
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
@@ -23,6 +24,7 @@ export async function GET(
       `/api/v1/campaigns/${campaignId}`,
       { timeoutMs: 5_000 },
     );
+    campaign.lineage = await withLineageOrigin(campaign.lineage);
     const payload: EvolutionCampaignDetailPayload = { campaign, asOf: new Date().toISOString() };
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

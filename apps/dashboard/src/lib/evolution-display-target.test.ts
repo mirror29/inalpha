@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const backend = vi.hoisted(() => vi.fn());
 vi.mock("./backend", () => ({ backendFetch: backend }));
-import { withDisplayTarget } from "./evolution-display-target";
-import type { EvolutionLoop } from "./types";
+import {
+  withDisplayTarget,
+  withLineageOrigin,
+} from "./evolution-display-target";
+import type { EvolutionLoop, EvolutionLineage } from "./types";
 const id = "11111111-1111-4111-8111-111111111111";
 const loop = {
   owner_account_id: id,
@@ -53,4 +56,35 @@ describe("owner-scoped readable evolution targets", () => {
     expect(await withDisplayTarget(malformed)).toBe(malformed);
     expect(backend).not.toHaveBeenCalled();
   });
+});
+
+it("enriches a lineage origin only after source ownership matches", async () => {
+  backend.mockReset();
+  const lineage = {
+    owner_account_id: id,
+    source_reference: `candidate:${id}`,
+  } as EvolutionLineage;
+  backend.mockResolvedValueOnce({
+    owner_account_id: id,
+    description: "Source strategy",
+  });
+  expect((await withLineageOrigin(lineage))?.display_origin).toEqual({
+    description: "Source strategy",
+    href: `/lab/${id}`,
+  });
+  backend.mockResolvedValueOnce({
+    owner_account_id: "another-owner",
+    description: "PRIVATE",
+  });
+  expect((await withLineageOrigin(lineage))?.display_origin).toBeNull();
+  backend.mockClear();
+  expect(
+    (
+      await withLineageOrigin({
+        ...lineage,
+        source_reference: "candidate:invalid",
+      })
+    )?.display_origin,
+  ).toBeNull();
+  expect(backend).not.toHaveBeenCalled();
 });

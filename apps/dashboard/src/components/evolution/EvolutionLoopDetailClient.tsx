@@ -1,5 +1,7 @@
 "use client";
 
+import { EvolutionLineage } from "./EvolutionLineage";
+
 import { EvolutionChatCosts } from "./EvolutionChatCosts";
 
 import { useTranslations } from "next-intl";
@@ -97,6 +99,7 @@ export function EvolutionLoopDetailClient({ loopId }: { loopId: string }) {
           {t(`guidance.${loop.status}`)}
         </p>
       </Panel>
+      <EvolutionLineage lineage={loop.lineage} />
       <Panel title={t("costTitle")}>
         {loop.budget_usage ? (
           <dl className="grid gap-4 p-4 text-sm sm:grid-cols-2">

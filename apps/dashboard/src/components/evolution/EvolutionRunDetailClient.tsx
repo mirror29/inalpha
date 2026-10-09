@@ -1,5 +1,7 @@
 "use client";
 
+import { EvolutionLineage } from "./EvolutionLineage";
+
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { ArrowLeft } from "lucide-react";
@@ -70,6 +72,7 @@ export function EvolutionRunDetailClient({ runId }: { runId: string }) {
       />
       {actionError && <p role="alert" className="rounded-lg border border-fox-red/30 bg-fox-red/10 px-3 py-2 text-sm text-fox-red">{actionError}</p>}
       <EvolutionComparison run={run} />
+      <EvolutionLineage lineage={run.lineage} />
       <EvolutionCosts run={run} />
       <EvolutionRunData run={run} />
       <Panel title={t("candidates")} aside={<span className="font-mono text-xs text-fg-muted">{run.attempted}/{run.budget}</span>}>
