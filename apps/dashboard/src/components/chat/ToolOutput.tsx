@@ -96,7 +96,12 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
         const result = await response.json() as { status: string; remainingMs?: number };
         if (!active) return;
         const remaining = result.remainingMs ?? Number.NaN;
-        if (result.status !== "pending" || !Number.isFinite(remaining) || remaining <= 0) {
+        if (result.status === "unavailable") {
+          setState("expired");
+          return;
+        }
+        if (result.status !== "pending" || !Number.isFinite(remaining)) throw new Error("invalid approval status");
+        if (remaining <= 0) {
           setState("expired");
           return;
         }

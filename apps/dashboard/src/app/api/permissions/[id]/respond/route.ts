@@ -43,8 +43,10 @@ export async function GET(
       "mastra", "/permissions/pending", { timeoutMs: 5_000 },
     );
     const pending = result.pending.find((item) => item.requestId === requestId);
+    const deadline = pending ? Date.parse(pending.deadline) : undefined;
+    if (pending && !Number.isFinite(deadline)) throw new Error("invalid approval deadline");
     return NextResponse.json(pending
-      ? { status: "pending", deadline: pending.deadline, remainingMs: Math.max(0, Date.parse(pending.deadline) - Date.now()) }
+      ? { status: "pending", deadline: pending.deadline, remainingMs: Math.max(0, deadline! - Date.now()) }
       : { status: "unavailable" }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "approval_status_unavailable" }, { status: 503 });

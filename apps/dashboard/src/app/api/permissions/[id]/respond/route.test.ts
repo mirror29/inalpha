@@ -77,6 +77,12 @@ describe("historical approval availability", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "approval_status_unavailable" });
   });
+  it("reports malformed deadlines as retryable status failures", async () => {
+    mockedBackendFetch.mockResolvedValue({ pending: [{ requestId: "request-1", deadline: "invalid" }] });
+    const response = await read();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "approval_status_unavailable" });
+  });
   it("preserves expired decision status for the UI", async () => {
     mockedBackendFetch.mockRejectedValue({ status: 404 });
     expect((await callRoute(JSON.stringify({ decision: "allow" }))).status).toBe(404);
