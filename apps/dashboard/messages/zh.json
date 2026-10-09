@@ -766,6 +766,7 @@
     "workflow": {
       "tasks": "策略改进任务",
       "loaded": "已加载 {count} 项",
+      "partial": "部分数据尚未加载或读取失败；以下仅显示已获取的任务，统计可能不完整。",
       "loadedTasks": "已加载任务",
       "researching": "正在研究",
       "observing": "持续观察中",

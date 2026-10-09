@@ -766,6 +766,7 @@
     "workflow": {
       "tasks": "Strategy improvement tasks",
       "loaded": "{count} loaded",
+      "partial": "Some data is loading or unavailable. The tasks and counts below cover only the sources loaded so far.",
       "loadedTasks": "Loaded tasks",
       "researching": "Research in progress",
       "observing": "Forward observation",

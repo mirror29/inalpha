@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   evolutionMarket,
+  evolutionOverview,
   independentExperiments,
   workflowState,
 } from "./evolution-presentation";
@@ -41,5 +42,22 @@ describe("evolution presentation", () => {
       "standalone",
     ]);
     expect(history.runs.map((item) => item.run_id)).toEqual(["old-run"]);
+  });
+});
+
+/** Aggregate research states without double-counting nested stage records. */
+describe("evolutionOverview", () => {
+  it("counts standalone E1 completed runs without marking them adoption ready", () => {
+    const result = evolutionOverview([], [], [{ run_id: "done", status: "completed" }] as EvolutionRunSummary[]);
+    expect(result).toMatchObject({ loadedTasks: 1, researching: 0, observing: 0, ready: 0 });
+  });
+  it("counts independent work and deduplicates attached E1 and campaigns", () => {
+    const result = evolutionOverview(
+      [{ e1_run_id: "nested", campaign_id: "nested-campaign", status: "waiting_forward" }] as EvolutionLoop[],
+      [{ campaign_id: "nested-campaign", status: "waiting_forward", frozen_config: {} },
+       { campaign_id: "independent", status: "replaying", frozen_config: {} }] as EvolutionCampaign[],
+      [{ run_id: "nested", status: "completed" }, { run_id: "active", status: "running" }] as EvolutionRunSummary[],
+    );
+    expect(result).toMatchObject({ loadedTasks: 3, researching: 2, observing: 1, ready: 0 });
   });
 });
