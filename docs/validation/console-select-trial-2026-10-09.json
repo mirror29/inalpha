@@ -1,0 +1,58 @@
+{
+  "pr": 197,
+  "merge_sha": "e0692149ad8ad101a79c148447f50814bd8e8553",
+  "image_build": {
+    "run": 37875803962,
+    "status": "success"
+  },
+  "website": {
+    "url": "https://inalpha.dev",
+    "live_zh_trial_link": "https://dashboard.inalpha.dev/register?from=/zh",
+    "live_en_trial_link": "https://dashboard.inalpha.dev/register?from=/en",
+    "both_links_opened_real_registration_form": true,
+    "no_registration_submitted": true,
+    "desktop_render_verified": true,
+    "mobile_390x844_render_verified": true
+  },
+  "dashboard": {
+    "deployment": "healthy",
+    "image_sha": "17ae0233c893884109a3ef481464ecd30a304425",
+    "container": "4a610993a023",
+    "backup": "infra/.env.prod.before-dashboard-20261009T035636Z",
+    "other_containers_unchanged": 9,
+    "prs": [
+      197,
+      198,
+      199
+    ],
+    "build_run": 37881319662,
+    "desktop_keyboard_verified": "ArrowDown moves DeepSeek to Anthropic; Enter selects Anthropic and returns focus to trigger",
+    "mobile_verified": "390x844 menu fits viewport; OpenAI click updates trigger",
+    "no_configuration_saved": true
+  },
+  "paper_runs_created": 0,
+  "evolution_runs_started": 0,
+  "additional_model_calls": 0,
+  "budget": "Prior diagnostic usage unresolved; new budget question pending",
+  "date": "2026-10-09",
+  "approval": {
+    "root_cause": "Historical request expired on server while old UI continued to offer Approve/Deny with a generic retry error",
+    "latest_request_created_at": "2026-10-09T02:20:35.822Z",
+    "latest_request_expired_at": "2026-10-09T02:25:35.840981Z",
+    "production_read_only_audit": true,
+    "original_history_card_verified": "Approval record; expired/already handled message; no Approve/Deny controls",
+    "no_expired_approval_replayed": true,
+    "fresh_paid_evolution_not_tested": true
+  },
+  "validation": {
+    "dashboard_tests": 133,
+    "typecheck": "passed",
+    "build": "passed",
+    "ci_run": 37880875207,
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  }
+}
