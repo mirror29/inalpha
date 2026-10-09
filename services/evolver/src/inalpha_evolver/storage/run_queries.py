@@ -12,7 +12,9 @@ from .runs import _COLUMNS
 
 _RUN_COLUMNS = ",".join(f"r.{name.strip()}" for name in _COLUMNS.split(","))
 _SUMMARY_COLUMNS = """COALESCE(s.attempted,0) attempted,COALESCE(s.succeeded,0) succeeded,
-COALESCE(s.rejected,0) rejected"""
+COALESCE(s.rejected,0) rejected,COALESCE(s.known_cost_usd,0) known_cost_usd,
+COALESCE(s.unknown_usage_count,0) unknown_usage_count,
+COALESCE(s.recorded_cost_usd,0) recorded_cost_usd"""
 
 
 async def list_runs(
@@ -25,7 +27,10 @@ async def list_runs(
     sql = f"""SELECT {_RUN_COLUMNS},{_SUMMARY_COLUMNS} FROM strategy_evo_runs r
 LEFT JOIN LATERAL(SELECT count(*) attempted,
 count(*)FILTER(WHERE outcome='succeeded') succeeded,
-count(*)FILTER(WHERE outcome NOT IN('pending','succeeded')) rejected
+count(*)FILTER(WHERE outcome NOT IN('pending','succeeded')) rejected,
+COALESCE(sum(llm_cost_usd)FILTER(WHERE usage_status='known'),0) known_cost_usd,
+count(*)FILTER(WHERE usage_status IN('unknown','legacy_unknown')) unknown_usage_count,
+COALESCE(sum(llm_cost_usd),0) recorded_cost_usd
 FROM strategy_evo_candidates WHERE run_id=r.run_id)s ON TRUE
 WHERE r.owner_account_id=%s"""
     params: list[Any] = [owner_account_id]

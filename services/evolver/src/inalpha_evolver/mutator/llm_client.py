@@ -80,12 +80,13 @@ class MutationResult:
     """LLM 返回的原始 unified diff（存 DB 供 lineage 追溯）。"""
     source_hash: str
     """变异后源码的 SHA256 摘要（防重复）。"""
-    llm_cost_usd: float
+    llm_cost_usd: float | None
     """本次 LLM 调用的估算费用（美元）。"""
     cache_hit_tokens: int
     """本次 LLM 调用的缓存命中 tokens（用于 cache 效率统计）。"""
     input_tokens: int = 0
     """本次 LLM 调用的输入 tokens。"""
+    usage_known: bool = False
     output_tokens: int = 0
     """本次 LLM 调用的输出 tokens。"""
 
@@ -139,7 +140,10 @@ class Mutator:
         user_prompt = build_user_prompt(current_source, report, hint)
         prompt_bytes = len(SYSTEM_PROMPT.encode()) + len(user_prompt.encode())
         if prompt_bytes > self.max_input_utf8_bytes:
-            raise LLMError("LLM 变异输入超过已审批上限（按 UTF-8 字节保守校验）；请缩短输入")
+            raise LLMError(
+                "LLM 变异输入超过已审批上限（按 UTF-8 字节保守校验）；请缩短输入",
+                request_sent=False,
+            )
         request = MutationRequest(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=user_prompt,
@@ -151,11 +155,13 @@ class Mutator:
         except LoopControlError:
             raise
         except Exception as exc:
-            raise LLMError(f"LLM 变异调用失败：{exc}") from exc
+            raise LLMError(f"LLM 变异调用失败：{type(exc).__name__}") from exc
 
         raw_diff = _clean_llm_diff(response.content)
         metrics = response.cache_metrics
-        llm_cost_usd = self._cost_usd(metrics)
+        supplied_usage = getattr(response, "usage_known", None)
+        usage_known = supplied_usage is True or (supplied_usage is None and metrics.input_tokens > 0)
+        llm_cost_usd = self._cost_usd(metrics) if usage_known else None
 
         def reject(message: str, code: str) -> DiffApplyError:
             return DiffApplyError(
@@ -163,6 +169,7 @@ class Mutator:
                 original=current_source,
                 failed_diff=response.content,
                 code=code,
+                usage_known=usage_known,
                 llm_cost_usd=llm_cost_usd,
                 cache_hit_tokens=metrics.cache_read_tokens,
                 input_tokens=metrics.input_tokens,
@@ -185,6 +192,7 @@ class Mutator:
         if raw_diff.splitlines() == ["--- a/strategy.py", "+++ b/strategy.py"]:
             return MutationResult(
                 new_source=current_source,
+                usage_known=usage_known,
                 unified_diff=None,
                 source_hash=sha256(current_source.encode()).hexdigest(),
                 llm_cost_usd=llm_cost_usd,
@@ -207,6 +215,7 @@ class Mutator:
                     original=current_source,
                     failed_diff=response.content,
                     code=exc.code,
+                    usage_known=usage_known,
                     llm_cost_usd=llm_cost_usd,
                     cache_hit_tokens=metrics.cache_read_tokens,
                     input_tokens=metrics.input_tokens,
@@ -215,6 +224,7 @@ class Mutator:
 
         return MutationResult(
             new_source=new_source,
+            usage_known=usage_known,
             unified_diff=raw_diff,
             source_hash=sha256(new_source.encode()).hexdigest(),
             llm_cost_usd=llm_cost_usd,

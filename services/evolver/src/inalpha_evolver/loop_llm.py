@@ -67,7 +67,8 @@ class BudgetedLoopClient:
         response = await self._client.mutate(request)
         metrics = response.cache_metrics
         # Zero usage can mean a provider omitted its receipt; it is not proof of a free call.
-        if metrics.input_tokens > 0 and metrics.output_tokens >= 0:
+        receipt = getattr(response, "usage_known", None)
+        if (receipt is True or (receipt is None and metrics.input_tokens > 0)) and metrics.output_tokens >= 0:
             actual = (
                 Decimal(metrics.input_tokens) * Decimal(str(pricing["input_usd_per_million"]))
                 + Decimal(metrics.output_tokens) * Decimal(str(pricing["output_usd_per_million"]))

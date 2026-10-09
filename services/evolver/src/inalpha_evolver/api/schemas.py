@@ -272,6 +272,9 @@ class StartRunRequest(BaseModel):
 
 
 class CandidateResponse(BaseModel):
+    usage_status: Literal["not_called", "known", "unknown", "legacy_unknown"] = "legacy_unknown"
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     parent_id: UUID | None = None
     candidate_id: UUID
     run_id: UUID
@@ -297,6 +300,8 @@ class CandidateResponse(BaseModel):
 
 
 class RunStatusResponse(BaseModel):
+    known_cost_usd: float = 0
+    unknown_usage_count: int = 0
     run_id: UUID
     experiment_id: UUID | None = None
     retry_of_run_id: UUID | None = None

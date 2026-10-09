@@ -305,3 +305,14 @@ async def test_diff_failure_persists_raw_artifact_and_usage(monkeypatch):
     assert captured["error_code"] == "MUTATION_OUTPUT_TRUNCATED"
     assert captured["llm_cost_usd"] == 0.004
     assert captured["output_tokens"] == 200
+
+
+@pytest.mark.asyncio
+async def test_missing_usage_is_not_recorded_as_free_mutation():
+    class MissingUsageClient:
+        async def mutate(self, request):
+            return MutationResponse(content=_DIFF, usage_known=False)
+
+    result = await Mutator(llm_client=MissingUsageClient()).mutate(_SOURCE)
+    assert result.llm_cost_usd is None
+    assert result.usage_known is False

@@ -11,11 +11,13 @@ class DiffApplyError(RuntimeError):
         failed_diff: str | None = None,
         *,
         code: str = "MUTATION_DIFF_INVALID",
+        usage_known: bool = False,
         llm_cost_usd: float | None = None,
         cache_hit_tokens: int | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
     ) -> None:
+        self.usage_known = usage_known
         self.code = code
         self.original = original
         self.failed_diff = failed_diff
@@ -43,8 +45,19 @@ class StoreError(RuntimeError):
 
 
 class LLMError(RuntimeError):
-    """LLM 调用失败。"""
+    """Provider failure retains uncertain cost unless rejected before the request."""
+
+    def __init__(self, message: str, *, request_sent: bool = True) -> None:
+        self.request_sent = request_sent
+        self.code = "MUTATION_PROVIDER_FAILED" if request_sent else "MUTATION_INPUT_LIMIT"
+        super().__init__(message)
 
 
 class LoopControlError(RuntimeError):
     """Durable authority, budget, or fencing failure; never a proposal fallback."""
+
+
+class UnconfirmedModelCall(RuntimeError):
+    """Recovery cannot establish whether an earlier request was billed."""
+
+    code = "MUTATION_USAGE_UNCONFIRMED"

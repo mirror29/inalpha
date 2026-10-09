@@ -59,10 +59,11 @@ async def test_repair_persists_link_before_call_and_never_replays_raw_output(mon
 
 
 @pytest.mark.asyncio
-async def test_generation_repairs_within_four_approved_slots_and_retains_failures(monkeypatch):
+@pytest.mark.parametrize("interrupted", [False, True])
+async def test_generation_repairs_within_four_approved_slots_and_retains_failures(monkeypatch, interrupted):
     run = {"run_id": uuid4(), "owner_account_id": uuid4(), "budget": 4,
            "seed_source_snapshot": "original frozen source"}
-    rows = []
+    rows = [_slot(0, usage_status="legacy_unknown", llm_cost_usd=0.02)] if interrupted else []
     calls = []
 
     class Connection:
@@ -89,6 +90,9 @@ async def test_generation_repairs_within_four_approved_slots_and_retains_failure
         rows.append(row)
         return row
 
+    async def claim(*args):
+        return True
+
     async def listing(*args):
         return rows
 
@@ -113,17 +117,23 @@ async def test_generation_repairs_within_four_approved_slots_and_retains_failure
     monkeypatch.setattr("inalpha_evolver.runtime.generation.runs.transition", transition)
     monkeypatch.setattr("inalpha_evolver.runtime.generation.candidates.insert_slot", insert)
     monkeypatch.setattr("inalpha_evolver.runtime.generation.candidates.summarize", summary)
+    monkeypatch.setattr("inalpha_evolver.runtime.generation.candidates.claim_model_call", claim)
     monkeypatch.setattr("inalpha_evolver.runtime.repair.candidates.list_candidates", listing)
     monkeypatch.setattr("inalpha_evolver.runtime.repair.candidates.update_slot", update)
     await execute_generation(run, mutator=Mutator(), evaluator=object())
-    assert len(calls) == 4
+    assert len(calls) == (3 if interrupted else 4)
     assert sum(row["parent_id"] is not None for row in rows) == 1
-    assert rows[1]["parent_id"] == rows[0]["candidate_id"]
-    assert all(row["outcome"] == "diff_failed" for row in rows)
-    assert sum(row["llm_cost_usd"] for row in rows) == pytest.approx(0.04)
+    repair_slot = 2 if interrupted else 1
+    assert rows[repair_slot]["parent_id"] == rows[repair_slot - 1]["candidate_id"]
+    assert all(row["outcome"] == "diff_failed" for row in rows[int(interrupted):])
+    if interrupted:
+        assert rows[0]["error_code"] == "MUTATION_USAGE_UNCONFIRMED"
+        assert rows[0]["llm_cost_usd"] == 0.02
+        assert rows[0]["usage_status"] == "legacy_unknown"
+    assert sum(row["llm_cost_usd"] for row in rows) == pytest.approx(0.05 if interrupted else 0.04)
     assert all(source == "original frozen source" for source, hint in calls)
     await execute_generation(run, mutator=Mutator(), evaluator=object())
-    assert len(calls) == 4
+    assert len(calls) == (3 if interrupted else 4)
 
 
 def test_candidate_response_exposes_repair_parent():

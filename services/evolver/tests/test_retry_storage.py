@@ -86,3 +86,26 @@ async def test_mutation_repair_link_survives_database_reload_and_is_owner_scoped
     assert await candidates.list_candidates(database, run["run_id"], uuid4()) == []
     assert rows[0]["unified_diff"] == "failed artifact"
     assert float((await candidates.summarize(database, run["run_id"]))["llm_cost_usd"]) == pytest.approx(0.03)
+
+
+@pytest.mark.asyncio
+async def test_model_claim_and_unknown_cost_survive_reload_without_replay(database):
+    args = await create_baseline(database, uuid4())
+    run_id = args["e1_run_id"]
+    slot = await candidates.insert_slot(database, run_id, 0, "initial")
+    assert slot["usage_status"] == "not_called"
+    assert await candidates.claim_model_call(database, run_id, 0)
+    assert not await candidates.claim_model_call(database, run_id, 0)
+    rows = await candidates.list_candidates(database, run_id, args["owner_account_id"])
+    assert rows[0]["usage_status"] == "unknown"
+    assert rows[0]["llm_cost_usd"] is None
+    summary = await candidates.summarize(database, run_id)
+    assert summary["unknown_usage_count"] == 1
+    assert summary["known_cost_usd"] == 0
+    await candidates.update_slot(
+        database, run_id, 0, usage_status="known", llm_cost_usd=0.01,
+        input_tokens=100, output_tokens=20, stage="completed", outcome="diff_failed",
+    )
+    summary = await candidates.summarize(database, run_id)
+    assert summary["unknown_usage_count"] == 0
+    assert float(summary["known_cost_usd"]) == pytest.approx(0.01)
