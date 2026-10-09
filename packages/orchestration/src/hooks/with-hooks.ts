@@ -37,6 +37,7 @@ import {
 } from "../mastra/llm/evolution-snapshot.js";
 import { projectApprovalInput } from "../permissions/approval-identity.js";
 import {
+  approvalInputDigest,
   type PendingApprovalsStore,
   pendingApprovals as defaultPendingApprovals,
 } from "../permissions/pending.js";
@@ -68,6 +69,8 @@ const E2_CAMPAIGN_RETRY_WINDOW_MS = 2 * 60 * 1_000;
  * 单租户 = console subject（稳定唯一）；多租户 = 每用户隔离，自动生效。
  */
 export const AUTH_SUB_KEY = "inalpha__authSub";
+/** Internal dispatch guard; never populated from model or HTTP body fields. */
+const APPROVED_INPUT_DIGEST_KEY = "inalpha__approvedInputDigest";
 
 /**
  * 提取 conversation 级稳定 ID；明确忽略每轮变化的 ``runId``。
@@ -208,6 +211,10 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           };
         }
 
+        if (getRequestContextValue<string>(ctx, APPROVED_INPUT_DIGEST_KEY) && permDecision !== "ask") {
+          return { isError: true, deniedBy: "approval-policy-changed", message: "Approved execution requires the original ask policy." };
+        }
+
         if (permDecision === "ask") {
           const store = opts.pendingApprovals ?? defaultPendingApprovals;
           const durableEvolutionApproval = DURABLE_EVOLUTION_APPROVAL_TOOLS.has(toolName);
@@ -248,6 +255,11 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           const approvalInput = llmSnapshot
             ? { request: projectedInput, llm_snapshot: llmSnapshot }
             : projectedInput;
+          const dispatchedDigest = getRequestContextValue<string>(ctx, APPROVED_INPUT_DIGEST_KEY);
+          if (dispatchedDigest && approvalInputDigest(approvalInput) !== dispatchedDigest) {
+            return { isError: true, deniedBy: "approval-input-drift", toolName,
+              message: "APPROVED_INPUT_CHANGED: preparation differs from the approved frozen task; request a new approval." };
+          }
           const operationId = await store.consumeApproved({
             authSub,
             sessionId,
@@ -357,6 +369,20 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
     },
   };
 
+  if (tool.id === "evolver.run_evolution") {
+    const store = opts.pendingApprovals ?? defaultPendingApprovals;
+    store.registerApprovedExecution(tool.id, async (command, freshContext) => {
+      const authSub = defaultGetAuthSub(freshContext);
+      const payload = command.view.toolInput as { request?: unknown; llm_snapshot?: EvolutionLLMSnapshot } | null;
+      if (!authSub || !payload?.request || !payload.llm_snapshot) throw new Error("approved execution identity is unavailable");
+      const requestContext = new Map<string, unknown>([
+        [AUTH_SUB_KEY, authSub], ["sessionId", command.view.sessionId],
+        [USER_LLM_SNAPSHOT_KEY, payload.llm_snapshot],
+        [APPROVED_INPUT_DIGEST_KEY, command.view.inputDigest],
+      ]);
+      return await wrapped.execute!(payload.request, { requestContext });
+    });
+  }
   return wrapped as T;
 }
 

@@ -9,7 +9,7 @@
  *
  * 何时用：前端气泡（CopilotKit / Mastra Studio）轮询 list 显示 + 用户点按钮触发 respond。
  *
- * 鉴权：跟 scheduler api 一致，依赖 Mastra dev 端 protected/public 配置；生产部署应加反代鉴权。
+ * 鉴权：identityMiddleware 验签 JWT 后提供 owner；所有查询与决策必须绑定该主体。
  *
  * 不在范围：SSE 推送 / WebSocket —— MVP 用前端轮询（1-2s 间隔够用，挂起项数量小）。
  */
@@ -78,6 +78,14 @@ const respondPending: Handler = async (c: Context) => {
   const authSub = getAuthSub(c);
   if (!authSub) return c.json({ error: "unauthorized" }, 401);
   const ok = pendingApprovals.respond(id, decision, authSub);
+  if (decision === "allow") {
+    try {
+      const execution = await pendingApprovals.dispatchApproved(id, authSub, { requestContext: c.get("requestContext") });
+      if (execution !== undefined) return c.json({ ok: true, decision, requestId: id, execution });
+    } catch {
+      return c.json({ error: "approved_execution_unavailable", requestId: id }, 503);
+    }
+  }
   if (!ok) {
     return c.json({ error: "not_found_or_expired", requestId: id }, 404);
   }

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import {
   claimEvolutionOperation,
+  findApprovedExecution,
   findEvolutionOperation,
   insertPending,
   markResolved,
@@ -38,7 +39,15 @@ export interface PendingConsumeArgs {
   reuseOnceAfterConsumeMs?: number;
 }
 
+export interface ApprovedExecutionCommand {
+  view: PendingApprovalView;
+  approvalInput: unknown;
+}
+
+export type ApprovedExecutionHandler = (command: ApprovedExecutionCommand, context: unknown) => Promise<unknown>;
+
 interface PendingApprovalRecord extends PendingApprovalView {
+  approvalInput: unknown;
   authSub: string;
   status: "pending" | "approved";
   timer: ReturnType<typeof setTimeout>;
@@ -61,6 +70,7 @@ const defaultPendingTelemetrySink: PendingTelemetrySink = (record) => {
 };
 
 export interface ApprovalPersistence {
+  findApprovedExecution?(operationId: string, authSub: string): Promise<ApprovedExecutionCommand | undefined>;
   insertPending(view: PendingApprovalView, authSub?: string): Promise<void>;
   markResolved(
     requestId: string,
@@ -68,7 +78,7 @@ export interface ApprovalPersistence {
     via: "user" | "timeout",
   ): Promise<void>;
   rememberEvolutionOperation(
-    args: EvolutionOperationScope & { operationId: string; retentionMs?: number },
+    args: EvolutionOperationScope & { operationId: string; retentionMs?: number; execution?: ApprovedExecutionCommand },
   ): Promise<{
     expiresAt: string;
   } | undefined>;
@@ -96,6 +106,9 @@ export function approvalInputDigest(input: unknown): string {
 
 /** Stores pending and approved decisions until one matching tool call consumes them. */
 export class PendingApprovalsStore {
+  private readonly executionHandlers = new Map<string, ApprovedExecutionHandler>();
+  private readonly dispatching = new Map<string, Promise<unknown>>();
+  private readonly executionCommands = new Map<string, { authSub: string; command: ApprovedExecutionCommand; expiresAt: number }>();
   private readonly records = new Map<string, PendingApprovalRecord>();
   private readonly identityIndex = new Map<string, string>();
   private readonly consumedByIdentity = new Map<string, ConsumedApprovalRecord>();
@@ -121,7 +134,8 @@ export class PendingApprovalsStore {
     const record: PendingApprovalRecord = {
       requestId,
       toolName: args.toolName,
-      toolInput: args.toolInput,
+      toolInput: structuredClone(args.toolInput),
+      approvalInput: structuredClone(args.approvalInput),
       sessionId: args.sessionId,
       authSub: args.authSub,
       inputDigest: approvalInputDigest(args.approvalInput),
@@ -144,6 +158,42 @@ export class PendingApprovalsStore {
     });
     this.persist((p) => p.insertPending(this.toView(record), args.authSub));
     return this.toView(record);
+  }
+
+  /** Registers only trusted code executors; HTTP callers cannot choose executable code. */
+  registerApprovedExecution(toolName: string, handler: ApprovedExecutionHandler): void {
+    if (toolName !== "evolver.run_evolution") throw new Error("direct approval execution is limited to E1");
+    this.executionHandlers.set(toolName, handler);
+  }
+
+  /** Executes an approved frozen command under a fresh verified owner's request context. */
+  async dispatchApproved(requestId: string, authSub: string, context: unknown): Promise<unknown> {
+    const record = this.records.get(requestId);
+    let command: ApprovedExecutionCommand | undefined;
+    if (record) {
+      if (record.authSub !== authSub || record.status !== "approved" || Date.now() >= Date.parse(record.deadline)) return undefined;
+      command = { view: this.toView(record), approvalInput: structuredClone(record.approvalInput) };
+      if (!this.executionHandlers.has(record.toolName)) return undefined;
+    } else {
+      const cached = this.executionCommands.get(requestId);
+      if (cached && cached.authSub === authSub && cached.expiresAt > Date.now()) command = cached.command;
+      if (!command) command = await this.persistence?.findApprovedExecution?.(requestId, authSub);
+      if (!command || command.view.requestId !== requestId || !this.executionHandlers.has(command.view.toolName)) return undefined;
+    }
+    if (approvalInputDigest(command.approvalInput) !== command.view.inputDigest) throw new Error("approved execution digest mismatch");
+    const handler = this.executionHandlers.get(command.view.toolName)!;
+    const key = `${authSub}\u0000${requestId}`;
+    const active = this.dispatching.get(key);
+    if (active) return await active;
+    const run = (async () => {
+      const operationId = await this.consumeApproved({ authSub, sessionId: command.view.sessionId,
+        toolName: command.view.toolName, approvalInput: command.approvalInput, reuseAfterConsume: true });
+      if (operationId !== requestId) throw new Error("approved execution unavailable");
+      this.executionCommands.set(requestId, { authSub, command: structuredClone(command), expiresAt: Date.now() + EVOLUTION_OPERATION_RETENTION_MS });
+      return await handler(structuredClone(command), context);
+    })();
+    this.dispatching.set(key, run);
+    try { return await run; } finally { if (this.dispatching.get(key) === run) this.dispatching.delete(key); }
   }
 
   /** Lists only pending requests owned by the authenticated subject. */
@@ -295,6 +345,7 @@ export class PendingApprovalsStore {
           ...scope,
           operationId: record.requestId,
           retentionMs,
+          execution: record.toolName === "evolver.run_evolution" ? { view: this.toView(record), approvalInput: record.approvalInput } : undefined,
         });
         persistedReusable = Boolean(persisted);
         reusable = persisted
@@ -339,6 +390,7 @@ export class PendingApprovalsStore {
 
   /** Revokes every active record during tests or shutdown. */
   clearAll(reason: PendingDecision = "deny"): void {
+    this.executionCommands.clear();
     for (const record of Array.from(this.records.values())) {
       this.remove(record);
       if (record.status === "pending") {
@@ -382,6 +434,7 @@ export class PendingApprovalsStore {
     if (!record) return;
     clearTimeout(record.timer);
     this.consumedByIdentity.delete(identity);
+    this.executionCommands.delete(record.operationId);
   }
 
   private cacheConsumed(
@@ -425,7 +478,7 @@ export class PendingApprovalsStore {
 
   private toView(record: PendingApprovalRecord): PendingApprovalView {
     const { requestId, toolName, toolInput, sessionId, inputDigest, createdAt, deadline } = record;
-    return { requestId, toolName, toolInput, sessionId, inputDigest, createdAt, deadline };
+    return structuredClone({ requestId, toolName, toolInput, sessionId, inputDigest, createdAt, deadline });
   }
 
   private persist(fn: (persistence: ApprovalPersistence) => Promise<void>): void {
@@ -457,4 +510,5 @@ export const pendingApprovals = new PendingApprovalsStore(undefined, {
   rememberEvolutionOperation,
   findEvolutionOperation,
   claimEvolutionOperation,
+  findApprovedExecution,
 });

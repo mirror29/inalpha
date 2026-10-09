@@ -25,6 +25,7 @@ import { getSettings } from "../config.js";
 import { maskSensitive } from "../redact.js";
 import type {
   EvolutionOperationScope,
+  ApprovedExecutionCommand,
   PendingApprovalView,
   PendingDecision,
 } from "./pending.js";
@@ -141,7 +142,7 @@ export async function markResolved(
 
 /** Persist one approved evolution identity before the costful tool is allowed to execute. */
 export async function rememberEvolutionOperation(
-  args: EvolutionOperationScope & { operationId: string; retentionMs?: number },
+  args: EvolutionOperationScope & { operationId: string; retentionMs?: number; execution?: ApprovedExecutionCommand },
 ): Promise<{ expiresAt: string } | undefined> {
   const pool = getPoolOrNull();
   if (!pool) return undefined;
@@ -151,12 +152,13 @@ export async function rememberEvolutionOperation(
   const expiresAt = new Date(Date.now() + retentionMs);
   const result = await pool.query(
     `INSERT INTO evolution_approval_operations
-       (operation_id,auth_sub,session_id,tool_name,input_digest,approved_at,expires_at)
-     VALUES ($1,$2,$3,$4,$5,NOW(),$6)
+       (operation_id,auth_sub,session_id,tool_name,input_digest,approved_at,expires_at,execution_input)
+     VALUES ($1,$2,$3,$4,$5,NOW(),$6,$7)
      ON CONFLICT (auth_sub,session_id,tool_name,input_digest) DO UPDATE SET
        operation_id=EXCLUDED.operation_id,
        approved_at=EXCLUDED.approved_at,
-       expires_at=EXCLUDED.expires_at
+       expires_at=EXCLUDED.expires_at,
+       execution_input=EXCLUDED.execution_input
      RETURNING expires_at`,
     [
       args.operationId,
@@ -165,6 +167,7 @@ export async function rememberEvolutionOperation(
       args.toolName,
       args.inputDigest,
       expiresAt,
+      args.execution ? JSON.stringify(maskSensitive(args.execution)) : null,
     ],
   );
   const row = result.rows[0];
@@ -187,6 +190,18 @@ export async function findEvolutionOperation(
   return row
     ? { operationId: String(row.operation_id), expiresAt: toIso(row.expires_at) }
     : undefined;
+}
+
+/** Loads only an unexpired E1 command previously consumed by this verified owner. */
+export async function findApprovedExecution(operationId: string, authSub: string): Promise<ApprovedExecutionCommand | undefined> {
+  const pool = getPoolOrNull();
+  if (!pool) return undefined;
+  const result = await pool.query(
+    `SELECT execution_input FROM evolution_approval_operations
+     WHERE operation_id=$1 AND auth_sub=$2 AND tool_name='evolver.run_evolution'
+       AND expires_at>NOW() AND execution_input IS NOT NULL`, [operationId, authSub],
+  );
+  return result.rows[0]?.execution_input as ApprovedExecutionCommand | undefined;
 }
 
 /** Atomically consume one unexpired recovery entitlement. */
