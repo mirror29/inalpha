@@ -1,5 +1,7 @@
 "use client";
 
+import { EvolutionChatCosts } from "./EvolutionChatCosts";
+
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -146,6 +148,7 @@ export function EvolutionCampaignDetailClient({
       {error && (
         <ErrorState message={l("refreshFailed")} onRetry={() => mutate()} />
       )}
+      <EvolutionChatCosts costs={campaign.chat_preparation_costs} />
       <Panel title={w("conclusion")}>
         <div className="p-5">
           <h2 className="text-xl">

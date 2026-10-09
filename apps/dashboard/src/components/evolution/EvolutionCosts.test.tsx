@@ -145,7 +145,7 @@ describe("evolution cost and repair evidence", () => {
       unknown_cost_count: 1, shared_approval_count: 2,
     } } as EvolutionRun;
     const html = renderToStaticMarkup(createElement(EvolutionCosts, { run }));
-    expect(html).toContain("审批准备会话费用");
+    expect(html).toContain("任务准备会话费用");
     expect(html).toContain("本轮 2 次模型调用");
     expect(html).toContain("未知金额 1 次");
     expect(html).toContain("不能逐任务累加");
@@ -160,7 +160,7 @@ describe("evolution cost and repair evidence", () => {
     const html = renderToStaticMarkup(createElement(EvolutionCosts, { run }));
     expect(html).toContain("calls with unknown cost: 1");
     expect(html).toContain("known estimate Unconfirmed");
-    expect(html.slice(html.indexOf("Approval preparation turn cost"))).not.toContain("$0.0000");
+    expect(html.slice(html.indexOf("Task preparation turn cost"))).not.toContain("$0.0000");
     expect(html).not.toContain("undefined");
   });
 

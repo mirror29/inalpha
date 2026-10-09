@@ -1,5 +1,7 @@
 "use client";
 
+import { EvolutionChatCosts } from "./EvolutionChatCosts";
+
 import { useTranslations } from "next-intl";
 import useSWR from "swr";
 
@@ -121,6 +123,7 @@ export function EvolutionLoopDetailClient({ loopId }: { loopId: string }) {
           {t("costExplanation")}
         </p>
       </Panel>
+      <EvolutionChatCosts costs={loop.chat_preparation_costs} />
       <Panel title={w("evidence")}>
         {loop.display_target?.description && (
           <p className="p-4 text-sm leading-6 text-fg-muted [overflow-wrap:anywhere]">

@@ -751,6 +751,7 @@ export interface EvolutionImplementationPage {
 }
 
 export interface EvolutionCampaign {
+  chat_preparation_costs?: EvolutionRunSummary["chat_preparation_costs"];
   campaign_id: string;
   status: EvolutionCampaignStatus;
   active_generation: number;
@@ -799,6 +800,7 @@ export type EvolutionLoopStatus =
   | "failed";
 
 export interface EvolutionLoop {
+  chat_preparation_costs?: EvolutionRunSummary["chat_preparation_costs"];
   loop_id: string;
   owner_account_id: string;
   operation_id: string;
