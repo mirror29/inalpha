@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { backendFetch } from "@/lib/backend";
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 vi.mock("@/lib/backend", () => ({ backendFetch: vi.fn() }));
 
@@ -21,7 +21,7 @@ async function callRoute(body: string) {
   );
 }
 
-beforeEach(() => mockedBackendFetch.mockReset());
+beforeEach(() => { mockedBackendFetch.mockReset(); });
 
 describe("approval response BFF", () => {
   it("forwards an explicit owner decision to the private Mastra API", async () => {
@@ -41,5 +41,50 @@ describe("approval response BFF", () => {
     expect((await callRoute("not-json")).status).toBe(400);
     expect((await callRoute(JSON.stringify({ decision: "yes" }))).status).toBe(400);
     expect(mockedBackendFetch).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("historical approval availability", () => {
+  const read = () => GET(new NextRequest("http://dashboard.test/api/permissions/request-1/respond"), {
+    params: Promise.resolve({ id: "request-1" }),
+  });
+  it("returns only the live deadline without tool inputs", async () => {
+    mockedBackendFetch.mockResolvedValue({ pending: [
+      { requestId: "request-1", deadline: "2026-10-09T12:00:00Z", toolInput: "private" },
+    ] });
+    const response = await read();
+    expect(await response.json()).toEqual({ status: "pending", deadline: "2026-10-09T12:00:00Z", remainingMs: expect.any(Number) });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+  it("computes the remaining window on the server clock", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-09T11:55:00Z"));
+    try {
+      mockedBackendFetch.mockResolvedValue({ pending: [
+        { requestId: "request-1", deadline: "2026-10-09T12:00:00Z" },
+      ] });
+      expect((await (await read()).json()).remainingMs).toBe(300_000);
+    } finally { clock.mockRestore(); }
+  });
+  it("marks expired or absent requests unavailable without replaying them", async () => {
+    mockedBackendFetch.mockResolvedValue({ pending: [] });
+    expect(await (await read()).json()).toEqual({ status: "unavailable" });
+    expect(mockedBackendFetch).toHaveBeenCalledWith("mastra", "/permissions/pending", { timeoutMs: 5_000 });
+  });
+  it("does not misreport backend failure as expiry", async () => {
+    mockedBackendFetch.mockRejectedValue(new Error("private failure"));
+    const response = await read();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "approval_status_unavailable" });
+  });
+  it("reports malformed deadlines as retryable status failures", async () => {
+    mockedBackendFetch.mockResolvedValue({ pending: [{ requestId: "request-1", deadline: "invalid" }] });
+    const response = await read();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "approval_status_unavailable" });
+  });
+  it("preserves expired decision status for the UI", async () => {
+    mockedBackendFetch.mockRejectedValue({ status: 404 });
+    expect((await callRoute(JSON.stringify({ decision: "allow" }))).status).toBe(404);
   });
 });
