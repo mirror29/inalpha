@@ -463,6 +463,7 @@ class ImplementationResponse(BaseModel):
 
 
 class CampaignResponse(BaseModel):
+    chat_preparation_costs: ChatPreparationCosts | None = None
     campaign_id: UUID
     owner_account_id: UUID
     source_run_id: UUID | None = None
@@ -559,6 +560,7 @@ class EvolutionLoopBudgetUsage(BaseModel):
 class EvolutionLoopResponse(BaseModel):
     """Compact durable workflow projection; heavy campaign details remain lazy."""
 
+    chat_preparation_costs: ChatPreparationCosts | None = None
     loop_id: UUID
     owner_account_id: UUID
     requested_by_sub: str

@@ -1,3 +1,4 @@
+import { linkChatOperation } from "../src/mastra/llm/chat-operation-store.js";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
@@ -50,4 +51,17 @@ describe.skipIf(!url)("owner-scoped chat call storage", () => {
     expect((await db.query("SELECT input_tokens FROM chat_usage_receipts WHERE call_id=$1", [identity.callId])).rows[0].input_tokens).toBe("1");
     await expect(store.begin(identity)).rejects.toThrow();
   });
+  it("requires an owned chat receipt and preserves the first E2 operation association", async () => {
+    const db = database(); const identity = call();
+    const link = { authSub: identity.authSub, invocationId: identity.invocationId,
+      operationId: randomUUID(), toolName: "evolver.start_evolution_loop" as const };
+    await expect(linkChatOperation(link, db)).rejects.toThrow("trusted chat call receipt unavailable");
+    await createChatUsageStore(db).begin(identity);
+    await expect(linkChatOperation({ ...link, authSub: "bob" }, db)).rejects.toThrow();
+    await linkChatOperation(link, db);
+    const later = call(); await createChatUsageStore(db).begin(later);
+    await linkChatOperation({ ...link, invocationId: later.invocationId }, db);
+    expect((await db.query("SELECT invocation_id FROM chat_evolution_operations WHERE auth_sub=$1 AND operation_id=$2", [link.authSub,link.operationId])).rows[0].invocation_id).toBe(identity.invocationId);
+  });
+
 });

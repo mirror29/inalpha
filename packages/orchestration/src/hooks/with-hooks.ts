@@ -1,3 +1,4 @@
+import { linkChatOperation, type ChatOperationLink } from "../mastra/llm/chat-operation-store.js";
 import { trustedChatInvocation } from "../mastra/llm/chat-invocation-scope.js";
 /**
  * ``withHooks`` —— Mastra tool execute 中间件。
@@ -147,6 +148,8 @@ export type WithHooksOptions = {
    * ``mastra/index.ts`` 注册 HTTP routes 用的 store）。测试可注入 fresh 实例隔离。
    */
   pendingApprovals?: PendingApprovalsStore;
+  /** Injected ledger write keeps E2 chat provenance durable before task execution. */
+  chatOperationLinker?: (link: ChatOperationLink) => Promise<void>;
   /** ask 路径 store 超时毫秒数；缺省 30_000（30 秒）。0 / 负数视作默认。 */
   askTimeoutMs?: number;
   /** Validate preparation after identity checks and before creating or consuming approval. */
@@ -326,6 +329,21 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           && !getRequestContextValue<string>(ctx, APPROVAL_OPERATION_ID_KEY)
         ) {
           setRequestContextValue(ctx, APPROVAL_OPERATION_ID_KEY, randomUUID());
+        }
+
+        if (authSub && (toolName === "evolver.start_evolution_loop" || toolName === "evolver.run_event_campaign")) {
+          const invocationId = trustedChatInvocation(
+            (ctx as { requestContext?: unknown } | undefined)?.requestContext, authSub,
+          );
+          const operationId = getRequestContextValue<string>(ctx, APPROVAL_OPERATION_ID_KEY);
+          if (invocationId && operationId) {
+            try {
+              await (opts.chatOperationLinker ?? linkChatOperation)({ authSub, operationId, invocationId, toolName });
+            } catch {
+              return { isError: true, deniedBy: "chat-lineage-unavailable", toolName,
+                message: "CHAT_LINEAGE_UNAVAILABLE: task preparation could not be recorded; retry after storage recovers." };
+            }
+          }
         }
 
         // 3. execute

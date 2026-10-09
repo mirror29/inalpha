@@ -66,3 +66,51 @@ async def test_shared_turn_is_flagged_and_unknown_cost_is_not_zero(database):
         assert summary['known_cost_usd'] is None
         assert summary['unknown_cost_count'] == 1
         assert summary['shared_approval_count'] == 2
+
+
+@pytest.mark.asyncio
+async def test_e2_baseline_campaign_and_reused_loop_keep_original_turn(database):
+    from inalpha_evolver.storage import loops
+    from .test_loop_storage import create_campaign
+
+    args = await create_baseline(database, uuid4())
+    original = await loops.ensure_for_e1_run(database, **args)
+    await database.execute('UPDATE strategy_evo_runs SET idempotency_key=%s WHERE run_id=%s', (args['operation_id'], args['e1_run_id']))
+    invocation = uuid4()
+    await receipt(database, invocation, args['requested_by_sub'], '0.0000015')
+    await database.execute("""INSERT INTO chat_evolution_operations(auth_sub,operation_id,invocation_id,tool_name)
+VALUES(%s,%s,%s,'evolver.start_evolution_loop')""", (args['requested_by_sub'], args['operation_id'], invocation))
+    later_operation, later_invocation = uuid4(), uuid4()
+    await receipt(database, later_invocation, args['requested_by_sub'], '9.99')
+    await database.execute("""INSERT INTO chat_evolution_operations(auth_sub,operation_id,invocation_id,tool_name)
+VALUES(%s,%s,%s,'evolver.start_evolution_loop')""", (args['requested_by_sub'], later_operation, later_invocation))
+    reused = await loops.ensure_for_e1_run(database, **{**args, 'operation_id': str(later_operation)})
+    assert reused['loop_id'] == original['loop_id']
+    campaign = await create_campaign(database, args)
+    await database.execute('UPDATE evolution_campaigns SET requested_by_sub=%s WHERE campaign_id=%s', (args['requested_by_sub'], campaign))
+    await database.execute('UPDATE evolution_loops SET campaign_id=%s WHERE loop_id=%s', (campaign, original['loop_id']))
+    expected = {'linked': True, 'call_count': 1, 'known_cost_usd': 0.0000015,
+                'unknown_cost_count': 0, 'shared_approval_count': 1}
+    assert await chat_costs.for_run(database, args['e1_run_id'], args['owner_account_id']) == expected
+    assert await chat_costs.for_e2_task(database, original['loop_id'], args['owner_account_id'], kind='loop') == expected
+    assert await chat_costs.for_e2_task(database, campaign, args['owner_account_id'], kind='campaign') == expected
+    assert await chat_costs.for_e2_task(database, campaign, uuid4(), kind='campaign') == {'linked': False}
+    await database.execute('UPDATE strategy_evo_runs SET idempotency_key=%s WHERE run_id=%s', (str(uuid4()), args['e1_run_id']))
+    assert await chat_costs.for_run(database, args['e1_run_id'], args['owner_account_id']) == {'linked': False}
+
+
+@pytest.mark.asyncio
+async def test_standalone_e2_campaign_uses_only_its_own_operation(database):
+    from .test_loop_storage import create_campaign
+
+    args = await create_baseline(database, uuid4())
+    campaign = await create_campaign(database, args)
+    operation, invocation = uuid4(), uuid4()
+    await database.execute('UPDATE evolution_campaigns SET requested_by_sub=%s,idempotency_key=%s WHERE campaign_id=%s',
+                           (args['requested_by_sub'], str(operation), campaign))
+    await receipt(database, invocation, args['requested_by_sub'], None)
+    await database.execute("""INSERT INTO chat_evolution_operations(auth_sub,operation_id,invocation_id,tool_name)
+VALUES(%s,%s,%s,'evolver.run_event_campaign')""", (args['requested_by_sub'], operation, invocation))
+    summary = await chat_costs.for_e2_task(database, campaign, args['owner_account_id'], kind='campaign')
+    assert summary['linked'] and summary['known_cost_usd'] is None
+    assert summary['unknown_cost_count'] == 1

@@ -44,21 +44,23 @@ export function createChatUsageStore(pool: Pick<Pool, "query">): ChatUsageStore 
   };
 }
 
-/** Lazily connects the production ledger, failing before payment if unavailable. */
-export function createProductionChatUsageStore(): ChatUsageStore {
-  let store: ChatUsageStore | undefined;
-  function database(): ChatUsageStore {
-    if (!store) {
-      const databaseUrl = getSettings().databaseUrl;
-      if (!databaseUrl) throw new Error("chat usage database unavailable");
-      const pool = new Pool({ connectionString: databaseUrl, max: 3,
-        connectionTimeoutMillis: 5000, statement_timeout: 5000 });
-      store = createChatUsageStore(pool);
-    }
-    return store;
+let productionPool: Pool | undefined;
+
+/** Shares a lazy production ledger connection pool without exposing credentials. */
+export function getChatUsagePool(): Pool {
+  if (!productionPool) {
+    const databaseUrl = getSettings().databaseUrl;
+    if (!databaseUrl) throw new Error("chat usage database unavailable");
+    productionPool = new Pool({ connectionString: databaseUrl, max: 3,
+      connectionTimeoutMillis: 5000, statement_timeout: 5000 });
   }
+  return productionPool;
+}
+
+/** Fails before model payment if the durable receipt store is unavailable. */
+export function createProductionChatUsageStore(): ChatUsageStore {
   return {
-    begin: (call) => database().begin(call),
-    settle: (call, receipt) => database().settle(call, receipt),
+    begin: (call) => createChatUsageStore(getChatUsagePool()).begin(call),
+    settle: (call, receipt) => createChatUsageStore(getChatUsagePool()).settle(call, receipt),
   };
 }
