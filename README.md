@@ -26,6 +26,8 @@
 
 <p>Inalpha is a <strong>professional quant agent framework</strong> — an open-source system where LLM agents research (with a panel of investing legends), pick the factors that work <em>now</em>, write and evolve strategy code, and route every order through machine approval, all under an <strong>audit-grade engineering harness</strong>. A unified kernel (one strategy codebase — swap only the Clock and Gateway), multi-market routing (crypto, US equities, A-shares, global indices, macro), and a Claude Code-style hooks/permissions/plan-exec layer back it — built for teams that demand <strong>every decision be provable and every order path be unreachable by the LLM directly</strong>.</p>
 
+<p><a href="https://dashboard.inalpha.dev"><strong>Hosted console</strong></a> &nbsp;·&nbsp; <a href="https://dashboard.inalpha.dev/register?from=/en"><strong>Request trial access</strong></a><br /><sub>Apply for an account. After approval, an activation link is sent by email.</sub></p>
+
 </div>
 
 ---
