@@ -63,9 +63,9 @@ describe("readable frozen approval summary", () => {
   it("keeps displayed fractions complementary and does not round tiny training shares to zero", () => {
     locale = "en";
     const value = envelope();
-    value.toolInput.request.config.validation_split = 0.05785;
+    value.toolInput.request.config.validation_split = 0.00005;
     let html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: value }));
-    expect(html).toContain("first 5.78% is training; the remaining 94.22% is within-window validation");
+    expect(html).toContain("first 0.01% is training; the remaining 99.99% is within-window validation");
     value.toolInput.request.config.validation_split = 0.00004;
     html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: value }));
     expect(html).not.toContain("0% is training");
