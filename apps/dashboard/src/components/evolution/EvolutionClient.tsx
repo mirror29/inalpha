@@ -21,6 +21,7 @@ import { EvolutionLoopTable } from "./EvolutionLoopTable";
 /** E1 策略演化运行列表。 */
 export function EvolutionClient() {
   const t = useTranslations("evolution");
+  const common = useTranslations("common");
   const campaigns = useSWR<EvolutionCampaignPayload>(
     "/api/evolution/campaigns",
     jsonFetcher,
@@ -38,6 +39,12 @@ export function EvolutionClient() {
   const history = overview.independent;
   const hasData = Boolean(loops.data || campaigns.data || runPages?.length);
   const completeCoverage = Boolean(loops.data && campaigns.data && runPages?.length);
+  const hasError = Boolean(loops.error || campaigns.error || error);
+  const retryFailedSources = () => Promise.allSettled([
+    ...(loops.error ? [loops.mutate()] : []),
+    ...(campaigns.error ? [campaigns.mutate()] : []),
+    ...(error ? [mutate()] : []),
+  ]);
   const stats = ["loadedTasks", "researching", "observing", "ready"] as const;
   const timestamps = [loops.data?.asOf, campaigns.data?.asOf, asOf]
     .filter((value): value is string => Boolean(value)).sort();
@@ -77,29 +84,17 @@ export function EvolutionClient() {
         </div>
       )}
       {!completeCoverage && <p role="status" className="text-sm text-fg-muted">{t("workflow.partial")}</p>}
-      {loops.error && (
-        <ErrorState
-          message={t("loop.refreshFailed")}
-          onRetry={() => loops.mutate()}
-        />
-      )}
+      {hasError && (hasData ? (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-gold/30 p-3 text-sm">
+          <p className="text-fg-muted">{t("loop.refreshFailed")}</p>
+          <button type="button" onClick={() => void retryFailedSources()} className="shrink-0 text-cyan hover:underline">{common("retry")}</button>
+        </div>
+      ) : <ErrorState message={t("loop.refreshFailed")} onRetry={() => void retryFailedSources()} />)}
       {loops.isLoading && !loops.data ? (
         <SkeletonBlock className="h-32" />
       ) : workflows.length > 0 ? (
         <EvolutionLoopTable loops={workflows} />
       ) : null}
-      {campaigns.error && (
-        <ErrorState
-          message={t("loop.refreshFailed")}
-          onRetry={() => campaigns.mutate()}
-        />
-      )}
-      {error && (
-        <ErrorState
-          message={t("loop.refreshFailed")}
-          onRetry={() => mutate()}
-        />
-      )}
       {isLoading && !runPages?.length ? <SkeletonBlock className="h-32" /> : !error || runPages?.length ? <EvolutionRunTable
         runs={history.runs}
         hasMore={hasMore}

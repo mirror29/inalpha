@@ -38,6 +38,7 @@ describe("EvolutionClient result visibility", () => {
     const html = renderToStaticMarkup(createElement(EvolutionClient));
     expect(html).toContain("BTC completed");
     expect(html).toContain("workflow.partial");
+    if (mode === "error") expect(html).toContain('role="alert"');
   });
   it("keeps E2 visible when E1 fails", () => {
     state.loops = { data: { loops: [{ status: "waiting_forward" }] } };
