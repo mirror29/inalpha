@@ -298,7 +298,9 @@
       "failed": "Retry",
       "working": "Saving…",
       "submitted": "Evolution task submitted.",
-      "viewTask": "View evolution task"
+      "viewTask": "View evolution task",
+      "recoveryAvailable": "This task is approved. Recover submission or retrieve its task record.",
+      "recoverTask": "Retrieve approved task"
     },
     "source": {
       "scheduler": "Scheduler",

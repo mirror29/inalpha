@@ -298,7 +298,9 @@
       "failed": "请重试",
       "working": "提交中…",
       "submitted": "演化任务已提交。",
-      "viewTask": "查看演化任务"
+      "viewTask": "查看演化任务",
+      "recoveryAvailable": "此任务已批准，可恢复交接或获取任务记录。",
+      "recoverTask": "获取已批准任务"
     },
     "source": {
       "scheduler": "定时任务",

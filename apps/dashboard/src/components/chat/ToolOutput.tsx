@@ -77,10 +77,11 @@ function isApprovalEnvelope(
 /** Submit a trusted approval and link directly submitted E1 tasks without another model turn. */
 function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onTerminal?: () => void }) {
   const t = useTranslations("activity.approval");
-  const [state, setState] = useState<"checking" | "statusFailed" | "idle" | "allow" | "deny" | "approved" | "submitted" | "denied" | "expired" | "failed">("checking");
+  const [state, setState] = useState<"checking" | "statusFailed" | "idle" | "recoverable" | "allow" | "deny" | "approved" | "submitted" | "denied" | "expired" | "failed">("checking");
 
   const [statusAttempt, setStatusAttempt] = useState(0);
   const [submittedRunId, setSubmittedRunId] = useState<string | null>(null);
+  const [approvedRecovery, setApprovedRecovery] = useState(false);
 
   useEffect(() => {
     if (state === "expired" || state === "denied" || state === "approved" || state === "submitted") onTerminal?.();
@@ -99,6 +100,12 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
         if (!response.ok) throw new Error("approval status unavailable");
         const result = await response.json() as { status: string; remainingMs?: number };
         if (!active) return;
+        if (result.status === "approved") {
+          setApprovedRecovery(true);
+          setState("recoverable");
+          return;
+        }
+        setApprovedRecovery(false);
         const remaining = result.remainingMs ?? Number.NaN;
         if (result.status === "unavailable") {
           setState("expired");
@@ -183,24 +190,24 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
   return (
     <div className="flex items-center justify-between gap-3 px-2.5 py-2">
       <span className="font-mono text-[10px] text-fg-muted">
-        {state === "failed" ? t("failed") : requestId.slice(0, 8)}
+        {state === "failed" ? t("failed") : approvedRecovery ? t("recoveryAvailable") : requestId.slice(0, 8)}
       </span>
       <div className="flex items-center gap-1.5">
-        <button
+        {!approvedRecovery && <button
           type="button"
           disabled={state === "allow" || state === "deny"}
           onClick={() => void respond("deny")}
           className="rounded-md border border-fox-red/35 px-2 py-1 font-mono text-[10px] uppercase text-fox-red disabled:opacity-40"
         >
           {state === "deny" ? t("working") : t("deny")}
-        </button>
+        </button>}
         <button
           type="button"
           disabled={state === "allow" || state === "deny"}
           onClick={() => void respond("allow")}
           className="rounded-md border border-bull/35 bg-bull/10 px-2 py-1 font-mono text-[10px] uppercase text-bull disabled:opacity-40"
         >
-          {state === "allow" ? t("working") : t("allow")}
+          {state === "allow" ? t("working") : approvedRecovery ? t("recoverTask") : t("allow")}
         </button>
       </div>
     </div>

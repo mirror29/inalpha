@@ -39,15 +39,16 @@ export async function GET(
 ) {
   const requestId = (await params).id;
   try {
-    const result = await backendFetch<{ pending: { requestId: string; deadline: string }[] }>(
-      "mastra", "/permissions/pending", { timeoutMs: 5_000 },
+    const result = await backendFetch<{ status: string; deadline?: string }>(
+      "mastra", `/permissions/${encodeURIComponent(requestId)}/status`, { timeoutMs: 5_000 },
     );
-    const pending = result.pending.find((item) => item.requestId === requestId);
-    const deadline = pending ? Date.parse(pending.deadline) : undefined;
-    if (pending && !Number.isFinite(deadline)) throw new Error("invalid approval deadline");
-    return NextResponse.json(pending
-      ? { status: "pending", deadline: pending.deadline, remainingMs: Math.max(0, deadline! - Date.now()) }
-      : { status: "unavailable" }, { headers: { "Cache-Control": "no-store" } });
+    if (result.status === "approved" || result.status === "unavailable") {
+      return NextResponse.json({ status: result.status }, { headers: { "Cache-Control": "no-store" } });
+    }
+    const deadline = result.deadline ? Date.parse(result.deadline) : Number.NaN;
+    if (result.status !== "pending" || !Number.isFinite(deadline)) throw new Error("invalid approval status");
+    return NextResponse.json({ status: "pending", deadline: result.deadline, remainingMs: Math.max(0, deadline - Date.now()) },
+      { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "approval_status_unavailable" }, { status: 503 });
   }
