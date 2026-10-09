@@ -227,6 +227,16 @@ export async function approveEvolutionExecution(args: {
       [view.requestId, args.authSub, view.sessionId, view.toolName, view.inputDigest, args.retentionMs, JSON.stringify(maskSensitive(args.command))],
     );
     if (result.rowCount !== 1) throw new Error("approved operation already exists");
+    if (view.chatInvocationId) {
+      const provenance = await client.query(
+        `INSERT INTO chat_evolution_operations(auth_sub,operation_id,invocation_id,tool_name)
+         SELECT $1,$2,$3,$4 WHERE EXISTS (
+           SELECT 1 FROM chat_usage_receipts WHERE auth_sub=$1 AND invocation_id=$3 AND call_source='chat'
+         ) ON CONFLICT(auth_sub,operation_id) DO NOTHING RETURNING operation_id`,
+        [args.authSub, view.requestId, view.chatInvocationId, view.toolName],
+      );
+      if (provenance.rowCount !== 1) throw new Error("trusted chat provenance unavailable");
+    }
     await client.query("COMMIT");
     return { expiresAt: toIso(result.rows[0].expires_at) };
   } catch (error) {

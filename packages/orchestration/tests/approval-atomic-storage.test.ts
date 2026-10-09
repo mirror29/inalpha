@@ -29,14 +29,41 @@ function command(sessionId = randomUUID()): ApprovedExecutionCommand {
     chatInvocationId: randomUUID(), createdAt: new Date().toISOString(), deadline: new Date(Date.now() + 30_000).toISOString() } };
 }
 
+/** Seeds a verified local chat call before its approval transaction. */
+async function chatReceipt(saved: ApprovedExecutionCommand): Promise<void> {
+  await database().query(`INSERT INTO chat_usage_receipts(call_id,invocation_id,auth_sub,step_number,call_source)
+    VALUES($1,$2,'alice',0,'chat')`, [randomUUID(), saved.view.chatInvocationId]);
+}
+
 afterAll(async () => { setPool(undefined); await pool?.end(); });
 
 describe.skipIf(!enabled)("atomic owner approval storage", () => {
+  it("retains original preparation audit when an expired identical approval is replaced", async () => {
+    const db = database();
+    const first = command();
+    await chatReceipt(first);
+    await approveEvolutionExecution({ authSub: "alice", command: first, retentionMs: 60_000 });
+    await db.query("UPDATE evolution_approval_operations SET approved_at=NOW()-INTERVAL '2 hours',expires_at=NOW()-INTERVAL '1 hour' WHERE operation_id=$1", [first.view.requestId]);
+    const second = command(first.view.sessionId);
+    await chatReceipt(second);
+    await approveEvolutionExecution({ authSub: "alice", command: second, retentionMs: 60_000 });
+    expect(await findApprovedExecution(first.view.requestId, "alice")).toBeUndefined();
+    expect(await findApprovedExecution(second.view.requestId, "alice")).toEqual(second);
+    for (const saved of [first, second]) {
+      const row = await db.query("SELECT invocation_id FROM chat_evolution_operations WHERE auth_sub='alice' AND operation_id=$1", [saved.view.requestId]);
+      expect(row.rows[0].invocation_id).toBe(saved.view.chatInvocationId);
+    }
+    const missing = command();
+    await expect(approveEvolutionExecution({ authSub: "alice", command: missing, retentionMs: 60_000 })).rejects.toThrow("trusted chat provenance unavailable");
+    expect((await db.query("SELECT status FROM pending_approvals WHERE request_id=$1", [missing.view.requestId])).rows).toEqual([]);
+  });
+
   it("persists consent and frozen input together and recovers before any execution", async () => {
     const db = database();
     const store = new PendingApprovalsStore(() => {}, { approveEvolutionExecution, findApprovedExecution,
       findEvolutionOperation, insertPending, markResolved, rememberEvolutionOperation });
     const original = command();
+    await chatReceipt(original);
     const view = store.request({ ...original.view, authSub: "alice", approvalInput: original.approvalInput });
     expect(await store.respondTrusted(view.requestId, "allow", "alice")).toBe(true);
     const row = await db.query("SELECT status FROM pending_approvals WHERE request_id=$1", [view.requestId]);
@@ -57,6 +84,7 @@ describe.skipIf(!enabled)("atomic owner approval storage", () => {
   it("rolls back the decision when the operation identity conflicts", async () => {
     const db = database();
     const first = command();
+    await chatReceipt(first);
     await approveEvolutionExecution({ authSub: "alice", command: first, retentionMs: 60_000 });
     const second = command(first.view.sessionId);
     await expect(approveEvolutionExecution({ authSub: "alice", command: second, retentionMs: 60_000 })).rejects.toThrow("approved operation already exists");

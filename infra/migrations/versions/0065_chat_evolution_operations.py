@@ -1,4 +1,4 @@
-"""Bind E2 operation identities to trusted, owner-scoped chat invocations."""
+"""Bind evolution operation identities to trusted, owner-scoped chat invocations."""
 from alembic import op
 
 revision = "0065"
@@ -13,7 +13,7 @@ CREATE TABLE chat_evolution_operations (
  auth_sub TEXT NOT NULL,
  operation_id UUID NOT NULL,
  invocation_id UUID NOT NULL,
- tool_name TEXT NOT NULL CHECK (tool_name IN ('evolver.start_evolution_loop','evolver.run_event_campaign')),
+ tool_name TEXT NOT NULL CHECK (tool_name IN ('evolver.run_evolution','evolver.start_evolution_loop','evolver.run_event_campaign')),
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  PRIMARY KEY(auth_sub,operation_id)
 );
