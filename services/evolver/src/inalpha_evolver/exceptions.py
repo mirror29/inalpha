@@ -10,11 +10,13 @@ class DiffApplyError(RuntimeError):
         original: str | None = None,
         failed_diff: str | None = None,
         *,
+        code: str = "MUTATION_DIFF_INVALID",
         llm_cost_usd: float | None = None,
         cache_hit_tokens: int | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
     ) -> None:
+        self.code = code
         self.original = original
         self.failed_diff = failed_diff
         self.llm_cost_usd = llm_cost_usd

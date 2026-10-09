@@ -157,14 +157,32 @@ class Mutator:
         metrics = response.cache_metrics
         llm_cost_usd = self._cost_usd(metrics)
 
+        def reject(message: str, code: str) -> DiffApplyError:
+            return DiffApplyError(
+                message,
+                original=current_source,
+                failed_diff=response.content,
+                code=code,
+                llm_cost_usd=llm_cost_usd,
+                cache_hit_tokens=metrics.cache_read_tokens,
+                input_tokens=metrics.input_tokens,
+                output_tokens=metrics.output_tokens,
+            )
+
+        if getattr(response, "finish_reason", None) == "length":
+            raise reject("模型输出达到 token 上限，未应用截断补丁", "MUTATION_OUTPUT_TRUNCATED")
+
         # 部分模型违反格式约束返回完整源码；转成 canonical diff 后走同一审计链。
         if not raw_diff or not raw_diff.startswith("---"):
             full_source = _full_source_fallback(response.content)
             if full_source is not None and full_source != current_source:
                 raw_diff = _source_diff(current_source, full_source)
 
-        # 空 diff = LLM 认为无需改动
-        if not raw_diff or not raw_diff.startswith("---"):
+        if not raw_diff.startswith("---"):
+            raise reject("模型未返回约定的 unified diff", "MUTATION_DIFF_INVALID")
+
+        # 只有协议约定的两个文件头明确表示无改动；空文本和解释不是有效结果。
+        if raw_diff.splitlines() == ["--- a/strategy.py", "+++ b/strategy.py"]:
             return MutationResult(
                 new_source=current_source,
                 unified_diff=None,
@@ -187,7 +205,8 @@ class Mutator:
                 raise DiffApplyError(
                     str(exc),
                     original=current_source,
-                    failed_diff=raw_diff,
+                    failed_diff=response.content,
+                    code=exc.code,
                     llm_cost_usd=llm_cost_usd,
                     cache_hit_tokens=metrics.cache_read_tokens,
                     input_tokens=metrics.input_tokens,

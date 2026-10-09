@@ -112,6 +112,7 @@ async def reject_slot(
     }
     if usage is not None:
         values.update(
+            unified_diff=getattr(usage, "failed_diff", getattr(usage, "unified_diff", None)),
             llm_cost_usd=usage.llm_cost_usd,
             cache_hit_tokens=usage.cache_hit_tokens,
             input_tokens=usage.input_tokens,
