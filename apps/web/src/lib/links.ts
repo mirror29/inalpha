@@ -11,6 +11,8 @@ const REPO = {
 } as const;
 
 export const LINKS = {
+  console: "https://dashboard.inalpha.dev",
+  trial: (locale: string) => `https://dashboard.inalpha.dev/register?from=/${locale === "zh" ? "zh" : "en"}`,
   github: `https://github.com/${REPO.owner}/${REPO.name}`,
   license: `https://github.com/${REPO.owner}/${REPO.name}/blob/main/LICENSE`,
   /** 同一来源的 git clone 命令，供 Hero / CTAFooter 复用。 */

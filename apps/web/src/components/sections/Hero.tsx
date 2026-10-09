@@ -3,7 +3,7 @@
 import { ArrowUpRight, BookOpen } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 import { CopyableCommand } from "@/components/primitives/CopyableCommand";
 import { HeroAtmosphere } from "@/components/primitives/HeroAtmosphere";
@@ -49,6 +49,7 @@ const drawRule = {
  * 数据区（下方各 section）仍临床（DESIGN.md §3.4）。
  */
 export function Hero() {
+  const locale = useLocale();
   const t = useTranslations("hero");
   const tCta = useTranslations("cta");
 
@@ -182,6 +183,9 @@ export function Hero() {
               copiedLabel={tCta("copied")}
               className="min-w-[19rem] max-w-md"
             />
+            <Link href={LINKS.trial(locale)} className="inline-flex items-center gap-2 rounded-md bg-seal px-5 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-seal">
+              {tCta("trial")}<ArrowUpRight className="size-4" aria-hidden />
+            </Link>
             <Link
               href={LINKS.github}
               target="_blank"

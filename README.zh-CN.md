@@ -24,6 +24,8 @@
 
 <p><em>每个因子提案、每次策略变异、每笔订单路由——都有日志、有版本、可复核。Agent 自己挑当前有效的因子来择时、自己写策略、自己进化；LLM 只负责写代码，工程纪律为每个决策背书。</em></p>
 
+<p><a href="https://dashboard.inalpha.dev"><strong>在线控制台</strong></a> &nbsp;·&nbsp; <a href="https://dashboard.inalpha.dev/register?from=/zh"><strong>申请账号试用</strong></a><br /><sub>提交账号申请，审核通过后通过邮件获取激活链接。</sub></p>
+
 </div>
 
 ---

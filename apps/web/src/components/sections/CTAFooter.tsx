@@ -4,7 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import { motion } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 import { CopyableCommand } from "@/components/primitives/CopyableCommand";
 import { LiveBadge } from "@/components/primitives/LiveBadge";
@@ -28,6 +28,7 @@ interface CTAFooterProps {
  * 与「star it · read it」的号召自然成对。
  */
 export function CTAFooter({ stats = null, updateTag }: CTAFooterProps = {}) {
+  const locale = useLocale();
   const t = useTranslations("cta");
   const tf = useTranslations("footer");
   const tc = useTranslations("coverage");
@@ -90,6 +91,9 @@ export function CTAFooter({ stats = null, updateTag }: CTAFooterProps = {}) {
             variants={fadeUp}
             className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-3"
           >
+            <Link href={LINKS.trial(locale)} className="inline-flex items-center gap-2 rounded-md bg-seal px-5 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-seal">
+              {t("trial")}<ArrowUpRight className="size-4" aria-hidden />
+            </Link>
             <Link
               href={LINKS.github}
               target="_blank"
@@ -108,6 +112,11 @@ export function CTAFooter({ stats = null, updateTag }: CTAFooterProps = {}) {
               {tf("license")}
             </Link>
           </motion.div>
+
+          <motion.p variants={fadeUp} className="mt-5 text-sm leading-relaxed text-fg-muted">
+            {t("trialNote")} {" "}
+            <a href={LINKS.console} className="underline underline-offset-4 hover:text-fg">dashboard.inalpha.dev</a>
+          </motion.p>
 
           {/* GitHub 数字 */}
           <motion.div
