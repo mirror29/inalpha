@@ -629,6 +629,13 @@ export interface EvolutionCandidateSummary {
 }
 
 export interface EvolutionRunSummary {
+  chat_preparation_costs?: {
+    linked: boolean;
+    call_count?: number | null;
+    known_cost_usd?: number | null;
+    unknown_cost_count?: number | null;
+    shared_approval_count?: number | null;
+  } | null;
   known_cost_usd?: number;
   unknown_usage_count?: number;
   run_id: string;

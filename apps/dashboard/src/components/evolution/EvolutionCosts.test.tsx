@@ -135,7 +135,33 @@ describe("evolution cost and repair evidence", () => {
     expect(html).toContain("Confirmed usage subtotal");
     expect(html).toContain("$0.0300");
     expect(html).toContain("not separate charges");
-    expect(html).toContain("Agent chat costs are not yet attributed");
+    expect(html).toContain("No trusted turn association is available");
     expect(html).not.toContain("undefined");
   });
+  it("shows the linked preparation turn separately and warns against shared cost double counting", () => {
+    locale = "zh";
+    const run = { candidates, llm_cost_usd: 0.03, chat_preparation_costs: {
+      linked: true, call_count: 2, known_cost_usd: 0.0000015,
+      unknown_cost_count: 1, shared_approval_count: 2,
+    } } as EvolutionRun;
+    const html = renderToStaticMarkup(createElement(EvolutionCosts, { run }));
+    expect(html).toContain("审批准备会话费用");
+    expect(html).toContain("本轮 2 次模型调用");
+    expect(html).toContain("未知金额 1 次");
+    expect(html).toContain("不能逐任务累加");
+    expect(html).toContain("&lt;$0.0001");
+  });
+  it("does not invent a zero amount for linked calls with unknown pricing", () => {
+    locale = "en";
+    const run = { candidates: [], chat_preparation_costs: {
+      linked: true, call_count: 1, known_cost_usd: null,
+      unknown_cost_count: 1, shared_approval_count: 1,
+    } } as unknown as EvolutionRun;
+    const html = renderToStaticMarkup(createElement(EvolutionCosts, { run }));
+    expect(html).toContain("calls with unknown cost: 1");
+    expect(html).toContain("known estimate Unconfirmed");
+    expect(html.slice(html.indexOf("Approval preparation turn cost"))).not.toContain("$0.0000");
+    expect(html).not.toContain("undefined");
+  });
+
 });
