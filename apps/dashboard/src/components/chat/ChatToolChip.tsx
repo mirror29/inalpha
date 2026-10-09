@@ -104,7 +104,7 @@ export function ChatToolChip({
       >
         {head}
       </summary>
-      {result && open && (
+      {result && (state !== "approval-requested" || open) && (
         <div className="border-t border-border-subtle bg-bg-deep/50">
           <div className="flex items-baseline justify-between pr-2.5">
             <div className={sectionCaption}>{resultLabel}</div>

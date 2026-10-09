@@ -44,7 +44,7 @@ export async function GET(
     );
     const pending = result.pending.find((item) => item.requestId === requestId);
     return NextResponse.json(pending
-      ? { status: "pending", deadline: pending.deadline }
+      ? { status: "pending", deadline: pending.deadline, remainingMs: Math.max(0, Date.parse(pending.deadline) - Date.now()) }
       : { status: "unavailable" }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "approval_status_unavailable" }, { status: 503 });

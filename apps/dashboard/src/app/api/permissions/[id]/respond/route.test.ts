@@ -54,8 +54,17 @@ describe("historical approval availability", () => {
       { requestId: "request-1", deadline: "2026-10-09T12:00:00Z", toolInput: "private" },
     ] });
     const response = await read();
-    expect(await response.json()).toEqual({ status: "pending", deadline: "2026-10-09T12:00:00Z" });
+    expect(await response.json()).toEqual({ status: "pending", deadline: "2026-10-09T12:00:00Z", remainingMs: expect.any(Number) });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+  it("computes the remaining window on the server clock", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-09T11:55:00Z"));
+    try {
+      mockedBackendFetch.mockResolvedValue({ pending: [
+        { requestId: "request-1", deadline: "2026-10-09T12:00:00Z" },
+      ] });
+      expect((await (await read()).json()).remainingMs).toBe(300_000);
+    } finally { clock.mockRestore(); }
   });
   it("marks expired or absent requests unavailable without replaying them", async () => {
     mockedBackendFetch.mockResolvedValue({ pending: [] });

@@ -287,6 +287,8 @@
     "emptyFiltered": "No {kind} events.",
     "sourceDown": "{sources} unavailable — those events are missing from the feed.",
     "approval": {
+      "statusFailed": "Approval status is unavailable. No decision was submitted.",
+      "retryStatus": "Check again",
       "record": "Approval record",
       "expired": "This approval has expired or was already handled. Request the operation again in chat, then review and approve the new request.",
       "denied": "Denied. This operation will not run.",

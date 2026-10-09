@@ -287,6 +287,8 @@
     "emptyFiltered": "没有「{kind}」类事件。",
     "sourceDown": "{sources} 不可用 —— 这些事件没进时间线。",
     "approval": {
+      "statusFailed": "暂时无法核对审批状态，尚未提交任何决定。",
+      "retryStatus": "重新检查",
       "record": "审批记录",
       "expired": "该审批已过期或已处理，无法再次批准。请在对话中重新发起操作，核对新审批后再批准。",
       "denied": "已拒绝，本次操作不会执行。",

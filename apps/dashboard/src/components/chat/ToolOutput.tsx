@@ -74,7 +74,9 @@ function isApprovalEnvelope(
 /** Complete the trusted approval in-place, then resume the same chat operation. */
 function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onTerminal?: () => void }) {
   const t = useTranslations("activity.approval");
-  const [state, setState] = useState<"checking" | "idle" | "allow" | "deny" | "approved" | "denied" | "expired" | "failed">("checking");
+  const [state, setState] = useState<"checking" | "statusFailed" | "idle" | "allow" | "deny" | "approved" | "denied" | "expired" | "failed">("checking");
+
+  const [statusAttempt, setStatusAttempt] = useState(0);
 
   useEffect(() => {
     if (state === "expired" || state === "denied" || state === "approved") onTerminal?.();
@@ -91,17 +93,17 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
           cache: "no-store", signal: controller.signal,
         });
         if (!response.ok) throw new Error("approval status unavailable");
-        const result = await response.json() as { status: string; deadline?: string };
+        const result = await response.json() as { status: string; remainingMs?: number };
         if (!active) return;
-        const remaining = Date.parse(result.deadline ?? "") - Date.now();
+        const remaining = result.remainingMs ?? Number.NaN;
         if (result.status !== "pending" || !Number.isFinite(remaining) || remaining <= 0) {
           setState("expired");
           return;
         }
         setState("idle");
-        const deadline = Date.parse(result.deadline!);
+        const deadline = performance.now() + remaining;
         const checkDeadline = () => {
-          const delay = deadline - Date.now();
+          const delay = deadline - performance.now();
           if (delay > 0) {
             timer = setTimeout(checkDeadline, Math.min(delay, 2_147_483_647));
           } else {
@@ -110,11 +112,11 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
         };
         checkDeadline();
       } catch {
-        if (active) setState("failed");
+        if (active) setState("statusFailed");
       }
     })();
     return () => { active = false; controller.abort(); if (timer) clearTimeout(timer); };
-  }, [requestId]);
+  }, [requestId, statusAttempt]);
 
   const respond = async (decision: "allow" | "deny") => {
     setState(decision);
@@ -139,6 +141,13 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
       setState("failed");
     }
   };
+
+  if (state === "statusFailed") {
+    return <div role="status" className="flex items-center gap-3 px-2.5 py-2 text-xs text-fg-muted">
+      <span>{t("statusFailed")}</span>
+      <button type="button" onClick={() => setStatusAttempt((value) => value + 1)} className="underline">{t("retryStatus")}</button>
+    </div>;
+  }
 
   if (state === "expired" || state === "denied" || state === "checking") {
     return <p role="status" className="px-2.5 py-2 text-xs text-fg-muted">{t(state)}</p>;
