@@ -68,6 +68,7 @@ describe("readable frozen approval summary", () => {
     expect(html).toContain("first 0.01% is training; the remaining 99.99% is within-window validation");
     value.toolInput.request.config.validation_split = 0.00004;
     html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: value }));
+    expect(html).toContain("first 0.004% is training; the remaining window is validation (actual segments round to whole bars)");
     expect(html).not.toContain("0% is training");
     expect(html).not.toContain("validation is disabled");
   });

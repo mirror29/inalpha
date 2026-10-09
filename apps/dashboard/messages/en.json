@@ -314,6 +314,7 @@
         "simulationValue": "Initial cash {cash} · fee {fee}% · leverage {leverage}×",
         "validation": "In-window validation",
         "validationValue": "The first {trainPercent}% is training; the remaining {validationPercent}% is within-window validation",
+        "validationPrecise": "The first {trainPercent}% is training; the remaining window is validation (actual segments round to whole bars)",
         "validationDisabled": "Within-window validation is disabled",
         "budget": "Candidate slots",
         "slots": "Up to {count} (repair uses an existing slot)",
