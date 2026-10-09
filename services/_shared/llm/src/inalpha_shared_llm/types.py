@@ -70,3 +70,8 @@ class MutationResponse:
     """LLM 返回的文本内容（应为 unified diff）。"""
     cache_metrics: CacheMetrics = field(default_factory=CacheMetrics)
     role: MutationRole = MutationRole.MUTATE
+    finish_reason: str | None = None
+    """Provider completion reason, when supplied by the API."""
+
+    usage_known: bool | None = None
+    """Whether the provider supplied token usage; None preserves legacy adapters."""

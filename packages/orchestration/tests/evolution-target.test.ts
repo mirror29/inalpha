@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resolveEvolutionSeedContext } from "../src/tools/evolution-target.js";
 import { clearSettings, setSettings } from "../src/config.js";
 import { evolverResolveTargetTool, evolverStartLoopTool } from "../src/tools/index.js";
 
@@ -40,6 +41,36 @@ afterEach(() => {
 });
 
 const ctx = { requestContext: { authToken: TOKEN } } as never;
+
+describe("standalone E1 seed context", () => {
+  it("canonicalizes a bare owned candidate ID and inherits completed evaluation context", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      expect((init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`);
+      expect(url).not.toContain("evolution-loops");
+      return new Response(JSON.stringify(routeBody(url)), { headers: { "Content-Type": "application/json" } });
+    }));
+    const result = await resolveEvolutionSeedContext(TARGET_ID, { authToken: TOKEN });
+    expect(result).toMatchObject({ reference: `candidate:${TARGET_ID}`, config: frozenConfig });
+  });
+
+  it("blocks absent or unfinished evaluation context instead of inventing a window", async () => {
+    for (const status of ["queued", "failed"]) {
+      vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+        url.includes("backtest_runs") ? { ...routeBody(url), status } : routeBody(url),
+      ), { headers: { "Content-Type": "application/json" } })));
+      await expect(resolveEvolutionSeedContext(`candidate:${TARGET_ID}`, { authToken: TOKEN })).rejects.toThrow("EVOLUTION_SEED_CONTEXT_REQUIRED");
+    }
+  });
+
+  it("does not reinterpret unknown references or hide foreign-owner rejection", async () => {
+    expect(await resolveEvolutionSeedContext("sma_cross_v1", { authToken: TOKEN })).toBeNull();
+    await expect(resolveEvolutionSeedContext("invalid", { authToken: TOKEN })).rejects.toThrow("EVOLUTION_SEED_REFERENCE_INVALID");
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ detail: { code: "NOT_FOUND", message: "not found" } }), { status: 404 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(resolveEvolutionSeedContext(TARGET_ID, { authToken: TOKEN })).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("evolver.resolve_target", () => {
   it("reads loop detail without launching research or requesting model credentials", async () => {

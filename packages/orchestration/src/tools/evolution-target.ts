@@ -37,6 +37,7 @@ type EvolutionConfig = {
   leverage?: number;
   params?: Record<string, unknown>;
   funding_rate?: number;
+  validation_split?: number;
 };
 
 export type EvolutionTargetResolution = {
@@ -101,7 +102,7 @@ async function resolveTargetRecord(
     case "strategy_candidate": {
       const candidate = await paper.getCandidate(targetId);
       const backtest = await getCandidateBacktest(paper, candidate);
-      const config = backtest ? normalizeEvolutionConfig(backtest.config) : null;
+      const config = backtest?.status === "done" ? normalizeEvolutionConfig(backtest.config) : null;
       const blockers = candidate.status === "rejected"
         ? ["strategy_candidate_rejected"]
         : config
@@ -118,6 +119,7 @@ async function resolveTargetRecord(
         blockers,
         evidence: {
           candidate_id: candidate.id,
+          seed_label: candidate.description?.trim().split("\n")[0]?.slice(0, 120) || null,
           fitness: candidate.fitness,
           backtest_run_id: backtest?.run_id ?? null,
           backtest_metrics: backtest?.metrics ?? null,
@@ -262,6 +264,25 @@ async function resolveTargetRecord(
   }
 }
 
+/** Resolves candidate references before paid E1 preparation, without launching or preferring E2. */
+export async function resolveEvolutionSeedContext(reference: string, ctx?: ToolRequestContext): Promise<{
+  reference: string; config: EvolutionConfig; evidence: Record<string, unknown>;
+} | null> {
+  if (reference === "sma_cross_v1") return null;
+  const bareId = z.string().uuid().safeParse(reference);
+  const canonical = bareId.success ? `candidate:${bareId.data}` : reference;
+  const kind = canonical.startsWith("candidate:") ? "strategy_candidate"
+    : canonical.startsWith("evolution_candidate:") ? "e1_candidate" : null;
+  if (!kind) throw new Error("EVOLUTION_SEED_REFERENCE_INVALID: use an owned candidate reference or sma_cross_v1");
+  const id = canonical.slice(canonical.indexOf(":") + 1);
+  if (!z.string().uuid().safeParse(id).success) throw new Error("EVOLUTION_SEED_REFERENCE_INVALID: candidate reference is malformed");
+  const target = await resolveTargetRecord(kind, id, ctx);
+  if (target.next_action !== "start_e1" || !target.start_input?.seedStrategyId) {
+    throw new Error(`EVOLUTION_SEED_CONTEXT_REQUIRED: ${target.blockers.join(",") || "seed not ready"}; do not invent a window after a blocked resolver`);
+  }
+  return { reference: target.start_input.seedStrategyId, config: target.start_input.config, evidence: target.evidence };
+}
+
 export const evolverResolveTargetTool = createTool({
   id: "evolver.resolve_target",
   description: `
@@ -334,6 +355,7 @@ function normalizeEvolutionConfig(raw: Record<string, unknown>): EvolutionConfig
     as_of: asOf,
     initial_cash: finiteNumber(raw.initial_cash) ?? 10_000,
     fee_rate: finiteNumber(raw.fee_rate) ?? 0.001,
+    validation_split: finiteNumber(raw.validation_split) ?? 0.3,
     trading_mode: raw.trading_mode === "perp" ? "perp" : "spot",
     leverage: finiteNumber(raw.leverage) ?? 1,
     funding_rate: finiteNumber(raw.funding_rate) ?? 0,

@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { Link } from "@/i18n/navigation";
 import type { EvolutionCandidateDetailPayload } from "@/lib/types";
 import { jsonFetcher } from "@/lib/fetcher";
+import { candidateCost, evolutionUsd } from "@/lib/evolution-cost";
 import { CodeViewer } from "@/components/ui/CodeViewer";
 import { ErrorState, SkeletonBlock } from "@/components/ui/Feedback";
 import { LiveStrip } from "@/components/ui/LiveStrip";
@@ -21,6 +22,7 @@ export function EvolutionCandidateDetailClient({
 }) {
   const t = useTranslations("evolution.candidate");
   const w = useTranslations("evolution.workflow");
+  const c = useTranslations("evolution.costs");
   const { data, error, isLoading, isValidating, mutate } =
     useSWR<EvolutionCandidateDetailPayload>(
       `/api/evolution/candidates/${candidateId}`,
@@ -40,6 +42,7 @@ export function EvolutionCandidateDetailClient({
     return <ErrorState message={String(error)} onRetry={() => mutate()} />;
   if (!data) return null;
   const candidate = data.candidate;
+  const cost = candidateCost(candidate);
   return (
     <div className="flex flex-col gap-6">
       <Link
@@ -74,6 +77,11 @@ export function EvolutionCandidateDetailClient({
           isStaleFrame={Boolean(error)}
         />
       </header>
+      {candidate.parent_id && (
+        <Link href={`/evolution/candidates/${candidate.parent_id}`} className="text-sm text-cyan hover:underline">
+          {c("repairParentLink")}
+        </Link>
+      )}
       {(candidate.error_code || candidate.error_message) && (
         <Panel title={t("error")}>
           <div className="space-y-2 p-4 text-sm text-fox-red">
@@ -108,9 +116,8 @@ export function EvolutionCandidateDetailClient({
         <Stat
           label={t("cost")}
           value={
-            candidate.llm_cost_usd === null
-              ? w("unknown")
-              : `$${candidate.llm_cost_usd.toFixed(4)}`
+            cost.state === "known" ? (evolutionUsd(cost.confirmed) ?? c("unknownState"))
+              : c(cost.state === "notCalled" ? "notCalled" : "unknownState")
           }
         />
       </div>
@@ -122,6 +129,9 @@ export function EvolutionCandidateDetailClient({
           <p className="text-sm text-fg-muted">{w("auditHint")}</p>
           <p className="break-all font-mono text-xs">
             {w("recordId")}: {candidate.candidate_id}
+          </p>
+          <p className="font-mono text-xs text-fg-muted">
+            {c("inputTokens")}: {cost.state === "known" ? (candidate.input_tokens ?? "—") : "—"} · {c("outputTokens")}: {cost.state === "known" ? (candidate.output_tokens ?? "—") : "—"}
           </p>
           {candidate.unified_diff && (
             <Panel title={t("diff")}>

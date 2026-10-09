@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local owner-scoped experiment and hypothesis lineage; not deployed",
+  "commits": {
+    "backend": "5ff4280c",
+    "dashboard": "83aecdda"
+  },
+  "schema_head": "0065",
+  "checks": {
+    "dashboard_tests_passed": 173,
+    "dashboard_typecheck": "passed",
+    "dashboard_build": "passed",
+    "evolver_default_tests_passed": 244,
+    "evolver_database_tests_skipped": 61,
+    "existing_short_test_jwt_warnings": 3,
+    "dedicated_evolver_database_tests_passed": 26,
+    "dedicated_orchestration_database_tests_passed": 6,
+    "migration_tests_passed": 8,
+    "lineage_ruff": "passed",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "evidence": [
+    "Own experiment attempts, retries, loops and campaigns retain their recorded identities",
+    "Foreign-owner roots, source candidates, attempts and observation references are excluded",
+    "Event-only campaigns do not invent an E1 source",
+    "Champion, Forward and holdout associations must match the owning campaign and implementation",
+    "Holdout identity remains immutable; the database trigger is not bypassed",
+    "Adoption counts exclude other owners and never imply trading",
+    "Hypothesis parents resolve only within the current campaign and earlier generations",
+    "Human labels replace hashes as primary text; absent records remain explicit",
+    "Research conclusion precedes lineage and preparation costs in campaign details"
+  ],
+  "evidence_limits": [
+    "Database fixtures are synthetic local records, not real E2 market acceptance",
+    "SSR tests verify rendered labels and links, not browser interactions",
+    "Counts summarize their corresponding local checks; this receipt is not a production invoice"
+  ],
+  "temporary_database_removed": true,
+  "existing_databases_modified": false,
+  "production_services_modified": false,
+  "pending": [
+    "Rendered desktop/mobile workflows including ancestry navigation",
+    "Full branch review and CI",
+    "Coordinated production migration/deployment",
+    "Real owner approval, retry and recovery acceptance",
+    "Complete real E2 champion, Forward and one-time holdout evidence",
+    "Provider invoice reconciliation"
+  ]
+}

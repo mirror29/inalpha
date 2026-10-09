@@ -8,6 +8,7 @@ import { useSWRConfig } from "swr";
 
 import type { ActivityEvent, ActivityTone } from "@/lib/types";
 import { Link } from "@/i18n/navigation";
+import { approvalExecutionReceipt } from "@/lib/approval-execution";
 import { cn } from "@/lib/cn";
 import { fmtRelative, fmtTime } from "@/lib/format";
 import { KindTag } from "./KindTag";
@@ -132,6 +133,7 @@ function ApprovalActions({ requestId }: { requestId: string }) {
   const { mutate } = useSWRConfig();
   const [submitting, setSubmitting] = useState<"allow" | "deny" | null>(null);
   const [failed, setFailed] = useState(false);
+  const [submittedRunId, setSubmittedRunId] = useState<string | null>(null);
 
   const respond = async (decision: "allow" | "deny") => {
     setSubmitting(decision);
@@ -143,6 +145,11 @@ function ApprovalActions({ requestId }: { requestId: string }) {
         body: JSON.stringify({ decision }),
       });
       if (!response.ok) throw new Error(`approval failed (${response.status})`);
+      if (decision === "allow") {
+        const receipt = approvalExecutionReceipt(await response.json());
+        if (receipt.kind === "failed") throw new Error("approved task submission failed");
+        if (receipt.kind === "submitted") setSubmittedRunId(receipt.runId);
+      }
       await mutate("/api/activity");
     } catch {
       setFailed(true);
@@ -150,6 +157,8 @@ function ApprovalActions({ requestId }: { requestId: string }) {
       setSubmitting(null);
     }
   };
+
+  if (submittedRunId) return <Link href={`/evolution/${submittedRunId}`} className="text-xs text-bull underline">{t("viewTask")}</Link>;
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">

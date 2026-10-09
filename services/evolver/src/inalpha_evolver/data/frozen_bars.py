@@ -54,6 +54,7 @@ class FrozenBarsLoader:
             instrument_id=InstrumentId(symbol=symbol, venue=venue),
             context=context,
             as_of=cutoff,
+            requested_from=start,
         )
         first, latest = _bar_time(bars[0].bar_open_at), _bar_time(bars[-1].bar_open_at)
         manifest = DatasetManifest(

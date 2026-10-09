@@ -1,4 +1,4 @@
-import { withDisplayTarget } from "@/lib/evolution-display-target";
+import { withDisplayTarget, withLineageOrigin } from "@/lib/evolution-display-target";
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
@@ -27,6 +27,7 @@ export async function GET(
       `/api/v1/evolution-loops/${loopId}`,
       { timeoutMs: 5_000 },
     );
+    loop.lineage = await withLineageOrigin(loop.lineage);
     const payload: EvolutionLoopDetailPayload = {
       loop: await withDisplayTarget(loop),
       asOf: new Date().toISOString(),

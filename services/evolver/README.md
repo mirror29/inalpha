@@ -31,10 +31,11 @@ owner 授权的 LLM 生成 unified diff 或结构化假设，在受限加载器�
 
 ```text
 Dashboard / orchestration
-  → 冻结 LLM + pricing snapshot，取得逐次审批
+  → 冻结 LLM + pricing snapshot，POST /api/v1/runs/preflight 校验种子与完整窗口
+  → 将 preparation 源码/数据指纹绑定费用审批与签名摘要，取得逐次审批
   → 签发 owner/operation/config/digest 绑定的 Ed25519 credential grant
   → POST /api/v1/runs（Idempotency-Key + 两个审批/凭据 header）
-  → 冻结真实 bars + manifest/hash
+  → 冻结真实 bars + manifest/hash，复核批准的 preparation 指纹
   → 解析 seed，跑同数据 baseline
   → LLM 生成 unified diff
   → diff 应用 → AST/loader/contract 校验 → 子进程回测
@@ -65,6 +66,17 @@ E2 自动闭环：
 - 仓库已有恢复、预算、租约、五代和交接相关测试；真实运行与重启验证尚需记录证据。
   优先级统一见[当前状态文档](../../docs/04-current-state.md#未完成--下一步)。
 
+### 审批命令恢复（2026-10-09 本地实现，未部署）
+
+E1 的批准决定与冻结执行命令同事务保存。执行命令使用 AES-256-GCM 无损加密，
+认证绑定 owner、operation、session、tool 与原输入摘要；普通审批历史独立脱敏。
+恢复不重建参数、不延长授权，旧格式仍校验原摘要，不能猜测已脱敏丢失的参数。
+
+加密密钥通过独立 HKDF 域从 orchestration 的 `JWT_SECRET` 派生。重启必须保持该配置稳定；
+当前没有旧密钥读取能力，轮换会使旧密文无法恢复，应等待最长 24 小时批准恢复窗口结束。
+已提交的运行不受影响。隔离库恢复检查已通过，完整服务重启与正常 owner 验收尚未完成；
+证据见[本地恢复回执](../../docs/validation/evolution-approval-encryption-local-2026-10-09.json)。
+
 核心目录：
 
 | 目录 | 职责 |
@@ -91,8 +103,10 @@ E2 自动闭环：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| `POST` | `/api/v1/runs/preflight` | 准备 owner 的种子与完整行情窗口，返回 manifest、审批摘要和估算；不创建 run、不兑换模型凭据 |
 | `POST` | `/api/v1/runs` | 创建或幂等复用 run，返回 `202`；额外要求审批与幂等 header |
 | `GET` | `/api/v1/runs` | 分页列出当前 owner 的 run |
+| `GET` | `/api/v1/runs/{run_id}/retry-plan` | 读取本人失败/中止的独立 E1 原始重试方案；不创建任务 |
 | `GET` | `/api/v1/runs/{run_id}` | 查看 run、slot 与候选摘要 |
 | `GET` | `/api/v1/candidates/{candidate_id}` | 查看当前 owner 的候选代码、指标和审计结果 |
 | `POST` | `/api/v1/runs/{run_id}/abort` | 请求取消 queued/running run |
@@ -108,7 +122,26 @@ E2 自动闭环：
 | `POST` | `/api/v1/campaigns/{campaign_id}/adopt` | 手动采用通过门禁的实验性赢家 |
 | `GET` | `/api/v1/adoptions` | 列出当前 owner 的实验性采用记录 |
 
-编排层为 E1 暴露 `evolver.run_evolution`、`evolver.get_evolution`、
+本分支新增的 E1 准备契约（尚未生产验收）：先按正常用户 JWT 调用预检，将返回的
+`seed_source_hash` 与 `dataset_manifest.content_sha256` 作为请求的
+`preparation.seed_source_hash` / `preparation.dataset_content_sha256`。费用审批和 Ed25519
+请求摘要均覆盖这两个字段。缺少 preparation 时，付费 `/runs` 返回
+`EVOLUTION_PREPARATION_REQUIRED`；种子或执行前数据变化时返回/记录
+`EVOLUTION_PREPARATION_CHANGED`，需重新预检并审批，不继续调用模型。
+自建部署需同步升级 orchestration 与 Evolver；现有 E2 内部 baseline 请求摘要和历史运行
+保持兼容，此准备接口不授予 E2、采用或交易权限。预检会通过正常 Data API 准备真实行情，
+不是完全无副作用的查询，也不证明已有策略会盈利。
+
+显式失败重试（本分支实现，线上验收待完成）：详情页“修复后重试”会请求原始重试方案，
+保持原种子源码、评估窗口、策略参数、执行费用模型和候选数，再经过预检与新的费用审批。
+`evolver.run_evolution` 的 `retryOfRunId` 绑定父尝试并进入签名摘要，数据库迁移 0060 为每次
+尝试保存 `experiment_id`、`retry_of_run_id` 和 `attempt_number`。普通重复请求复用同一尝试，
+同一实验最多一个活跃尝试；各次失败记录与已有费用保留。历史缺少冻结源码的任务不能重试。
+E2 内部 baseline 走原工作流恢复，不支持通过这个入口重试，也不会重复消费 holdout。
+新的模型快照仍由当前 owner 选择并单独审批；重试不会继承旧 credential grant。
+迁移 0060 在已有重试血缘时拒绝降级，避免丢失审计关系。
+
+编排层为 E1 暴露 `evolver.get_retry_plan`、`evolver.run_evolution`、`evolver.get_evolution`、
 `evolver.get_candidate`、`evolver.abort_evolution`，并为 E2 暴露 `evolver.resolve_target`、
 `evolver.run_event_campaign` 与 `evolver.get_event_campaign`。
 

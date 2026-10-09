@@ -46,7 +46,7 @@ def test_0059_preserves_wallets_and_immutable_receipts(migration_db_url: str) ->
         wallet = conn.execute(
             "SELECT * FROM strategy_run_wallets WHERE run_id=%s", (run,)
         ).fetchone()
-    alembic(migration_db_url, "upgrade", "head")
+    alembic(migration_db_url, "upgrade", "0059")
     with psycopg.connect(db_url(migration_db_url)) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
             "0059",
@@ -70,7 +70,7 @@ def test_0059_preserves_wallets_and_immutable_receipts(migration_db_url: str) ->
         )
     # Empty diagnostic defaults can roll back without touching deployed wallets.
     alembic(migration_db_url, "downgrade", "0058")
-    alembic(migration_db_url, "upgrade", "head")
+    alembic(migration_db_url, "upgrade", "0059")
     with psycopg.connect(db_url(migration_db_url)) as conn:
         with pytest.raises(psycopg.errors.CheckViolation), conn.transaction():
             conn.execute(

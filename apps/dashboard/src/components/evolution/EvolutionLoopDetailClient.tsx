@@ -1,5 +1,9 @@
 "use client";
 
+import { EvolutionLineage } from "./EvolutionLineage";
+
+import { EvolutionChatCosts } from "./EvolutionChatCosts";
+
 import { useTranslations } from "next-intl";
 import useSWR from "swr";
 
@@ -95,6 +99,7 @@ export function EvolutionLoopDetailClient({ loopId }: { loopId: string }) {
           {t(`guidance.${loop.status}`)}
         </p>
       </Panel>
+      <EvolutionLineage lineage={loop.lineage} />
       <Panel title={t("costTitle")}>
         {loop.budget_usage ? (
           <dl className="grid gap-4 p-4 text-sm sm:grid-cols-2">
@@ -121,6 +126,7 @@ export function EvolutionLoopDetailClient({ loopId }: { loopId: string }) {
           {t("costExplanation")}
         </p>
       </Panel>
+      <EvolutionChatCosts costs={loop.chat_preparation_costs} />
       <Panel title={w("evidence")}>
         {loop.display_target?.description && (
           <p className="p-4 text-sm leading-6 text-fg-muted [overflow-wrap:anywhere]">

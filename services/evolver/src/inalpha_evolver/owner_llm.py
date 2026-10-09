@@ -93,10 +93,9 @@ async def build_owner_mutator(
         LLM_MAX_TOKENS=int(pricing["max_output_tokens"]),
     )
     llm_client = LLMClient(settings=llm_settings)
-    if loop_scope is not None:
-        sdk = await llm_client._ensure_client()
-        # One reservation covers one network attempt, not invisible SDK retries.
-        sdk.max_retries = 0
+    sdk = await llm_client._ensure_client()
+    # Each approved candidate slot covers one network attempt, without hidden SDK retries.
+    sdk.max_retries = 0
     return Mutator(
         llm_client=(BudgetedLoopClient(llm_client, loop_scope, pricing)
                     if loop_scope is not None else llm_client),

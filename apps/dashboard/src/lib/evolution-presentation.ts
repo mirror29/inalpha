@@ -1,3 +1,5 @@
+import { isEvolutionActive } from "./evolution";
+import { loopStage } from "./evolution-loop";
 import type {
   EvolutionCampaign,
   EvolutionLoop,
@@ -50,4 +52,26 @@ export function independentExperiments(
 /** Use the strategy's own first sentence as its title; keep its full description in evidence. */
 export function strategyTitle(description?: string): string {
   return description?.trim().split(/[。\n]/, 1)[0] ?? "";
+}
+
+/** Count loaded experiments once; E1 completion never implies readiness for adoption. */
+export function evolutionOverview(
+  loops: EvolutionLoop[],
+  campaigns: EvolutionCampaign[],
+  runs: EvolutionRunSummary[],
+) {
+  const independent = independentExperiments(loops, campaigns, runs);
+  return {
+    independent,
+    loadedTasks: loops.length + independent.campaigns.length + independent.runs.length,
+    researching: loops.filter((loop) => {
+      const stage = loopStage(loop.status);
+      return stage !== null && stage !== 2 && stage !== 4;
+    }).length + independent.runs.filter((run) => isEvolutionActive(run.status)).length
+      + independent.campaigns.filter((campaign) => ["draft", "replaying"].includes(campaign.status)).length,
+    observing: loops.filter((loop) => ["candidate_locked", "waiting_forward"].includes(loop.status)).length
+      + independent.campaigns.filter((campaign) => ["candidate_locked", "waiting_forward"].includes(campaign.status)).length,
+    ready: loops.filter((loop) => loop.status === "adoption_ready").length
+      + independent.campaigns.filter((campaign) => campaign.status === "graduated").length,
+  };
 }

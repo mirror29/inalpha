@@ -11,6 +11,7 @@ import { withHooks } from "../hooks/with-hooks.js";
 import { PermissionEngine } from "../permissions/engine.js";
 import type { PendingApprovalsStore } from "../permissions/pending.js";
 import type { Decision } from "../permissions/types.js";
+import { evolutionApprovalPreflight } from "../tools/evolution-preflight.js";
 import { loadDefaultPermissions } from "../permissions/yaml_loader.js";
 
 /** 通用 tool wiring 的可注入依赖。 */
@@ -60,6 +61,7 @@ export function wireToolList(
     withHooks(tool as WiredTool, {
       runner,
       permissionResolver: resolver,
+      approvalPreflight: evolutionApprovalPreflight,
       pendingApprovals: options.pendingApprovals,
       askTimeoutMs: options.askTimeoutMs,
     }),

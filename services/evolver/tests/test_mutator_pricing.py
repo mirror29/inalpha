@@ -10,7 +10,7 @@ from inalpha_shared_llm.types import CacheMetrics, MutationResponse
 
 from inalpha_evolver.exceptions import DiffApplyError, LLMError
 from inalpha_evolver.mutator import Mutator
-from inalpha_evolver.runtime.slots import persist_mutation
+from inalpha_evolver.runtime.slots import persist_mutation, reject_slot
 
 _SOURCE = """class Strategy:\n    value = 1\n"""
 _DIFF = """--- a/strategy.py
@@ -231,3 +231,88 @@ async def test_rejected_or_duplicate_mutation_still_persists_usage(
     assert captured["llm_cost_usd"] == pytest.approx(0.004)
     assert captured["input_tokens"] == 1_000
     assert captured["output_tokens"] == 200
+
+
+class _ResponseClient(_PricedClient):
+    def __init__(self, content: str, finish_reason: str | None = None) -> None:
+        super().__init__()
+        self.content = content
+        self.finish_reason = finish_reason
+
+    async def mutate(self, request):
+        self.calls += 1
+        return MutationResponse(
+            content=self.content,
+            finish_reason=self.finish_reason,
+            cache_metrics=CacheMetrics(input_tokens=1_000, output_tokens=200),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "finish_reason", "code"),
+    [
+        (_DIFF, "length", "MUTATION_OUTPUT_TRUNCATED"),
+        ("", "stop", "MUTATION_DIFF_INVALID"),
+        ("No improvement needed", "stop", "MUTATION_DIFF_INVALID"),
+        (_DIFF.replace("value = 1", "value = 99"), "stop", "MUTATION_CONTEXT_MISMATCH"),
+    ],
+)
+async def test_rejected_output_retains_artifact_and_cost(content, finish_reason, code):
+    client = _ResponseClient(content, finish_reason)
+    with pytest.raises(DiffApplyError) as error:
+        await Mutator(
+            llm_client=client,
+            input_usd_per_million=2.0,
+            output_usd_per_million=10.0,
+        ).mutate(_SOURCE)
+    assert error.value.code == code
+    assert error.value.failed_diff == content
+    assert error.value.llm_cost_usd == pytest.approx(0.004)
+    assert client.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_header_only_response_is_no_change():
+    result = await Mutator(
+        llm_client=_ResponseClient("--- a/strategy.py\n+++ b/strategy.py", "stop")
+    ).mutate(_SOURCE)
+    assert result.unified_diff is None
+    assert result.new_source == _SOURCE
+
+
+@pytest.mark.asyncio
+async def test_diff_failure_persists_raw_artifact_and_usage(monkeypatch):
+    captured = {}
+
+    async def update_slot(*args, **values):
+        captured.update(values)
+        return values
+
+    monkeypatch.setattr("inalpha_evolver.runtime.slots.get_conn", _ConnectionContext)
+    monkeypatch.setattr("inalpha_evolver.runtime.slots.candidates.update_slot", update_slot)
+    error = DiffApplyError(
+        "truncated",
+        failed_diff="partial raw output",
+        code="MUTATION_OUTPUT_TRUNCATED",
+        llm_cost_usd=0.004,
+        cache_hit_tokens=0,
+        input_tokens=1_000,
+        output_tokens=200,
+    )
+    await reject_slot(uuid4(), 0, "diff_failed", error, usage=error)
+    assert captured["unified_diff"] == "partial raw output"
+    assert captured["error_code"] == "MUTATION_OUTPUT_TRUNCATED"
+    assert captured["llm_cost_usd"] == 0.004
+    assert captured["output_tokens"] == 200
+
+
+@pytest.mark.asyncio
+async def test_missing_usage_is_not_recorded_as_free_mutation():
+    class MissingUsageClient:
+        async def mutate(self, request):
+            return MutationResponse(content=_DIFF, usage_known=False)
+
+    result = await Mutator(llm_client=MissingUsageClient()).mutate(_SOURCE)
+    assert result.llm_cost_usd is None
+    assert result.usage_known is False

@@ -50,9 +50,7 @@ describe("historical approval availability", () => {
     params: Promise.resolve({ id: "request-1" }),
   });
   it("returns only the live deadline without tool inputs", async () => {
-    mockedBackendFetch.mockResolvedValue({ pending: [
-      { requestId: "request-1", deadline: "2026-10-09T12:00:00Z", toolInput: "private" },
-    ] });
+    mockedBackendFetch.mockResolvedValue({ status: "pending", deadline: "2026-10-09T12:00:00Z", toolInput: "private" });
     const response = await read();
     expect(await response.json()).toEqual({ status: "pending", deadline: "2026-10-09T12:00:00Z", remainingMs: expect.any(Number) });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -60,16 +58,14 @@ describe("historical approval availability", () => {
   it("computes the remaining window on the server clock", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-09T11:55:00Z"));
     try {
-      mockedBackendFetch.mockResolvedValue({ pending: [
-        { requestId: "request-1", deadline: "2026-10-09T12:00:00Z" },
-      ] });
+      mockedBackendFetch.mockResolvedValue({ status: "pending", deadline: "2026-10-09T12:00:00Z" });
       expect((await (await read()).json()).remainingMs).toBe(300_000);
     } finally { clock.mockRestore(); }
   });
   it("marks expired or absent requests unavailable without replaying them", async () => {
-    mockedBackendFetch.mockResolvedValue({ pending: [] });
+    mockedBackendFetch.mockResolvedValue({ status: "unavailable" });
     expect(await (await read()).json()).toEqual({ status: "unavailable" });
-    expect(mockedBackendFetch).toHaveBeenCalledWith("mastra", "/permissions/pending", { timeoutMs: 5_000 });
+    expect(mockedBackendFetch).toHaveBeenCalledWith("mastra", "/permissions/request-1/status", { timeoutMs: 5_000 });
   });
   it("does not misreport backend failure as expiry", async () => {
     mockedBackendFetch.mockRejectedValue(new Error("private failure"));
@@ -78,7 +74,7 @@ describe("historical approval availability", () => {
     expect(await response.json()).toEqual({ error: "approval_status_unavailable" });
   });
   it("reports malformed deadlines as retryable status failures", async () => {
-    mockedBackendFetch.mockResolvedValue({ pending: [{ requestId: "request-1", deadline: "invalid" }] });
+    mockedBackendFetch.mockResolvedValue({ status: "pending", deadline: "invalid" });
     const response = await read();
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "approval_status_unavailable" });
@@ -87,4 +83,12 @@ describe("historical approval availability", () => {
     mockedBackendFetch.mockRejectedValue({ status: 404 });
     expect((await callRoute(JSON.stringify({ decision: "allow" }))).status).toBe(404);
   });
+});
+
+
+it("exposes approved recovery without replaying or leaking the frozen input", async () => {
+  mockedBackendFetch.mockResolvedValue({ status: "approved", toolInput: "private", authSub: "private" });
+  const response = await GET(new NextRequest("http://dashboard.test/api/permissions/request-1/respond"), { params: Promise.resolve({ id: "request-1" }) });
+  expect(await response.json()).toEqual({ status: "approved" });
+  expect(mockedBackendFetch).toHaveBeenCalledTimes(1);
 });

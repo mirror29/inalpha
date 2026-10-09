@@ -84,7 +84,13 @@ class LLMClient:
         # 合并 choices 文本
         content = completion.choices[0].message.content or ""
 
-        return MutationResponse(content=content, cache_metrics=cache_metrics)
+        finish_reason = getattr(completion.choices[0], "finish_reason", None)
+        return MutationResponse(
+            content=content,
+            cache_metrics=cache_metrics,
+            finish_reason=finish_reason if isinstance(finish_reason, str) else None,
+            usage_known=usage is not None,
+        )
 
     async def close(self) -> None:
         """关闭底层 HTTP client。"""

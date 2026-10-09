@@ -1,6 +1,7 @@
 import { backendFetch } from "./backend";
 import type {
   EvolutionLoop,
+  EvolutionLineage,
   StrategyCandidateRecord,
   StrategyRunRecord,
 } from "./types";
@@ -92,4 +93,26 @@ export async function withDisplayTargets(
     );
   }
   return result;
+}
+
+/** Enriches only a verified source reference; a missing source does not hide lineage. */
+export async function withLineageOrigin(
+  lineage: EvolutionLineage | null | undefined,
+): Promise<EvolutionLineage | null> {
+  if (!lineage) return null;
+  const reference = lineage.source_reference ?? "";
+  const [prefix, id, extra] = reference.split(":");
+  if (
+    extra !== undefined ||
+    !UUID.test(id ?? "") ||
+    !["candidate", "evolution_candidate"].includes(prefix)
+  ) {
+    return { ...lineage, display_origin: null };
+  }
+  const target = await withDisplayTarget({
+    owner_account_id: lineage.owner_account_id,
+    target_kind: prefix === "candidate" ? "strategy_candidate" : "e1_candidate",
+    target_id: id,
+  } as EvolutionLoop);
+  return { ...lineage, display_origin: target.display_target ?? null };
 }

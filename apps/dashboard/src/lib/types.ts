@@ -602,6 +602,10 @@ export interface EvolutionLLMSnapshot {
 }
 
 export interface EvolutionCandidateSummary {
+  parent_id?: string | null;
+  usage_status?: "not_called" | "known" | "unknown" | "legacy_unknown";
+  input_tokens?: number | null;
+  output_tokens?: number | null;
   candidate_id: string;
   run_id: string;
   slot: number;
@@ -624,8 +628,39 @@ export interface EvolutionCandidateSummary {
   updated_at: string | null;
 }
 
+export interface EvolutionLineage {
+  owner_account_id: string;
+  source_reference: string | null;
+  experiment_id: string | null;
+  current_run_id: string | null;
+  display_origin?: { description: string; href: string } | null;
+  attempts: { run_id: string; attempt_number: number; retry_of_run_id: string | null; status: string }[];
+  loops: { loop_id: string; status: string; e1_run_id: string | null; campaign_id: string | null }[];
+  campaigns: {
+    campaign_id: string; source_run_id: string | null; status: string;
+    locked_candidate_id: string | null;
+    forward_sandbox_id: string | null; forward_status: string | null; forward_event_count: number | null;
+    holdout_attempt_id: string | null; holdout_status: string | null; holdout_passed: boolean | null;
+    adoption_count: number;
+  }[];
+}
+
 export interface EvolutionRunSummary {
+  lineage?: EvolutionLineage | null;
+  chat_preparation_costs?: {
+    linked: boolean;
+    call_count?: number | null;
+    known_cost_usd?: number | null;
+    unknown_cost_count?: number | null;
+    shared_approval_count?: number | null;
+  } | null;
+  known_cost_usd?: number;
+  unknown_usage_count?: number;
   run_id: string;
+  experiment_id?: string | null;
+  retry_of_run_id?: string | null;
+  attempt_number?: number;
+  retry_allowed?: boolean;
   seed_strategy_id: string;
   budget: number;
   config: Record<string, unknown>;
@@ -734,6 +769,8 @@ export interface EvolutionImplementationPage {
 }
 
 export interface EvolutionCampaign {
+  lineage?: EvolutionLineage | null;
+  chat_preparation_costs?: EvolutionRunSummary["chat_preparation_costs"];
   campaign_id: string;
   status: EvolutionCampaignStatus;
   active_generation: number;
@@ -782,6 +819,8 @@ export type EvolutionLoopStatus =
   | "failed";
 
 export interface EvolutionLoop {
+  lineage?: EvolutionLineage | null;
+  chat_preparation_costs?: EvolutionRunSummary["chat_preparation_costs"];
   loop_id: string;
   owner_account_id: string;
   operation_id: string;

@@ -142,16 +142,21 @@ export const evolverRunEvolutionTool = createTool({
 启动一次真实数据驱动的单代策略演化。每个候选经过源码审计、契约校验和同一冻结数据集回测；调用会产生 LLM 与计算成本，必须获得用户确认。
 何时用：用户明确要求变异、优化或探索已存在策略的新方向。
 何时不用：只需一次回测时用 paper.run_backtest；种子未验证或用户未授权额外成本时不要调用。
-坑：返回 queued run_id 后用 evolver.get_evolution 轮询；freshness 不足会 fail closed；不会自动 promote、注册或启动候选。
+坑：系统先解析本人种子和完整行情窗口再展示费用审批；候选缺少已完成的评估上下文时禁止手工拼窗绕过。批准后系统直接提交冻结任务，页面读取持久化进度，无需聊天轮询；不会自动 promote、注册或启动候选。
   `.trim(),
   inputSchema: z.object({
     budget: z.number().int().min(1).max(20).default(4),
     seedStrategyId: z.string().min(1).max(128).default("sma_cross_v1"),
-    config: evolutionConfigSchema,
+    retryOfRunId: z.string().uuid().optional().describe("显式重试已失败或中止的 E1；先取 retry plan，保持原种子/窗口/参数/候选数"),
+    config: evolutionConfigSchema.optional().describe("候选可省略，系统从本人已完成回测或父 E1 继承；内置种子/显式重试需完整冻结配置"),
+    preparation: z.object({
+      seed_source_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      dataset_content_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    }).optional().describe("系统预检填充，不由模型生成"),
   }),
   execute: async (inputData, ctx) => {
     const approved = await getApprovedEvolutionRunContext(
-      inputData,
+      { ...inputData, config: evolutionConfigSchema.parse(inputData.config) },
       ctx?.requestContext as ToolRequestContext | undefined,
     );
     return await approved.client.startRun({
@@ -160,6 +165,14 @@ export const evolverRunEvolutionTool = createTool({
       credentialGrant: approved.credentialGrant,
     });
   },
+});
+
+export const evolverGetRetryPlanTool = createTool({
+  id: "evolver.get_retry_plan",
+  description: "读取本人失败或中止 E1 的原始重试参数；修复数据后要重试时用。无需模型费用审批，不用它重试 E2 内部阶段。坑：不得改 as_of 或参数，提交新尝试仍须正常费用审批。",
+  inputSchema: z.object({ runId: z.string().uuid() }),
+  execute: async (inputData, ctx) =>
+    await (await getEvolverClient(ctx?.requestContext as ToolRequestContext | undefined)).getRetryPlan(inputData.runId),
 });
 
 export const evolverGetEvolutionTool = createTool({
@@ -195,6 +208,7 @@ export const evolverTools = [
   evolverRunEventCampaignTool,
   evolverGetEventCampaignTool,
   evolverRunEvolutionTool,
+  evolverGetRetryPlanTool,
   evolverGetEvolutionTool,
   evolverGetCandidateTool,
   evolverAbortEvolutionTool,

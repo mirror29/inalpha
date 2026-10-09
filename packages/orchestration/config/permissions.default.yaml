@@ -41,6 +41,7 @@ allow:
   - "scheduler.set_enabled"
   - "scheduler.trigger_job"
   # 演化状态与候选详情只读
+  - "evolver.get_retry_plan"
   - "evolver.get_evolution"
   - "evolver.get_candidate"
   # 事件 campaign 查询只读；启动 campaign 会产生 LLM 费用，必须先显式审批

@@ -10,12 +10,12 @@
  *
  * 何时用：仅 `PendingApprovalsStore`（写）与 permissions HTTP API（读 history）。
  *
- * 何时不用：普通 ask 审批的决策仍走内存；只有会产生成本的演化操作
+ * 何时不用：普通 ask 审批的决策仍走内存；E1 UI 批准使用原子事务，其他演化操作
  * 额外使用本层恢复稳定 operation ID。单测用 setPool() 注 mock。
  *
  * 坑：
  *
- * - 审计写入仍 fail-open；演化 operation ledger 的 DB 错误会向上抛出，由
+ * - 普通审计写入仍 fail-open；E1 批准事务与演化 operation ledger 的 DB 错误会向上抛出，由
  *   pending.ts fail-closed，避免重启/超时后丢失幂等边界。
  * - DATABASE_URL 未配置时本层整体降级为 no-op（dev 无 PG 也能跑）
  */
@@ -23,8 +23,10 @@ import { Pool, type PoolConfig } from "pg";
 
 import { getSettings } from "../config.js";
 import { maskSensitive } from "../redact.js";
+import { openExecution, sealExecution } from "./execution-envelope.js";
 import type {
   EvolutionOperationScope,
+  ApprovedExecutionCommand,
   PendingApprovalView,
   PendingDecision,
 } from "./pending.js";
@@ -141,7 +143,7 @@ export async function markResolved(
 
 /** Persist one approved evolution identity before the costful tool is allowed to execute. */
 export async function rememberEvolutionOperation(
-  args: EvolutionOperationScope & { operationId: string; retentionMs?: number },
+  args: EvolutionOperationScope & { operationId: string; retentionMs?: number; execution?: ApprovedExecutionCommand },
 ): Promise<{ expiresAt: string } | undefined> {
   const pool = getPoolOrNull();
   if (!pool) return undefined;
@@ -151,12 +153,13 @@ export async function rememberEvolutionOperation(
   const expiresAt = new Date(Date.now() + retentionMs);
   const result = await pool.query(
     `INSERT INTO evolution_approval_operations
-       (operation_id,auth_sub,session_id,tool_name,input_digest,approved_at,expires_at)
-     VALUES ($1,$2,$3,$4,$5,NOW(),$6)
+       (operation_id,auth_sub,session_id,tool_name,input_digest,approved_at,expires_at,execution_input)
+     VALUES ($1,$2,$3,$4,$5,NOW(),$6,$7)
      ON CONFLICT (auth_sub,session_id,tool_name,input_digest) DO UPDATE SET
        operation_id=EXCLUDED.operation_id,
        approved_at=EXCLUDED.approved_at,
-       expires_at=EXCLUDED.expires_at
+       expires_at=EXCLUDED.expires_at,
+       execution_input=EXCLUDED.execution_input
      RETURNING expires_at`,
     [
       args.operationId,
@@ -165,6 +168,7 @@ export async function rememberEvolutionOperation(
       args.toolName,
       args.inputDigest,
       expiresAt,
+      args.execution ? JSON.stringify(sealExecution(args.execution, { authSub: args.authSub, operationId: args.operationId, sessionId: args.sessionId, toolName: args.toolName, inputDigest: args.inputDigest })) : null,
     ],
   );
   const row = result.rows[0];
@@ -187,6 +191,75 @@ export async function findEvolutionOperation(
   return row
     ? { operationId: String(row.operation_id), expiresAt: toIso(row.expires_at) }
     : undefined;
+}
+
+/** Commits consent and the non-secret E1 command together; failure grants no execution. */
+export async function approveEvolutionExecution(args: {
+  authSub: string;
+  command: ApprovedExecutionCommand;
+  retentionMs: number;
+}): Promise<{ expiresAt: string } | undefined> {
+  const pool = getPoolOrNull();
+  if (!pool) return undefined;
+  const { view } = args.command;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = '5s'; SET LOCAL lock_timeout = '2s'");
+    await client.query(
+      `INSERT INTO pending_approvals(request_id,tool_name,tool_input,session_id,auth_sub,status,created_at,deadline)
+       VALUES($1,$2,$3,$4,$5,'pending',$6,$7) ON CONFLICT(request_id) DO NOTHING`,
+      [view.requestId, view.toolName, JSON.stringify(maskSensitive(view.toolInput)), view.sessionId, args.authSub, view.createdAt, view.deadline],
+    );
+    const decision = await client.query(
+      `UPDATE pending_approvals SET status='allowed',via='user',resolved_at=NOW()
+       WHERE request_id=$1 AND auth_sub=$2 AND status='pending' AND deadline>clock_timestamp()
+       RETURNING request_id`, [view.requestId, args.authSub],
+    );
+    if (decision.rowCount !== 1) throw new Error("approval no longer pending");
+    const result = await client.query(
+      `INSERT INTO evolution_approval_operations(operation_id,auth_sub,session_id,tool_name,input_digest,approved_at,expires_at,execution_input)
+       VALUES($1,$2,$3,$4,$5,NOW(),NOW()+($6::bigint*INTERVAL '1 millisecond'),$7)
+       ON CONFLICT(auth_sub,session_id,tool_name,input_digest) DO UPDATE SET
+         operation_id=EXCLUDED.operation_id,approved_at=EXCLUDED.approved_at,
+         expires_at=EXCLUDED.expires_at,execution_input=EXCLUDED.execution_input
+       WHERE evolution_approval_operations.expires_at<=NOW()
+       RETURNING expires_at`,
+      [view.requestId, args.authSub, view.sessionId, view.toolName, view.inputDigest, args.retentionMs, JSON.stringify(sealExecution(args.command, { authSub: args.authSub, operationId: view.requestId, sessionId: view.sessionId, toolName: view.toolName, inputDigest: view.inputDigest }))],
+    );
+    if (result.rowCount !== 1) throw new Error("approved operation already exists");
+    if (view.chatInvocationId) {
+      const provenance = await client.query(
+        `INSERT INTO chat_evolution_operations(auth_sub,operation_id,invocation_id,tool_name)
+         SELECT $1,$2,$3,$4 WHERE EXISTS (
+           SELECT 1 FROM chat_usage_receipts WHERE auth_sub=$1 AND invocation_id=$3 AND call_source='chat'
+         ) ON CONFLICT(auth_sub,operation_id) DO NOTHING RETURNING operation_id`,
+        [args.authSub, view.requestId, view.chatInvocationId, view.toolName],
+      );
+      if (provenance.rowCount !== 1) throw new Error("trusted chat provenance unavailable");
+    }
+    await client.query("COMMIT");
+    return { expiresAt: toIso(result.rows[0].expires_at) };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Loads only an unexpired E1 command previously consumed by this verified owner. */
+export async function findApprovedExecution(operationId: string, authSub: string): Promise<ApprovedExecutionCommand | undefined> {
+  const pool = getPoolOrNull();
+  if (!pool) return undefined;
+  const result = await pool.query(
+    `SELECT execution_input,session_id,tool_name,input_digest FROM evolution_approval_operations
+     WHERE operation_id=$1 AND auth_sub=$2 AND tool_name='evolver.run_evolution'
+       AND expires_at>NOW() AND execution_input IS NOT NULL`, [operationId, authSub],
+  );
+  const row = result.rows[0];
+  return row ? openExecution(row.execution_input, { authSub, operationId, sessionId: row.session_id,
+    toolName: row.tool_name, inputDigest: row.input_digest }) : undefined;
 }
 
 /** Atomically consume one unexpired recovery entitlement. */

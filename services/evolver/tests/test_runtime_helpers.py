@@ -33,3 +33,18 @@ def test_parse_config_restores_datetime() -> None:
     assert parsed["from_ts"] == datetime(2026, 8, 1, tzinfo=UTC)
     assert parsed["as_of"] == datetime(2026, 8, 13, tzinfo=UTC)
     assert parsed["venue"] == "binance"
+
+
+def test_run_response_retains_failure_cost_and_marks_unconfirmed_usage():
+    from inalpha_evolver.api.presenters import run_response
+
+    row = {
+        "run_id": uuid4(), "seed_strategy_id": "seed", "budget": 4, "config": {},
+        "status": "failed", "queued_at": datetime.now(UTC), "llm_cost_usd": 0,
+    }
+    response = run_response(row, summary={
+        "recorded_cost_usd": 0.0123, "known_cost_usd": 0, "unknown_usage_count": 1,
+    })
+    assert response.llm_cost_usd == 0.0123
+    assert response.known_cost_usd == 0
+    assert response.unknown_usage_count == 1

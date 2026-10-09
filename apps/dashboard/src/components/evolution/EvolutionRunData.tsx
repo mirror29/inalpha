@@ -39,7 +39,6 @@ export function EvolutionRunData({ run }: { run: EvolutionRun }) {
           />
           <Item label={t("succeeded")} value={String(run.succeeded)} />
           <Item label={t("rejected")} value={String(run.rejected)} />
-          <Item label={t("cost")} value={`$${run.llm_cost_usd.toFixed(4)}`} />
         </dl>
         {run.failure_message && (
           <p className="border-t border-border-subtle px-4 py-3 text-sm text-fox-red">
@@ -87,24 +86,24 @@ export function EvolutionRunData({ run }: { run: EvolutionRun }) {
               ]}
             />
           </Panel>
+          <Panel title={t("seedReport")}>
+            <ObjectRows
+              value={reportMetrics(run.seed_report_snapshot)}
+              empty={t("notAvailable")}
+              preferred={Object.keys(labels)}
+              labels={labels}
+            />
+          </Panel>
+          <Panel title={t("baseline")}>
+            <ObjectRows
+              value={reportMetrics(run.baseline_snapshot)}
+              empty={t("notAvailable")}
+              preferred={Object.keys(labels)}
+              labels={labels}
+            />
+          </Panel>
         </div>
       </details>
-      <Panel title={t("seedReport")}>
-        <ObjectRows
-          value={reportMetrics(run.seed_report_snapshot)}
-          empty={t("notAvailable")}
-          preferred={Object.keys(labels)}
-          labels={labels}
-        />
-      </Panel>
-      <Panel title={t("baseline")}>
-        <ObjectRows
-          value={reportMetrics(run.baseline_snapshot)}
-          empty={t("notAvailable")}
-          preferred={Object.keys(labels)}
-          labels={labels}
-        />
-      </Panel>
     </div>
   );
 }

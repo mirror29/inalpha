@@ -37,6 +37,7 @@ async def persist_mutation(
                 stage="completed",
                 outcome="duplicate",
                 unified_diff=mutation.unified_diff,
+                usage_status="known" if getattr(mutation, "usage_known", False) else "unknown",
                 llm_cost_usd=mutation.llm_cost_usd,
                 cache_hit_tokens=mutation.cache_hit_tokens,
                 input_tokens=mutation.input_tokens,
@@ -51,6 +52,7 @@ async def persist_mutation(
             source_code=audited_source,
             source_hash=mutation.source_hash,
             unified_diff=mutation.unified_diff,
+            usage_status="known" if getattr(mutation, "usage_known", False) else "unknown",
             llm_cost_usd=mutation.llm_cost_usd,
             cache_hit_tokens=mutation.cache_hit_tokens,
             input_tokens=mutation.input_tokens,
@@ -110,8 +112,12 @@ async def reject_slot(
         "error_code": getattr(error, "code", None),
         "error_message": str(error)[:1000] if error else None,
     }
+    if hasattr(error, "request_sent"):
+        values.update(usage_status="unknown" if error.request_sent else "not_called", llm_cost_usd=None)
     if usage is not None:
         values.update(
+            usage_status="known" if getattr(usage, "usage_known", False) else "unknown",
+            unified_diff=getattr(usage, "failed_diff", getattr(usage, "unified_diff", None)),
             llm_cost_usd=usage.llm_cost_usd,
             cache_hit_tokens=usage.cache_hit_tokens,
             input_tokens=usage.input_tokens,

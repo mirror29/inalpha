@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local real Agent processor and dedicated PostgreSQL tests; not deployed",
+  "commit": "a707f378",
+  "schema_head": "0064",
+  "checks": {
+    "orchestration_tests_passed": 601,
+    "database_tests_skipped_in_default_suite": 5,
+    "typecheck": "passed",
+    "dedicated_evolver_database_tests_passed": 18,
+    "dedicated_orchestration_database_tests_passed": 5,
+    "migration_tests_passed": 7,
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "evidence": [
+    "One unknown receipt persists before each paid model call",
+    "Actual pinned Agent state persists across steps and resets between requests",
+    "Step receipts are not counted again from aggregate output usage",
+    "Failed model calls retain unknown cost and are not automatically retried",
+    "Failed initial persistence prevents model access",
+    "Failed settlement preserves reply and previously persisted unknown receipt",
+    "Actual model configuration determines frozen estimate; client pricing is ignored",
+    "Verified background service calls are separately classified",
+    "Owner and invocation constrain once-only settlement",
+    "Audit-bearing migration downgrade is blocked"
+  ],
+  "temporary_database_removed": true,
+  "existing_databases_modified": false,
+  "pending": [
+    "Trusted approval and experiment association",
+    "Owner-scoped totals and full lineage UI",
+    "Production migration and coordinated deployment",
+    "Real owner chat and cost reconciliation"
+  ]
+}
