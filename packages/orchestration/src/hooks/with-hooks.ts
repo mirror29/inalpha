@@ -145,6 +145,8 @@ export type WithHooksOptions = {
   pendingApprovals?: PendingApprovalsStore;
   /** ask 路径 store 超时毫秒数；缺省 30_000（30 秒）。0 / 负数视作默认。 */
   askTimeoutMs?: number;
+  /** Validate preparation after identity checks and before creating or consuming approval. */
+  approvalPreflight?: (toolName: string, input: unknown, ctx: unknown) => Promise<unknown>;
 };
 
 /**
@@ -230,6 +232,18 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
             };
           }
 
+          let preparation: unknown;
+          try {
+            preparation = await opts.approvalPreflight?.(toolName, effectiveInput, ctx);
+          } catch (error) {
+            return {
+              isError: true,
+              deniedBy: "preflight",
+              toolName,
+              message: formatToolError(error).message,
+            };
+          }
+
           const operationId = await store.consumeApproved({
             authSub,
             sessionId,
@@ -265,6 +279,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
               requestId: pending.requestId,
               toolName,
               toolInput: approvalViewInput,
+              preparation,
               message:
                 `APPROVAL_REQUIRED: tool "${toolName}" needs an explicit decision through the ` +
                 `trusted approval UI/API. Chat text, a new turn, or model output cannot approve it. ` +

@@ -345,6 +345,17 @@ export class EvolverClient {
     });
   }
 
+  /** Prepare an owned seed and complete data window without paid model generation. */
+  async preflightRun(request: EvolutionStartRequest): Promise<{
+    seed_strategy_id: string;
+    seed_source_hash: string;
+    request_digest: string;
+    dataset_manifest: Record<string, unknown>;
+    estimated_max_cost_usd: number;
+  }> {
+    return await this.http.post("/api/v1/runs/preflight", request);
+  }
+
   async startRun(options: {
     request: EvolutionStartRequest;
     idempotencyKey: string;
