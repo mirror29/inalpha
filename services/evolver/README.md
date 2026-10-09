@@ -31,10 +31,11 @@ owner 授权的 LLM 生成 unified diff 或结构化假设，在受限加载器�
 
 ```text
 Dashboard / orchestration
-  → 冻结 LLM + pricing snapshot，取得逐次审批
+  → 冻结 LLM + pricing snapshot，POST /api/v1/runs/preflight 校验种子与完整窗口
+  → 将 preparation 源码/数据指纹绑定费用审批与签名摘要，取得逐次审批
   → 签发 owner/operation/config/digest 绑定的 Ed25519 credential grant
   → POST /api/v1/runs（Idempotency-Key + 两个审批/凭据 header）
-  → 冻结真实 bars + manifest/hash
+  → 冻结真实 bars + manifest/hash，复核批准的 preparation 指纹
   → 解析 seed，跑同数据 baseline
   → LLM 生成 unified diff
   → diff 应用 → AST/loader/contract 校验 → 子进程回测
@@ -91,6 +92,7 @@ E2 自动闭环：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
+| `POST` | `/api/v1/runs/preflight` | 准备 owner 的种子与完整行情窗口，返回 manifest、审批摘要和估算；不创建 run、不兑换模型凭据 |
 | `POST` | `/api/v1/runs` | 创建或幂等复用 run，返回 `202`；额外要求审批与幂等 header |
 | `GET` | `/api/v1/runs` | 分页列出当前 owner 的 run |
 | `GET` | `/api/v1/runs/{run_id}` | 查看 run、slot 与候选摘要 |
@@ -107,6 +109,16 @@ E2 自动闭环：
 | `POST` | `/api/v1/campaigns/{campaign_id}/start` | 启动仍处于 draft 的 campaign |
 | `POST` | `/api/v1/campaigns/{campaign_id}/adopt` | 手动采用通过门禁的实验性赢家 |
 | `GET` | `/api/v1/adoptions` | 列出当前 owner 的实验性采用记录 |
+
+本分支新增的 E1 准备契约（尚未生产验收）：先按正常用户 JWT 调用预检，将返回的
+`seed_source_hash` 与 `dataset_manifest.content_sha256` 作为请求的
+`preparation.seed_source_hash` / `preparation.dataset_content_sha256`。费用审批和 Ed25519
+请求摘要均覆盖这两个字段。缺少 preparation 时，付费 `/runs` 返回
+`EVOLUTION_PREPARATION_REQUIRED`；种子或执行前数据变化时返回/记录
+`EVOLUTION_PREPARATION_CHANGED`，需重新预检并审批，不继续调用模型。
+自建部署需同步升级 orchestration 与 Evolver；现有 E2 内部 baseline 请求摘要和历史运行
+保持兼容，此准备接口不授予 E2、采用或交易权限。预检会通过正常 Data API 准备真实行情，
+不是完全无副作用的查询，也不证明已有策略会盈利。
 
 编排层为 E1 暴露 `evolver.run_evolution`、`evolver.get_evolution`、
 `evolver.get_candidate`、`evolver.abort_evolution`，并为 E2 暴露 `evolver.resolve_target`、
