@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveEvolutionSeedContext } from "./evolution-target.js";
 import { HttpClientError } from "../clients/http.js";
 import { buildEvolutionStartRequest, evolutionRequestDigest } from "../clients/evolver.js";
 import {
@@ -12,7 +13,7 @@ const inputSchema = z.object({
   budget: z.number().int().min(1).max(20).default(4),
   seedStrategyId: z.string().min(1).max(128).default("sma_cross_v1"),
   retryOfRunId: z.string().uuid().optional(),
-  config: evolutionConfigSchema,
+  config: evolutionConfigSchema.optional(),
 });
 
 /** Enforce deterministic preparation before the middleware creates a cost approval. */
@@ -23,7 +24,11 @@ export async function evolutionApprovalPreflight(toolName: string, input: unknow
   const requestContext = (ctx as { requestContext?: ToolRequestContext } | undefined)?.requestContext;
   const client = await getEvolverClient(requestContext);
   try {
-    const parsed = inputSchema.parse(input);
+    const raw = inputSchema.parse(input);
+    const seedContext = raw.retryOfRunId ? null : await resolveEvolutionSeedContext(raw.seedStrategyId, requestContext);
+    const config = raw.config ?? seedContext?.config;
+    if (!config) throw new Error("EVOLUTION_SEED_CONTEXT_REQUIRED: an explicit frozen configuration is required for built-in seeds and retries");
+    const parsed = { ...raw, seedStrategyId: seedContext?.reference ?? raw.seedStrategyId, config: evolutionConfigSchema.parse(config) };
     const summary = await client.preflightRun(buildEvolutionStartRequest({
       ...parsed, llmSnapshot: snapshot,
     }));
@@ -38,7 +43,7 @@ export async function evolutionApprovalPreflight(toolName: string, input: unknow
     if (summary.request_digest !== evolutionRequestDigest(request)) {
       throw new Error("EVOLUTION_PREPARATION_INVALID: preparation does not match the requested input");
     }
-    return { input: { ...parsed, preparation }, summary };
+    return { input: { ...parsed, preparation }, summary: { ...summary, seed_context: seedContext?.evidence ?? null } };
   } catch (error) {
     if (!(error instanceof HttpClientError)) throw error;
     const missing = error.details.missing_count;
