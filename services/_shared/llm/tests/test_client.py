@@ -145,3 +145,20 @@ async def test_missing_usage_is_distinct_from_explicit_zero_receipt() -> None:
     response = await client.mutate(request)
     assert response.usage_known is False
     assert response.cache_metrics.input_tokens == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("recorded, retries", [(False, 2), (True, 0)])
+async def test_sdk_retry_policy_preserves_unrecorded_callers(recorded, retries):
+    """Only recorded requests disable invisible SDK retries."""
+    from inalpha_shared_llm.config import LLMSettings
+
+    client = LLMClient(
+        settings=LLMSettings(LLM_API_KEY="test-only", DEEPSEEK_API_KEY=""),
+        usage_recorder=object() if recorded else None,
+    )
+    try:
+        sdk = await client._ensure_client()
+        assert sdk.max_retries == retries
+    finally:
+        await client.close()

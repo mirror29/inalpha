@@ -44,7 +44,9 @@ class LLMClient:
                 kwargs["base_url"] = self.settings.llm_base_url
             if self.settings.llm_timeout_s:
                 kwargs["timeout"] = float(self.settings.llm_timeout_s)
-            self._client = AsyncOpenAI(max_retries=0, **kwargs)
+            if self.usage_recorder is not None:
+                kwargs["max_retries"] = 0
+            self._client = AsyncOpenAI(**kwargs)
         return self._client
 
     async def mutate(self, request: MutationRequest) -> MutationResponse:
