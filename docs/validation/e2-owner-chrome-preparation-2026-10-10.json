@@ -40,7 +40,9 @@
     "Native Chrome works; in-app browser automation still times out",
     "No production identity or credential extraction",
     "Desktop Chinese UI only; bilingual/mobile acceptance remains outstanding",
-    "Accessibility-driven existing owner session, not manual human acceptance"
+    "Accessibility-driven existing owner session, not manual human acceptance",
+    "Last-bar timestamp and freshness were not observed; counts are UI output only",
+    "Input editing hid the prior UI result; server-side stale approval rejection was not exercised"
   ],
   "environment": "production",
   "revision_binding": "Behavioral observation via existing owner session; deployed image was not sampled during the UI check. Earlier release ab5fd15b is context only, not a verified binding for this receipt."
