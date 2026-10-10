@@ -1102,6 +1102,12 @@
     "legacyPositions": "以下为历史／手动账本；旧仓已停止自动策略管理。"
   },
   "usage": {
+    "filters": "筛选记录",
+    "reset": "重置",
+    "records": "调用明细",
+    "page": "第 {current} / {total} 页",
+    "services": {"orchestration": "对话与编排", "research": "研究", "evolver": "策略演化"},
+    "statuses": {"pending": "待结算", "completed": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断", "invalid": "结果无效", "truncated": "已截断"},
     "title": "模型用量",
     "description": "统一查看对话、研究和策略演化的逐次调用记录。",
     "service": "服务",

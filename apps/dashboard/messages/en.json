@@ -1102,6 +1102,12 @@
     "legacyPositions": "Legacy/manual book below; old positions are no longer managed automatically."
   },
   "usage": {
+    "filters": "Filter records",
+    "reset": "Reset",
+    "records": "Call history",
+    "page": "Page {current} of {total}",
+    "services": {"orchestration": "Chat & orchestration", "research": "Research", "evolver": "Evolution"},
+    "statuses": {"pending": "Pending", "completed": "Completed", "failed": "Failed", "cancelled": "Cancelled", "interrupted": "Interrupted", "invalid": "Invalid result", "truncated": "Truncated"},
     "title": "Model usage",
     "description": "Request-level usage across chat, research and evolution.",
     "service": "Service",
