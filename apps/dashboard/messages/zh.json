@@ -130,8 +130,8 @@
       }
     },
     "runnersPanel": {
-      "title": "Live Runner",
-      "empty": "暂无策略运行。promote 候选并启动后,运行中的策略会出现在这里。",
+      "title": "模拟盘",
+      "empty": "暂无策略运行。在策略实验室选择已晋级策略并启动模拟盘。",
       "viewAll": "查看全部",
       "running": "{count} 运行中",
       "col": {
@@ -168,9 +168,9 @@
     }
   },
   "runners": {
-    "title": "Live Runner",
-    "subtitle": "promoted 策略按行情自动跑 —— 状态、累计盈亏,以及每根 bar 的决策。",
-    "empty": "暂无策略运行。promote 一个候选并启动后,运行中的 Live Runner 会出现在这里。",
+    "title": "模拟盘",
+    "subtitle": "查看策略运行状态、收益与交易记录。",
+    "empty": "暂无策略运行。在策略实验室选择已晋级策略并启动模拟盘。",
     "emptyFiltered": "该状态暂无 run。",
     "running": "运行中",
     "filter": {
@@ -235,8 +235,8 @@
     },
     "factors": {
       "title": "标的有效因子",
-      "hint": "针对本模拟盘标的实时算出的 top 有效因子(Rank IC)。近期 IC(近 1/3 样本)相对全样本 IC 反号或趋零 = 因子正在衰减。注意:这是标的当前的因子环境,不代表策略源码内部用了这些因子。",
-      "unavailable": "因子有效性暂不可用(factor 服务未起或数据不足)。",
+      "hint": "展示标的当前的有效因子，不代表运行策略已采用。",
+      "unavailable": "因子有效性暂不可用。",
       "empty": "暂无过有效性阈值的因子。",
       "barsUsed": "{n} 根 bar",
       "colFactor": "因子",
@@ -263,7 +263,7 @@
   },
   "activity": {
     "title": "Agent 活动",
-    "subtitle": "一条时间线看清 agent 跨模块都做了什么 —— 定时任务、审批、决策、风控拦截、订单。",
+    "subtitle": "查看任务、审批、交易与风控记录。",
     "kpi": {
       "scheduler": "调度器",
       "schedulerOn": "运行中",
@@ -370,7 +370,7 @@
       "lineage": "查看演化血缘"
     },
     "title": "策略实验室",
-    "subtitle": "LLM 自创的策略候选,按多目标 fitness 排序 —— 附最近一次回测指标。",
+    "subtitle": "查看策略候选及其回测表现。",
     "candidates": "候选",
     "promoted": "已晋级",
     "empty": "暂无候选。",
@@ -412,7 +412,7 @@
         "by": "by {who}"
       },
       "instances": "运行实例",
-      "instancesEmpty": "该策略还没启动过模拟盘。promote 后启动会出现在这里。",
+      "instancesEmpty": "暂无模拟盘记录。策略晋级并启动后会显示在这里。",
       "instancesHint": "最近一个 run 的行情与成交,见下方 K 线与历史交易。",
       "chart": "K 线（最近 run）",
       "trades": "历史交易（最近 run）",
@@ -439,13 +439,13 @@
   },
   "factors": {
     "title": "因子库",
-    "subtitle": "系统全部因子目录(pandas-ta / Alpha101 / qlib 等),点卡片看因子说明。针对标的的择时有效性见各模拟盘详情页。",
+    "subtitle": "浏览因子，查看定义与计算方法。",
     "catalogCount": "目录",
     "totalFactors": "共 {n} 个因子",
     "serviceDown": "因子服务不可用 —— 目录拉不到。",
     "viewDetail": "查看因子详情",
     "catalog": "系统因子目录",
-    "catalogHint": "系统当前可用的全部因子,按来源分组(不限标的 / 市场)。点卡片查看该因子度量什么、怎么读。",
+    "catalogHint": "按来源分组；点击因子查看详情。",
     "filter": {
       "all": "全部"
     },
@@ -805,7 +805,7 @@
       "adopt": "采用到策略实验室",
       "adopting": "正在采用…",
       "adopted": "已作为实验性策略采用",
-      "adoptHint": "采用不会 promote、启动 Runner 或下单；后端强制 runner_eligible=false。",
+      "adoptHint": "仅保存为实验性策略，不会自动启用或交易。",
       "loadMore": "加载更多评估结果",
       "loadingMore": "正在加载…"
     },
@@ -1064,7 +1064,7 @@
   },
   "dataHealth": {
     "title": "事件数据健康",
-    "subtitle": "事件唯一事实源的覆盖、首次接收、修订与冻结快照完整性。",
+    "subtitle": "查看事件来源、数据覆盖与处理状态。",
     "rawEvents": "原始事件",
     "facts": "规范事实",
     "retractions": "修订 / 撤回",
@@ -1106,6 +1106,7 @@
     "legacyPositions": "以下为历史／手动账本；旧仓已停止自动策略管理。"
   },
   "usage": {
+    "accountingHelp": "统计口径",
     "filters": "筛选记录",
     "reset": "重置",
     "records": "调用明细",
