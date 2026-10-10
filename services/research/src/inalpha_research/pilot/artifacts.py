@@ -148,6 +148,10 @@ def validate_materials(materials: dict[str, Any]) -> list[str]:
     for field in ("case_id", "decision_at"):
         if {c[field] for c in dev} & {c[field] for c in formal}:
             problems.append(f"development/formal overlap: {field}")
+    for name, split in (("development", dev), ("formal", formal)):
+        identities = [case["case_id"] for case in split]
+        if len(identities) != len(set(identities)):
+            problems.append(f"duplicate {name} case")
     for case in dev + formal:
         problems.extend(validate_bundle(case))
     bars = materials.get("market", {})
@@ -195,7 +199,7 @@ def validate_materials(materials: dict[str, Any]) -> list[str]:
                     "criteria",
                 )
             )
-            if any(row.get(key) in (None, "") for key in required) or row.get(
+            if any(row.get(key) in (None, "", [], {}) for key in required) or row.get(
                 "protocol_version"
             ) != protocol.get("version"):
                 problems.append(f"invalid {kind} provenance")
@@ -232,7 +236,7 @@ class PilotArtifacts:
         self.links = dict(
             experiment_id=experiment_id, case_id=case["case_id"], arm_id=arm_id, run_id=self.run_id
         )
-        self.configuration = configuration
+        self._configuration = safe_json(configuration).decode()
         self.write(
             "manifest.json",
             {
@@ -250,8 +254,14 @@ class PilotArtifacts:
                 },
             },
         )
-        self.write("evidence.json", case)
-        self.case = case
+        self._model_input = safe_json(case).decode()
+        self.write("evidence.json", json.loads(self._model_input))
+        self.case = json.loads(self._model_input)
+
+    @property
+    def configuration(self) -> dict[str, Any]:
+        """Return an independent copy of the configuration frozen in the manifest."""
+        return json.loads(self._configuration)
 
     def write(self, name: str, value: Any) -> None:
         if Path(name).name != name:
@@ -275,7 +285,7 @@ class PilotArtifacts:
 
     def model_input(self) -> str:
         """The model receives evidence only; this object has no network/data client."""
-        return safe_json(self.case).decode()
+        return self._model_input
 
     def finish(self, output: Any, status: str = "completed") -> None:
         if status not in {"completed", "failed", "invalid", "truncated", "interrupted"}:

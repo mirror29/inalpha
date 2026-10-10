@@ -21,6 +21,23 @@ def pilot_client(
     pricing: dict[str, Any] | None = None,
 ) -> LLMClient:
     """Credentials stay in memory; #206 owns arm prompts and budgets, not this adapter."""
+    configuration = artifacts.configuration
+    configured_provider = configuration.get("provider")
+    configured_model = configuration.get("model")
+    if (
+        not isinstance(configured_provider, str)
+        or not configured_provider.strip()
+        or not isinstance(configured_model, str)
+        or not configured_model.strip()
+        or not provider.strip()
+        or not model.strip()
+    ):
+        raise ValueError(
+            "pilot requires explicit provider and model in frozen configuration and call"
+        )
+    if provider.lower() != configured_provider.lower() or model != configured_model:
+        raise ValueError("pilot provider/model must match frozen configuration")
+    provider = provider.lower()
     recorder = UsageRecorder(
         UsageIdentity(
             auth_sub=auth_sub,

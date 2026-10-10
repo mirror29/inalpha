@@ -152,5 +152,89 @@ def test_materials_require_actual_label_content_not_only_metadata():
         ],
     }
     assert validate_materials(materials) == []
+    materials["development"].append(case())
+    assert "duplicate development case" in validate_materials(materials)
+    materials["development"].pop()
+    materials["annotations"][0]["criteria"] = {}
+    assert "invalid annotations provenance" in validate_materials(materials)
+    materials["annotations"][0]["criteria"] = {"factual_errors": 0}
+    materials["labels"][0]["value"] = {}
+    assert "invalid labels provenance" in validate_materials(materials)
+    materials["labels"][0]["value"] = 0
+    assert validate_materials(materials) == []
     del materials["labels"][0]["value"]
     assert "invalid labels provenance" in validate_materials(materials)
+
+
+def test_model_input_keeps_original_frozen_snapshot(tmp_path):
+    original = case()
+    artifacts = PilotArtifacts(
+        tmp_path, experiment_id="e", case=original, arm_id="A", configuration={}
+    )
+    frozen_input = artifacts.model_input()
+    original["evidence"][0]["content"] = "future outcome"
+    artifacts.case["evidence"][0]["content"] = "another future outcome"
+    assert artifacts.model_input() == frozen_input
+    assert json.loads(frozen_input) == json.loads((artifacts.path / "evidence.json").read_text())
+
+
+@pytest.mark.parametrize(
+    "configuration,provider,model",
+    [
+        ({}, "openai", "m"),
+        ({"provider": "openai", "model": ""}, "openai", "m"),
+        ({"provider": "openai", "model": "m"}, "", "m"),
+        ({"provider": "openai", "model": "m"}, "openai", ""),
+        ({"provider": "openai", "model": "m"}, "anthropic", "m"),
+        ({"provider": "openai", "model": "m"}, "openai", "other"),
+    ],
+)
+def test_pilot_rejects_missing_or_conflicting_model_before_factory(
+    tmp_path, monkeypatch, configuration, provider, model
+):
+    from unittest.mock import Mock
+
+    from inalpha_research.pilot import session
+
+    factory = Mock()
+    monkeypatch.setattr(session, "build_llm_client", factory)
+    artifacts = PilotArtifacts(
+        tmp_path, experiment_id="e", case=case(), arm_id="A", configuration=configuration
+    )
+    with pytest.raises(ValueError, match="pilot"):
+        session.pilot_client(
+            artifacts,
+            auth_sub="owner",
+            store=object(),
+            provider=provider,
+            model=model,
+            api_key="test-only",
+        )
+    factory.assert_not_called()
+
+
+def test_pilot_uses_frozen_configuration_despite_caller_mutation(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from inalpha_research.pilot import session
+
+    configuration = {"provider": "OpenAI", "model": "m"}
+    artifacts = PilotArtifacts(
+        tmp_path, experiment_id="e", case=case(), arm_id="A", configuration=configuration
+    )
+    configuration["model"] = "changed"
+    artifacts.configuration["model"] = "also-changed"
+    factory = Mock()
+    monkeypatch.setattr(session, "build_llm_client", factory)
+    result = session.pilot_client(
+        artifacts,
+        auth_sub="owner",
+        store=object(),
+        provider="OPENAI",
+        model="m",
+        api_key="test-only",
+    )
+    assert result is factory.return_value
+    assert factory.call_args.kwargs["provider"] == "openai"
+    assert factory.call_args.kwargs["model"] == "m"
+    assert artifacts.configuration["model"] == "m"
