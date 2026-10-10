@@ -15,6 +15,12 @@ describe("compact usage tokens", () => {
     expect(formatUsageTokens("1234567890")).toBe("1.23B");
   });
 
+  it("treats invalid integer strings as unknown instead of crashing", () => {
+    for (const value of ["", " ", "12.5", "1_000", "0x10", "unknown", "-1"]) {
+      expect(formatUsageTokens(value)).toBe("—");
+    }
+  });
+
   it("supports database integers above the JavaScript safe integer limit", () => {
     expect(formatUsageTokens("9223372036854775807")).toBe("9,223,372.04T");
   });

@@ -12,5 +12,7 @@ const tokenFormatter = new Intl.NumberFormat("en-US", {
 
 /** Compact database integer strings without passing through imprecise numbers. */
 export function formatUsageTokens(value: string | null): string {
-  return value === null ? "—" : tokenFormatter.format(BigInt(value));
+  return value !== null && /^\d+$/.test(value)
+    ? tokenFormatter.format(BigInt(value))
+    : "—";
 }
