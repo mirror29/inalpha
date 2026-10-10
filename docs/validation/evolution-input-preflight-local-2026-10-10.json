@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-10",
+  "scope": "Local owner-authenticated necessary-input preflight and worker checks before paid baseline execution; not deployed",
+  "commits": {
+    "backend": "c09f7b23",
+    "orchestration": "ba47be44"
+  },
+  "public_surface": {
+    "method": "POST",
+    "path": "/api/v1/evolution-loops/preflight",
+    "input": "Existing StartEvolutionLoopRequest shape",
+    "authentication": "Owner JWT; target and seed ownership checked",
+    "database_connection_released_before_snapshot_and_data_fetch": true,
+    "execution_authorized": false,
+    "model_calls": 0
+  },
+  "coverage_semantics": {
+    "dataset": "Full closed bars from normal Data loader",
+    "split": "Same natural 60/20/20 selection segment",
+    "count": "Maximum same-type 24-hour-separated event count upper bound, summed across types",
+    "minimum_matched_event_pairs": 8,
+    "below_minimum": "blocked",
+    "at_or_above_minimum": "necessary_inputs_present",
+    "matched_controls": "not_evaluated",
+    "fdr": "not_evaluated",
+    "holdout": "not_evaluated",
+    "candidate_acceptance_or_improvement_demonstrated": false
+  },
+  "execution_guards": {
+    "tool_preflight_before_credential_grant_mint_and_loop_start": true,
+    "blocked_unknown_or_error_fails_closed": true,
+    "worker_independently_rechecks_persisted_full_frozen_dataset_and_snapshot": true,
+    "worker_check_before_execute_frozen_run_and_model_credential_redemption": true,
+    "owner_pit_statistical_window_and_thresholds_unchanged": true,
+    "ui_preapproval_card_overhaul_in_scope": false
+  },
+  "checks": {
+    "python_version": "3.12",
+    "fresh_isolated_database_migration_chain": "0058 wallet -> 0059 diagnostics -> 0065",
+    "final_full_evolver_tests_passed": 333,
+    "existing_short_test_jwt_warnings": 3,
+    "temporary_database_cleaned_up": true,
+    "first_full_run": {
+      "passed": 329,
+      "timeout_failures": 1,
+      "scenario": "five-generations[True]"
+    },
+    "final_rerun": {
+      "supported_evaluation_concurrency": 4,
+      "numerical_threads": 1,
+      "original_assertion_and_timeout_seconds": 240,
+      "assertion_or_timeout_relaxed": false,
+      "full_suite_duration_seconds": 179.72
+    },
+    "added_coverage": [
+      "Anonymous preflight HTTP 401",
+      "Foreign-owner snapshot HTTP 404",
+      "Worker snapshot fetch failure prevents execution"
+    ],
+    "orchestration_tests_passed": 626,
+    "orchestration_tests_skipped": 7,
+    "orchestration_typecheck": "passed",
+    "orchestration_build": "passed",
+    "offline_pr_evaluation": {
+      "passed": 4,
+      "total": 4,
+      "live_model_acceptance": false
+    },
+    "touched_python_files_mypy_passed": 3,
+    "full_repository_mypy_claimed": false,
+    "ruff": "passed",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "independent_coverage_review": "No blocking findings"
+  },
+  "production_read_only": {
+    "repository_business_sha": "493175aa2554ea195fc60bedb2cfa1dd8590610b",
+    "mastra_business_sha": "493175aa2554ea195fc60bedb2cfa1dd8590610b",
+    "mastra_container_id_prefix": "75f1c51a1709",
+    "other_business_versions_unchanged": true,
+    "schema": "0065",
+    "active_e1_runs": 0,
+    "loops": 0,
+    "campaigns": 0,
+    "deployment_of_this_change": false
+  },
+  "historical_input_limits": {
+    "asset": "SOL",
+    "original_selection_start": "2026-07-29T07:00:00Z",
+    "original_selection_end": "2026-09-03T06:00:00Z",
+    "visible_selection_facts": 0,
+    "waiting_for_october_facts_cannot_fill_original_frozen_selection": true,
+    "next_step": "Accumulate real evidence for a new explicit experiment; preserve original acceptance scope",
+    "backdating_or_old_window_rewriting_permitted": false
+  },
+  "new_production_mutations": false,
+  "new_model_calls_this_turn": 0,
+  "historical_unknown_costs_preserved": true,
+  "pending": [
+    "CI and automated review",
+    "Deploy a pinned business version",
+    "Normal-owner new coverage preflight and fail-closed behavior acceptance",
+    "Qualified real E2 search and champion",
+    "At least 30 real days and three independent Forward events, one-time holdout and explicit adoption",
+    "Previously recorded response-loss, full restart recovery, explicit retry and fencing acceptance"
+  ]
+}
