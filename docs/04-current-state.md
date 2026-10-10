@@ -17,7 +17,7 @@ Inalpha 是 AI agent 编排与多 Python kernel 的量化实验框架。D-12 因
 | E1 正常 owner 预检、冻结审批、生成、刷新读取 | [真实执行回执](validation/evolution-approval-execution-lineage-2026-10-10.json) | 已生产实测；候选与原策略适应度相同，验证段零成交，未证明改善 |
 | E2 必要输入不足拦截 | [正常 owner 回执](validation/evolution-owner-preflight-2026-10-10.json) | 实际 SOL 8760 bars 的选择段为 5 月 16 日至 7 月 28 日，事实数 0；没有启动搜索 |
 | 五代搜索、checkpoint、拒绝路径 | [历史记录](validation/current-state-history-through-2026-10-10.md) | 有自动化与历史拒绝路径证据；不能记为生产冠军通过 |
-| 新实验准备与直接审批 | [本地验收](validation/e2-experiment-preparation-local-2026-10-10.json) | PR #219 已合并、CI/镜像通过并部署；Chrome 正常 owner 免费准备、参数修改失效及重新预检已实测；覆盖不足，审批与执行待验收 |
+| 新实验准备与直接审批 | [本地验收](validation/e2-experiment-preparation-local-2026-10-10.json) | PR #219 已合并、CI/镜像通过并部署；Chrome 既有 owner 登录会话经辅助功能操作，中文桌面免费准备、参数修改失效及重新预检已实测；覆盖不足，审批与执行待验收 |
 | 冠军、Forward、holdout、人工采用 | 无完整正向生产回执 | 未完成；Forward 计时尚不能宣称开始 |
 
 旧冻结窗口无法靠未来采集补齐。新闻原文数、事实版本数、24 小时独立事件上界、匹配对照数是不同口径。
@@ -46,7 +46,7 @@ Inalpha 是 AI agent 编排与多 Python kernel 的量化实验框架。D-12 因
 ### P0 · 新入口生产验收
 
 1. PR #219 的精确 head CI、主分支 CI、镜像构建、专项审查与三个服务部署已完成；保留旧镜像1dc8fa78和备份，Chrome 正常 owner 连接已恢复，免费准备与不足拦截已验收。
-2. 正常 owner 验证：页面免费准备新窗口、结构化阻塞、参数修改失效、冻结费用、单次批准、刷新和响应丢失后的原操作恢复。
+2. 待验收：冻结费用、单次批准、刷新和响应丢失后的原操作恢复，以及英文与移动页面。中文桌面免费准备、结构化阻塞、参数修改失效已由 Chrome 辅助功能操作既有 owner 会话验证，不代表用户手工验收。
 3. 核对实际新窗口、来源首次可见时间、闭合连续行情与必要覆盖。输入不足时继续真实采集；不重跑相同付费搜索、不改写历史窗口。
 
 ### P0 · 可靠性与真实五代搜索
