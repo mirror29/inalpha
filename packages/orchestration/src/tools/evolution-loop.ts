@@ -60,6 +60,7 @@ export const evolverStartLoopTool = createTool({
       return {
         status: "blocked", code: preflight.blocker_codes[0] ?? "E2_INPUT_PREFLIGHT_INVALID", preflight,
         execution_started: false, generation_model_calls: 0,
+        cost_scope: "evolution_generation_only", chat_cost_status: "accounted_separately",
         frozen_window_backfill_allowed: false,
       };
     }
