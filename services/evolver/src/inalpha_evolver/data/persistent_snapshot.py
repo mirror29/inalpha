@@ -16,6 +16,7 @@ from psycopg import AsyncConnection
 
 from .bar_hash import bars_content_hash
 from .manifest import DatasetManifest, FrozenDataset
+from .partitions import event_partition_ends
 
 CANONICAL_VERSION = "e2-bars-snapshot-v1"
 
@@ -87,11 +88,7 @@ def decode_frozen_dataset(row: dict[str, Any]) -> FrozenDataset:
     )
     if len(bars) != int(row["bar_count"]):
         raise RuntimeError("evolution data snapshot bar count mismatch")
-    expected_discovery = max(2, int(len(bars) * 0.60))
-    expected_validation = min(
-        max(expected_discovery + 2, int(len(bars) * 0.80)),
-        len(bars) - 1,
-    )
+    expected_discovery, expected_validation = event_partition_ends(len(bars))
     if (
         int(row["discovery_end"]) != expected_discovery
         or int(row["validation_end"]) != expected_validation
@@ -145,8 +142,7 @@ async def persist_loop_data_snapshot(
     """Freeze once under a live loop lease; repeat writes retain the first payload."""
     payload, digest = encode_frozen_dataset(dataset)
     count = len(dataset.bars)
-    discovery_end = max(2, int(count * 0.60))
-    validation_end = min(max(discovery_end + 2, int(count * 0.80)), count - 1)
+    discovery_end, validation_end = event_partition_ends(count)
     manifest = dataset.manifest
     async with conn.transaction():
         cursor = await conn.execute(
@@ -227,11 +223,7 @@ async def _persist_campaign_data_snapshot(
     """Insert exactly once and return the winning immutable row."""
     payload, content_sha256 = encode_frozen_dataset(dataset)
     bar_count = len(dataset.bars)
-    discovery_end = max(2, int(bar_count * 0.60))
-    validation_end = min(
-        max(discovery_end + 2, int(bar_count * 0.80)),
-        bar_count - 1,
-    )
+    discovery_end, validation_end = event_partition_ends(bar_count)
     snapshot_id = uuid4()
     manifest = dataset.manifest
     async with conn.cursor() as cur:

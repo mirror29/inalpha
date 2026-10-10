@@ -1,3 +1,5 @@
+import { loopInputSchema } from "./evolution-loop.js";
+import { prepareExperiment } from "../evolution/preparation.js";
 import { z } from "zod";
 import { resolveEvolutionSeedContext } from "./evolution-target.js";
 import { HttpClientError } from "../clients/http.js";
@@ -18,6 +20,28 @@ const inputSchema = z.object({
 
 /** Enforce deterministic preparation before the middleware creates a cost approval. */
 export async function evolutionApprovalPreflight(toolName: string, input: unknown, ctx: unknown) {
+  if (toolName === "evolver.start_evolution_loop") {
+    const raw = loopInputSchema.parse(input);
+    const rc = (ctx as { requestContext?: ToolRequestContext } | undefined)?.requestContext;
+    const snapshot = getRequestContextValue<EvolutionLLMSnapshot>(ctx, USER_LLM_SNAPSHOT_KEY);
+    if (!rc || !snapshot) throw new Error("EVOLUTION_MODEL_CONFIG_REQUIRED");
+    const prepared = await prepareExperiment({ targetKind: raw.targetKind, targetId: raw.targetId,
+      ...(raw.experiment ? { window: { from_ts: raw.experiment.from_ts, as_of: raw.experiment.as_of } } : {}),
+    }, rc, raw.experiment?.eventSnapshotId);
+    if (prepared.status === "existing_experiment" && raw.experiment) return { input: raw };
+    if (prepared.status !== "necessary_inputs_present" || !("config" in prepared)) {
+      throw new Error("E2_INPUT_COVERAGE_INSUFFICIENT: inspect preparation; no generation started");
+    }
+    const data = prepared as Record<string, unknown>;
+    const config = data.config as { from_ts: string; as_of: string };
+    const experiment = { config, from_ts: config.from_ts, as_of: config.as_of,
+      eventSnapshotId: data.event_snapshot_id, seed_source_hash: data.seed_source_hash,
+      dataset_content_sha256: data.dataset_content_sha256 };
+    const maxCostUsd = raw.maxCostUsd ?? Math.ceil((raw.budget + 13) * snapshot.pricing.estimated_max_usd_per_candidate * 1e6) / 1e6;
+    if (maxCostUsd < (raw.budget + 10) * snapshot.pricing.estimated_max_usd_per_candidate) throw new Error("LOOP_BUDGET_INSUFFICIENT");
+    return { input: loopInputSchema.parse({ ...raw, experiment, maxCostUsd }),
+      summary: { ...data, estimated_max_cost_usd: maxCostUsd, cost_scope: "evolution_generation_only" } };
+  }
   if (toolName !== "evolver.run_evolution") return undefined;
   const snapshot = getRequestContextValue<EvolutionLLMSnapshot>(ctx, USER_LLM_SNAPSHOT_KEY);
   if (!snapshot) throw new Error("EVOLUTION_MODEL_CONFIG_REQUIRED: choose a model before preparation");

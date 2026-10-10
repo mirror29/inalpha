@@ -82,6 +82,7 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
   const [state, setState] = useState<"checking" | "statusFailed" | "idle" | "recoverable" | "allow" | "deny" | "approved" | "submitted" | "denied" | "expired" | "failed">("checking");
 
   const [statusAttempt, setStatusAttempt] = useState(0);
+  const [submittedLoop, setSubmittedLoop] = useState(false);
   const [submittedRunId, setSubmittedRunId] = useState<string | null>(null);
   const [approvedRecovery, setApprovedRecovery] = useState(false);
 
@@ -154,6 +155,7 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
         if (receipt.kind === "failed") throw new Error("approved task submission failed");
         if (receipt.kind === "submitted") {
           setSubmittedRunId(receipt.runId);
+          setSubmittedLoop(receipt.loop === true);
           setState("submitted");
         } else {
           setState("approved");
@@ -181,7 +183,7 @@ function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onT
   if (state === "submitted" && submittedRunId) {
     return <div role="status" className="flex items-center gap-3 px-2.5 py-2 text-xs text-bull">
       <span>{t("submitted")}</span>
-      <Link href={`/evolution/${submittedRunId}`} className="underline">{t("viewTask")}</Link>
+      <Link href={`/evolution/${submittedLoop ? "loops/" : ""}${submittedRunId}`} className="underline">{t("viewTask")}</Link>
     </div>;
   }
 

@@ -124,6 +124,8 @@ snapshot、HypothesisSpec 确定性编译、五代 8×3 共演化、单冠军 Fo
 2026-09-30 代码核对：持久化 EvolutionLoop、重复触发复用、租约恢复与原子阶段交接已落地；
 已有自动化测试，真实运行验证仍待完成。下一步优先真实 E2 链路与重启幂等验证，
 再校准事件覆盖、费用与评估；优先级统一见 `docs/04-current-state.md`「未完成 / 下一步」。
+
+> E2 更新（2026-10-10）：显式新实验准备与冻结费用审批已本地实现。E1 正常 owner 执行和 E2 输入不足拦截有生产证据；冠军、Forward、holdout 正向生产验收仍未完成。优先级统一见 `docs/04-current-state.md`。
 详见 [`docs/04-current-state.md`](docs/04-current-state.md) / `CLAUDE.md` §3 /
 仓库根 `README.md`。
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "@/i18n/navigation";
+
 import { useCopilotChatInternal } from "@copilotkit/react-core";
 import {
   History,
@@ -70,6 +72,7 @@ export function ChatThread({
 
   const [draft, setDraft] = useState("");
   const page = usePageContext();
+  const router = useRouter();
   const [contextDismissed, setContextDismissed] = useState(false);
   useEffect(() => setContextDismissed(false), [page.kind, page.id]);
   const contextAttached = !contextDismissed;
@@ -287,8 +290,10 @@ export function ChatThread({
 
   const evolutionTarget = contextAttached ? evolutionTargetFromPage(page) : null;
   const submitEvolution = useCallback(() => {
-    void submitText(t("context.evolvePrompt"));
-  }, [submitText, t]);
+    if (evolutionTarget && ["strategy_candidate", "paper_runner", "backtest_run", "e1_candidate"].includes(evolutionTarget.kind)) {
+      router.push(`/evolution/prepare?targetKind=${evolutionTarget.kind}&targetId=${evolutionTarget.id}`);
+    } else void submitText(t("context.evolvePrompt"));
+  }, [evolutionTarget, router, submitText, t]);
 
   useEffect(() => {
     const handler = (event: Event) => {

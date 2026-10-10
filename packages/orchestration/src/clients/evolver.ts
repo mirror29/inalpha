@@ -363,6 +363,11 @@ export class EvolverClient {
     return await this.http.post("/api/v1/evolution-loops/preflight", request);
   }
 
+  /** Inspect an explicit experiment without requiring any model configuration. */
+  async prepareExperiment(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return await this.http.post("/api/v1/evolution-loops/prepare", request);
+  }
+
   /** Start the baseline and its automatic continuation with one bounded authorization. */
   async startEvolutionLoop(options: {
     request: EvolutionLoopStartRequest;

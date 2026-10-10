@@ -127,3 +127,23 @@ it("does not report consent as accepted when the atomic commit fails", async () 
   expect(await store.dispatchApproved(view.requestId, "alice", {})).toBeUndefined();
   expect(execute).not.toHaveBeenCalled();
 });
+
+it("binds E2 approval to the full experiment and dispatches once without a chat turn", async () => {
+  const store = new PendingApprovalsStore(() => {});
+  stores.push(store);
+  const execute = vi.fn(async () => ({ loop_id: "loop-1" }));
+  const tool = withHooks({ id: "evolver.start_evolution_loop", execute }, {
+    runner: new HookRunner(), pendingApprovals: store, permissionResolver: () => "ask",
+  });
+  const requestContext = new Map<string, unknown>([[AUTH_SUB_KEY, "alice"], ["sessionId", "draft"], [USER_LLM_SNAPSHOT_KEY, { config_id: "frozen" }]]);
+  const input = { targetId: "target", experiment: { config: { from_ts: "old" }, dataset_content_sha256: "frozen" }, maxCostUsd: 1 };
+  const pending = await tool.execute!(input, { requestContext }) as { requestId: string };
+  expect(execute).not.toHaveBeenCalled();
+  expect(await store.dispatchApproved(pending.requestId, "bob", { requestContext })).toBeUndefined();
+  store.respond(pending.requestId, "allow", "alice");
+  const [first, second] = await Promise.all([store.dispatchApproved(pending.requestId, "alice", { requestContext }), store.dispatchApproved(pending.requestId, "alice", { requestContext })]);
+  expect(first).toEqual({ loop_id: "loop-1" });
+  expect(second).toEqual(first);
+  expect(execute).toHaveBeenCalledOnce();
+  expect(execute.mock.calls[0]?.[0]).toEqual(input);
+});

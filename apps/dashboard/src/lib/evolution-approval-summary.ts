@@ -3,18 +3,20 @@ export function evolutionApprovalSummary(envelope: unknown) {
   const root = object(envelope);
   const input = object(root?.toolInput);
   const request = object(input?.request);
-  const config = object(request?.config);
+  const experiment = object(request?.experiment);
+  const config = object(experiment?.config ?? request?.config);
   const model = object(input?.llm_snapshot);
   const preparation = object(root?.preparation ?? input?.preparation);
   const dataset = object(preparation?.dataset_manifest);
   if (!request || !config || !model || !preparation || !dataset) return null;
-  const reference = text(preparation.seed_strategy_id) ?? text(request.seedStrategyId);
+  const reference = text(preparation.seed_strategy_id) ?? text(request.seedStrategyId) ?? text(object(object(preparation.target)?.start_input)?.seedStrategyId);
   if (!reference) return null;
   const context = object(preparation.seed_context);
   const retry = text(request.retryOfRunId);
   const kind = retry ? "retry" : reference === "sma_cross_v1" ? "builtin"
     : reference.startsWith("evolution_candidate:") ? "evolution" : "candidate";
   return {
+    eventLoop: Boolean(experiment),
     kind, label: text(context?.seed_label)?.slice(0, 120) ?? null,
     slot: number(context?.slot), reference,
     market: [text(config.venue), text(config.symbol)].filter(Boolean).join(" · "),

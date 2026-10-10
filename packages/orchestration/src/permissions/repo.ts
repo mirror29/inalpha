@@ -254,7 +254,7 @@ export async function findApprovedExecution(operationId: string, authSub: string
   if (!pool) return undefined;
   const result = await pool.query(
     `SELECT execution_input,session_id,tool_name,input_digest FROM evolution_approval_operations
-     WHERE operation_id=$1 AND auth_sub=$2 AND tool_name='evolver.run_evolution'
+     WHERE operation_id=$1 AND auth_sub=$2 AND tool_name IN ('evolver.run_evolution','evolver.start_evolution_loop')
        AND expires_at>NOW() AND execution_input IS NOT NULL`, [operationId, authSub],
   );
   const row = result.rows[0];
