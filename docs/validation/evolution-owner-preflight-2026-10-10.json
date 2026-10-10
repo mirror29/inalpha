@@ -57,8 +57,48 @@
   },
   "positive_e2_acceptance": false,
   "pending": [
-    "Deploy narrative clarification after exact-head CI and review",
+    "Observe corrected narrative on next legitimate model request; no repeated insufficient-evidence search",
     "New explicitly scoped experiment with sufficient actual evidence",
     "Recovery/retry/fencing and positive champion/Forward/holdout acceptance"
-  ]
+  ],
+  "deployment_followup": {
+    "pr": 216,
+    "business_sha": "307da1827ff266a876a174af673ee96258f4c3b8",
+    "branch_ci": 38027325384,
+    "automated_review": 38027325537,
+    "review": "Effective body, zero MEDIUM or higher findings; diff-only limitations retained",
+    "main_ci": 38027569777,
+    "image_build": 38027569778,
+    "checks": "success",
+    "changed_service": "mastra",
+    "container_id": "dcc586753c63a1e7137c2d273403314b44e9a1dd0e3f0fee7f37f271ee72bdab",
+    "health": "healthy",
+    "config_backup": "infra/.env.prod.before-mastra-20261010T053058Z",
+    "backup_mode_observed": "600",
+    "unchanged_container_id_prefixes": {
+      "evolver": "3009ad579db0",
+      "dashboard": "48bbc4790a14",
+      "data": "e61ae92b2019",
+      "research": "465dea967b10",
+      "factor": "751f2cbfb280",
+      "paper": "ec25617b1fed",
+      "redis": "4377f3064aa0",
+      "cloudflared": "d993c45012e5",
+      "postgres": "cdd60c8434a9"
+    },
+    "compiled_markers": {
+      "cost_scope": true,
+      "chat_separate": true,
+      "no_historical_backfill_instruction": true,
+      "actual_window_instruction": true,
+      "inspection": "Read-only bundle inspection; Unicode escapes decoded without execution"
+    },
+    "schema": "0065",
+    "active_e1": 0,
+    "loops": 0,
+    "campaigns": 0,
+    "new_model_calls_during_deployment": 0,
+    "post_fix_live_model_response_retested": false,
+    "screenshot_capture": "Post-result capture timed out; raw UI result and read-only SQL were verified"
+  }
 }
