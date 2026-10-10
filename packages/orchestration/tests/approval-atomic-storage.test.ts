@@ -113,3 +113,17 @@ describe.skipIf(!enabled)("atomic owner approval storage", () => {
     expect((await db.query("SELECT status FROM pending_approvals WHERE request_id=$1", [owned.view.requestId])).rows[0].status).toBe("pending");
   });
 });
+
+it.skipIf(!enabled)("restores an approved E2 command after a store restart and rejects a foreign owner", async () => {
+  database();
+  const saved = command();
+  saved.view.toolName = "evolver.start_evolution_loop";
+  delete saved.view.chatInvocationId;
+  await approveEvolutionExecution({ authSub: "alice", command: saved, retentionMs: 60_000 });
+  expect(await findApprovedExecution(saved.view.requestId, "bob")).toBeUndefined();
+  expect(await findApprovedExecution(saved.view.requestId, "alice")).toEqual(saved);
+  const restarted = new PendingApprovalsStore(() => {}, { findApprovedExecution, findEvolutionOperation });
+  restarted.registerApprovedExecution("evolver.start_evolution_loop", async command => ({ loop_id: "reused-loop", request: command.view.requestId }));
+  expect(await restarted.dispatchApproved(saved.view.requestId, "alice", {})).toEqual({ loop_id: "reused-loop", request: saved.view.requestId });
+  restarted.clearAll();
+});

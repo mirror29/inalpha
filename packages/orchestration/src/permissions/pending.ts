@@ -168,7 +168,7 @@ export class PendingApprovalsStore {
 
   /** Registers only trusted code executors; HTTP callers cannot choose executable code. */
   registerApprovedExecution(toolName: string, handler: ApprovedExecutionHandler): void {
-    if (toolName !== "evolver.run_evolution") throw new Error("direct approval execution is limited to E1");
+    if (!["evolver.run_evolution", "evolver.start_evolution_loop"].includes(toolName)) throw new Error("direct approval execution is limited to evolution");
     this.executionHandlers.set(toolName, handler);
   }
 
@@ -179,7 +179,7 @@ export class PendingApprovalsStore {
     if (active) { await active; return await this.respondTrusted(requestId, decision, authSub); }
     const record = this.records.get(requestId);
     if (!record || record.authSub !== authSub || record.status !== "pending") return false;
-    if (decision !== "allow" || record.toolName !== "evolver.run_evolution" || !this.persistence?.approveEvolutionExecution) {
+    if (decision !== "allow" || !["evolver.run_evolution", "evolver.start_evolution_loop"].includes(record.toolName) || !this.persistence?.approveEvolutionExecution) {
       return this.respond(requestId, decision, authSub);
     }
     if (Date.now() >= Date.parse(record.deadline)) return false;
@@ -206,12 +206,12 @@ export class PendingApprovalsStore {
     if (record) {
       if (record.authSub !== authSub || Date.now() >= Date.parse(record.deadline)) return { status: "unavailable" };
       if (record.status === "pending") return { status: "pending", deadline: record.deadline, remainingMs: Math.max(0, Date.parse(record.deadline) - Date.now()) };
-      return { status: record.toolName === "evolver.run_evolution" ? "approved" : "unavailable" };
+      return { status: ["evolver.run_evolution", "evolver.start_evolution_loop"].includes(record.toolName) ? "approved" : "unavailable" };
     }
     const cached = this.executionCommands.get(requestId);
     if (cached?.authSub === authSub && cached.expiresAt > Date.now()) return { status: "approved" };
     const command = await this.persistence?.findApprovedExecution?.(requestId, authSub);
-    return { status: command && command.view.requestId === requestId && command.view.toolName === "evolver.run_evolution" ? "approved" : "unavailable" };
+    return { status: command && command.view.requestId === requestId && ["evolver.run_evolution", "evolver.start_evolution_loop"].includes(command.view.toolName) ? "approved" : "unavailable" };
   }
 
   /** Executes an approved frozen command under a fresh verified owner's request context. */
@@ -393,7 +393,7 @@ export class PendingApprovalsStore {
           ...scope,
           operationId: record.requestId,
           retentionMs,
-          execution: record.toolName === "evolver.run_evolution" ? { view: this.toView(record), approvalInput: record.approvalInput } : undefined,
+          execution: ["evolver.run_evolution", "evolver.start_evolution_loop"].includes(record.toolName) ? { view: this.toView(record), approvalInput: record.approvalInput } : undefined,
         });
         persistedReusable = Boolean(persisted);
         reusable = persisted

@@ -5,7 +5,7 @@ import json
 import struct
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
@@ -204,7 +204,14 @@ WHERE l.owner_account_id=%s AND l.operation_id=%s""",
 
 async def _validate_target_seed(db, owner, body: StartEvolutionLoopRequest) -> None:
     """Do not let a signed target label point at a different strategy or another owner's run."""
-    kind, target_id = body.campaign.target_kind, body.campaign.target_id
+    await validate_target_seed(db, owner, body.campaign.target_kind,
+                               body.campaign.target_id, body.baseline.seed_strategy_id)
+
+
+async def validate_target_seed(
+    db: Any, owner: UUID, kind: str | None, target_id: str | None, seed_strategy_id: str
+) -> None:
+    """Validate preparation and launch against the same owned target-to-seed binding."""
     expected = None
     if kind == "strategy_candidate":
         expected = f"candidate:{target_id}"
@@ -230,5 +237,5 @@ async def _validate_target_seed(db, owner, body: StartEvolutionLoopRequest) -> N
                     expected = f"candidate:{candidate_id}" if candidate_id else row["strategy_code"]
                     if expected == "sma_cross":
                         expected = "sma_cross_v1"
-    if not expected or expected != body.baseline.seed_strategy_id:
+    if not expected or expected != seed_strategy_id:
         raise ConflictError("evolution target does not match its seed", code="LOOP_TARGET_MISMATCH")

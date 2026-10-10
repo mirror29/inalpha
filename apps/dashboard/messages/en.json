@@ -303,6 +303,7 @@
       "recoveryAvailable": "This task is approved. Recover submission or retrieve its task record.",
       "recoverTask": "Retrieve approved task",
       "preparation": {
+        "eventSplit": "Event evolution: 60% discovery, 20% selection, 20% sealed holdout; matching and FDR assessed separately",
         "title": "Confirm this single-generation experiment",
         "unavailable": "Unavailable",
         "seedLabel": "Original strategy",
@@ -560,6 +561,7 @@
     "thinking": "Thinking…",
     "loadingHistory": "Loading history…",
     "toolRunning": "running",
+    "toolBlocked": "Inputs not ready",
     "toolDone": "done",
     "toolPending": "pending",
     "toolError": "error",

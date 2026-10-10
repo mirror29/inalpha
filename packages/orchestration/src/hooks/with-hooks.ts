@@ -61,6 +61,7 @@ type GenericTool = {
 
 const DURABLE_EVOLUTION_APPROVAL_TOOLS = new Set([
   "evolver.run_evolution",
+  "evolver.start_evolution_loop",
   "evolver.run_event_campaign",
 ]);
 const E2_CAMPAIGN_RETRY_WINDOW_MS = 2 * 60 * 1_000;
@@ -269,7 +270,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
             sessionId,
             toolName,
             approvalInput,
-            reuseAfterConsume: toolName === "evolver.run_evolution",
+            reuseAfterConsume: ["evolver.run_evolution", "evolver.start_evolution_loop"].includes(toolName),
             reuseOnceAfterConsumeMs:
               toolName === "evolver.run_event_campaign"
                 ? E2_CAMPAIGN_RETRY_WINDOW_MS
@@ -392,7 +393,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
     },
   };
 
-  if (tool.id === "evolver.run_evolution") {
+  if (["evolver.run_evolution", "evolver.start_evolution_loop"].includes(tool.id)) {
     const store = opts.pendingApprovals ?? defaultPendingApprovals;
     store.registerApprovedExecution(tool.id, async (command, freshContext) => {
       const authSub = defaultGetAuthSub(freshContext);
