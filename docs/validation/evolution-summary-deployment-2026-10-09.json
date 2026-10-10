@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-09",
+  "pr": 204,
+  "business_sha": "ad33e3eb1aecb527041e085912e1c58ffb8dd242",
+  "ci_run": 37995059551,
+  "ci": "All checks passed after failed infrastructure jobs were rerun",
+  "ci_transient_failure": "Docker Hub authentication 504/timeouts before smoke build and test DB containers initialized",
+  "automated_review": "Latest reviewer raised a diff-only source-verification concern; independently verified source and executed existing Paper tests; exact evaluator source quoted in PR body",
+  "local_checks": {
+    "dashboard_tests": 177,
+    "paper_validation_and_backtest_api_tests": 18,
+    "typecheck": "passed",
+    "build": "passed",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "image_build_run": 37998302914,
+  "image_build": "All seven images passed",
+  "changed_service": "dashboard",
+  "dashboard_container": "48bbc4790a14e615a3abede24072ae05ccfa9f9e4988e7fe97c70f47bb973287",
+  "dashboard_health": "healthy",
+  "schema": "0065",
+  "configuration_backup": "infra/.env.prod.before-dashboard-20261009T222004Z",
+  "backup_permissions": "600",
+  "unchanged_container_ids": [
+    "inalpha-mastra",
+    "inalpha-evolver",
+    "inalpha-data",
+    "inalpha-research",
+    "inalpha-factor",
+    "inalpha-paper",
+    "inalpha-redis",
+    "inalpha-cloudflared",
+    "inalpha-postgres"
+  ],
+  "deployment_guard": "First attempt stopped before mutation due to one established Dashboard HTTP connection; later idle check had zero and deployed only Dashboard",
+  "normal_owner_ui": "Original owner session read before deployment: old approval expired, no generation. Post-deploy reload and page reads timed out; corrected rendered card and new approval not yet verified.",
+  "prior_preparation_usage": "Exact expired operation query found no linked receipts; cannot infer zero chat cost or owner invocation usage",
+  "new_model_calls_this_followup": 0,
+  "pending": [
+    "Corrected summary in normal owner UI",
+    "Fresh legitimate preparation and approval; never replay expired request",
+    "Real E1 execution, recovery, explicit retry and fencing",
+    "Usage attribution/reconciliation",
+    "Qualified E2 and real Forward/holdout evidence"
+  ]
+}
