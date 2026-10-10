@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-10",
+  "scope": "Normal-owner SOL runner start button preflight; insufficient-input path, not positive E2 acceptance",
+  "deployed_business_sha": "d82bcfd43967017297bee46f853aaa9a649c7871",
+  "target_kind": "paper_runner",
+  "target_id": "7c09cdb0-cd8a-43b6-8e66-787eb9f7aaed",
+  "input": "Normal existing owner session; clicked start evolution once",
+  "preflight": {
+    "status": "blocked",
+    "code": "E2_INPUT_COVERAGE_INSUFFICIENT",
+    "bar_count": 8760,
+    "dataset_content_sha256": "b310745c353c9a0735dcf6eb57152b3fca87e246777b61a9925adeb1bd86e1a4",
+    "selection_start": "2026-05-16T07:00:00+00:00",
+    "selection_end": "2026-07-28T06:00:00+00:00",
+    "selection_fact_count": 0,
+    "independent_event_upper_bound": 0,
+    "minimum_matched_event_pairs": 8,
+    "matched_controls": "not_evaluated",
+    "fdr": "not_evaluated",
+    "holdout": "not_evaluated",
+    "event_snapshot_id": "057dd025-125f-4d59-99af-a0be45c2fb27",
+    "events_sha256": "96d600abba81b602e0bd1ca0efe7b3cbe06004893050746040314c86fed9420b",
+    "execution_started": false,
+    "generation_model_calls": 0,
+    "execution_authorized": false,
+    "frozen_window_backfill_allowed": false
+  },
+  "window_provenance": "Runner resolver inherits the seed last-backtest config when present. The older 180-day cache diagnostic was a fallback scenario, not this actual request. No window was changed to seek acceptance.",
+  "chat_usage": {
+    "invocation_id": "c8c1f791-b0a2-4d45-ad57-4b7a1741b46c",
+    "linked_tool": "evolver.start_evolution_loop",
+    "linked_operations": 1,
+    "calls": 4,
+    "unknown_calls": 0,
+    "estimated_cost_usd": 0.0898308,
+    "supplier_bill_reconciled": false,
+    "historical_unknown_costs_preserved": true
+  },
+  "database": {
+    "name": "inalpha",
+    "schema": "0065",
+    "transaction_read_only": true,
+    "statement_timeout_seconds": 10,
+    "loops": 0,
+    "campaigns": 0
+  },
+  "observed_narrative_defects": [
+    "Agent incorrectly equated zero generation calls with zero overall LLM cost",
+    "Agent suggested filling the historical window even though future first-seen facts cannot backfill it"
+  ],
+  "local_followup": {
+    "commit": "f530f24f",
+    "changes": "Explicit generation-only cost scope and separate chat accounting; instruction to quote actual preflight window and not promise historical backfill",
+    "targeted_tests_passed": 4,
+    "typecheck": "passed",
+    "deployed": false
+  },
+  "positive_e2_acceptance": false,
+  "pending": [
+    "Deploy narrative clarification after exact-head CI and review",
+    "New explicitly scoped experiment with sufficient actual evidence",
+    "Recovery/retry/fencing and positive champion/Forward/holdout acceptance"
+  ]
+}
