@@ -115,3 +115,20 @@ describe("real Agent per-call usage processing", () => {
     } finally { warning.mockRestore(); }
   });
 });
+
+it("preserves truncation and response model metadata without adding another call", async () => {
+  const store: ChatUsageStore = { begin: vi.fn(async () => {}), settle: vi.fn(async () => {}) };
+  const processor = createChatUsageProcessor(store);
+  const state = {};
+  const requestContext = new RequestContext([[AUTH_SUB_KEY, "alice"]]);
+  await processor.processInputStep!({ state, stepNumber: 0, requestContext, modelSettings: {} } as never);
+  const result = { state, stepNumber: 0, usage: { inputTokens: 10, outputTokens: 20, reasoningTokens: 15 },
+    messages: [], finishReason: "length", steps: [{ response: { modelId: "immutable-fixture" } }] };
+  await processor.processOutputStep!(result as never);
+  await processor.processOutputStep!(result as never);
+  expect(store.begin).toHaveBeenCalledTimes(1);
+  expect(store.settle).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(store.settle).mock.calls[0][1]).toMatchObject({
+    status: "truncated", finishReason: "length", responseModel: "immutable-fixture", reasoningTokens: 15, outputTokens: 20,
+  });
+});
