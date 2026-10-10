@@ -6,6 +6,14 @@ import { useTranslations } from "next-intl";
 import useSWR from "swr";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -245,13 +253,17 @@ export function UsageClient({
               </span>
             }
           >
-            <p className="border-b border-border-subtle px-4 py-3 text-xs leading-relaxed text-fg-muted">
-              {t("incomplete", {
-                usage: data.summary.unknown_usage_calls,
-                cost: data.summary.unknown_cost_calls,
-                pending: data.summary.pending_calls,
-              })}
-            </p>
+            {(data.summary.unknown_usage_calls > 0 ||
+              data.summary.unknown_cost_calls > 0 ||
+              data.summary.pending_calls > 0) && (
+              <p className="border-b border-border-subtle px-4 py-3 text-xs leading-relaxed text-fg-muted">
+                {t("incomplete", {
+                  usage: data.summary.unknown_usage_calls,
+                  cost: data.summary.unknown_cost_calls,
+                  pending: data.summary.pending_calls,
+                })}
+              </p>
+            )}
             {data.items.length ? (
               <div className="overflow-x-auto">
                 <table className="w-full whitespace-nowrap text-sm">
@@ -355,9 +367,19 @@ export function UsageClient({
               </div>
             </div>
           </Panel>
-          <p className="max-w-3xl text-xs leading-relaxed text-fg-muted">
-            {t("limits")}
-          </p>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="sm">
+                {t("accountingHelp")}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("accountingHelp")}</DialogTitle>
+                <DialogDescription>{t("limits")}</DialogDescription>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </div>
