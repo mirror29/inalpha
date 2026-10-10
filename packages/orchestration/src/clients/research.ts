@@ -91,10 +91,12 @@ export type DeepDiveParams = {
 
 export class ResearchClient {
   private readonly http: HttpClient;
+  private readonly invocationId?: string;
 
-  constructor(opts: { baseUrl: string; token: string; timeoutMs?: number }) {
+  constructor(opts: { baseUrl: string; token: string; timeoutMs?: number; invocationId?: string }) {
     // deep_dive 单次 90-240s（5 个 analyst 并行 + manager 综合 + 可选 debate），
     // 默认 300s 而不是 HttpClient 的 30s 默认（A-share backfill 慢路径 ~150s，需留足余量）
+    this.invocationId = opts.invocationId;
     this.http = new HttpClient({
       baseUrl: opts.baseUrl,
       token: opts.token,
@@ -112,7 +114,7 @@ export class ResearchClient {
       user_question: params.userQuestion,
       personas: params.personas,
       language: params.language,
-    });
+    }, this.invocationId ? { "X-Inalpha-Invocation": this.invocationId } : undefined);
   }
 
   async health(): Promise<{ status: string; service: string; version: string; llm_provider: string }> {

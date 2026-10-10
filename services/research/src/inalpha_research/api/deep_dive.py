@@ -3,13 +3,16 @@
 D-8b 范围：同步调用，单 deep dive < 90s（DeepSeek API + 2 analyst + 1 manager）。
 D-9+ 升级 async + jobId + polling/WS（ADR-0002 §长任务）。
 """
+
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.errors import UnauthorizedError
+from inalpha_shared.usage import PostgresUsageStore, UsageIdentity, UsageRecorder
 
 from ..config import ResearchSettings, get_research_settings
 from ..data_client import DataClient
@@ -31,12 +34,32 @@ async def post_deep_dive(
     settings: Annotated[ResearchSettings, Depends(get_research_settings)],
     _user: Annotated[User, Depends(get_current_user)],
     authorization: Annotated[str | None, Header()] = None,
+    x_inalpha_invocation: Annotated[UUID | None, Header()] = None,
 ) -> ResearchPlan:
     """跑研究：每次都新建 LLM + DataClient（D-8b 单次，连接池等 D-9 再加）。"""
     if not authorization or not authorization.startswith("Bearer "):
         raise UnauthorizedError("missing Authorization header")
     user_token = authorization.removeprefix("Bearer ").strip()
 
+    research_id = uuid4()
+    parent_id = None
+    store = PostgresUsageStore(settings.database_url)
+    if x_inalpha_invocation is not None:
+        parent_id = await store.owned_operation(_user.user_id, str(x_inalpha_invocation))
+    recorder = UsageRecorder(
+        UsageIdentity(
+            auth_sub=_user.user_id,
+            service="research",
+            operation_id=str(research_id),
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+            stage="deep_dive",
+            links={"research_id": str(research_id)},
+            parent_operation_id=parent_id,
+        ),
+        store,
+        family=settings.llm_provider,
+    )
     llm = build_llm_client(
         provider=settings.llm_provider,
         api_key=settings.effective_api_key,
@@ -46,6 +69,7 @@ async def post_deep_dive(
         max_concurrent=settings.llm_max_concurrent,
         max_retries=settings.llm_max_retries,
         retry_base_seconds=settings.llm_retry_base_seconds,
+        recorder=recorder,
     )
     # Fix C：输出语言 = 显式 language 优先，否则从 user_question 兜底推断（防 orchestrator
     # 漏传 language 时研究结果跑去英文、再把最终报告带跑）。两者都缺才保持模型默认。
@@ -60,6 +84,7 @@ async def post_deep_dive(
             DataClient(settings.data_service_url, user_token) as data,
             FactorClient(settings.factor_service_url, user_token) as factor,
         ):
-            return await run_deep_dive(req, llm=llm, data=data, factor=factor)
+            plan = await run_deep_dive(req, llm=llm, data=data, factor=factor)
+            return plan.model_copy(update={"research_id": research_id})
     finally:
         await llm.aclose()

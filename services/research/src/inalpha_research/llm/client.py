@@ -11,6 +11,7 @@
 为什么不直接用 ``BaseChatModel`` 一类的库（langchain 等）：增加大量依赖、版本耦合，
 本项目就 2 个 analyst + 1 manager 三处调用点，自己包一层就够。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,10 +19,13 @@ import json
 import logging
 import random
 import re
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import replace
 from typing import Any, Protocol
+from uuid import uuid4
 
 from inalpha_shared.errors import InalphaError
+from inalpha_shared.usage import UsageRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -90,11 +94,9 @@ class LLMClient(Protocol):
         user: str,
         max_tokens: int = 2048,
         temperature: float = 0.2,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
-    async def aclose(self) -> None:
-        ...
+    async def aclose(self) -> None: ...
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -126,6 +128,7 @@ class DeepSeekLLMClient:
         max_concurrent: int = 5,
         max_retries: int = 3,
         retry_base_seconds: float = 1.0,
+        recorder: UsageRecorder | None = None,
         provider_name: str = "deepseek",
     ) -> None:
         # provider_name 让 OpenAI-compat 家族（openai / kimi / zhipu / ollama）
@@ -139,12 +142,14 @@ class DeepSeekLLMClient:
             api_key=api_key,
             base_url=base_url,
             timeout=timeout_seconds,
+            max_retries=0,
         )
         self._model = model
         self._provider_name = provider_name
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._max_retries = max_retries
         self._retry_base_seconds = retry_base_seconds
+        self._recorder = recorder
 
     async def _call_with_retry(
         self,
@@ -163,14 +168,22 @@ class DeepSeekLLMClient:
         retriable = (RateLimitError, APITimeoutError, InternalServerError)
         last_err: Exception | None = None
 
+        logical_id = str(uuid4())
         for attempt in range(self._max_retries + 1):
             try:
-                return await self._client.chat.completions.create(
-                    model=self._model,
-                    messages=messages,  # type: ignore[arg-type]
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    response_format={"type": "json_object"},
+                return await _record_request(
+                    self._recorder,
+                    lambda: self._client.chat.completions.create(
+                        model=self._model,
+                        messages=messages,  # type: ignore[arg-type]
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        response_format={"type": "json_object"},
+                    ),
+                    logical_id=logical_id,
+                    attempt=attempt,
+                    sampling={"temperature": temperature, "max_tokens": max_tokens},
+                    artifact={"messages": messages},
                 )
             except retriable as e:
                 last_err = e
@@ -268,16 +281,18 @@ class AnthropicLLMClient:
         max_concurrent: int = 5,
         max_retries: int = 3,
         retry_base_seconds: float = 1.0,
+        recorder: UsageRecorder | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("anthropic: api_key is required")
         from anthropic import AsyncAnthropic
 
-        self._client = AsyncAnthropic(api_key=api_key, timeout=timeout_seconds)
+        self._client = AsyncAnthropic(api_key=api_key, timeout=timeout_seconds, max_retries=0)
         self._model = model
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._max_retries = max_retries
         self._retry_base_seconds = retry_base_seconds
+        self._recorder = recorder
 
     async def _call_with_retry(
         self,
@@ -292,14 +307,23 @@ class AnthropicLLMClient:
         retriable = (RateLimitError, APITimeoutError, InternalServerError)
         last_err: Exception | None = None
 
+        system_message = system + "\n\nIMPORTANT: respond with a single valid JSON object only."
+        logical_id = str(uuid4())
         for attempt in range(self._max_retries + 1):
             try:
-                return await self._client.messages.create(
-                    model=self._model,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    system=system + "\n\nIMPORTANT: respond with a single valid JSON object only.",
-                    messages=[{"role": "user", "content": user}],
+                return await _record_request(
+                    self._recorder,
+                    lambda: self._client.messages.create(
+                        model=self._model,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        system=system_message,
+                        messages=[{"role": "user", "content": user}],
+                    ),
+                    logical_id=logical_id,
+                    attempt=attempt,
+                    sampling={"temperature": temperature, "max_tokens": max_tokens},
+                    artifact={"system": system_message, "user": user},
                 )
             except retriable as e:
                 last_err = e
@@ -356,9 +380,7 @@ class AnthropicLLMClient:
         # Anthropic 返回 content blocks list；我们只取第一块的 text
         blocks = r.content
         if not blocks:
-            raise LLMError(
-                "anthropic returned no content blocks", code="LLM_EMPTY_RESPONSE"
-            )
+            raise LLMError("anthropic returned no content blocks", code="LLM_EMPTY_RESPONSE")
         text = getattr(blocks[0], "text", "") or ""
         return _parse_json_response(text, provider="anthropic", model=self._model)
 
@@ -387,17 +409,21 @@ class GeminiLLMClient:
         max_concurrent: int = 5,
         max_retries: int = 3,
         retry_base_seconds: float = 1.0,
+        recorder: UsageRecorder | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("gemini: api_key is required")
         from google import genai
 
-        self._client = genai.Client(api_key=api_key)
+        self._client = genai.Client(
+            api_key=api_key, http_options={"retry_options": {"attempts": 1}}
+        )
         self._model = model
         self._timeout = timeout_seconds
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._max_retries = max_retries
         self._retry_base_seconds = retry_base_seconds
+        self._recorder = recorder
 
     async def _call_with_retry(
         self,
@@ -411,17 +437,25 @@ class GeminiLLMClient:
         from google.genai import errors as genai_errors
 
         last_err: Exception | None = None
+        logical_id = str(uuid4())
         for attempt in range(self._max_retries + 1):
             try:
-                return await self._client.aio.models.generate_content(
-                    model=self._model,
-                    contents=user,
-                    config={
-                        "system_instruction": system,
-                        "temperature": temperature,
-                        "max_output_tokens": max_tokens,
-                        "response_mime_type": "application/json",
-                    },
+                return await _record_request(
+                    self._recorder,
+                    lambda: self._client.aio.models.generate_content(
+                        model=self._model,
+                        contents=user,
+                        config={
+                            "system_instruction": system,
+                            "temperature": temperature,
+                            "max_output_tokens": max_tokens,
+                            "response_mime_type": "application/json",
+                        },
+                    ),
+                    logical_id=logical_id,
+                    attempt=attempt,
+                    sampling={"temperature": temperature, "max_tokens": max_tokens},
+                    artifact={"system": system, "user": user},
                 )
             except genai_errors.APIError as e:
                 last_err = e
@@ -676,6 +710,7 @@ def build_llm_client(
     max_concurrent: int = 5,
     max_retries: int = 3,
     retry_base_seconds: float = 1.0,
+    recorder: UsageRecorder | None = None,
 ) -> LLMClient:
     """按 provider 构造 LLM client。
 
@@ -696,9 +731,15 @@ def build_llm_client(
 
     if p not in SUPPORTED_PROVIDERS:
         raise ValueError(
-            f"unknown LLM provider {provider!r}; "
-            f"supported: {', '.join(SUPPORTED_PROVIDERS)}"
+            f"unknown LLM provider {provider!r}; supported: {', '.join(SUPPORTED_PROVIDERS)}"
         )
+
+    if recorder is not None:
+        resolved_model = model or (
+            _OPENAI_COMPAT_DEFAULTS[p][1] if p in _OPENAI_COMPAT_DEFAULTS else _NATIVE_DEFAULTS[p]
+        )
+        recorder.identity = replace(recorder.identity, provider=p, model=resolved_model)
+        recorder.family = p
 
     # OpenAI-compat 家族
     if p in _OPENAI_COMPAT_DEFAULTS:
@@ -711,6 +752,7 @@ def build_llm_client(
             max_concurrent=max_concurrent,
             max_retries=max_retries,
             retry_base_seconds=retry_base_seconds,
+            recorder=recorder,
             provider_name=p,
         )
 
@@ -722,6 +764,7 @@ def build_llm_client(
             max_concurrent=max_concurrent,
             max_retries=max_retries,
             retry_base_seconds=retry_base_seconds,
+            recorder=recorder,
         )
 
     if p == "gemini":
@@ -732,7 +775,29 @@ def build_llm_client(
             max_concurrent=max_concurrent,
             max_retries=max_retries,
             retry_base_seconds=retry_base_seconds,
+            recorder=recorder,
         )
 
     # 不可达：上面 if p not in SUPPORTED_PROVIDERS 已抛
     raise AssertionError(f"unreachable provider branch: {p}")
+
+
+async def _record_request(
+    recorder: UsageRecorder | None, invoke: Callable[[], Awaitable[Any]], **metadata: Any
+) -> Any:
+    """Observe each provider attempt before response parsing."""
+    if recorder is None:
+        return await invoke()
+
+    def validate(response: Any) -> None:
+        if recorder.family == "gemini":
+            text = getattr(response, "text", "") or ""
+        elif recorder.family == "anthropic":
+            text = getattr(response.content[0], "text", "") if response.content else ""
+        else:
+            text = response.choices[0].message.content if response.choices else ""
+        _parse_json_response(
+            text or "", provider=recorder.identity.provider, model=recorder.identity.model
+        )
+
+    return await recorder.request(invoke, validate=validate, **metadata)
