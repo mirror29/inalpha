@@ -2,6 +2,9 @@
 
 import { useLocale } from "next-intl";
 import { useEffect, useRef, useState } from "react";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Panel } from "@/components/ui/Panel";
+import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 
 type Preparation = {
@@ -117,43 +120,48 @@ export function EvolutionPreparation({ targetKind, targetId }: { targetKind: str
     } catch { setError(true); }
     finally { setBusy(false); }
   };
-  const button = "rounded-md border border-seal/30 px-4 py-2 text-seal disabled:opacity-40";
-  return <section className="mx-auto max-w-4xl space-y-6 p-6">
+  /** Format research timestamps in UTC without exposing transport serialization. */
+  const date = (value?: string) => value ? value.replace("T", " ").slice(0, 16) : "—";
+  const input = "mt-2 block h-10 w-full min-w-0 rounded-md border border-border-subtle bg-bg-elev/50 px-3 font-mono text-sm text-fg outline-none transition-colors focus:border-cyan focus:ring-1 focus:ring-cyan disabled:opacity-50";
+  return <section className="flex flex-col gap-6 text-sm text-fg">
     <Link href="/evolution" className="text-sm text-fg-muted">← {text("策略演化", "Evolution")}</Link>
-    <h1 className="text-3xl">{text("准备新的演化实验", "Prepare a new experiment")}</h1>
-    <p>{text("先检查真实数据，再决定是否开始搜索。旧实验保持不变；本页检查不调用聊天或生成模型。", "Check real inputs before deciding to search. Existing experiments stay frozen. These checks invoke neither chat nor generation models.")}</p>
-    <button className={button} disabled={busy || !!approval || !!loopId} onClick={() => void check(true)}>{text("根据真实事件准备新窗口", "Prepare window from real event availability")}</button>
+    <PageHeader title={text("准备演化实验", "Prepare an experiment")} subtitle={text("选择研究窗口，检查数据覆盖，再确认实验费用。", "Choose a research window, check coverage, then review the cost.")} right={<span className="font-mono text-xs text-fg-muted">{text("准备 → 审批 → 搜索", "PREPARE → APPROVE → SEARCH")}</span>} />
+    <Panel title={text("研究窗口", "Research window")} aside={<span className="font-mono text-xs text-cyan">{text("免费预检 · UTC", "FREE PREFLIGHT · UTC")}</span>}>
+    <div className="space-y-5 p-4 sm:p-5">
+    <Button disabled={busy || !!approval || !!loopId} onClick={() => void check(true)}>{text("使用建议窗口", "Use suggested window")}</Button>
     <p className="text-sm text-fg-muted">{text("默认窗口参考事件首次可见时间与最新闭合行情，不根据收益选择窗口，也不保证覆盖足够。时间统一为 UTC。", "The default uses event availability and closed bars, never returns. Sufficient coverage is not guaranteed. All times are UTC.")}</p>
     <div className="grid gap-4 sm:grid-cols-2">
-      <label>{text("开始时间（UTC）", "Start (UTC)")}<input type="datetime-local" disabled={busy || !!approval || !!loopId} value={from} onChange={e => { changed(); setFrom(e.target.value); }} className="mt-2 block w-full rounded border bg-transparent p-2" /></label>
-      <label>{text("截止时间（UTC）", "Cutoff (UTC)")}<input type="datetime-local" disabled={busy || !!approval || !!loopId} value={until} onChange={e => { changed(); setUntil(e.target.value); }} className="mt-2 block w-full rounded border bg-transparent p-2" /></label>
+      <label className="block text-xs text-fg-muted">{text("开始时间（UTC）", "Start (UTC)")}<input type="datetime-local" disabled={busy || !!approval || !!loopId} value={from} onChange={e => { changed(); setFrom(e.target.value); }} className={input} /></label>
+      <label className="block text-xs text-fg-muted">{text("截止时间（UTC）", "Cutoff (UTC)")}<input type="datetime-local" disabled={busy || !!approval || !!loopId} value={until} onChange={e => { changed(); setUntil(e.target.value); }} className={input} /></label>
     </div>
-    <button className={button} disabled={busy || !!approval || !!loopId || !from || !until || from >= until} onClick={() => void check(false)}>{text("检查此窗口", "Check this window")}</button>
-    <div aria-live="polite">
-      {busy && <p>{text("正在核对种子、闭合行情和事件覆盖…", "Checking the seed, closed bars and event coverage…")}</p>}
-      {error && <p role="alert">{approval || recovering ? text("原审批任务的状态尚未确认。请恢复原任务或查看演化列表，避免重复创建。", "The original approval status is unconfirmed. Recover that task or inspect the evolution list before creating another.") : text("准备未完成。请检查时间范围、登录状态、模型配置和服务连接后重试；未启动生成。", "Preparation did not finish. Check the window, session, model configuration and service connection. Generation has not started.")}</p>}
+    <Button disabled={busy || !!approval || !!loopId || !from || !until || from >= until} onClick={() => void check(false)}>{text("检查此窗口", "Check this window")}</Button>
+    </div>
+    </Panel>
+    <div aria-live="polite" className="space-y-4">
+      {busy && <p className="animate-pulse text-fg-muted">{text("正在核对种子、闭合行情和事件覆盖…", "Checking the seed, closed bars and event coverage…")}</p>}
+      {error && <p role="alert" className="rounded-lg border border-fox-red/25 bg-fox-red/5 p-4 text-fox-red">{approval || recovering ? text("原审批任务的状态尚未确认。请恢复原任务或查看演化列表，避免重复创建。", "The original approval status is unconfirmed. Recover that task or inspect the evolution list before creating another.") : text("准备未完成。请检查时间范围、登录状态、模型配置和服务连接后重试；未启动生成。", "Preparation did not finish. Check the window, session, model configuration and service connection. Generation has not started.")}</p>}
       {loopId && <Link href={`/evolution/loops/${loopId}`}>{text("查看已提交的演化实验", "View submitted experiment")}</Link>}
-      {approval && <div className="my-4 space-y-3 rounded-xl border p-5">
-        <h2>{text("冻结实验与费用审批", "Frozen experiment approval")}</h2>
+      {approval && <div className="space-y-4 rounded-xl border border-border-subtle bg-bg-elev/30 p-5">
+        <h2 className="font-display text-xl">{text("冻结实验与费用审批", "Frozen experiment approval")}</h2>
         <p>{approval.toolInput?.llm_snapshot?.provider} / {approval.toolInput?.llm_snapshot?.model}</p>
         <p>{text("生成费用上限（不含聊天）", "Generation budget ceiling (excluding chat)")}: ${approval.preparation?.estimated_max_cost_usd ?? "—"}</p>
         <p>{text("4 个基线候选，随后五代事件搜索；失败或证据不足会停止，不自动采用或下单。", "4 baseline candidates, followed by five generations of event search. Failures or insufficient evidence stop the experiment; no automatic adoption or orders.")}</p>
-        <button className={button} disabled={busy || approval.status === "approved"} onClick={() => void discardApproval()}>{text("返回修改，重新预检", "Edit and prepare again")}</button>
-        <button className={button} disabled={busy || (approval.status !== "approved" && typeof approval.preparation?.estimated_max_cost_usd !== "number")} onClick={() => void approve()}>{approval.status === "approved" ? text("恢复已批准任务", "Recover approved execution") : text("批准并提交此实验", "Approve and submit this experiment")}</button>
+        <Button variant="outline" disabled={busy || approval.status === "approved"} onClick={() => void discardApproval()}>{text("返回修改，重新预检", "Edit and prepare again")}</Button>
+        <Button disabled={busy || (approval.status !== "approved" && typeof approval.preparation?.estimated_max_cost_usd !== "number")} onClick={() => void approve()}>{approval.status === "approved" ? text("恢复已批准任务", "Recover approved execution") : text("批准并提交此实验", "Approve and submit this experiment")}</Button>
       </div>}
-      {result && <div className="space-y-4 rounded-xl border p-5">
-        <h2 className="text-xl">{result.status === "existing_experiment" ? text("已有实验", "Existing experiment") : result.status === "blocked" ? text("数据尚不足，未启动搜索", "Insufficient inputs; search not started") : text("必要输入具备，尚未通过评估", "Necessary inputs present; evaluation pending")}</h2>
+      {result && <div className="space-y-4 rounded-xl border border-border-subtle bg-bg-elev/30 p-4 sm:p-5">
+        <h2 className={`font-display text-xl ${result.status === "blocked" ? "text-gold" : "text-fg"}`}>{result.status === "existing_experiment" ? text("已有实验", "Existing experiment") : result.status === "blocked" ? text("数据尚不足，未启动搜索", "Insufficient inputs; search not started") : text("必要输入具备，尚未通过评估", "Necessary inputs present; evaluation pending")}</h2>
         {result.target?.evidence?.loop_id && <Link href={`/evolution/loops/${result.target.evidence.loop_id}`}>{text("继续查看已有实验", "Continue existing experiment")}</Link>}
         {result.blocker_codes?.includes("EVENT_SNAPSHOT_EMPTY") && <p>{text("当前标的在截止时点没有可见事件；需继续真实采集后准备新实验。", "No visible events for this asset at the cutoff. Collect real evidence before preparing a new experiment.")}</p>}
         {result.blocker_codes?.some(code => code.startsWith("EVOLUTION_DATA_")) && <p>{text("行情窗口尚不可用：请核对连续闭合行情、数据新鲜度及最多 10,000 根限制。", "The bar window is unavailable: check continuity, freshness and the 10,000-bar limit.")}</p>}
-        {result.target?.evidence?.seed_label && <p>{result.target.evidence.seed_label}</p>}
-        {result.config && <p>{result.config.symbol} · {result.config.timeframe}</p>}
-        {result.selection_start && <p>{text("选择段", "Selection window")}: {result.selection_start} — {result.selection_end}</p>}
-        {result.partition_bar_counts && <p>{text("发现 / 选择 / 封存行情根数", "Discovery / selection / sealed bars")}: {result.partition_bar_counts.discovery} / {result.partition_bar_counts.selection} / {result.partition_bar_counts.holdout}</p>}
-        {result.selection_fact_count !== undefined && <p>{text("选择段事实数", "Selection facts")}: {result.selection_fact_count} · {text("独立事件上界", "Independent-event upper bound")}: {result.independent_event_upper_bound} / {result.minimum_matched_event_pairs}</p>}
-        <p>{text("事件上界不是匹配对照数。匹配对照、FDR 与 holdout 尚未评估；等待新事件不能补齐已经冻结的旧窗口。", "The event upper bound is not a matched-control count. Matching, FDR and holdout remain unevaluated. New events cannot fill an old frozen window.")}</p>
-        {result.status === "necessary_inputs_present" && !approval && !loopId && <button className={button} disabled={busy} onClick={() => void requestApproval()}>{text("冻结输入并查看费用审批", "Freeze inputs and review cost approval")}</button>}
-        {result.inherited_window && <details><summary>{text("原策略窗口（未修改）", "Original strategy window (unchanged)")}</summary><p>{result.inherited_window.from_ts} — {result.inherited_window.as_of}</p></details>}
+        {result.target?.evidence?.seed_label && <p className="max-w-3xl leading-relaxed text-fg-muted">{result.target.evidence.seed_label}</p>}
+        {result.config && <p className="font-mono text-sm text-cyan">{result.config.symbol} · {result.config.timeframe}</p>}
+        {result.selection_start && <p className="break-words font-mono text-xs text-fg-muted">{text("选择段", "Selection window")}: {date(result.selection_start)} — {date(result.selection_end)} UTC</p>}
+        {result.partition_bar_counts && <p className="border-t border-border-subtle pt-4 font-mono text-sm">{text("发现 / 选择 / 封存行情根数", "Discovery / selection / sealed bars")}: {result.partition_bar_counts.discovery} / {result.partition_bar_counts.selection} / {result.partition_bar_counts.holdout}</p>}
+        {result.selection_fact_count !== undefined && <p className="font-mono text-sm">{text("选择段事实数", "Selection facts")}: {result.selection_fact_count} · {text("独立事件上界", "Independent-event upper bound")}: {result.independent_event_upper_bound} / {result.minimum_matched_event_pairs}</p>}
+        <p className="max-w-3xl text-xs leading-relaxed text-fg-muted">{text("事件上界不是匹配对照数。匹配对照、FDR 与 holdout 尚未评估；等待新事件不能补齐已经冻结的旧窗口。", "The event upper bound is not a matched-control count. Matching, FDR and holdout remain unevaluated. New events cannot fill an old frozen window.")}</p>
+        {result.status === "necessary_inputs_present" && !approval && !loopId && <Button disabled={busy} onClick={() => void requestApproval()}>{text("冻结输入并查看费用审批", "Freeze inputs and review cost approval")}</Button>}
+        {result.inherited_window && <details className="border-t border-border-subtle pt-3 text-xs text-fg-muted"><summary className="cursor-pointer transition-colors hover:text-fg">{text("原策略窗口（未修改）", "Original strategy window (unchanged)")}</summary><p className="mt-3 break-words font-mono">{date(result.inherited_window.from_ts)} — {date(result.inherited_window.as_of)} UTC</p></details>}
       </div>}
     </div>
   </section>;
