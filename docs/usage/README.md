@@ -98,8 +98,7 @@ A material manifest contains `protocol`, `development`, `formal`, `market`, `lab
 adjustment/cost assumptions, decision/probability semantics, neutral/short treatment and
 thresholds. Market input explicitly supplies ordered expected `sessions` and asset/benchmark
 rows with `session`, `source`, `raw`, and its `hash`. No calendar or benchmark is guessed.
-Labels reference the protocol/code version and provenance; blinded annotations additionally
-reference the rubric. Human review and actual blindness remain evidence requirements, not
+Labels include an actual `value` plus protocol/code version and provenance; blinded annotations include `criteria`, frozen `evidence_ids`, and a rubric reference. Metadata-only labels and empty raw market records do not pass readiness. Human review and actual blindness remain evidence requirements, not
 facts a boolean flag can prove.
 
 ## Readiness and rollout

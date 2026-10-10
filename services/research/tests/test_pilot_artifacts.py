@@ -101,3 +101,56 @@ def test_run_validation_distinguishes_local_output_from_durable_ledger(tmp_path)
     artifacts.event({"event": "settled", "call_id": "c", "ledger_settled": False})
     artifacts.finish({"decision": "neutral"})
     assert "ledger settlement unconfirmed" in validate_run(artifacts.path)
+
+
+def test_materials_require_actual_label_content_not_only_metadata():
+    protocol = {
+        key: "fixture"
+        for key in (
+            "version",
+            "asset",
+            "calendar",
+            "timezone",
+            "benchmark",
+            "horizon",
+            "entry_timing",
+            "adjustment",
+            "transaction_costs",
+            "decision_semantics",
+            "probability_semantics",
+            "neutral_treatment",
+            "short_treatment",
+            "thresholds",
+        )
+    }
+    raw = {"close": 100}
+    bar = {"session": "2026-05-01", "source": "synthetic", "raw": raw, "hash": digest(raw)}
+    materials = {
+        "protocol": protocol,
+        "development": [case()],
+        "formal": [],
+        "market": {"sessions": ["2026-05-01"], "asset": [bar], "benchmark": [bar]},
+        "labels": [
+            {
+                "case_id": "c1",
+                "protocol_version": "fixture",
+                "provenance": "synthetic",
+                "code_version": "v1",
+                "value": "neutral",
+            }
+        ],
+        "annotations": [
+            {
+                "case_id": "c1",
+                "protocol_version": "fixture",
+                "provenance": "synthetic",
+                "rubric_version": "v1",
+                "blinded": True,
+                "evidence_ids": ["price1"],
+                "criteria": {"factual_errors": 0},
+            }
+        ],
+    }
+    assert validate_materials(materials) == []
+    del materials["labels"][0]["value"]
+    assert "invalid labels provenance" in validate_materials(materials)

@@ -162,7 +162,11 @@ def validate_materials(materials: dict[str, Any]) -> list[str]:
         if sessions != schedule:
             problems.append(f"{label} sessions do not match calendar")
         for row in rows:
-            if not row.get("source") or row.get("hash") != digest(row.get("raw")):
+            if (
+                not row.get("source")
+                or not row.get("raw")
+                or row.get("hash") != digest(row.get("raw"))
+            ):
                 problems.append(f"{label} missing provenance or hash mismatch")
     cases = {case["case_id"]: case for case in dev + formal}
     if formal and protocol.get("frozen") is not True:
@@ -180,9 +184,16 @@ def validate_materials(materials: dict[str, Any]) -> list[str]:
             problems.append(f"duplicate {kind} case")
         for row in rows:
             required = (
-                ("case_id", "protocol_version", "provenance", "code_version")
+                ("case_id", "protocol_version", "provenance", "code_version", "value")
                 if kind == "labels"
-                else ("case_id", "protocol_version", "provenance", "rubric_version", "blinded")
+                else (
+                    "case_id",
+                    "protocol_version",
+                    "provenance",
+                    "rubric_version",
+                    "blinded",
+                    "criteria",
+                )
             )
             if any(row.get(key) in (None, "") for key in required) or row.get(
                 "protocol_version"

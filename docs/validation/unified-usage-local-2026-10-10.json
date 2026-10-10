@@ -17,7 +17,8 @@
     "dashboard_typecheck_and_production_build": "passed",
     "http_smoke": "unauthenticated 401; authenticated owner-scoped 200; private no-store response",
     "synthetic_evidence_cli": "freeze and validation passed",
-    "consistency": "19 passed, 12 pre-existing warnings, 0 failures"
+    "consistency": "19 passed, 12 pre-existing warnings, 0 failures",
+    "pilot_material_validation_regression": "9 passed, including rejection of metadata-only labels"
   },
   "remaining_gates": [
     "Production migration and writer rollout have not been performed.",
