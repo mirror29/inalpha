@@ -130,7 +130,7 @@
       }
     },
     "runnersPanel": {
-      "title": "Live Runners",
+      "title": "Strategy runs",
       "empty": "No strategy running. Promote a candidate and start it — running strategies show up here.",
       "viewAll": "View all",
       "running": "{count} running",
@@ -168,9 +168,9 @@
     }
   },
   "runners": {
-    "title": "Live Runners",
-    "subtitle": "Promoted strategies trading the live feed — status, PnL, and every bar-by-bar decision.",
-    "empty": "No strategy runs yet. Promote a candidate and start it to see live runners here.",
+    "title": "Strategy runs",
+    "subtitle": "Track strategy status, returns and trades.",
+    "empty": "No strategy runs yet. Start a promoted strategy from the strategy lab.",
     "emptyFiltered": "No {status} runs.",
     "running": "running",
     "filter": {
@@ -235,8 +235,8 @@
     },
     "factors": {
       "title": "Effective Factors (Instrument)",
-      "hint": "Top effective factors (Rank IC) computed live for this runner's instrument. Recent IC (last ⅓ of the sample) flipping sign or fading toward zero vs the full-sample IC = the factor is decaying. Note: this is the instrument's current factor environment, not the factors referenced inside the strategy code.",
-      "unavailable": "Factor effectiveness unavailable (factor service down or insufficient data).",
+      "hint": "Current effective factors for this instrument; the running strategy may not use them.",
+      "unavailable": "Factor effectiveness is currently unavailable.",
       "empty": "No factor passed the effectiveness threshold.",
       "barsUsed": "{n} bars",
       "colFactor": "Factor",
@@ -263,7 +263,7 @@
   },
   "activity": {
     "title": "Agent Activity",
-    "subtitle": "One timeline for everything the agents did across modules — scheduled runs, approvals, decisions, risk blocks, orders.",
+    "subtitle": "View tasks, approvals, trades and risk events.",
     "kpi": {
       "scheduler": "Scheduler",
       "schedulerOn": "running",
@@ -371,7 +371,7 @@
       "lineage": "View evolution lineage"
     },
     "title": "Strategy Lab",
-    "subtitle": "LLM-authored strategy candidates, ranked by multi-objective fitness — with their latest backtest metrics.",
+    "subtitle": "Explore strategy candidates and their backtest results.",
     "candidates": "Candidates",
     "promoted": "Promoted",
     "empty": "No candidates yet.",
@@ -413,7 +413,7 @@
         "by": "by {who}"
       },
       "instances": "Run Instances",
-      "instancesEmpty": "This strategy hasn't run paper trading yet. Promote and start it to see instances here.",
+      "instancesEmpty": "No runs yet. Runs appear after this strategy is promoted and started.",
       "instancesHint": "Price action and fills for the most recent run are shown below.",
       "chart": "Price (latest run)",
       "trades": "Trades (latest run)",
@@ -440,13 +440,13 @@
   },
   "factors": {
     "title": "Factor Library",
-    "subtitle": "The full system factor catalog (pandas-ta / Alpha101 / qlib …) — click a card for what each factor measures. Per-instrument timing effectiveness lives on each runner's detail page.",
+    "subtitle": "Browse factors, definitions and calculation methods.",
     "catalogCount": "Catalog",
     "totalFactors": "{n} factors",
     "serviceDown": "Factor service unavailable — the catalog can't be loaded.",
     "viewDetail": "View factor detail",
     "catalog": "System Factor Catalog",
-    "catalogHint": "Every factor currently available in the system, grouped by source (instrument- and market-agnostic). Click a card to see what it measures and how to read it.",
+    "catalogHint": "Grouped by source. Select a factor for details.",
     "filter": {
       "all": "All"
     },
@@ -807,7 +807,7 @@
       "adopt": "Adopt into Strategy Lab",
       "adopting": "Adopting…",
       "adopted": "Adopted as an experimental strategy",
-      "adoptHint": "Adoption does not promote, start Runner, or trade; runner_eligible is enforced false.",
+      "adoptHint": "Save as an experimental strategy only; it will not be enabled or traded automatically.",
       "loadMore": "Load more evaluations",
       "loadingMore": "Loading…"
     },
@@ -1066,7 +1066,7 @@
   },
   "dataHealth": {
     "title": "Event Data Health",
-    "subtitle": "Coverage, first acceptance, revisions, and snapshot integrity for the event source of truth.",
+    "subtitle": "Check event sources, coverage and processing status.",
     "rawEvents": "Raw events",
     "facts": "Normalized facts",
     "retractions": "Revisions / retractions",
@@ -1082,6 +1082,14 @@
     "empty": "No event source has been archived yet."
   },
   "walletAccounting": {
+    "releaseRequiresStopped": "Capital release requires a stopped run",
+    "warningSummary": "The wallet has unresolved warnings. See accounting details.",
+    "releaseRequiresClose": "Close open positions to release capital",
+    "releaseReady": "Released capital returns to the main account",
+    "details": "Accounting details",
+    "hideDetails": "Hide details",
+    "valuationWarning": "Valuation could not be updated; showing the last trusted value.",
+    "releaseRequiresFlat": "Stop the run and close positions to release capital",
     "resume": "Resume this run",
     "verified": "Verified accounting",
     "legacy_unverified": "Unverified legacy accounting",
@@ -1104,6 +1112,7 @@
     "legacyPositions": "Legacy/manual book below; old positions are no longer managed automatically."
   },
   "usage": {
+    "accountingHelp": "Accounting scope",
     "filters": "Filter records",
     "reset": "Reset",
     "records": "Call history",

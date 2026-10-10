@@ -92,7 +92,9 @@ export function RunnerCard({
         </div>
       </div>
 
-      <p className="px-0 text-xs text-fg-muted">{accounting(run.accounting_status ?? "legacy_unverified")}</p>
+      {run.accounting_status !== "verified" && (
+        <p className="px-0 text-xs text-gold">{accounting(run.accounting_status ?? "legacy_unverified")}</p>
+      )}
 
       {/* 元信息 */}
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 font-mono text-[11px]">
