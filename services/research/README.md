@@ -111,3 +111,12 @@ python scripts/replay-e2-archive.py \
 并单列四类直接触发事件；质量门槛和 24 小时独立性规则不变。
 就绪检查只证明必要输入覆盖，匹配对照、FDR、收益和 Forward 仍需正式链路验证。
 模型预算、当前真实证据与下一步清单以 [当前状态文档](../../docs/04-current-state.md#未完成--下一步) 为准。
+
+## Unified usage and development pilot artifacts
+
+Research provider attempts are recorded in the owner-scoped unified ledger (migration
+0066 required), including retries and returned usage before JSON parsing. Unknown usage
+or prices remain unknown. Production deep dives keep their existing response schema.
+For offline evidence preparation and #206 adapter contracts, see
+[Unified model usage](../../docs/usage/README.md). These tools do not authorize paid runs
+or establish real-data pilot readiness.

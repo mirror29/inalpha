@@ -1,0 +1,30 @@
+{
+  "scope": "Unified authenticated application LLM usage and Research pilot tooling (#208)",
+  "date": "2026-10-10",
+  "environment": "isolated local worktree and dedicated PostgreSQL test database",
+  "paid_model_calls": 0,
+  "production_deployment": false,
+  "checks": {
+    "research_suite": "187 passed; 2 database-only tests separately passed with dedicated DB",
+    "research_lint": "passed",
+    "evolver_related_tests": "owner credentials, pricing, repair and proposal tests passed; one existing optional integration test skipped",
+    "evolver_owner_attribution_database_test": "passed (including cross-owner rejection)",
+    "migration_0066": "2 PostgreSQL migration tests passed",
+    "orchestration_related_tests": "67 passed before the additional truncation regression; chat processor suite then passed all 9 tests",
+    "chat_storage_database_tests": "3 passed",
+    "orchestration_typecheck": "passed",
+    "dashboard_related_tests": "10 passed",
+    "dashboard_typecheck_and_production_build": "passed",
+    "http_smoke": "unauthenticated 401; authenticated owner-scoped 200; private no-store response",
+    "synthetic_evidence_cli": "freeze and validation passed",
+    "consistency": "19 passed, 12 pre-existing warnings, 0 failures"
+  },
+  "remaining_gates": [
+    "Production migration and writer rollout have not been performed.",
+    "Historical aggregate Evolver costs are retained separately and are not invented as per-call receipts.",
+    "Unfinished chat streams without a completion callback remain explicitly pending/unknown.",
+    "Developer-only review scripts are outside authenticated application accounting coverage.",
+    "Real pilot assets, benchmark, calendar, scoring protocol, annotations and paid budget remain decisions under #206.",
+    "Unknown model revisions, training cutoff and contamination limitations remain explicit."
+  ]
+}
