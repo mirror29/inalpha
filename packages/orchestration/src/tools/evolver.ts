@@ -15,11 +15,19 @@ import {
 } from "./evolver-shared.js";
 
 const AUTOMATIC_SNAPSHOT_POLICY = "all-visible-facts-v1";
+/** Freeze supported evidence; direct-trigger restrictions belong to HypothesisSpec validation. */
 const AUTOMATIC_EVENT_TYPES: MarketEventType[] = [
   "listing",
   "delisting",
   "exploit",
   "chain_halt",
+  "regulatory",
+  "upgrade",
+  "unlock",
+  "burn",
+  "partnership",
+  "macro",
+  "other",
 ];
 
 export async function createAutomaticEventSnapshot(
@@ -65,7 +73,7 @@ export async function createAutomaticEventSnapshot(
   if (snapshot.fact_count < 1) {
     throw new Error(
       "EVENT_SNAPSHOT_EMPTY: no point-in-time event facts cover this asset and cutoff; " +
-        "backfill the event ledger before starting the campaign",
+        "collect real events before retrying; never backdate their availability or change the frozen cutoff",
     );
   }
   return { snapshotId: snapshot.snapshot_id, asset };
