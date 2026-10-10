@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-10",
+  "pr": 219,
+  "reviewed_head": "957e567f091fd449ba32674f73d0582e3a8ebf0e",
+  "business_sha": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+  "merged": true,
+  "ci": {
+    "pr": 38036239879,
+    "main": 38036966422,
+    "images": 38036966379,
+    "all": "success"
+  },
+  "review": {
+    "automatic_run": 38036239876,
+    "automatic_result": "no_publishable_body_not_approval",
+    "independent": "No confirmed new P1/P2 in identity, preparation, approval, recovery and worker digest scope; static review only"
+  },
+  "deployment": {
+    "status": "deferred_before_mutation",
+    "attempts": 3,
+    "guard": "Dashboard established connection count remained 1",
+    "additional_observation": {
+      "dashboard_tx_queue": 0,
+      "dashboard_rx_queue": 0,
+      "mastra_established_connections": 0
+    },
+    "interpretation": "May be keep-alive; not proof of an active user task or proof that no request is in flight",
+    "configuration_modified": false,
+    "migration_performed": false,
+    "containers_replaced": false
+  },
+  "observed_production": {
+    "repo": "1dc8fa78f7d02857cc1c8968e9255db19b245a9f",
+    "database": "inalpha",
+    "schema": "0066",
+    "dashboard": "5389534ca0a6",
+    "mastra": "d07222ad85e9",
+    "evolver": "750723fb5cd1",
+    "three_service_image_sha": "1dc8fa78f7d02857cc1c8968e9255db19b245a9f",
+    "data": "e61ae92b2019",
+    "evolution_loops": 0
+  },
+  "browser": {
+    "status": "connection_unavailable",
+    "attempts": "Existing in-app browser tab connection timed out twice",
+    "normal_owner_acceptance": "not_performed"
+  },
+  "model_calls": 0,
+  "next": [
+    "Restore normal browser connection and establish safe deployment window",
+    "Back up config/database, migrate 0066 to 0067 and replace only Dashboard/Mastra/Evolver with fixed business SHA",
+    "Verify normal owner model-free preparation and blocked/approval/recovery flows",
+    "Continue isolated process fault injection and real E2 when necessary inputs suffice"
+  ],
+  "boundaries": [
+    "No invented input or owner identity",
+    "No real five-generation, Forward, holdout or human-adoption pass claimed"
+  ]
+}

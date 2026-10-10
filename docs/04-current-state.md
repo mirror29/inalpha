@@ -17,11 +17,13 @@ Inalpha 是 AI agent 编排与多 Python kernel 的量化实验框架。D-12 因
 | E1 正常 owner 预检、冻结审批、生成、刷新读取 | [真实执行回执](validation/evolution-approval-execution-lineage-2026-10-10.json) | 已生产实测；候选与原策略适应度相同，验证段零成交，未证明改善 |
 | E2 必要输入不足拦截 | [正常 owner 回执](validation/evolution-owner-preflight-2026-10-10.json) | 实际 SOL 8760 bars 的选择段为 5 月 16 日至 7 月 28 日，事实数 0；没有启动搜索 |
 | 五代搜索、checkpoint、拒绝路径 | [历史记录](validation/current-state-history-through-2026-10-10.md) | 有自动化与历史拒绝路径证据；不能记为生产冠军通过 |
-| 新实验准备与直接审批 | [本地验收](validation/e2-experiment-preparation-local-2026-10-10.json) | 本分支已实现；尚未部署或通过正常 owner 实测 |
+| 新实验准备与直接审批 | [本地验收](validation/e2-experiment-preparation-local-2026-10-10.json) | PR #219 已合并且完整 CI/镜像通过；尚未部署或通过正常 owner 实测 |
 | 冠军、Forward、holdout、人工采用 | 无完整正向生产回执 | 未完成；Forward 计时尚不能宣称开始 |
 
 旧冻结窗口无法靠未来采集补齐。新闻原文数、事实版本数、24 小时独立事件上界、匹配对照数是不同口径。
 必要输入上界达到 8 只允许继续评估，不代表匹配对照、FDR 或采用门槛已通过。
+
+最新发布：[PR #219 发布回执](validation/e2-experiment-release-2026-10-10.json)。固定业务 `ab5fd15b` 的 PR/main CI 与镜像构建均通过；自动 CR 无有效正文，独立静态专项审查无确认新增 P1/P2，不能替代生产验收。三次部署前检查均发现 Dashboard 一条已建立连接，故在修改前停止；收发队列为空可能是保活，不能认定正在执行任务。生产仍为 `1dc8fa78` / schema0066，本轮未修改配置、迁移或替换容器。内置浏览器连接两次超时，正常 owner 页面验收待恢复连接。
 
 ## 本次实现：统一准备新实验
 
@@ -41,7 +43,7 @@ Inalpha 是 AI agent 编排与多 Python kernel 的量化实验框架。D-12 因
 
 ### P0 · 新入口生产验收
 
-1. 完成精确 head 的 CI 与具体代码审查；先备份配置和数据库，按真实迁移链升级，部署受影响的 Dashboard、orchestration、Evolver，保留旧版本回滚。
+1. PR #219 的精确 head CI、主分支 CI、镜像构建及专项审查已完成；待安全空闲窗口，先备份配置和数据库，升级0067，仅部署受影响的 Dashboard、orchestration、Evolver，保留旧版本回滚。
 2. 正常 owner 验证：页面免费准备新窗口、结构化阻塞、参数修改失效、冻结费用、单次批准、刷新和响应丢失后的原操作恢复。
 3. 核对实际新窗口、来源首次可见时间、闭合连续行情与必要覆盖。输入不足时继续真实采集；不重跑相同付费搜索、不改写历史窗口。
 
