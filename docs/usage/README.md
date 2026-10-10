@@ -26,8 +26,8 @@ links a verified owned chat invocation. `links` carries pilot experiment/case/ar
 - Missing usage is null. Provider-reported zero is a valid known value. Missing or
   unsupported pricing leaves cost null even when tokens are known.
 - Costs use frozen, versioned USD input/output rates, without inventing cache discounts;
-  these are estimates, not billed amounts. Research production requests have unknown
-  prices until an explicit pricing snapshot is supplied by an experiment adapter.
+  these are estimates, not billed amounts. Research production requests accept explicit model-bound snapshots via
+  `RESEARCH_USAGE_PRICING` (a JSON array); absent or ambiguous matches remain unknown.
 - The ledger contains no prompts, response bodies, keys or authorization headers.
   Pilot content lives in restricted local artifacts, joined by call ID.
 
@@ -126,3 +126,23 @@ response with an unavailable ledger remains usable diagnostic evidence but does 
 readiness. `completed` in the ledger denotes a returned provider request, not proof that an
 Evolver candidate passed parsing, compilation or evaluation; inspect linked business
 outcomes as well. Research JSON validation marks invalid responses directly.
+
+
+### Research pricing configuration
+
+Set `RESEARCH_USAGE_PRICING` to a JSON array before starting Research. Each item must
+specify `provider`, `model`, nonempty `version`, `currency: "USD"`, and finite nonnegative
+`input_usd_per_million` / `output_usd_per_million` rates. Rates are frozen into each new
+call; changing configuration never reprices historical calls. Set `LLM_MODEL` explicitly
+when using pricing snapshots; an empty model name does not infer a pricing match. An unmatched model or
+duplicate match remains unknown. Invalid rate values fail startup validation.
+
+Example estimate (peak/non-cache rates, not an invoice):
+
+```dotenv
+RESEARCH_USAGE_PRICING='[{"provider":"deepseek","model":"deepseek-flash","version":"deepseek-peak-estimate-2026-10-10","currency":"USD","input_usd_per_million":"0.3","output_usd_per_million":"1.2"}]'
+```
+
+Verify current rates with the provider before use. DeepSeek applies cache and time-of-day
+discounts; this conservative estimate intentionally does not claim those discounts.
+Source checked 2026-10-10: https://api-docs.deepseek.com/quick_start/pricing/.

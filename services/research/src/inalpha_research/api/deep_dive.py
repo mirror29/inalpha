@@ -22,6 +22,7 @@ from ..llm.client import (
     build_llm_client,
     infer_output_language,
 )
+from ..pricing import pricing_for_model
 from ..runner import run_deep_dive
 from ..schemas import DeepDiveRequest, ResearchPlan
 
@@ -54,6 +55,9 @@ async def post_deep_dive(
             provider=settings.llm_provider,
             model=settings.llm_model,
             stage="deep_dive",
+            pricing=pricing_for_model(
+                settings.research_usage_pricing, settings.llm_provider, settings.llm_model
+            ),
             links={"research_id": str(research_id)},
             parent_operation_id=parent_id,
         ),
