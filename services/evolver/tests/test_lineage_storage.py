@@ -3,9 +3,12 @@
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
+from inalpha_shared.auth import User
 from psycopg.errors import RaiseException
 
-from inalpha_evolver.storage import lineage, loops, runs
+from inalpha_evolver.api.detail_routes import get_run
+from inalpha_evolver.storage import candidates, lineage, loops, runs
 
 from .test_loop_storage import create_baseline, create_campaign, loop_database  # noqa: F401
 from .test_retry_storage import insert_retry
@@ -139,3 +142,32 @@ VALUES(%s,%s,%s,'limited'),(%s,%s,%s,'limited')""",
         "campaigns"
     ][0]
     assert isolated["forward_sandbox_id"] is None and isolated["holdout_attempt_id"] == holdout
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_kind", ["owned", "foreign", "missing", "malformed"])
+async def test_evolution_candidate_source_reference_respects_run_owner(database, source_kind):
+    owner = uuid4()
+    source = await create_baseline(database, owner if source_kind == "owned" else uuid4())
+    candidate = await candidates.insert_slot(database, source["e1_run_id"], 0, "test mutation")
+    candidate_id = uuid4() if source_kind == "missing" else candidate["candidate_id"]
+    reference = f"evolution_candidate:{candidate_id}"
+    if source_kind == "malformed":
+        reference = "evolution_candidate:not-a-uuid"
+    target = await create_baseline(database, owner)
+    await database.execute(
+        "UPDATE strategy_evo_runs SET seed_strategy_id=%s WHERE run_id=%s",
+        (reference, target["e1_run_id"]),
+    )
+
+    graph = await lineage.for_run(database, target["e1_run_id"], owner)
+
+    assert graph["source_reference"] == (reference if source_kind == "owned" else None)
+    assert graph["current_run_id"] == target["e1_run_id"]
+    assert await lineage.for_run(database, target["e1_run_id"], uuid4()) is None
+
+    response = await get_run(target["e1_run_id"], database, User(user_id=str(owner)))
+    assert response.lineage["source_reference"] == graph["source_reference"]
+    with pytest.raises(HTTPException) as denied:
+        await get_run(target["e1_run_id"], database, User(user_id=str(uuid4())))
+    assert denied.value.status_code == 404
