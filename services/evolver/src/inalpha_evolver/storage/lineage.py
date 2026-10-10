@@ -36,7 +36,9 @@ ORDER BY attempt.attempt_number,attempt.queued_at,attempt.run_id""",
                 reference = None
             else:
                 await cur.execute(
-                    "SELECT 1 FROM strategy_evo_candidates WHERE candidate_id=%s AND owner_account_id=%s",
+                    """SELECT 1 FROM strategy_evo_candidates candidate
+JOIN strategy_evo_runs source_run USING(run_id)
+WHERE candidate.candidate_id=%s AND source_run.owner_account_id=%s""",
                     (source_candidate, owner),
                 )
                 if await cur.fetchone() is None:
