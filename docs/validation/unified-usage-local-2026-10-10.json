@@ -2,7 +2,7 @@
   "scope": "Unified authenticated application LLM usage and Research pilot tooling (#208)",
   "date": "2026-10-10",
   "environment": "isolated local worktree and dedicated PostgreSQL test database",
-  "paid_model_calls": 0,
+  "paid_model_calls": 30,
   "production_deployment": false,
   "checks": {
     "research_suite": "196 passed; 2 database-only tests separately passed with dedicated DB",
@@ -25,7 +25,41 @@
     "browser_acceptance": "Passed: actual login/logout, two-owner isolation, service/status/model/operation filters, date input, 50+3 pagination, tiny costs, empty/error/recovery states, 390px responsive layout.",
     "research_http_acceptance": "Real Research HTTP service plus local OpenAI-compatible upstream: 6 analyst briefs, 3 debate entries, synthesis; injected HTTP 500 persisted separately from retry.",
     "request_reconciliation": "66 local provider HTTP requests = 66 database receipts (65 completed, 1 failed); Alice 65, Bob 1.",
-    "pilot_http_acceptance": "Frozen evidence sent through SDK to local HTTP upstream; artifact/event/hash/ledger validation passed and experiment filter remained owner-scoped."
+    "pilot_http_acceptance": "Frozen evidence sent through SDK to local HTTP upstream; artifact/event/hash/ledger validation passed and experiment filter remained owner-scoped.",
+    "real_provider_acceptance": {
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "research_id": "5a379757-4d55-4bdc-b1d0-8f3802a9d890",
+      "http_status": 200,
+      "elapsed_seconds": 21.87,
+      "analyst_briefs": 6,
+      "debate_entries": 3,
+      "synthesis_present": true,
+      "calls": 10,
+      "completed": 10,
+      "input_tokens": 19754,
+      "output_tokens": 5513,
+      "browser_totals_match_database": true,
+      "debate_max_tokens": 4096,
+      "thinking": "disabled for structured deepseek-flash calls"
+    },
+    "real_pilot_acceptance": {
+      "run_id": "674f8d6c-746a-4409-add6-5a7209fe5718",
+      "calls": 1,
+      "input_tokens": 268,
+      "output_tokens": 40,
+      "artifact_validation_errors": [],
+      "scope": "Infrastructure smoke with frozen acceptance annotation; not a formal investment experiment"
+    },
+    "real_provider_reconciliation": {
+      "requests": 30,
+      "receipts": 30,
+      "completed": 25,
+      "truncated": 4,
+      "invalid": 1,
+      "pending": 0,
+      "initial_runs": "Retained two exploratory runs with truncation/invalid JSON, then verified all 10 stages after explicit non-thinking JSON mode."
+    }
   },
   "remaining_gates": [
     "Production migration and writer rollout have not been performed.",
@@ -34,13 +68,14 @@
     "Developer-only review scripts are outside authenticated application accounting coverage.",
     "Real pilot assets, benchmark, calendar, scoring protocol, annotations and paid budget remain decisions under #206.",
     "Unknown model revisions, training cutoff and contamination limitations remain explicit.",
-    "Real provider/invoice reconciliation and a full configured Agent chat/Evolver run remain unverified."
+    "Provider invoice reconciliation and a full configured Agent chat/Evolver run remain unverified. Costs are unknown because these Research calls have no versioned pricing snapshot; token receipts are real."
   ],
   "review_fixes": [
     "Keep model evidence and configuration immutable after artifact creation.",
     "Reject duplicate cases and empty label/annotation content.",
     "Reject pilot provider/model values that differ from the frozen configuration.",
-    "Preserve nonzero costs down to the ledger precision in Dashboard displays."
+    "Preserve nonzero costs down to the ledger precision in Dashboard displays.",
+    "Explicitly disable thinking for structured deepseek-flash calls to prevent reasoning from exhausting small output budgets; retain other providers and reasoning models unchanged."
   ],
   "browser_environment": {
     "dashboard": "Next.js localhost:4308 (production smoke, latest-source development acceptance)",
@@ -49,6 +84,7 @@
     "upstream": "Local synthetic OpenAI-compatible provider/data fixtures on localhost:8309; no paid calls",
     "pilot_endpoint": "Test harness overrides only factory base_url to localhost; production provider endpoints were not contacted",
     "console": "Expected CopilotKit 428 without a configured chat model; injected ledger outage returned 503 and recovered. No other observed application console error.",
-    "screenshots": "Retained locally; not committed as public research data"
+    "screenshots": "Retained locally; not committed as public research data",
+    "real_provider": "Research localhost:8315 -> real Data localhost:8001 / Factor localhost:8004 -> official DeepSeek API; isolated usage database. Initial synthetic acceptance above remains a separate test."
   }
 }
