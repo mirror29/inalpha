@@ -23,7 +23,7 @@ from ..event_client import fetch_event_snapshot
 from ..loop_fencing import BaselineLease, BaselineLeaseLost, baseline_lease
 from ..loop_llm import LoopModelScope
 from ..storage import loop_dispatch, runs
-from .executor import _parse_config, _service_token, execute_frozen_run
+from .executor import _parse_config, _service_token, execute_frozen_run, validate_prepared_dataset
 
 
 async def execute_loop_baseline(
@@ -82,6 +82,8 @@ async def execute_loop_baseline(
                     )
                 async with get_conn() as conn:
                     persisted = await persist_loop_data_snapshot(conn, **scope, dataset=dataset)
+            if run.get("config", {}).get("preparation") is not None:
+                validate_prepared_dataset(run, decode_frozen_dataset(persisted))
             await require_loop_event_coverage(loop, persisted, settings)
             await execute_frozen_run(
                 run,
