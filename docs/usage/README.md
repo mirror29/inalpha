@@ -48,6 +48,8 @@ Filters: `from` (inclusive UTC), `to` (exclusive UTC), `service`, `model`, `stat
 includes its directly linked child requests once. Ownership always comes from the
 session, never query parameters. Totals and rows use one repeatable-read snapshot.
 Numeric token/amount values are strings to avoid JSON integer precision loss.
+The page displays token counts with compact K/M/B/T units (up to two decimal places).
+Hover titles and accessible labels retain exact integers; unknown values remain `—`.
 
 Coverage:
 
@@ -119,6 +121,8 @@ facts a boolean flag can prove.
 
 This development change does not authorize production deployment, private data extraction,
 paid calls or automatic promotion/order execution. #208 stays open for the real-data gates.
+For recorded deployment acceptance and remaining research gaps, see the
+[2026-10-10 production validation](../validation/unified-usage-production-2026-10-10.md).
 
 Use `python -m inalpha_research.pilot validate-run /path/to/run` to verify call-event
 pairing, manifest/evidence/configuration hashes and confirmed ledger settlement. A local
