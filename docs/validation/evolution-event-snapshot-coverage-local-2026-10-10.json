@@ -32,7 +32,17 @@
     },
     "source_versions_are_not_independent_events": true,
     "loops": 0,
-    "campaigns": 0
+    "campaigns": 0,
+    "original_sol_window_cache_diagnostic": {
+      "cutoff": "2026-10-09T06:25:54.528Z",
+      "resolver_from_ts": "2026-04-12T06:25:54.528Z",
+      "closed_cached_bars": 4319,
+      "contiguous": true,
+      "selection_start": "2026-07-29T07:00:00Z",
+      "selection_end": "2026-09-03T06:00:00Z",
+      "visible_selection_facts": 0,
+      "qualification": "Cache-only necessary-input diagnostic at original cutoff, not a runtime frozen dataset or matched/FDR evaluation. No acceptance range modified."
+    }
   },
   "finding": {
     "cause": "Automatic entry used the four direct-trigger types as the complete evidence filter, omitting supported confirmed/hybrid evidence",
@@ -85,7 +95,8 @@
       "passed": 19,
       "failed": 0,
       "existing_warnings": 12
-    }
+    },
+    "trigger_safety_regressions_passed": 11
   },
   "deployment": {
     "deployed": false,
