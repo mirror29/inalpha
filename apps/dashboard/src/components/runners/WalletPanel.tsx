@@ -42,13 +42,16 @@ export function WalletPanel({
       {run.accounting_status !== "verified" && (
         <p className="text-gold">{t("legacyWarning")}</p>
       )}
-      {!wallet &&
-        run.accounting_status !== "verified" &&
-        run.accounting_note && (
-          <p className="mt-2 break-words text-xs text-fg-muted">
-            {run.accounting_note}
+      {!wallet && run.accounting_status !== "verified" && (
+        <div className="mt-2 space-y-1 text-xs text-fg-muted">
+          {run.accounting_note && (
+            <p className="break-words">{run.accounting_note}</p>
+          )}
+          <p>
+            {t("original")}: {run.original_cumulative_pnl ?? run.cumulative_pnl}
           </p>
-        )}
+        </div>
+      )}
       {wallet ? (
         <>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -81,13 +84,7 @@ export function WalletPanel({
             </Button>
           </div>
           {wallet.warnings.length > 0 && (
-            <p className="mt-2 text-xs text-gold">
-              {t(
-                !wallet.released_at && wallet.equity !== null
-                  ? "valuationWarning"
-                  : "warningSummary",
-              )}
-            </p>
+            <p className="mt-2 text-xs text-gold">{t("warningSummary")}</p>
           )}
           {showDetails && (
             <div
