@@ -14,3 +14,8 @@ describe("direct approval receipts", () => {
     }
   });
 });
+
+it("recognizes a direct E2 loop submission without resuming chat", () => {
+  expect(approvalExecutionReceipt({ execution: { loop_id: "680ac835-ef1d-4f72-a298-76ca1ba4c81e" } }))
+    .toEqual({ kind: "submitted", runId: "680ac835-ef1d-4f72-a298-76ca1ba4c81e", loop: true });
+});

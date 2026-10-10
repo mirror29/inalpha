@@ -1,10 +1,11 @@
 /** Distinguishes direct submission receipts from approvals requiring legacy chat continuation. */
-export function approvalExecutionReceipt(value: unknown): { kind: "resume" } | { kind: "submitted"; runId: string } | { kind: "failed" } {
+export function approvalExecutionReceipt(value: unknown): { kind: "resume" } | { kind: "submitted"; runId: string; loop?: boolean } | { kind: "failed" } {
   if (!value || typeof value !== "object") return { kind: "failed" };
   if (!("execution" in value)) return { kind: "resume" };
   const execution = (value as { execution: unknown }).execution;
   if (!execution || typeof execution !== "object") return { kind: "failed" };
-  const receipt = execution as { run_id?: unknown; isError?: unknown };
+  const receipt = execution as { run_id?: unknown; loop_id?: unknown; isError?: unknown };
+  if (!receipt.isError && typeof receipt.loop_id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(receipt.loop_id)) return { kind: "submitted", runId: receipt.loop_id, loop: true };
   if (receipt.isError || typeof receipt.run_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(receipt.run_id)) return { kind: "failed" };
   return { kind: "submitted", runId: receipt.run_id };
 }

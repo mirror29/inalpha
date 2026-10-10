@@ -19,7 +19,7 @@ export function EvolutionApprovalSummary({ envelope }: { envelope: unknown }) {
     [t("market"), `${summary.market || unavailable} · ${summary.mode ? t(summary.mode) : unavailable} · ${summary.timeframe ?? unavailable}`],
     [t("simulation"), summary.initialCash !== null && summary.feeRate !== null && summary.leverage !== null
       ? t("simulationValue", { cash: summary.initialCash, fee: Number((summary.feeRate * 100).toFixed(4)), leverage: summary.leverage }) : unavailable],
-    [t("validation"), summary.validationSplit === null || trainPercent === null ? unavailable : summary.validationSplit === 0
+    [t("validation"), summary.eventLoop ? t("eventSplit") : summary.validationSplit === null || trainPercent === null ? unavailable : summary.validationSplit === 0
       ? t("validationDisabled") : trainPercent === 0
         ? t("validationPrecise", { trainPercent: String(summary.validationSplit * 100) }) : t("validationValue", {
         trainPercent,
