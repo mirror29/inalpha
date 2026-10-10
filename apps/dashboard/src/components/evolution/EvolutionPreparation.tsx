@@ -121,7 +121,11 @@ export function EvolutionPreparation({ targetKind, targetId }: { targetKind: str
     finally { setBusy(false); }
   };
   /** Format research timestamps in UTC without exposing transport serialization. */
-  const date = (value?: string) => value ? value.replace("T", " ").slice(0, 16) : "—";
+  const date = (value?: string) => {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString().replace("T", " ").replace(/Z$/, "");
+  };
   const input = "mt-2 block h-10 w-full min-w-0 rounded-md border border-border-subtle bg-bg-elev/50 px-3 font-mono text-sm text-fg outline-none transition-colors focus:border-cyan focus:ring-1 focus:ring-cyan disabled:opacity-50";
   return <section className="flex flex-col gap-6 text-sm text-fg">
     <Link href="/evolution" className="text-sm text-fg-muted">← {text("策略演化", "Evolution")}</Link>
