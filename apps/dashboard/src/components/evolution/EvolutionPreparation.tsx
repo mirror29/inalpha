@@ -123,8 +123,9 @@ export function EvolutionPreparation({ targetKind, targetId }: { targetKind: str
   /** Format research timestamps in UTC without exposing transport serialization. */
   const date = (value?: string) => {
     if (!value) return "—";
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString().replace("T", " ").replace(/Z$/, "");
+    const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? value : `${parsed.toISOString().replace("T", " ").replace(/Z$/, "")} UTC`;
   };
   const input = "mt-2 block h-10 w-full min-w-0 rounded-md border border-border-subtle bg-bg-elev/50 px-3 font-mono text-sm text-fg outline-none transition-colors focus:border-cyan focus:ring-1 focus:ring-cyan disabled:opacity-50";
   return <section className="flex flex-col gap-6 text-sm text-fg">
@@ -160,12 +161,12 @@ export function EvolutionPreparation({ targetKind, targetId }: { targetKind: str
         {result.blocker_codes?.some(code => code.startsWith("EVOLUTION_DATA_")) && <p>{text("行情窗口尚不可用：请核对连续闭合行情、数据新鲜度及最多 10,000 根限制。", "The bar window is unavailable: check continuity, freshness and the 10,000-bar limit.")}</p>}
         {result.target?.evidence?.seed_label && <p className="max-w-3xl leading-relaxed text-fg-muted">{result.target.evidence.seed_label}</p>}
         {result.config && <p className="font-mono text-sm text-cyan">{result.config.symbol} · {result.config.timeframe}</p>}
-        {result.selection_start && <p className="break-words font-mono text-xs text-fg-muted">{text("选择段", "Selection window")}: {date(result.selection_start)} — {date(result.selection_end)} UTC</p>}
+        {result.selection_start && <p className="break-words font-mono text-xs text-fg-muted">{text("选择段", "Selection window")}: {date(result.selection_start)} — {date(result.selection_end)}</p>}
         {result.partition_bar_counts && <p className="border-t border-border-subtle pt-4 font-mono text-sm">{text("发现 / 选择 / 封存行情根数", "Discovery / selection / sealed bars")}: {result.partition_bar_counts.discovery} / {result.partition_bar_counts.selection} / {result.partition_bar_counts.holdout}</p>}
         {result.selection_fact_count !== undefined && <p className="font-mono text-sm">{text("选择段事实数", "Selection facts")}: {result.selection_fact_count} · {text("独立事件上界", "Independent-event upper bound")}: {result.independent_event_upper_bound} / {result.minimum_matched_event_pairs}</p>}
         <p className="max-w-3xl text-xs leading-relaxed text-fg-muted">{text("事件上界不是匹配对照数。匹配对照、FDR 与 holdout 尚未评估；等待新事件不能补齐已经冻结的旧窗口。", "The event upper bound is not a matched-control count. Matching, FDR and holdout remain unevaluated. New events cannot fill an old frozen window.")}</p>
         {result.status === "necessary_inputs_present" && !approval && !loopId && <Button disabled={busy} onClick={() => void requestApproval()}>{text("冻结输入并查看费用审批", "Freeze inputs and review cost approval")}</Button>}
-        {result.inherited_window && <details className="border-t border-border-subtle pt-3 text-xs text-fg-muted"><summary className="cursor-pointer transition-colors hover:text-fg">{text("原策略窗口（未修改）", "Original strategy window (unchanged)")}</summary><p className="mt-3 break-words font-mono">{date(result.inherited_window.from_ts)} — {date(result.inherited_window.as_of)} UTC</p></details>}
+        {result.inherited_window && <details className="border-t border-border-subtle pt-3 text-xs text-fg-muted"><summary className="cursor-pointer transition-colors hover:text-fg">{text("原策略窗口（未修改）", "Original strategy window (unchanged)")}</summary><p className="mt-3 break-words font-mono">{date(result.inherited_window.from_ts)} — {date(result.inherited_window.as_of)}</p></details>}
       </div>}
     </div>
   </section>;
