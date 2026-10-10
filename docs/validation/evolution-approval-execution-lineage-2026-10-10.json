@@ -1,0 +1,164 @@
+{
+  "date": "2026-10-10",
+  "scope": "Normal-owner fresh E1 approval, direct submission, completed evaluation and persisted detail read after candidate-lineage fix; full restart/retry/fencing acceptance remains pending",
+  "normal_owner_execution": {
+    "normal_existing_owner_session": true,
+    "source": "Owned accepted BTC evolution candidate #3",
+    "expired_approval_replayed": false,
+    "new_approval_count": 1,
+    "request_id": "341d2c34-b748-430b-ad2e-402909ff4adf",
+    "run_id": "e9ccc95c-60c9-4525-8699-5acefc55885b",
+    "candidate_id": "869ea4e5-28e7-4e39-a752-1242ae8e2b69",
+    "direct_submission_without_chat_resume": true,
+    "candidate_budget": 1,
+    "estimated_generation_max_usd": 0.0170304,
+    "generation_estimate_excludes_chat": true,
+    "window_from": "2025-10-09T06:00:00Z",
+    "window_to": "2026-10-09T06:12:17.635Z",
+    "closed_bars": 8760,
+    "last_bar_open": "2026-10-09T05:00:00Z",
+    "rendered_split": "First 30% training; remaining 70% within-window validation",
+    "status": "completed",
+    "completed_at": "2026-10-10T01:26:33.680242Z",
+    "succeeded_candidates": 1,
+    "attempt": "1/1"
+  },
+  "evaluation": {
+    "fitness": -1.8067746507501257,
+    "same_fitness_as_original": true,
+    "total_return_pct": -6.236777239980511,
+    "training": {
+      "bars": 2628,
+      "trades": 4
+    },
+    "within_window_validation": {
+      "bars": 6132,
+      "trades": 0,
+      "flags": [
+        "insufficient_sample",
+        "sharpe_undefined"
+      ]
+    },
+    "overfit_risk": "high",
+    "improvement_demonstrated": false,
+    "forward_holdout_or_adoption_evidence": false
+  },
+  "costs": {
+    "generation": {
+      "calls": 1,
+      "known_cost_usd": 0.0053022,
+      "unknown_calls": 0,
+      "input_tokens": 2142,
+      "output_tokens": 3883
+    },
+    "repair_calls": 0,
+    "chat_preparation": {
+      "linked": true,
+      "calls": 4,
+      "known_cost_usd": 0.0949611,
+      "unknown_cost_count": 0,
+      "shared_approval_count": 1
+    },
+    "shared_preparation_not_accumulated_per_stage": true,
+    "provider_invoice_reconciled": false,
+    "new_model_calls_during_deployment_and_ui_recheck_only": 0,
+    "execution_is_not_zero_model_calls": true
+  },
+  "fix_and_checks": {
+    "pr": 207,
+    "head_sha": "6d3147ec6294cfb6231afa19ad5e426ea0011ad6",
+    "merge_sha": "4ad1ac557bf8d0cab64efc49caa19dc3bfd3eea6",
+    "cause": "Candidate lineage query referenced an owner column absent from the candidate schema",
+    "resolution": "Join the candidate to its owning run and enforce run owner scope",
+    "isolated_schema": "0065",
+    "before_fix": {
+      "failed": 3,
+      "passed": 1
+    },
+    "related_tests_passed": 37,
+    "full_evolver_python_3_12_tests_passed": 310,
+    "ruff": "passed",
+    "format": "passed",
+    "mypy": "Seven existing tuple/dict errors reproduced on main; not a typecheck pass",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "independent_review": "Schema, owner permissions and incremental route review found no blockers",
+    "automated_review_run": 38015295556,
+    "automated_review": "No valid review body returned; not treated as review pass",
+    "branch_ci_run": 38015295566,
+    "main_ci_run": 38015531784,
+    "ci": "Both passed",
+    "image_build_run": 38015531908,
+    "image_build": "All seven images passed"
+  },
+  "deployment": {
+    "changed_service": "evolver",
+    "business_sha": "4ad1ac557bf8d0cab64efc49caa19dc3bfd3eea6",
+    "old_business_sha": "93ec6b2848c6670a529cacbada450f0bf8c92489",
+    "old_container_id_prefix": "8dec5c37aa7d",
+    "new_container_id": "716fd30ee0f57f33bbf94473979a76e778618fc09efdbeb3addd4d8fec68a4fc",
+    "health": "healthy",
+    "schema": "0065",
+    "configuration_backup": "infra/.env.prod.before-evolver-20261010T020645Z",
+    "backup_permissions": "600",
+    "exact_old_image_retained_for_rollback": true,
+    "guard": "First attempt refused one established HTTP connection without mutation; later zero active tasks and zero HTTP connections permitted deployment",
+    "unchanged_services": [
+      "dashboard",
+      "mastra",
+      "data",
+      "paper",
+      "factor",
+      "research",
+      "redis",
+      "postgres",
+      "cloudflared"
+    ],
+    "unchanged_container_count": 9
+  },
+  "normal_owner_ui_recheck": {
+    "button_retry": "Retained the prior 500 state; new Evolver logs contained no 500 during this recheck",
+    "full_page_reload": "Succeeded with persisted completed evaluation, original source link, attempt 1/1, candidate and separate costs",
+    "rendered_original_and_best_fitness": -1.8068,
+    "rendered_net_return_pct": -6.24,
+    "correct_split_and_submitted_link_retained": true,
+    "proves_persisted_result_readable": true,
+    "proves_response_loss_or_full_restart_recovery": false,
+    "local_observation_screenshot": "evolution-detail-restored-2026-10-10.jpg",
+    "screenshot_publication": "Local observation evidence only; screenshot not committed or included in this receipt"
+  },
+  "e2_readiness": {
+    "checked_at": "2026-10-10T01:51:33Z",
+    "from_ts": "2026-09-04T00:00:00Z",
+    "split": "Natural 60/20/20",
+    "qualifying_independent_macro_events_in_selection_per_timeframe": {
+      "1h": 1,
+      "4h": 1
+    },
+    "minimum_matched_event_pairs": 8,
+    "coverage_sufficient": false,
+    "cached_last_bar_open": {
+      "1h": "2026-10-08T06:00:00Z",
+      "4h": "2026-10-08T00:00:00Z"
+    },
+    "cache_fresh": false,
+    "runtime_requires_backfill_and_expected_latest_closed_bar": true,
+    "loops": 0,
+    "campaigns": 0,
+    "forward": 0,
+    "holdout": 0,
+    "new_paid_search_started": false,
+    "query_scope_or_thresholds_changed": false,
+    "limits": "Necessary input check only; independent counts do not prove matched controls, FDR, profitability, PIT completeness or Forward"
+  },
+  "pending": [
+    "Response loss and approved-command recovery across complete service restart",
+    "Explicit failed-run retry and running old-worker fencing acceptance",
+    "Real mutation effectiveness and cost calibration beyond this one accepted candidate",
+    "Provider invoice reconciliation and historical unlinked chat costs",
+    "Qualified E2 champion, at least 30 real days and three independent Forward events, one-time holdout and explicit experimental adoption"
+  ]
+}
