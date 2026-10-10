@@ -46,7 +46,7 @@ def test_nonempty_snapshot_outside_selection_is_blocked():
     result = inspect_event_coverage(data, [event(data, 100), event(data, 1100)], "BTC")
     assert result["status"] == "blocked"
     assert result["selection_fact_count"] == 0
-    assert result["blocker_codes"] == ["E2_SELECTION_EVENT_COVERAGE_INSUFFICIENT"]
+    assert result["blocker_codes"] == ["E2_INPUT_COVERAGE_INSUFFICIENT"]
 
 
 def test_versions_same_type_within_day_do_not_fill_eight_pairs():

@@ -34,9 +34,10 @@ beforeEach(() => {
 });
 
 it("returns coverage blockers without signing or submitting paid execution", async () => {
-  mocks.preflight.mockResolvedValue({ status: "blocked", selection_fact_count: 0 });
+  mocks.preflight.mockResolvedValue({ status: "blocked", blocker_codes: ["E2_INPUT_COVERAGE_INSUFFICIENT"], selection_fact_count: 0 });
   const result = await evolverStartLoopTool.execute!(input, context);
   expect(result).toMatchObject({ status: "blocked", code: "E2_INPUT_COVERAGE_INSUFFICIENT", preflight: { selection_fact_count: 0 } });
+  expect(result).not.toHaveProperty("message");
   expect(mocks.mint).not.toHaveBeenCalled();
   expect(mocks.start).not.toHaveBeenCalled();
 });

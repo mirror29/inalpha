@@ -48,7 +48,7 @@ def inspect_event_coverage(
     blocked = upper_bound < 8
     return {
         "status": "blocked" if blocked else "necessary_inputs_present",
-        "blocker_codes": ["E2_SELECTION_EVENT_COVERAGE_INSUFFICIENT"] if blocked else [],
+        "blocker_codes": ["E2_INPUT_COVERAGE_INSUFFICIENT"] if blocked else [],
         "dataset_content_sha256": dataset.manifest.content_sha256,
         "bar_count": len(bars),
         "selection_start": datetime.fromtimestamp(start / 1e9, UTC).isoformat() if start else None,
