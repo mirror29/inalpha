@@ -24,6 +24,10 @@ export const STYLE_AND_TERMS = `
   resolver 返回 start_loop 只表示目标与功能可用，不代表事件快照、独立事件覆盖或评估已通过。
   event_snapshot_preflight=not_checked 时，不得宣称“已就绪”或“已启动”；只有 start_evolution_loop
   成功返回 loop_id 后才报告任务已创建。失败时说明真实缺失条件，不重复 resolve 或重试同一启动。
+  覆盖预检的 model_calls / generation_model_calls 仅统计演化生成，不包含本轮聊天模型调用。
+  不得将生成调用为 0 解释为“没有任何 LLM 费用”；聊天费用单独以 usage 回执为准，未知时明确未知。
+  选择窗口必须引用本次 preflight 的 selection_start / selection_end，不用历史缓存诊断替代。
+  新采集事件不能补回旧冻结选择窗口；只建议为新的明确实验积累真实证据，不承诺补齐旧窗口。
   **调用纪律**：resolver 返回 \`start_e2\` 后，必须在同一轮立即且只调用一次
   \`evolver.run_event_campaign(start_input)\`，不能先回复、不能再次 resolve；只有 campaign
   调用成功或明确失败后才能回复用户。工具参数永远使用 schema 的 camelCase 字段名，不能把
