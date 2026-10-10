@@ -49,7 +49,7 @@ includes its directly linked child requests once. Ownership always comes from th
 session, never query parameters. Totals and rows use one repeatable-read snapshot.
 Numeric token/amount values are strings to avoid JSON integer precision loss.
 The page displays token counts with compact K/M/B/T units (up to two decimal places).
-Hover titles and accessible labels retain exact integers; unknown values remain `—`.
+Hover titles and visually hidden accessible text retain exact integers; unknown values remain `—`.
 
 Coverage:
 

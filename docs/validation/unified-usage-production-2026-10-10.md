@@ -16,7 +16,7 @@ Stored yfinance TSLA daily data contains 542 bars from 2024-05-07 through 2026-0
 
 ## Token presentation follow-up
 
-Summary and detail tokens use compact K/M/B/T units with up to two decimal places. Exact database integer values remain in accessible labels and native hover titles; null remains unknown and zero remains known zero. Conversion uses BigInt to avoid Number precision loss. Desktop preview verified 19.42K / 5.81K tokens. At 390px, document width equals viewport width; the exact title remains 19421 / 5808 tokens. The new display is a follow-up change and was not deployed during this acceptance pass.
+Summary and detail tokens use compact K/M/B/T units with up to two decimal places. Exact database integer values remain in visually hidden accessible text and native hover titles; null remains unknown and zero remains known zero. Conversion uses BigInt to avoid Number precision loss. Desktop preview verified 19.42K / 5.81K tokens. At 390px, document width equals viewport width; the exact title remains 19421 / 5808 tokens. The new display is a follow-up change and was not deployed during this acceptance pass.
 
 Validation: Dashboard 185 tests in 40 files passed, including compact-unit boundary and large-integer cases; TypeScript passed. The production build passed.
 

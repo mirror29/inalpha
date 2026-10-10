@@ -238,15 +238,18 @@ export function UsageClient({
                       ? `${data.summary.input_tokens ?? "—"} / ${data.summary.output_tokens ?? "—"} tokens`
                       : undefined
                   }
-                  aria-label={
-                    key === "tokens"
-                      ? `${data.summary.input_tokens ?? "—"} / ${data.summary.output_tokens ?? "—"} tokens`
-                      : undefined
-                  }
                 >
-                  {value}
                   {key === "tokens" && (
-                    <span className="ml-2 text-xs tracking-normal text-fg-muted">
+                    <span className="sr-only">{`${data.summary.input_tokens ?? "—"} / ${data.summary.output_tokens ?? "—"} tokens`}</span>
+                  )}
+                  <span aria-hidden={key === "tokens" ? true : undefined}>
+                    {value}
+                  </span>
+                  {key === "tokens" && (
+                    <span
+                      aria-hidden="true"
+                      className="ml-2 text-xs tracking-normal text-fg-muted"
+                    >
                       tokens
                     </span>
                   )}
@@ -332,10 +335,12 @@ export function UsageClient({
                         <Td mono right className="text-xs">
                           <span
                             title={`${row.input_tokens ?? "—"} / ${row.output_tokens ?? "—"} tokens`}
-                            aria-label={`${row.input_tokens ?? "—"} / ${row.output_tokens ?? "—"} tokens`}
                           >
-                            {formatUsageTokens(row.input_tokens)} /{" "}
-                            {formatUsageTokens(row.output_tokens)}
+                            <span className="sr-only">{`${row.input_tokens ?? "—"} / ${row.output_tokens ?? "—"} tokens`}</span>
+                            <span aria-hidden="true">
+                              {formatUsageTokens(row.input_tokens)} /{" "}
+                              {formatUsageTokens(row.output_tokens)}
+                            </span>
                           </span>
                         </Td>
                         <Td mono right className="text-xs">
