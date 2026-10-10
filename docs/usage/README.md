@@ -39,7 +39,8 @@ refuses rollback once any ledger records exist; roll back application code inste
 
 ## Query interface
 
-Open **Usage** in the Dashboard sidebar, or `/{locale}/usage`, for the owner-scoped view.
+Open **Settings → Usage** in the Dashboard sidebar (Chinese: **配置 → 模型用量**),
+or `/{locale}/usage`, for the owner-scoped view.
 
 Authenticated `GET /api/usage` returns `summary`, 50 `items`, `nextOffset`, and `coverage`.
 Filters: `from` (inclusive UTC), `to` (exclusive UTC), `service`, `model`, `status`,

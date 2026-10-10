@@ -21,7 +21,11 @@
     "pilot_material_validation_regression": "17 passed, including immutable evidence/configuration and model consistency",
     "evolver_full_suite": "255 passed, 67 optional integration tests skipped",
     "orchestration_full_suite": "624 passed, 7 optional integration tests skipped",
-    "dashboard_full_suite": "182 passed"
+    "dashboard_full_suite": "182 passed",
+    "browser_acceptance": "Passed: actual login/logout, two-owner isolation, service/status/model/operation filters, date input, 50+3 pagination, tiny costs, empty/error/recovery states, 390px responsive layout.",
+    "research_http_acceptance": "Real Research HTTP service plus local OpenAI-compatible upstream: 6 analyst briefs, 3 debate entries, synthesis; injected HTTP 500 persisted separately from retry.",
+    "request_reconciliation": "66 local provider HTTP requests = 66 database receipts (65 completed, 1 failed); Alice 65, Bob 1.",
+    "pilot_http_acceptance": "Frozen evidence sent through SDK to local HTTP upstream; artifact/event/hash/ledger validation passed and experiment filter remained owner-scoped."
   },
   "remaining_gates": [
     "Production migration and writer rollout have not been performed.",
@@ -30,12 +34,21 @@
     "Developer-only review scripts are outside authenticated application accounting coverage.",
     "Real pilot assets, benchmark, calendar, scoring protocol, annotations and paid budget remain decisions under #206.",
     "Unknown model revisions, training cutoff and contamination limitations remain explicit.",
-    "Visual browser acceptance and live provider/invoice reconciliation were not performed."
+    "Real provider/invoice reconciliation and a full configured Agent chat/Evolver run remain unverified."
   ],
   "review_fixes": [
     "Keep model evidence and configuration immutable after artifact creation.",
     "Reject duplicate cases and empty label/annotation content.",
     "Reject pilot provider/model values that differ from the frozen configuration.",
     "Preserve nonzero costs down to the ledger precision in Dashboard displays."
-  ]
+  ],
+  "browser_environment": {
+    "dashboard": "Next.js localhost:4308 (production smoke, latest-source development acceptance)",
+    "paper": "Real FastAPI localhost:8302 with disposable database and two fixture users",
+    "research": "Real FastAPI localhost:8303",
+    "upstream": "Local synthetic OpenAI-compatible provider/data fixtures on localhost:8309; no paid calls",
+    "pilot_endpoint": "Test harness overrides only factory base_url to localhost; production provider endpoints were not contacted",
+    "console": "Expected CopilotKit 428 without a configured chat model; injected ledger outage returned 503 and recovered. No other observed application console error.",
+    "screenshots": "Retained locally; not committed as public research data"
+  }
 }
