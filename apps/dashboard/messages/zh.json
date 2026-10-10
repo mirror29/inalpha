@@ -1080,6 +1080,10 @@
     "empty": "尚未归档事件来源。"
   },
   "walletAccounting": {
+    "details": "记账明细",
+    "hideDetails": "收起明细",
+    "valuationWarning": "估值暂未更新，当前显示上次可信估值。",
+    "releaseRequiresFlat": "停止运行并平仓后可释放资金",
     "resume": "恢复本运行",
     "verified": "记账已验证",
     "legacy_unverified": "历史记账未验证",

@@ -1080,6 +1080,10 @@
     "empty": "No event source has been archived yet."
   },
   "walletAccounting": {
+    "details": "Accounting details",
+    "hideDetails": "Hide details",
+    "valuationWarning": "Valuation could not be updated; showing the last trusted value.",
+    "releaseRequiresFlat": "Stop the run and close positions to release capital",
     "resume": "Resume this run",
     "verified": "Verified accounting",
     "legacy_unverified": "Unverified legacy accounting",
