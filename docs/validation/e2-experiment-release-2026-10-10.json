@@ -107,5 +107,25 @@
     "mastra_approval": 401,
     "evolver_prepare": 401,
     "interpretation": "Auth rejection only; not owner workflow acceptance"
+  },
+  "reviewed_to_deployed": {
+    "relationship": "business_sha is the PR219 merge commit; reviewed_head is its second parent",
+    "merge_parents": [
+      "1dc8fa78f7d02857cc1c8968e9255db19b245a9f",
+      "957e567f091fd449ba32674f73d0582e3a8ebf0e"
+    ],
+    "reviewed_tree": "41f35cbcb7ae0d3bfc259ee74fe3af3c922ae046",
+    "deployed_tree": "41f35cbcb7ae0d3bfc259ee74fe3af3c922ae046",
+    "git_diff_empty": true,
+    "main_ci": {
+      "run": 38036966422,
+      "head_sha": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+      "conclusion": "success"
+    },
+    "image_build": {
+      "run": 38036966379,
+      "head_sha": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+      "conclusion": "success"
+    }
   }
 }
