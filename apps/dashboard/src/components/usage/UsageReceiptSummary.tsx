@@ -1,6 +1,7 @@
 "use client";
 import { useTranslations } from "next-intl";
 import useSWR from "swr";
+import { formatUsageCost } from "@/lib/usage-format";
 import { Link } from "@/i18n/navigation";
 
 /** Request receipts are an independent view, never added to candidate projections. */
@@ -15,7 +16,7 @@ export function UsageReceiptSummary({ operationId }: { operationId: string }) {
   const summary = data.summary;
   return <section className="rounded-lg border border-border-subtle p-3 text-sm">
     <Link className="underline" href={`/usage?operation=${encodeURIComponent(operationId)}`}>{t("title")}</Link>
-    <p>{t("cost")}: {summary.known_cost_usd === null ? t("unknown") : `$${Number(summary.known_cost_usd).toFixed(8)}`}</p>
+    <p>{t("cost")}: {summary.known_cost_usd === null ? t("unknown") : formatUsageCost(summary.known_cost_usd)}</p>
     <p className="text-xs text-fg-muted">{t("incomplete", { usage: summary.unknown_usage_calls, cost: summary.unknown_cost_calls, pending: summary.pending_calls })}</p>
   </section>;
 }

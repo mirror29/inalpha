@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import useSWR from "swr";
+import { formatUsageCost } from "@/lib/usage-format";
 
 type UsageRow = {
   call_id: string; service: string; stage: string; model: string | null;
@@ -31,7 +32,7 @@ export function UsageClient({ initialOperation = "" }: { initialOperation?: stri
     if (!response.ok) throw new Error(String(response.status));
     return response.json();
   });
-  const money = (value: string | null) => value === null ? t("unknown") : `$${Number(value).toFixed(8)}`;
+  const money = (value: string | null) => value === null ? t("unknown") : formatUsageCost(value);
   return <section className="space-y-6 p-6 text-fg">
     <header><h1 className="text-2xl font-semibold">{t("title")}</h1><p className="mt-2 text-sm text-fg-muted">{t("description")}</p></header>
     <div className="flex flex-wrap gap-3">
