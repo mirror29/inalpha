@@ -16,7 +16,7 @@
 - D-8~D-12、research-hub 与 E1 已收口；E2 在 feature flag 后落地双时态事件 snapshot、确定性 DSL、五代 8×3 共演化、Forward/Holdout 和非 Runner 实验性采用。E1 原语义不变
 - 2026-09-30 核对：EvolutionLoop 持久化、重复复用、租约恢复、原子交接与预算授权已落地；已有自动化测试，真实运行待验证。下一步统一见 `docs/04-current-state.md`「未完成 / 下一步」
 
-> E2 更新（2026-10-10）：显式新实验准备与冻结费用审批已本地实现。E1 正常 owner 执行和 E2 输入不足拦截有生产证据；冠军、Forward、holdout 正向生产验收仍未完成。优先级统一见 `docs/04-current-state.md`。
+> E2 更新（2026-10-10）：显式新实验准备与冻结费用审批代码已落地；最新部署与正常 owner 验收状态以中央清单为准。E1 正常 owner 执行和 E2 输入不足拦截有生产证据；冠军、Forward、holdout 正向生产验收仍未完成。优先级统一见 `docs/04-current-state.md`。
 
 ## 3. 协作硬约束
 
