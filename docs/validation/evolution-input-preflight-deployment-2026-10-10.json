@@ -42,7 +42,17 @@
     ],
     "backup_permissions_observed": "600",
     "other_eight_container_ids_unchanged": true,
-    "data_and_paper_continued_running": true
+    "data_and_paper_continued_running": true,
+    "unchanged_container_id_prefixes_before_and_after": {
+      "dashboard": "48bbc4790a14",
+      "data": "e61ae92b2019",
+      "research": "465dea967b10",
+      "factor": "751f2cbfb280",
+      "paper": "ec25617b1fed",
+      "redis": "4377f3064aa0",
+      "cloudflared": "d993c45012e5",
+      "postgres": "cdd60c8434a9"
+    }
   },
   "production_checks": {
     "unauthenticated_preflight_http": 401,
@@ -51,5 +61,25 @@
     "active_e1_runs": 0,
     "loops": 0,
     "campaigns": 0
+  },
+  "followup": {
+    "date": "2026-10-10",
+    "production_services_still_healthy": true,
+    "database": "inalpha",
+    "schema": "0065",
+    "read_only_transaction": true,
+    "statement_timeout_seconds": 10,
+    "raw_versions": 306,
+    "distinct_source_articles": 258,
+    "fact_versions": 306,
+    "completed_extractions": 306,
+    "latest_fact_available_at": "2026-10-10T04:34:56.489682Z",
+    "sol_fact_versions": {
+      "other": 4,
+      "upgrade": 1
+    },
+    "sol_first_available_at": "2026-10-01T14:37:01.079456Z",
+    "versions_are_not_independent_evaluable_events": true,
+    "normal_owner_ui": "Browser tab read timed out again; device inventory reported locked Mac. User asked to unlock; no credentials requested."
   }
 }

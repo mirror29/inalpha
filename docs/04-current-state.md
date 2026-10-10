@@ -1239,3 +1239,8 @@ fail-closed 标记。只读数据库确认活动 E1 为 0，Loop / campaign 均�
 下一步仍按中央 P0：正常 owner 核对新预检，积累足够真实证据后准备新的明确实验，
 再验证搜索与冠军；恢复、重试、旧 worker 隔离、真实 Forward 和一次性 holdout 仍未完成。
 脱敏回执：[必要输入预检部署](validation/evolution-input-preflight-deployment-2026-10-10.json)。
+
+同日后续只读复核：四来源共 258 篇独立原文、306 个原文/事实版本，306 个抽取任务 completed；
+最新事实可用时间为 04:34:56 UTC。SOL 仍为 4 个 other、1 个 upgrade 事实版本，首次可用时间
+在十月；版本数不是独立可评估事件数，也没有补足旧选择段。服务与 schema 不变。
+浏览器读取再次超时，设备检查报告 Mac 锁定，已请操作者解锁后继续正常 owner 验收。
