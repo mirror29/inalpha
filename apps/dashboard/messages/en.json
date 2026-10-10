@@ -1080,6 +1080,9 @@
     "empty": "No event source has been archived yet."
   },
   "walletAccounting": {
+    "warningSummary": "The wallet has unresolved warnings. See accounting details.",
+    "releaseRequiresClose": "Close open positions to release capital",
+    "releaseReady": "Released capital returns to the main account",
     "details": "Accounting details",
     "hideDetails": "Hide details",
     "valuationWarning": "Valuation could not be updated; showing the last trusted value.",

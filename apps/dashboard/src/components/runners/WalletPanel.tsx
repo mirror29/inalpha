@@ -22,6 +22,14 @@ export function WalletPanel({
   const [busy, setBusy] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const wallet = data?.wallet;
+  const onlyValuationWarnings = wallet?.warnings.every(
+    (warning) =>
+      warning.includes(
+        "price unavailable or stale; retaining last trusted valuation",
+      ) ||
+      warning ===
+        "Wallet changed during valuation; retaining previous snapshot",
+  );
   async function action(operation: "release_capital" | "resume") {
     setBusy(true);
     setError(null);
@@ -74,7 +82,13 @@ export function WalletPanel({
             </Button>
           </div>
           {wallet.warnings.length > 0 && (
-            <p className="mt-2 text-xs text-gold">{t("valuationWarning")}</p>
+            <p className="mt-2 text-xs text-gold">
+              {t(
+                onlyValuationWarnings && wallet.equity !== null
+                  ? "valuationWarning"
+                  : "warningSummary",
+              )}
+            </p>
           )}
           {showDetails && (
             <div
@@ -105,7 +119,14 @@ export function WalletPanel({
                   {run.original_cumulative_pnl ?? run.cumulative_pnl}
                 </p>
               )}
-              {!wallet.released_at && <p>{t("stopWarning")}</p>}
+              {wallet.warnings.map((warning, index) => (
+                <p
+                  key={`${index}:${warning}`}
+                  className="break-words text-gold"
+                >
+                  {warning}
+                </p>
+              ))}
             </div>
           )}
           {wallet.released_at ? (
@@ -129,11 +150,15 @@ export function WalletPanel({
                 >
                   {t("release")}
                 </Button>
-                {(run.status !== "stopped" || !flat) && (
-                  <span className="text-xs text-fg-muted">
-                    {t("releaseRequiresFlat")}
-                  </span>
-                )}
+                <span className="text-xs text-fg-muted">
+                  {t(
+                    run.status !== "stopped"
+                      ? "releaseRequiresFlat"
+                      : !flat
+                        ? "releaseRequiresClose"
+                        : "releaseReady",
+                  )}
+                </span>
               </div>
             )
           )}

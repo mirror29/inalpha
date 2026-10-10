@@ -1080,6 +1080,9 @@
     "empty": "尚未归档事件来源。"
   },
   "walletAccounting": {
+    "warningSummary": "钱包存在未解决的提示，请查看记账明细。",
+    "releaseRequiresClose": "平仓后可释放资金",
+    "releaseReady": "释放后资金退回主账户",
     "details": "记账明细",
     "hideDetails": "收起明细",
     "valuationWarning": "估值暂未更新，当前显示上次可信估值。",
