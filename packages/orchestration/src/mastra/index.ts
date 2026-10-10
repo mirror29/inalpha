@@ -16,6 +16,8 @@ import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 
 import { resolveMastraDbDir, resolveOrchestrationRoot } from "./paths.js";
+import { experimentApprovalApiRoutes } from "../evolution/approval-api.js";
+import { experimentApiRoutes } from "../evolution/preparation.js";
 import { identityMiddleware } from "./identity.js";
 
 // dev 启动时显式加载 package 根 .env。注意不能按 cwd 解析：mastra dev 的 server
@@ -118,7 +120,7 @@ export const mastra = new Mastra({
   server: {
     timeout: 600_000,
     middleware: identityMiddleware,
-    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes, ...divinationApiRoutes, ...loopCredentialApiRoutes],
+    apiRoutes: [...schedulerApiRoutes, ...permissionsApiRoutes, ...divinationApiRoutes, ...loopCredentialApiRoutes, ...experimentApiRoutes, ...experimentApprovalApiRoutes],
   },
 });
 

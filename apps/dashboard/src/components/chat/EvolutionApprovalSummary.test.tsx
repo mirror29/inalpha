@@ -91,3 +91,15 @@ describe("readable frozen approval summary", () => {
     expect(html).not.toContain("$0.0000");
   });
 });
+
+it("describes the E2 partition without reusing the E1 30/70 label", () => {
+  locale = "zh";
+  const value = envelope();
+  const loop = { ...value, toolInput: { ...value.toolInput, request: {
+    budget: 4, experiment: { config: value.toolInput.request.config },
+  } } };
+  const html = renderToStaticMarkup(createElement(EvolutionApprovalSummary, { envelope: loop }));
+  expect(html).toContain("前 60%");
+  expect(html).toContain("最后 20%");
+  expect(html).not.toContain("后 70%");
+});

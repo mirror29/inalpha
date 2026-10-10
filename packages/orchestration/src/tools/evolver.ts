@@ -38,7 +38,8 @@ export async function createAutomaticEventSnapshot(
   },
   ctx?: ToolRequestContext,
   existingSnapshotId?: string,
-): Promise<{ snapshotId: string; asset: AssetIdentity }> {
+  allowEmpty = false,
+): Promise<{ snapshotId: string; asset: AssetIdentity; facts?: Array<Record<string, unknown>> }> {
   const owner = await resolveRequestSubject(ctx);
   const resolveToken = await mintServiceToken({
     sub: owner,
@@ -70,13 +71,13 @@ export async function createAutomaticEventSnapshot(
     assets: [asset.event_asset_code],
     assetIds: [asset.asset_id],
   });
-  if (snapshot.fact_count < 1) {
+  if (snapshot.fact_count < 1 && !allowEmpty) {
     throw new Error(
       "EVENT_SNAPSHOT_EMPTY: no point-in-time event facts cover this asset and cutoff; " +
         "collect real events before retrying; never backdate their availability or change the frozen cutoff",
     );
   }
-  return { snapshotId: snapshot.snapshot_id, asset };
+  return { snapshotId: snapshot.snapshot_id, asset, facts: snapshot.facts };
 }
 
 export const evolverRunEventCampaignTool = createTool({

@@ -89,13 +89,14 @@ def test_selection_edges_are_permissive_upper_bound_not_execution_claim():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("snapshot_unavailable", [False, True])
-async def test_worker_blocks_before_model_execution(monkeypatch, snapshot_unavailable):
+@pytest.mark.parametrize("prepared_data_changed", [False, True])
+async def test_worker_blocks_before_model_execution(monkeypatch, snapshot_unavailable, prepared_data_changed):
     from contextlib import asynccontextmanager
     from unittest.mock import AsyncMock
     from uuid import uuid4
 
     import pytest
-    from inalpha_shared.errors import ValidationError
+    from inalpha_shared.errors import ConflictError, ValidationError
 
     from inalpha_evolver.config import EvolverSettings
     from inalpha_evolver.runtime import loop_baseline
@@ -106,6 +107,10 @@ async def test_worker_blocks_before_model_execution(monkeypatch, snapshot_unavai
     loop = {key: uuid4() for key in ("loop_id", "owner_account_id", "e1_run_id", "lease_token")}
     loop["frozen_config"] = {"campaign_request": body.campaign.model_dump(mode="json")}
     run = {"status": "queued"}
+    if prepared_data_changed:
+        run.update(seed_source_hash="a" * 64, config={"preparation": {
+            "seed_source_hash": "a" * 64, "dataset_content_sha256": "wrong-approved-hash",
+        }})
 
     @asynccontextmanager
     async def connection():
@@ -145,11 +150,12 @@ async def test_worker_blocks_before_model_execution(monkeypatch, snapshot_unavai
     monkeypatch.setattr(loop_baseline.loop_dispatch, "complete_step", AsyncMock(return_value=True))
     execute = AsyncMock()
     monkeypatch.setattr(loop_baseline, "execute_frozen_run", execute)
-    with pytest.raises(ValidationError) as raised:
+    with pytest.raises(ConflictError if prepared_data_changed else ValidationError) as raised:
         await loop_baseline.execute_loop_baseline(loop, EvolverSettings())
     assert raised.value.code == (
+        "EVOLUTION_PREPARATION_CHANGED" if prepared_data_changed else
         "EVENT_SNAPSHOT_UNAVAILABLE" if snapshot_unavailable else "E2_INPUT_COVERAGE_INSUFFICIENT"
     )
-    if not snapshot_unavailable:
+    if not snapshot_unavailable and not prepared_data_changed:
         assert raised.value.details["selection_fact_count"] == 0
     execute.assert_not_awaited()

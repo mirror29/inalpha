@@ -218,3 +218,51 @@ async def test_loop_preflight_http_preserves_snapshot_owner_rejection(preparatio
     assert response.status_code == 404
     assert fetch.call_args.kwargs["owner_account_id"] == owner
     preparation[1].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_model_free_preparation_rejects_foreign_target_before_snapshot(preparation, monkeypatch):
+    from .test_loop_start import make_request
+
+    body = make_request(uuid4())
+    request = preflight.ExperimentPreparationRequest(
+        target_kind=body.campaign.target_kind, target_id=body.campaign.target_id,
+        seed_strategy_id=body.baseline.seed_strategy_id,
+        event_snapshot_id=body.campaign.event_snapshot_id,
+        event_asset_code=body.campaign.config.event_asset_code, config=body.baseline.config,
+    )
+    monkeypatch.setattr(preflight, "_require_event_evolution", lambda: None)
+    monkeypatch.setattr(preflight, "validate_target_seed", AsyncMock(side_effect=NotFoundError("target not found")))
+    fetch = AsyncMock()
+    monkeypatch.setattr(preflight, "fetch_event_snapshot", fetch)
+    with pytest.raises(NotFoundError):
+        await preflight.prepare_experiment(request, SimpleNamespace(user_id=str(uuid4())), "Bearer owner-token")
+    fetch.assert_not_awaited()
+    preparation[1].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_model_free_preparation_reports_frozen_dataset_without_llm(preparation, monkeypatch):
+    from .test_event_coverage import dataset
+    from .test_loop_start import make_request
+
+    body = make_request(uuid4())
+    request = preflight.ExperimentPreparationRequest(
+        target_kind=body.campaign.target_kind, target_id=body.campaign.target_id,
+        seed_strategy_id=body.baseline.seed_strategy_id, event_snapshot_id=body.campaign.event_snapshot_id,
+        event_asset_code=body.campaign.config.event_asset_code, config=body.baseline.config,
+    )
+    monkeypatch.setattr(preflight, "_require_event_evolution", lambda: None)
+    monkeypatch.setattr(preflight, "validate_target_seed", AsyncMock())
+    monkeypatch.setattr(preflight, "fetch_event_snapshot", AsyncMock(return_value={
+        "cutoff": body.baseline.config.as_of.isoformat(), "facts": [], "events_sha256": "b" * 64,
+    }))
+    preparation[1].side_effect = None
+    preparation[1].return_value = dataset()
+    result = await preflight.prepare_experiment(request, SimpleNamespace(user_id=str(uuid4())), "Bearer owner-token")
+    assert result["status"] == "blocked"
+    assert result["model_calls"] == 0
+    assert result["execution_authorized"] is False
+    assert result["dataset_content_sha256"] == dataset().manifest.content_sha256
+    assert result["seed_source_hash"] == "a" * 64
+    assert "llm" not in request.model_dump()

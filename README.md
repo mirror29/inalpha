@@ -60,6 +60,8 @@ The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha*
 > runs and restart validation still need recorded evidence. Final adoption remains manual and
 > experimental candidates remain Runner-ineligible. See the [current state and next steps](docs/04-current-state.md#未完成--下一步).
 
+> E2 update (2026-10-10): explicit experiment preparation and frozen cost approval are implemented locally. E1 owner execution and E2 insufficient-input rejection have production evidence; the positive champion/Forward/holdout path remains unverified. See the [current-state checklist](docs/04-current-state.md#未完成--下一步).
+
 ## The Operator Console
 
 The **Operator Console** (`apps/dashboard`) is the home base — a runtime dashboard that surfaces everything you'd otherwise have to ask the agent for, with a docked agent chat on the right. The shots below are the live console, running locally.

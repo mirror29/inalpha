@@ -112,6 +112,9 @@ E1 的批准决定与冻结执行命令同事务保存。执行命令使用 AES-
 | `GET` | `/api/v1/candidates/{candidate_id}` | 查看当前 owner 的候选代码、指标和审计结果 |
 | `POST` | `/api/v1/runs/{run_id}/abort` | 请求取消 queued/running run |
 | `GET` | `/api/v1/capabilities` | 查询 E2 是否开放及限制；UI/BFF 的唯一开关来源 |
+| `POST` | `/api/v1/evolution-loops/prepare` | 无模型配置的 owner 预检：明确新窗口、种子、事件快照与必要覆盖；不授权执行 |
+| `POST` | `/api/v1/evolution-loops/preflight` | 对完整启动请求复核必要输入，不创建运行 |
+| `POST` | `/api/v1/evolution-loops/start` | 签名、预算与幂等绑定的闭环启动 |
 | `POST` | `/api/v1/evolution-loops` | 从稳定 target reference 创建或幂等复用自动闭环 |
 | `GET` | `/api/v1/evolution-loops` | 按 `limit` 列出当前 owner 最近的闭环 |
 | `GET` | `/api/v1/evolution-loops/{loop_id}` | 查看阶段、下一动作与关联 E1/E2/Forward/holdout |
@@ -123,7 +126,7 @@ E1 的批准决定与冻结执行命令同事务保存。执行命令使用 AES-
 | `POST` | `/api/v1/campaigns/{campaign_id}/adopt` | 手动采用通过门禁的实验性赢家 |
 | `GET` | `/api/v1/adoptions` | 列出当前 owner 的实验性采用记录 |
 
-本分支新增的 E1 准备契约（尚未生产验收）：先按正常用户 JWT 调用预检，将返回的
+E1 准备契约（正常 owner 路径已有生产回执，恢复边界见当前状态）：先按正常用户 JWT 调用预检，将返回的
 `seed_source_hash` 与 `dataset_manifest.content_sha256` 作为请求的
 `preparation.seed_source_hash` / `preparation.dataset_content_sha256`。费用审批和 Ed25519
 请求摘要均覆盖这两个字段。缺少 preparation 时，付费 `/runs` 返回
@@ -211,8 +214,19 @@ SIGKILL、断电或数据库不可用可能留下 `inalpha_loop_check_<随机 ID
 支持 IPv6，并避免环境变量 `PGHOSTADDR` 改变连接目标。
 
 仓库级开发推荐直接运行 `bash scripts/dev.sh`。要在本地试用 E2，在根 `.env` 设置
-`EVENT_EVOLUTION_ENABLED=true`，并先导入历史事件，或同时启用 `EVENT_ARCHIVE_ENABLED=true`
+`EVENT_EVOLUTION_ENABLED=true`，并通过真实来源采集事件，同时启用 `EVENT_ARCHIVE_ENABLED=true`
 与 `EVENT_EXTRACTION_ENABLED=true`。重启服务后，登录并在策略、
 模拟盘或 E1 结果页点击“开始进化”，也可以直接在右侧 Agent 输入同一句话。重复触发会复用
-同一活动 loop；无可见事件时会在产生 LLM 费用前返回 `EVENT_SNAPSHOT_EMPTY`。E2 仍限定研究环境；MAP-Elites / Island Model 在拿到真实成功率、拒绝分布和
+同一活动 loop。新准备页不调用模型；聊天准备费用另计，不能把生成未启动写成整体零费用。无可见事件时返回 `EVENT_SNAPSHOT_EMPTY`。E2 仍限定研究环境；MAP-Elites / Island Model 在拿到真实成功率、拒绝分布和
 费用样本后再评估。
+
+
+### 显式新实验与 E2 Loop 费用审批
+
+Dashboard 的准备页通过普通 owner 身份调用 orchestration `/evolution/prepare`，后者解析本人种子、冻结 Data 事件快照并调用 Evolver `/api/v1/evolution-loops/prepare`。预检可能通过正常 Data API 补齐行情和创建快照，不是完全无写入的查询；不会创建 Loop、兑换模型密钥或调用模型。
+
+默认新窗口依据真实事件 `available_at` 和闭合行情，独立于种子旧回测窗口。显示自然 60/20/20 分段；独立事件上界满足最低必要输入不代表匹配对照或 FDR 已通过。不能回溯可见时间、改写旧实验或按收益选择窗口。
+
+`/evolution/approval` 通过既有 hooks 创建冻结费用审批。E2 Loop 现在与 E1 一样，正常用户明确批准后才直接提交；独立 campaign API 保持既有授权语义。准备页不通过聊天申请审批，故不产生准备聊天费用。审批包含完整配置、事件快照、种子与行情摘要、冻结模型和硬预算，修改需要重新准备。执行仍经 owner/JWT、orchestration Ed25519 grant 与 Dashboard 模型兑换；不新增明文凭据持久化。
+
+部署需先完成 `0067`（依赖 `0066`）迁移，再同步 Dashboard、orchestration、Evolver。已有 Loop 批准记录时降级迁移会拒绝，不自动删除命令。批准命令沿用原 AES-GCM 与最长 24 小时恢复窗口，`JWT_SECRET` 轮换旧密文限制不变。所有生产状态和剩余验收统一见 [当前状态](../../docs/04-current-state.md#未完成--下一步)。
