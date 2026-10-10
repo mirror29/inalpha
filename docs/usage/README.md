@@ -39,6 +39,8 @@ refuses rollback once any ledger records exist; roll back application code inste
 
 ## Query interface
 
+Open **Usage** in the Dashboard sidebar, or `/{locale}/usage`, for the owner-scoped view.
+
 Authenticated `GET /api/usage` returns `summary`, 50 `items`, `nextOffset`, and `coverage`.
 Filters: `from` (inclusive UTC), `to` (exclusive UTC), `service`, `model`, `status`,
 `operation`, `experiment_id`, `case_id`, `arm_id`, `run_id`, `offset`. An operation filter
@@ -77,7 +79,8 @@ from output text.
 versioned manifest/evidence, append-only started/settled call events and an exclusive
 result file. Missing result or an unmatched start is an interrupted/incomplete run, not
 success. `pilot.session.pilot_client` wires the provider to the unified store and artifact
-sink. Keep API keys in memory; do not put them in the configuration manifest. Artifact
+sink. The frozen configuration and client arguments must explicitly name the same provider
+and model; implicit provider/model defaults are rejected for pilot calls. Keep API keys in memory; do not put them in the configuration manifest. Artifact
 validation rejects credential-shaped fields and common key/bearer literals; this is not
 a guarantee that arbitrary free text is safe to publish. Artifacts are private by default.
 
@@ -92,6 +95,8 @@ uncertainty, and SHA256. Price evidence also requires actual session close. Unkn
 availability is retained in a bundle but blocks model-ready validation. Unfinished bars,
 future evidence, malformed schema, duplicate identities and changed hashes are rejected.
 The supplied fixture is synthetic; it is not market evidence or an evaluation result.
+
+Validate imported materials with `uv run python -m inalpha_research.pilot validate /path/to/materials.json` from `services/research`.
 
 A material manifest contains `protocol`, `development`, `formal`, `market`, `labels`, and
 `annotations`. Protocol must provide asset/calendar/timezone/benchmark/horizon/entry timing,
