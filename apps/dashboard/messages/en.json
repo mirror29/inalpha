@@ -23,7 +23,8 @@
     "expand": "Expand sidebar",
     "logout": "Sign out",
     "config": "Config",
-    "waitlist": "Trial Waitlist"
+    "waitlist": "Trial Waitlist",
+    "usage": "Model usage"
   },
   "adminWaitlist": {
     "title": "Trial Waitlist",
@@ -1099,5 +1100,28 @@
     "main": "Main account equity",
     "books": "Run wallet equity",
     "legacyPositions": "Legacy/manual book below; old positions are no longer managed automatically."
+  },
+  "usage": {
+    "title": "Model usage",
+    "description": "Request-level usage across chat, research and evolution.",
+    "service": "Service",
+    "status": "Status",
+    "all": "All",
+    "model": "Model",
+    "operation": "Operation",
+    "from": "From (UTC)",
+    "to": "Before (UTC)",
+    "unknown": "Unknown",
+    "error": "Usage is unavailable. Please retry.",
+    "loading": "Loading…",
+    "calls": "Calls",
+    "tokens": "Known input / output tokens",
+    "cost": "Known estimated cost (USD)",
+    "time": "Time (UTC)",
+    "incomplete": "Unknown usage: {usage} · Unknown cost: {cost} · Pending: {pending}",
+    "empty": "No recorded calls match these filters.",
+    "previous": "Previous",
+    "next": "Next",
+    "limits": "Historical aggregate evolution costs are excluded. Pending requests may have been interrupted; unknown values are not zero. Totals cover recorded calls only."
   }
 }

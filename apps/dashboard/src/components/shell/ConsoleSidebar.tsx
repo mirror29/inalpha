@@ -80,6 +80,7 @@ const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
 
 /** 配置菜单复用同一组次级入口，管理员入口仍按 session 角色过滤。 */
 const SECONDARY_NAV: NavItem[] = [
+  { key: "usage", href: "/usage", icon: Activity },
   { key: "dataHealth", href: "/data-health", icon: Database },
   {
     key: "waitlist",

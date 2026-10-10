@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import type { EvolutionRun } from "@/lib/types";
 import { evolutionCosts, evolutionUsd } from "@/lib/evolution-cost";
 import { EvolutionChatCosts } from "./EvolutionChatCosts";
+import { UsageReceiptSummary } from "@/components/usage/UsageReceiptSummary";
 import { Panel } from "@/components/ui/Panel";
 
 /** Separate receipts, uncertain usage and repair costs without implying a complete bill. */
@@ -52,6 +53,7 @@ export function EvolutionCosts({ run }: { run: EvolutionRun }) {
             unknown: costs.rejectedUnknown,
           })}
         </p>
+        <UsageReceiptSummary operationId={run.run_id} />
         <EvolutionChatCosts costs={run.chat_preparation_costs} />
       </div>
     </Panel>
