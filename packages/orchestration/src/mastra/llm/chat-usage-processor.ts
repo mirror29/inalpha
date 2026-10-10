@@ -59,7 +59,7 @@ export function createChatUsageProcessor(store: ChatUsageStore): InputProcessor 
       const responseModel = (steps?.at(-1) as { response?: { modelId?: unknown } } | undefined)?.response?.modelId;
       if (state.settledCallId !== call.callId) {
         const settled = await settleReceipt(store, call, { ...normalizeChatUsage(usage, call.pricing),
-          status: finishReason === "length" ? "truncated" : finishReason === "error" ? "failed" : "completed",
+          status: finishReason === "length" ? "truncated" : (finishReason === "error" || !finishReason) ? "failed" : "completed",
           finishReason, responseModel: typeof responseModel === "string" ? responseModel : undefined });
         if (settled) state.settledCallId = call.callId;
       }

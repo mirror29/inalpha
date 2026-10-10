@@ -79,7 +79,7 @@ describe("real Agent per-call usage processing", () => {
     await expect(f.generate("test", { requestContext: f.requestContext })).rejects.toThrow();
     expect(f.calls).toHaveLength(1);
     expect(f.model.calls).toHaveLength(1);
-    expect(f.receipts).toEqual([expect.objectContaining({ usageStatus: "unknown", estimatedCostUsd: null })]);
+    expect(f.receipts).toEqual([expect.objectContaining({ status: "failed", usageStatus: "unknown", inputTokens: null, outputTokens: null, estimatedCostUsd: null })]);
   });
 
   it("records verified background calls separately from user chat", async () => {
@@ -130,5 +130,20 @@ it("preserves truncation and response model metadata without adding another call
   expect(store.settle).toHaveBeenCalledTimes(1);
   expect(vi.mocked(store.settle).mock.calls[0][1]).toMatchObject({
     status: "truncated", finishReason: "length", responseModel: "immutable-fixture", reasoningTokens: 15, outputTokens: 20,
+  });
+});
+
+
+it("settles an API error without usage once and never retries the model", async () => {
+  const store: ChatUsageStore = { begin: vi.fn(async () => {}), settle: vi.fn(async () => {}) };
+  const processor = createChatUsageProcessor(store);
+  const state = {};
+  const requestContext = new RequestContext([[AUTH_SUB_KEY, "user:alice"]]);
+  await processor.processInputStep!({ state, stepNumber: 0, requestContext, modelSettings: {} } as never);
+  expect(await processor.processAPIError!({ state } as never)).toEqual({ retry: false });
+  await processor.processAPIError!({ state } as never);
+  expect(store.settle).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(store.settle).mock.calls[0][1]).toMatchObject({
+    status: "failed", usageStatus: "unknown", inputTokens: null, outputTokens: null,
   });
 });
