@@ -168,6 +168,14 @@ class DeepSeekLLMClient:
         retriable = (RateLimitError, APITimeoutError, InternalServerError)
         last_err: Exception | None = None
 
+        # DeepSeek Flash defaults can spend the short JSON budget on reasoning.
+        # Keep this structured-output path explicit without changing other providers.
+        thinking = (
+            {"thinking": {"type": "disabled"}}
+            if self._provider_name == "deepseek" and self._model == "deepseek-flash"
+            else {}
+        )
+        request_options = {"extra_body": thinking} if thinking else {}
         logical_id = str(uuid4())
         for attempt in range(self._max_retries + 1):
             try:
@@ -179,10 +187,11 @@ class DeepSeekLLMClient:
                         temperature=temperature,
                         max_tokens=max_tokens,
                         response_format={"type": "json_object"},
+                        **request_options,
                     ),
                     logical_id=logical_id,
                     attempt=attempt,
-                    sampling={"temperature": temperature, "max_tokens": max_tokens},
+                    sampling={"temperature": temperature, "max_tokens": max_tokens, **thinking},
                     artifact={"messages": messages},
                 )
             except retriable as e:
