@@ -57,7 +57,7 @@
     "pit_owner_and_frozen_cutoff_preserved": true,
     "facts_backdated": false,
     "statistical_window_or_thresholds_changed": false,
-    "other_counts_as_qualifying_independent_event": false,
+    "other_facts_do_not_demonstrate_qualified_evidence": true,
     "target_event_snapshot_preflight": "not_checked",
     "task_created_claim_requires_successful_loop_id": true,
     "instructions_avoid_repeated_resolution_or_same_failed_start_retry": true,

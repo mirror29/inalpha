@@ -1157,7 +1157,8 @@ PR #204 已合并，Dashboard 固定部署 `ad33e3eb`，仅替换 Dashboard，�
   版本数不等于独立事件数。生产 Loop 与 campaign 仍为 0。
 - **本地代码修正**：`32111f75` 将自动快照证据过滤扩为 HypothesisSpec 支持的全部 11 类型，
   confirmed 可使用 upgrade 等证据；直接触发四类型白名单仍由假设校验保持。快照仍按真实可见时间和
-  owner 冻结，不回溯事实、不改 cutoff、统计窗口、匹配对照或 FDR / Forward 门槛；`other` 不能凑合格独立事件。
+  owner 冻结，不回溯事实、不改 cutoff、统计窗口、匹配对照或 FDR / Forward 门槛；纳入 `other` 事实不等于已验证合格独立事件，
+  仍须通过正式评估的时间窗筛选、独立事件聚类、匹配对照与 FDR。
   支持类型事实进入快照不表示覆盖充分、假设有效或可进入冠军与 Forward。
 - **目标解析与就绪分开**：`1d0d78d5` 为自动闭环目标增加 `event_snapshot_preflight=not_checked`；
   `start_loop` 只表示目标与功能可用。Agent 不得据此声称已就绪或已启动，只有启动成功返回 loop ID 才报告任务创建，
