@@ -24,6 +24,10 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**：agent 
 
 ## 3. 协作硬约束（任何 AI 工具必须遵守）
 
+- **前端 UI 一致性**：Dashboard 改动先读 `apps/dashboard/design.md`，优先复用
+  `src/components/ui/` 的 shadcn/Radix 组件及现有业务封装（PageHeader / Panel / Table / StatusBadge）。
+  已有组件不得绕过后另写原生控件样式；缺失通用能力先补共享组件，统一主题 token、间距和交互态。
+  验收必须实际检查深浅主题、窄屏、键盘操作及加载/空/错误/禁用态，不能只以编译和接口测试代替 UI 验收。
 - **品牌名**：始终大写 **Inalpha**（不写 inalpha / InAlpha / inAlpha） <!-- check-consistency: skip -->（元用法）
 - **市场覆盖**：crypto + 美股 + A股 + 港股 + 全球单股 / 指数 + FRED 宏观；
   orchestration 按市场类型路由 venue，交易时段由市场日历处理
