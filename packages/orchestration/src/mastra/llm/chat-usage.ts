@@ -8,6 +8,10 @@ export type ChatUsageReceipt = {
   cachedInputTokens: number | null;
   estimatedCostUsd: number | null;
   pricingVersion: string | null;
+  reasoningTokens: number | null;
+  status?: "completed" | "failed" | "truncated";
+  finishReason?: string;
+  responseModel?: string;
 };
 
 /** Accepts explicit zero, while rejecting missing, fractional or invalid counts. */
@@ -35,6 +39,8 @@ export function normalizeChatUsage(
   const cachedInputTokens = cached !== null && inputTokens !== null && cached <= inputTokens
     ? cached
     : null;
+  const reasoning = tokenCount(source.reasoningTokens);
+  const reasoningTokens = reasoning !== null && outputTokens !== null && reasoning <= outputTokens ? reasoning : null;
   const usageStatus = inputTokens !== null && outputTokens !== null ? "known" : "unknown";
   const validPricing = pricing?.currency === "USD"
     && typeof pricing.version === "string" && pricing.version.trim() !== ""
@@ -48,6 +54,7 @@ export function normalizeChatUsage(
   }
   return {
     usageStatus,
+    reasoningTokens,
     inputTokens,
     outputTokens,
     cachedInputTokens,

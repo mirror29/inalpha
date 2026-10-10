@@ -23,7 +23,8 @@
     "expand": "展开侧边栏",
     "logout": "登出",
     "config": "配置",
-    "waitlist": "试用审核"
+    "waitlist": "试用审核",
+    "usage": "模型用量"
   },
   "adminWaitlist": {
     "title": "试用候审名单",
@@ -1099,5 +1100,34 @@
     "main": "主账户权益",
     "books": "运行钱包权益",
     "legacyPositions": "以下为历史／手动账本；旧仓已停止自动策略管理。"
+  },
+  "usage": {
+    "filters": "筛选记录",
+    "reset": "重置",
+    "records": "调用明细",
+    "page": "第 {current} / {total} 页",
+    "services": {"orchestration": "对话与编排", "research": "研究", "evolver": "策略演化"},
+    "statuses": {"pending": "待结算", "completed": "已完成", "failed": "失败", "cancelled": "已取消", "interrupted": "已中断", "invalid": "结果无效", "truncated": "已截断"},
+    "title": "模型用量",
+    "description": "统一查看对话、研究和策略演化的逐次调用记录。",
+    "service": "服务",
+    "status": "状态",
+    "all": "全部",
+    "model": "模型",
+    "operation": "任务",
+    "from": "起始日期（UTC）",
+    "to": "截止日期（不含，UTC）",
+    "unknown": "未知",
+    "error": "用量暂时不可用，请重试。",
+    "loading": "加载中…",
+    "calls": "调用次数",
+    "tokens": "已知输入 / 输出 token",
+    "cost": "已知估算费用（美元）",
+    "time": "时间（UTC）",
+    "incomplete": "用量未知：{usage} · 费用未知：{cost} · 待结算：{pending}",
+    "empty": "没有符合条件的调用记录。",
+    "previous": "上一页",
+    "next": "下一页",
+    "limits": "历史演化聚合费用不计入逐调用合计。待结算请求可能已中断；未知值不等于零。合计仅覆盖已记录的调用。"
   }
 }

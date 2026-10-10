@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 import httpx
 import jwt
+from inalpha_shared.usage import UsageIdentity, UsageRecorder
 from inalpha_shared_llm import LLMClient  # type: ignore[import-untyped]
 from inalpha_shared_llm.config import LLMSettings  # type: ignore[import-untyped]
 
@@ -15,6 +16,7 @@ from .config import EvolverSettings
 from .loop_llm import BudgetedLoopClient, LoopModelScope
 from .mutator import Mutator
 from .storage.loop_authorizations import LoopAuthorizationUnavailable
+from .usage import EvolverUsageStore
 
 _BASE_URLS = {
     "deepseek": "https://api.deepseek.com",
@@ -93,12 +95,43 @@ async def build_owner_mutator(
         LLM_MAX_TOKENS=int(pricing["max_output_tokens"]),
     )
     llm_client = LLMClient(settings=llm_settings)
+    operation_id = str(
+        run.get("run_id") or run.get("campaign_id") or (loop_scope.loop_id if loop_scope else "")
+    )
+    owner_sub = run.get("requested_by_sub")
+    if not owner_sub or not operation_id:
+        raise RuntimeError("usage requires persisted owner and operation")
+    llm_client.usage_recorder = UsageRecorder(
+        UsageIdentity(
+            auth_sub=owner_sub,
+            service="evolver",
+            operation_id=operation_id,
+            provider=snapshot["provider"],
+            model=snapshot["model"],
+            config_id=config_id,
+            pricing=pricing,
+            stage=loop_scope.phase if loop_scope else "evolution",
+            links={
+                key: str(run[key])
+                for key in ("run_id", "campaign_id", "owner_account_id")
+                if run.get(key)
+            },
+        ),
+        EvolverUsageStore(
+            settings.database_url,
+            run.get("idempotency_key"),
+            str(loop_scope.loop_id) if loop_scope else None,
+        ),
+    )
     sdk = await llm_client._ensure_client()
     # Each approved candidate slot covers one network attempt, without hidden SDK retries.
     sdk.max_retries = 0
     return Mutator(
-        llm_client=(BudgetedLoopClient(llm_client, loop_scope, pricing)
-                    if loop_scope is not None else llm_client),
+        llm_client=(
+            BudgetedLoopClient(llm_client, loop_scope, pricing)
+            if loop_scope is not None
+            else llm_client
+        ),
         input_usd_per_million=float(pricing["input_usd_per_million"]),
         output_usd_per_million=float(pricing["output_usd_per_million"]),
         max_input_utf8_bytes=int(pricing["assumed_input_tokens"]),
@@ -109,20 +142,30 @@ async def build_owner_mutator(
 async def _renew_loop_grant(scope: LoopModelScope, settings: EvolverSettings) -> str:
     """Ask the signer for a short-lived grant bound to the current persisted lease."""
     now = int(time.time())
-    token = jwt.encode({
-        "sub": "service:evolver", "aud": "inalpha-orchestration",
-        "token_use": "service", "token_purpose": "evolution_loop_credential",
-        "loop_id": str(scope.loop_id), "owner_account_id": str(scope.owner_account_id),
-        "lease_token": str(scope.lease_token), "phase": scope.phase,
-        "iat": now, "exp": now + 120,
-    }, settings.jwt_secret, algorithm="HS256")
+    token = jwt.encode(
+        {
+            "sub": "service:evolver",
+            "aud": "inalpha-orchestration",
+            "token_use": "service",
+            "token_purpose": "evolution_loop_credential",
+            "loop_id": str(scope.loop_id),
+            "owner_account_id": str(scope.owner_account_id),
+            "lease_token": str(scope.lease_token),
+            "phase": scope.phase,
+            "iat": now,
+            "exp": now + 120,
+        },
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
     url = (
         f"{settings.orchestration_service_url.rstrip('/')}"
         f"/internal/evolution-loops/{scope.loop_id}/credential-grant"
     )
     try:
         async with httpx.AsyncClient(
-            timeout=settings.evolver_credential_timeout_s, trust_env=False,
+            timeout=settings.evolver_credential_timeout_s,
+            trust_env=False,
         ) as client:
             response = await client.post(url, headers={"Authorization": f"Bearer {token}"})
     except httpx.HTTPError as exc:

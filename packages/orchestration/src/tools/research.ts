@@ -4,6 +4,8 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
+import { trustedChatInvocation } from "../mastra/llm/chat-invocation-scope.js";
+import { AUTH_SUB_KEY } from "../hooks/with-hooks.js";
 import { resolveRequestToken } from "../auth.js";
 import { ResearchClient, type PersonaKey } from "../clients/research.js";
 import { getSettings } from "../config.js";
@@ -34,7 +36,8 @@ type ToolRequestContext = { authToken?: string; get?: (key: string) => unknown }
 async function getClient(ctx?: ToolRequestContext): Promise<ResearchClient> {
   const settings = getSettings();
   const token = await resolveRequestToken(ctx);
-  return new ResearchClient({ baseUrl: settings.researchServiceUrl, token });
+  const owner = ctx?.get?.(AUTH_SUB_KEY);
+  return new ResearchClient({ baseUrl: settings.researchServiceUrl, token, invocationId: typeof owner === "string" ? trustedChatInvocation(ctx, owner) : undefined });
 }
 
 // ────────────────────────────────────────────────────────────────────

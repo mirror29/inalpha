@@ -10,6 +10,8 @@ from typing import Literal
 from inalpha_shared.config import Settings as BaseSettings
 from pydantic import Field
 
+from .pricing import ResearchUsagePricing
+
 
 class ResearchSettings(BaseSettings):
     """research service 完整 settings。"""
@@ -53,6 +55,12 @@ class ResearchSettings(BaseSettings):
         ge=15,
         le=300,
         alias="EVENT_EXTRACTION_LEASE_SECONDS",
+    )
+
+    research_usage_pricing: list[ResearchUsagePricing] = Field(
+        default_factory=list,
+        alias="RESEARCH_USAGE_PRICING",
+        description="JSON array of explicit versioned provider/model USD estimates; absent prices remain unknown.",
     )
 
     # ─── LLM ─────────────────────────────────────────────────────────

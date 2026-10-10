@@ -13,7 +13,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Radio,
-  Settings,
   ShieldAlert,
   Sigma,
   Sparkles,
@@ -30,13 +29,7 @@ import { AccountControl } from "./AccountControl";
 import { LocaleSwitcher } from "./LocaleSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
 import { clearLLMConfigDismissed } from "@/components/llm/LLMConfigModal";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 interface NavItem {
   key: string;
@@ -80,6 +73,7 @@ const NAV_GROUPS: { key: string; items: NavItem[] }[] = [
 
 /** 配置菜单复用同一组次级入口，管理员入口仍按 session 角色过滤。 */
 const SECONDARY_NAV: NavItem[] = [
+  { key: "usage", href: "/usage", icon: Activity },
   { key: "dataHealth", href: "/data-health", icon: Database },
   {
     key: "waitlist",
@@ -257,8 +251,6 @@ function SidebarBody({
   buildDate: string;
   isAdmin: boolean;
 }) {
-  // 配置下拉菜单
-  const [configMenuOpen, setConfigMenuOpen] = useState(false);
   // 脱离 aside(z-10 + backdrop-blur)的层叠上下文 —— 否则在 aside 内无论写多大
   // z-index 都会被外部 z-20+ 的模块(活动日志条 / 对话栏等)压住。
   const [tip, setTip] = useState<{
@@ -307,6 +299,22 @@ function SidebarBody({
       </DropdownMenuItem>
     );
   });
+
+  /** 展开、折叠和移动侧栏共享同一个配置与账户菜单。 */
+  const accountMenu = (
+    <AccountControl collapsed={collapsed}>
+      <DropdownMenuItem
+        onSelect={() => {
+          clearLLMConfigDismissed();
+          window.dispatchEvent(new CustomEvent("inalpha:open-llm-settings"));
+        }}
+      >
+        <Key className="size-4" strokeWidth={1.75} />
+        {llmLabel}
+      </DropdownMenuItem>
+      {secondaryEntries}
+    </AccountControl>
+  );
 
   return (
     <>
@@ -519,35 +527,8 @@ function SidebarBody({
       {/* Footer —— 控制区(主题 / 语言)+ 配置菜单 + 折叠开关 + build 标记。 */}
       {collapsed ? (
         <div className="flex flex-col items-center gap-3 border-t border-border-subtle px-2 py-3">
-          <AccountControl collapsed />
+          {accountMenu}
           <ThemeToggle />
-          {/* 折叠态配置按钮 */}
-          <DropdownMenu open={configMenuOpen} onOpenChange={setConfigMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-8"
-                aria-label={t("config")}
-              >
-                <Settings className="size-4" strokeWidth={1.75} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="center" className="mb-1">
-              <DropdownMenuItem
-                onClick={() => {
-                  clearLLMConfigDismissed();
-                  window.dispatchEvent(
-                    new CustomEvent("inalpha:open-llm-settings"),
-                  );
-                }}
-              >
-                <Key className="size-4" strokeWidth={1.75} />
-                {llmLabel}
-              </DropdownMenuItem>
-              {secondaryEntries}
-            </DropdownMenuContent>
-          </DropdownMenu>
           {onToggleCollapsed && (
             <button
               type="button"
@@ -562,37 +543,11 @@ function SidebarBody({
         </div>
       ) : (
         <div className="flex flex-col gap-3 border-t border-border-subtle px-4 py-3">
-          <AccountControl collapsed={false} />
+          {accountMenu}
           <div className="flex items-center justify-between">
             <ThemeToggle />
             <LocaleSwitcher />
           </div>
-          {/* 配置按钮 */}
-          <DropdownMenu open={configMenuOpen} onOpenChange={setConfigMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="w-full">
-                <Settings className="size-4" strokeWidth={1.75} />
-                <span>{t("config")}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              side="top"
-              className="mb-1 w-[--radix-dropdown-menu-trigger-width]"
-            >
-              <DropdownMenuItem
-                onClick={() => {
-                  clearLLMConfigDismissed();
-                  window.dispatchEvent(
-                    new CustomEvent("inalpha:open-llm-settings"),
-                  );
-                }}
-              >
-                <Key className="size-4" strokeWidth={1.75} />
-                {llmLabel}
-              </DropdownMenuItem>
-              {secondaryEntries}
-            </DropdownMenuContent>
-          </DropdownMenu>
           <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.18em] text-fg-muted/60">
             <span className="size-1.5 shrink-0 rounded-full bg-seal" />
             <span>Build · {buildDate}</span>

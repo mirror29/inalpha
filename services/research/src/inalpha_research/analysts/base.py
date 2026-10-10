@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any
 
 from inalpha_shared import get_logger
+from inalpha_shared.usage import usage_stage
 
 from ..data_client import DataClient
 from ..factor_client import FactorClient
@@ -101,7 +102,8 @@ class Analyst(ABC):
             as_of=as_of,
             lookback_days=lookback_days,
         )
-        raw = await self._llm.complete_json(system=system, user=user)
+        with usage_stage(f"analyst:{self.type_id}"):
+            raw = await self._llm.complete_json(system=system, user=user)
         brief = self._parse(raw)
         # 注意顺序：cap 由 build_user_prompt 按数据可得性设置，必须在其之后读
         if self._confidence_cap is not None:

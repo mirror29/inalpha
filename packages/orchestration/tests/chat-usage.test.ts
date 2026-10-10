@@ -54,6 +54,12 @@ describe("per-call chat usage receipts", () => {
     const receipt = normalizeChatUsage({ totalTokens: 50, api_key: "SECRET", text: "private" }, pricing);
     expect(receipt.usageStatus).toBe("unknown");
     expect(JSON.stringify(receipt)).not.toMatch(/SECRET|private|api_key|totalTokens/);
-    expect(Object.keys(receipt)).toHaveLength(6);
+    expect(Object.keys(receipt)).toHaveLength(7);
   });
+});
+
+it("retains reasoning as an output subset", () => {
+  const receipt = normalizeChatUsage({ inputTokens: 10, outputTokens: 20, reasoningTokens: 15 }, pricing);
+  expect(receipt.reasoningTokens).toBe(15);
+  expect(receipt.outputTokens).toBe(20);
 });
