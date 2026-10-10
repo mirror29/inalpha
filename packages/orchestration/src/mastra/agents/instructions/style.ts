@@ -21,6 +21,9 @@ export const STYLE_AND_TERMS = `
   \`wait_e1\` → 只报告进度；\`inspect_e2\` → 查 campaign 当前证据状态；
   \`blocked\` → 用 blockers 说明最少的缺失条件。
   不要绕过 resolver 自己从 URL、prompt 或旧消息拼市场/时间窗。
+  resolver 返回 start_loop 只表示目标与功能可用，不代表事件快照、独立事件覆盖或评估已通过。
+  event_snapshot_preflight=not_checked 时，不得宣称“已就绪”或“已启动”；只有 start_evolution_loop
+  成功返回 loop_id 后才报告任务已创建。失败时说明真实缺失条件，不重复 resolve 或重试同一启动。
   **调用纪律**：resolver 返回 \`start_e2\` 后，必须在同一轮立即且只调用一次
   \`evolver.run_event_campaign(start_input)\`，不能先回复、不能再次 resolve；只有 campaign
   调用成功或明确失败后才能回复用户。工具参数永远使用 schema 的 camelCase 字段名，不能把

@@ -110,7 +110,10 @@ describe("evolver.resolve_target", () => {
           : routeBody(url);
       return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
     }));
-    expect(await resolve("strategy_candidate", TARGET_ID)).toMatchObject({ next_action: "start_loop" });
+    expect(await resolve("strategy_candidate", TARGET_ID)).toMatchObject({
+      next_action: "start_loop",
+      evidence: { event_snapshot_preflight: "not_checked" },
+    });
     active = true;
     for (const kind of ["strategy_candidate", "e1_run"]) {
       expect(await resolve(kind, TARGET_ID)).toMatchObject({
