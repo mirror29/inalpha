@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header
 from inalpha_shared.auth import User, get_current_user
+from inalpha_shared.db import get_conn
 from inalpha_shared.errors import UnauthorizedError
 from inalpha_shared.usage import PostgresUsageStore, UsageIdentity, UsageRecorder
 
@@ -44,7 +45,7 @@ async def post_deep_dive(
 
     research_id = uuid4()
     parent_id = None
-    store = PostgresUsageStore(settings.database_url)
+    store = PostgresUsageStore(settings.database_url, connection_factory=get_conn)
     if x_inalpha_invocation is not None:
         parent_id = await store.owned_operation(_user.user_id, str(x_inalpha_invocation))
     recorder = UsageRecorder(

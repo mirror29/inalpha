@@ -11,12 +11,12 @@ class EvolverUsageStore(PostgresUsageStore):
     """Resolve the persisted approval association; never accept a client-supplied owner."""
 
     def __init__(self, database_url: str, operation_key: str | None, loop_id: str | None):
-        super().__init__(database_url)
+        super().__init__(database_url, connection_factory=get_conn)
         self.operation_key = operation_key
         self.loop_id = loop_id
 
     async def begin(self, identity: UsageIdentity, *args: Any) -> None:
-        async with get_conn() as conn:
+        async with self.connection() as conn:
             cursor = await conn.execute(
                 """WITH operations AS (
  SELECT %s::text AS operation_key
@@ -41,5 +41,5 @@ ORDER BY invocation_id LIMIT 1""",
                 ),
             )
             row = await cursor.fetchone()
-        parent = row["invocation_id"] if row else None
-        await super().begin(replace(identity, parent_operation_id=parent), *args)
+            parent = row["invocation_id"] if row else None
+            await self.begin_on_connection(conn, replace(identity, parent_operation_id=parent), *args)

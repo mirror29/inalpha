@@ -17,6 +17,7 @@ from inalpha_shared import (
     install_error_handler,
     install_request_logging,
 )
+from inalpha_shared.db import close_pool, init_pool
 
 from . import __version__
 from .api import deep_dive, event_facts, health
@@ -30,6 +31,7 @@ configure_logging(level=_settings.log_level, service_name=_settings.service_name
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Start the optional durable event-extraction worker without owning Data state."""
+    await init_pool(_settings.database_url, min_size=0, max_size=10, timeout=5)
     stop = asyncio.Event()
     task: asyncio.Task[None] | None = None
     if _settings.event_extraction_enabled:
@@ -42,8 +44,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         stop.set()
-        if task is not None:
-            await task
+        try:
+            if task is not None:
+                await task
+        finally:
+            await close_pool()
 
 
 app = FastAPI(

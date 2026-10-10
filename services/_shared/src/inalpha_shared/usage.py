@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -116,14 +116,26 @@ class UsageIdentity:
 class PostgresUsageStore:
     """Short independent transactions survive cancellation of the business transaction."""
 
-    def __init__(self, database_url: str) -> None:
+    def __init__(self, database_url: str, connection_factory: Any = None) -> None:
+        self.connection_factory = connection_factory
         self.database_url = database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+
+    @asynccontextmanager
+    async def connection(self):
+        """Borrow an independent transaction from the service-owned pool."""
+        if self.connection_factory is not None:
+            async with self.connection_factory() as conn:
+                await conn.execute("SET LOCAL statement_timeout = '5s'")
+                yield conn
+        else:
+            async with await AsyncConnection.connect(
+                self.database_url, connect_timeout=5, options="-c statement_timeout=5000"
+            ) as conn:
+                yield conn
 
     async def owned_operation(self, auth_sub: str, operation_id: str) -> str | None:
         """Resolve attribution without allowing cross-owner parent links."""
-        async with await AsyncConnection.connect(
-            self.database_url, connect_timeout=5, options="-c statement_timeout=5000"
-        ) as conn:
+        async with self.connection() as conn:
             cursor = await conn.execute(
                 "SELECT 1 FROM llm_usage_calls WHERE auth_sub=%s AND operation_id=%s LIMIT 1",
                 (auth_sub, operation_id),
@@ -139,36 +151,47 @@ class PostgresUsageStore:
         sampling: dict[str, Any],
         stage: str,
     ) -> None:
-        async with await AsyncConnection.connect(
-            self.database_url, connect_timeout=5, options="-c statement_timeout=5000"
-        ) as conn:
-            await conn.execute(
-                """INSERT INTO llm_usage_calls
+        async with self.connection() as conn:
+            await self.begin_on_connection(
+                conn, identity, call_id, logical_id, attempt, sampling, stage
+            )
+
+    async def begin_on_connection(
+        self,
+        conn: Any,
+        identity: UsageIdentity,
+        call_id: str,
+        logical_id: str,
+        attempt: int,
+        sampling: dict[str, Any],
+        stage: str,
+    ) -> None:
+        """Insert within the attribution transaction before contacting the provider."""
+        await conn.execute(
+            """INSERT INTO llm_usage_calls
 (call_id,logical_call_id,auth_sub,service,stage,operation_id,parent_operation_id,attempt,
  provider,model,config_id,pricing,links,sampling)
 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (
-                    call_id,
-                    logical_id,
-                    identity.auth_sub,
-                    identity.service,
-                    stage,
-                    identity.operation_id,
-                    identity.parent_operation_id,
-                    attempt,
-                    identity.provider,
-                    identity.model,
-                    identity.config_id,
-                    Jsonb(identity.pricing) if identity.pricing else None,
-                    Jsonb(identity.links),
-                    Jsonb(sampling),
-                ),
-            )
+            (
+                call_id,
+                logical_id,
+                identity.auth_sub,
+                identity.service,
+                stage,
+                identity.operation_id,
+                identity.parent_operation_id,
+                attempt,
+                identity.provider,
+                identity.model,
+                identity.config_id,
+                Jsonb(identity.pricing) if identity.pricing else None,
+                Jsonb(identity.links),
+                Jsonb(sampling),
+            ),
+        )
 
     async def settle(self, identity: UsageIdentity, call_id: str, receipt: dict[str, Any]) -> None:
-        async with await AsyncConnection.connect(
-            self.database_url, connect_timeout=5, options="-c statement_timeout=5000"
-        ) as conn:
+        async with self.connection() as conn:
             await conn.execute(
                 """UPDATE llm_usage_calls SET status=%s,usage_status=%s,
 input_tokens=%s,output_tokens=%s,cached_input_tokens=%s,cache_write_tokens=%s,reasoning_tokens=%s,

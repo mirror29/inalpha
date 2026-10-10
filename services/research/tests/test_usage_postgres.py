@@ -4,6 +4,7 @@ import os
 from uuid import uuid4
 
 import pytest
+from inalpha_shared.db import close_pool, get_conn, init_pool
 from inalpha_shared.usage import PostgresUsageStore, UsageIdentity, UsageRecorder
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
@@ -14,7 +15,7 @@ pytestmark = pytest.mark.skipif(not URL, reason="dedicated ledger test DB not co
 
 async def test_owner_bound_idempotent_settlement():
     assert URL and URL.endswith("/inalpha_migration_usage208_test") and "@localhost:" in URL
-    store = PostgresUsageStore(URL)
+    store = PostgresUsageStore(URL, connection_factory=get_conn)
     identity = UsageIdentity("usage-test-alice", "research", str(uuid4()), "openai", "fixture")
     call, logical = str(uuid4()), str(uuid4())
     await store.begin(identity, call, logical, 0, {}, "test")
@@ -57,7 +58,7 @@ async def test_owner_bound_idempotent_settlement():
 async def test_real_store_records_invalid_response_usage():
     assert URL and URL.endswith("/inalpha_migration_usage208_test") and "@localhost:" in URL
     identity = UsageIdentity("usage-test-alice", "research", str(uuid4()), "openai", "fixture")
-    recorder = UsageRecorder(identity, PostgresUsageStore(URL))
+    recorder = UsageRecorder(identity, PostgresUsageStore(URL, connection_factory=get_conn))
 
     async def invoke():
         return {"usage": {"prompt_tokens": 5, "completion_tokens": 3}, "choices": []}
@@ -76,3 +77,29 @@ async def test_real_store_records_invalid_response_usage():
         assert row["status"] == "invalid"
         assert row["input_tokens"] == 5
         assert row["usage_status"] == "known"
+
+
+@pytest.fixture(autouse=True)
+async def ledger_pool():
+    await init_pool(URL, min_size=0, max_size=2, timeout=5)
+    try:
+        yield
+    finally:
+        await close_pool()
+
+
+async def test_same_subject_reads_all_service_calls_without_prefix_rewriting():
+    owner, other = f"user:{uuid4()}", str(uuid4())
+    store = PostgresUsageStore(URL, connection_factory=get_conn)
+    for service in ("chat", "research", "evolver"):
+        operation, call = str(uuid4()), str(uuid4())
+        await store.begin(
+            UsageIdentity(owner, service, operation, "openai", "fixture"), call, call, 0, {}, "test"
+        )
+        assert await store.owned_operation(owner, operation) == operation
+        assert await store.owned_operation(other, operation) is None
+    async with get_conn() as conn:
+        rows = await (
+            await conn.execute("SELECT service FROM llm_usage_calls WHERE auth_sub=%s", (owner,))
+        ).fetchall()
+    assert {row["service"] for row in rows} == {"chat", "research", "evolver"}
