@@ -150,6 +150,7 @@ async function resolveTargetRecord(
         blockers,
         evidence: {
           candidate_id: runner.candidate_id,
+          seed_label: candidate.description?.trim().split("\n")[0]?.slice(0, 120) || null,
           cumulative_pnl: runner.cumulative_pnl,
           last_bar_ts: runner.last_bar_ts,
           backtest_run_id: backtest?.run_id ?? null,

@@ -50,7 +50,6 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     "evolver.resolve_target",
     /** Owner 明确点击/说“开始进化”即授权研究型 E2；签名 operation/grant 仍绑定 owner、模型和请求。 */
     "evolver.run_event_campaign",
-    "evolver.start_evolution_loop",
 
     // Swarm 批量回测（ADR-0025）：只读，无下单路径
     "swarm.*",
@@ -98,8 +97,9 @@ export const DEFAULT_PERMISSIONS: PermissionConfig = {
     // reset 是破坏性操作（删全部持仓行），后端另有 running-run 409 硬守门。
     "paper.deposit_cash",
     "paper.reset_account",
-    /** E1 保留逐次审批；E2 是不接 Runner 的研究闭环，由 owner 指令直接启动。 */
+    /** E1 保留逐次审批；持久化 E2 Loop 同样冻结费用审批；独立 campaign 保留既有行为。 */
     "evolver.run_evolution",
+    "evolver.start_evolution_loop",
     "evolver.abort_evolution",
   ],
 

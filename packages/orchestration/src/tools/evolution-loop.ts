@@ -8,7 +8,21 @@ import { mintEvolutionCredentialGrant } from "../mastra/llm/evolution-credential
 import { APPROVAL_OPERATION_ID_KEY, getRequestContextValue, USER_LLM_SNAPSHOT_KEY, type EvolutionLLMSnapshot } from "../mastra/llm/evolution-snapshot.js";
 import { resolveEvolutionTarget } from "./evolution-target.js";
 import { createAutomaticEventSnapshot } from "./evolver.js";
-import { eventCampaignConfigSchema, getEvolverClient, type ToolRequestContext } from "./evolver-shared.js";
+import { eventCampaignConfigSchema, evolutionConfigSchema, getEvolverClient, type ToolRequestContext } from "./evolver-shared.js";
+
+export const loopInputSchema = z.object({
+    targetKind: z.enum(["strategy_candidate", "paper_runner", "backtest_run", "e1_candidate"]),
+    targetId: z.string().uuid(),
+    budget: z.number().int().min(1).max(20).default(4),
+    experiment: z.object({
+      config: evolutionConfigSchema,
+      from_ts: z.string().datetime({ offset: true }), as_of: z.string().datetime({ offset: true }),
+      eventSnapshotId: z.string().uuid(),
+      seed_source_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      dataset_content_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    }).strict().optional(),
+    maxCostUsd: z.number().positive().max(100).optional(),
+  });
 
 export const evolverStartLoopTool = createTool({
   id: "evolver.start_evolution_loop",
@@ -16,12 +30,7 @@ export const evolverStartLoopTool = createTool({
 何时用：用户明确要求“开始进化”或自动持续探索当前策略，且已有稳定 targetKind/targetId。
 何时不用：只查状态、只做一次回测或只运行旧 E1；不支持实盘操作。
 坑：仅在服务端 durable_loop_enabled 时可用；重复触发复用活动 Loop。费用受冻结预算上限约束，证据不足会结束；最终必须人工采用，绝不 promote、启动 Runner 或下单。`,
-  inputSchema: z.object({
-    targetKind: z.enum(["strategy_candidate", "paper_runner", "backtest_run", "e1_candidate"]),
-    targetId: z.string().uuid(),
-    budget: z.number().int().min(1).max(20).default(4),
-    maxCostUsd: z.number().positive().max(100).optional(),
-  }),
+  inputSchema: loopInputSchema,
   execute: async (input, ctx) => {
     const rc = ctx?.requestContext as ToolRequestContext | undefined;
     const client = await getEvolverClient(rc);
@@ -34,17 +43,19 @@ export const evolverStartLoopTool = createTool({
     if (target.next_action !== "start_loop" || !target.start_input?.seedStrategyId) {
       throw new Error(`EVOLUTION_TARGET_BLOCKED: ${target.blockers.join("; ") || target.next_action}`);
     }
-    const config = eventCampaignConfigSchema.parse(target.start_input.config);
+    const baseConfig = input.experiment?.config ?? target.start_input.config;
+    const config = eventCampaignConfigSchema.parse(baseConfig);
     const snapshot = getRequestContextValue<EvolutionLLMSnapshot>({ requestContext: rc }, USER_LLM_SNAPSHOT_KEY);
     const operationId = getRequestContextValue<string>({ requestContext: rc }, APPROVAL_OPERATION_ID_KEY);
     const authSub = rc?.get?.(AUTH_SUB_KEY);
     if (!snapshot || !operationId || typeof authSub !== "string" || !authSub) {
       throw new Error("owner-bound loop authorization context is missing");
     }
-    const frozen = await createAutomaticEventSnapshot(config, rc);
+    const frozen = await createAutomaticEventSnapshot(config, rc, input.experiment?.eventSnapshotId);
     const baseline = buildEvolutionStartRequest({
       budget: input.budget, seedStrategyId: target.start_input.seedStrategyId,
-      config: target.start_input.config, llmSnapshot: snapshot,
+      config: baseConfig, llmSnapshot: snapshot,
+      ...(input.experiment ? { preparation: { seed_source_hash: input.experiment.seed_source_hash, dataset_content_sha256: input.experiment.dataset_content_sha256 } } : {}),
     });
     const campaign = buildEventCampaignRequest({
       eventSnapshotId: frozen.snapshotId, targetKind: input.targetKind, targetId: input.targetId,
