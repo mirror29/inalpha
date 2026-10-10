@@ -79,7 +79,11 @@ export async function resolveEvolutionTarget(
   if (target.next_action !== "start_e1" || !target.start_input
     || !E2_TIMEFRAMES.has(target.start_input.config.timeframe)) return target;
   const capabilities = await evolver.getEventEvolutionCapabilities();
-  return capabilities.durable_loop_enabled ? { ...target, next_action: "start_loop" } : target;
+  return capabilities.durable_loop_enabled ? {
+    ...target,
+    next_action: "start_loop",
+    evidence: { ...target.evidence, event_snapshot_preflight: "not_checked" },
+  } : target;
 }
 
 /** Read authoritative target records; legacy E1 remains available when automatic research is disabled. */
