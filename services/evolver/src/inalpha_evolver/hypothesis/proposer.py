@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
+from inalpha_shared.usage import usage_stage
 from inalpha_shared_llm.types import MutationRequest  # type: ignore[import-untyped]
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 from pydantic import ValidationError
@@ -124,13 +125,15 @@ async def _propose_four(
     )
     if len(prompt.encode()) + len(_SYSTEM_PROMPT.encode()) > mutator.max_input_utf8_bytes:
         raise _PromptBudgetExceeded("hypothesis proposer prompt exceeds frozen input budget")
-    response = await mutator.llm_client.mutate(
-        MutationRequest(
-            system_prompt=_SYSTEM_PROMPT,
-            user_prompt=prompt,
-            max_tokens=mutator.max_output_tokens,
+    with usage_stage(f"hypothesis:generation:{generation}"):
+        response = await mutator.llm_client.mutate(
+            MutationRequest(
+                system_prompt=_SYSTEM_PROMPT,
+                user_prompt=prompt,
+                max_tokens=mutator.max_output_tokens,
+            )
         )
-    )
+
     cost = _cost(mutator, response.cache_metrics)
     try:
         payload = _parse_json_array(response.content)

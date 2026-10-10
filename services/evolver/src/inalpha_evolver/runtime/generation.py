@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from inalpha_shared.db import get_conn
+from inalpha_shared.usage import usage_stage
 
 from ..evaluator.frozen import FrozenDatasetEvaluator
 from ..exceptions import DiffApplyError, LLMError, UnconfirmedModelCall
@@ -62,7 +63,8 @@ async def execute_generation(
         if not claimed:
             raise asyncio.CancelledError
         try:
-            mutation = await mutator.mutate(source, seed_result.report, hint)
+            with usage_stage(f"mutation:slot:{slot}"):
+                mutation = await mutator.mutate(source, seed_result.report, hint)
         except LLMError as exc:
             await reject_slot(run["run_id"], slot, "mutation_failed", exc)
             continue

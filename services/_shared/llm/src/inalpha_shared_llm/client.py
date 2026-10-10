@@ -7,6 +7,7 @@
 - system prompt 作为 messages 数组的第一个 system role 消息
 - CacheMetrics 从 openai usage 字段解析（与 Anthropic 的 cache 字段略有不同）
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,6 +28,7 @@ class LLMClient:
     """
 
     settings: LLMSettings = field(default_factory=get_llm_settings)
+    usage_recorder: Any | None = None
     _client: Any | None = None  # 延迟初始化
 
     async def _ensure_client(self) -> Any:
@@ -42,7 +44,7 @@ class LLMClient:
                 kwargs["base_url"] = self.settings.llm_base_url
             if self.settings.llm_timeout_s:
                 kwargs["timeout"] = float(self.settings.llm_timeout_s)
-            self._client = AsyncOpenAI(**kwargs)
+            self._client = AsyncOpenAI(max_retries=0, **kwargs)
         return self._client
 
     async def mutate(self, request: MutationRequest) -> MutationResponse:
@@ -64,11 +66,21 @@ class LLMClient:
             {"role": "user", "content": request.user_prompt},
         ]
 
-        completion = await client.chat.completions.create(
-            model=self.settings.llm_model,
-            messages=messages,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
+        async def invoke() -> Any:
+            return await client.chat.completions.create(
+                model=self.settings.llm_model,
+                messages=messages,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+            )
+
+        completion = (
+            await self.usage_recorder.request(
+                invoke,
+                sampling={"temperature": request.temperature, "max_tokens": request.max_tokens},
+            )
+            if self.usage_recorder is not None
+            else await invoke()
         )
 
         # 从响应提取 token 使用统计
