@@ -24,6 +24,7 @@ from ..api.schemas import CampaignConfig
 from ..campaign_preparation import discovery_facts
 from ..config import EvolverSettings
 from ..data import FrozenBarsLoader, FrozenDataset
+from ..data.partitions import event_partition_ends
 from ..data.persistent_snapshot import (
     decode_frozen_dataset,
     get_campaign_data_snapshot,
@@ -196,7 +197,7 @@ async def _execute_campaign(
     lease_token = UUID(str(campaign["lease_token"]))
     all_events = tuple(market_event_from_fact(item) for item in snapshot["facts"])
     search_dataset, validation_bars = _search_dataset(dataset)
-    discovery_end = max(2, int(len(dataset.bars) * 0.60))
+    discovery_end, _ = event_partition_ends(len(dataset.bars))
     discovery_cutoff = datetime.fromtimestamp(
         dataset.bars[discovery_end - 1].bar_known_at / 1e9, tz=UTC,
     )
@@ -952,9 +953,7 @@ def _spec_tokens(spec: HypothesisSpec) -> set[str]:
 
 def _search_dataset(dataset: FrozenDataset) -> tuple[FrozenDataset, tuple[Any, ...]]:
     bars = dataset.bars
-    discovery_end = max(2, int(len(bars) * 0.6))
-    validation_end = max(discovery_end + 2, int(len(bars) * 0.8))
-    validation_end = min(validation_end, len(bars) - 1)
+    discovery_end, validation_end = event_partition_ends(len(bars))
     search_bars = bars[:validation_end]
     validation_bars = bars[discovery_end:validation_end]
     content_hash = hashlib.sha256(

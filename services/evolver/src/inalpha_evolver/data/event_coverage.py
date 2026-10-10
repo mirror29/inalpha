@@ -6,6 +6,7 @@ from typing import Any
 from inalpha_paper.model.market_events import MarketEvent
 
 from .manifest import FrozenDataset
+from .partitions import event_partition_ends
 
 
 def inspect_event_coverage(
@@ -21,8 +22,7 @@ def inspect_event_coverage(
     types is deliberately permissive; this cannot certify any actual candidate.
     """
     bars = dataset.bars
-    discovery_end = max(2, int(len(bars) * 0.60))
-    selection_end = min(max(discovery_end + 2, int(len(bars) * 0.80)), len(bars) - 1)
+    discovery_end, selection_end = event_partition_ends(len(bars))
     selection = bars[discovery_end:selection_end]
     start = selection[0].bar_known_at if selection else None
     end = selection[-1].bar_known_at if selection else None
@@ -51,6 +51,9 @@ def inspect_event_coverage(
         "blocker_codes": ["E2_INPUT_COVERAGE_INSUFFICIENT"] if blocked else [],
         "dataset_content_sha256": dataset.manifest.content_sha256,
         "bar_count": len(bars),
+        "partition_bar_counts": {"discovery": len(bars[:discovery_end]),
+                                 "selection": len(selection),
+                                 "holdout": len(bars[selection_end:])},
         "selection_start": datetime.fromtimestamp(start / 1e9, UTC).isoformat() if start else None,
         "selection_end": datetime.fromtimestamp(end / 1e9, UTC).isoformat() if end else None,
         "selection_fact_count": len(selected),
