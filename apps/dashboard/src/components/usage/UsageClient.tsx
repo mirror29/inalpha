@@ -20,7 +20,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { TableEmpty, TableHeadRow, Td, Th } from "@/components/ui/Table";
-import { formatUsageCost } from "@/lib/usage-format";
+import { formatUsageCost, formatUsageTokens } from "@/lib/usage-format";
 
 const SERVICES = ["orchestration", "research", "evolver"] as const;
 const STATUSES = [
@@ -221,7 +221,7 @@ export function UsageClient({
                 ["calls", data.summary.calls],
                 [
                   "tokens",
-                  `${data.summary.input_tokens ?? "—"} / ${data.summary.output_tokens ?? "—"}`,
+                  `${formatUsageTokens(data.summary.input_tokens)} / ${formatUsageTokens(data.summary.output_tokens)}`,
                 ],
                 ["cost", money(data.summary.known_cost_usd)],
               ] as const
@@ -231,8 +231,25 @@ export function UsageClient({
                 className="min-w-0 rounded-xl border border-border-subtle border-t-cyan/40 bg-bg-elev/30 p-4"
               >
                 <dt className="text-xs text-fg-muted">{t(key)}</dt>
-                <dd className="tnum mt-3 break-all font-mono text-xl tracking-tight text-fg lg:text-2xl">
+                <dd
+                  className="tnum mt-3 break-words font-mono text-xl tracking-tight text-fg lg:text-2xl"
+                  title={
+                    key === "tokens"
+                      ? `${data.summary.input_tokens ?? "—"} / ${data.summary.output_tokens ?? "—"} tokens`
+                      : undefined
+                  }
+                  aria-label={
+                    key === "tokens"
+                      ? `${data.summary.input_tokens ?? "—"} / ${data.summary.output_tokens ?? "—"} tokens`
+                      : undefined
+                  }
+                >
                   {value}
+                  {key === "tokens" && (
+                    <span className="ml-2 text-xs tracking-normal text-fg-muted">
+                      tokens
+                    </span>
+                  )}
                 </dd>
               </div>
             ))}
@@ -313,7 +330,13 @@ export function UsageClient({
                           />
                         </Td>
                         <Td mono right className="text-xs">
-                          {row.input_tokens ?? "—"} / {row.output_tokens ?? "—"}
+                          <span
+                            title={`${row.input_tokens ?? "—"} / ${row.output_tokens ?? "—"} tokens`}
+                            aria-label={`${row.input_tokens ?? "—"} / ${row.output_tokens ?? "—"} tokens`}
+                          >
+                            {formatUsageTokens(row.input_tokens)} /{" "}
+                            {formatUsageTokens(row.output_tokens)}
+                          </span>
                         </Td>
                         <Td mono right className="text-xs">
                           {money(row.estimated_cost_usd)}
