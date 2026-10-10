@@ -5,8 +5,8 @@
     "runner_start_opens_preparation": true,
     "chat_panel_closed_on_preparation": true,
     "default_window_utc": [
-      "2026-10-01T14:00",
-      "2026-10-10T10:00"
+      "2026-10-01T14:00:00Z",
+      "2026-10-10T10:00:00Z"
     ],
     "bars_discovery_selection_holdout": [
       127,
@@ -39,6 +39,9 @@
     "No champion, FDR, Forward, holdout or recovery acceptance claimed",
     "Native Chrome works; in-app browser automation still times out",
     "No production identity or credential extraction",
-    "Desktop Chinese UI only; bilingual/mobile acceptance remains outstanding"
-  ]
+    "Desktop Chinese UI only; bilingual/mobile acceptance remains outstanding",
+    "Accessibility-driven existing owner session, not manual human acceptance"
+  ],
+  "environment": "production",
+  "revision_binding": "Behavioral observation via existing owner session; deployed image was not sampled during the UI check. Earlier release ab5fd15b is context only, not a verified binding for this receipt."
 }
