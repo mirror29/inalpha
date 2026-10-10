@@ -1,7 +1,19 @@
 {
   "date": "2026-10-10",
   "scope": "Normal signed-in owner via Chrome native accessibility UI; SOL paper-runner preparation only",
-  "checks": {
+  "limits": [
+    "No approval or paid search submitted",
+    "No champion, FDR, Forward, holdout or recovery acceptance claimed",
+    "Native Chrome works; in-app browser automation still times out",
+    "No production identity or credential extraction",
+    "Desktop Chinese UI only; bilingual/mobile acceptance remains outstanding",
+    "Accessibility-driven existing owner session, not manual human acceptance",
+    "Last-bar timestamp and freshness were not observed; counts are UI output only",
+    "Input editing hid the prior UI result; server-side stale approval rejection was not exercised"
+  ],
+  "environment": "production",
+  "revision_binding": "Behavioral observation via existing owner session; deployed image was not sampled during the UI check. Earlier release ab5fd15b is context only, not a verified binding for this receipt.",
+  "ui_observations": {
     "runner_start_opens_preparation": true,
     "chat_panel_closed_on_preparation": true,
     "default_window_utc": [
@@ -34,16 +46,5 @@
     "explicit_recheck_upper_bound": 1,
     "default_restored": true
   },
-  "limits": [
-    "No approval or paid search submitted",
-    "No champion, FDR, Forward, holdout or recovery acceptance claimed",
-    "Native Chrome works; in-app browser automation still times out",
-    "No production identity or credential extraction",
-    "Desktop Chinese UI only; bilingual/mobile acceptance remains outstanding",
-    "Accessibility-driven existing owner session, not manual human acceptance",
-    "Last-bar timestamp and freshness were not observed; counts are UI output only",
-    "Input editing hid the prior UI result; server-side stale approval rejection was not exercised"
-  ],
-  "environment": "production",
-  "revision_binding": "Behavioral observation via existing owner session; deployed image was not sampled during the UI check. Earlier release ab5fd15b is context only, not a verified binding for this receipt."
+  "server_side_rejection_exercised": false
 }
