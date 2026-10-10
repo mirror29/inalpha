@@ -1,4 +1,6 @@
-/** Preserve the ledger's twelve decimal places, including sub-cent estimates. */
+/** Format the ledger decimal string without losing precision through binary floats. */
 export function formatUsageCost(value: string): string {
-  return `$${Number(value).toFixed(12).replace(/\.?0+$/, "") || "0"}`;
+  const [whole, fraction = ""] = value.split(".");
+  const decimals = fraction.replace(/0+$/, "");
+  return `$${whole}${decimals ? `.${decimals}` : ""}`;
 }
