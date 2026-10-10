@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-10",
+  "scope": "Pinned Evolver and Mastra deployment; normal-owner UI preflight not yet verified",
+  "pr": 214,
+  "business_sha": "d82bcfd43967017297bee46f853aaa9a649c7871",
+  "pr_head_sha": "4a4a5f962e7aad76175febd406c6c4efe7ee7737",
+  "checks": {
+    "branch_ci": 38023780443,
+    "automated_review": 38023780510,
+    "main_ci": 38024009083,
+    "image_build": 38024009079,
+    "ci_and_images": "success",
+    "review_disposition": "Initial two MEDIUM findings fixed; later four diff-only MEDIUM findings individually checked against actual split, imports, persisted schema and asset conversion; no new blocking defect found. Not a zero-findings review."
+  },
+  "normal_owner_ui": {
+    "status": "not_verified",
+    "reason": "Existing browser tab DOM read and rebind timed out; no hidden credentials or fabricated owner used"
+  },
+  "model_calls_this_followup": 0,
+  "historical_unknown_costs_preserved": true,
+  "positive_e2_acceptance": false,
+  "pending": [
+    "Normal-owner preflight structured blocker acceptance",
+    "New explicitly scoped experiment with sufficient real selection evidence",
+    "Response-loss, full approval-command restart recovery, explicit retry and old-worker fencing",
+    "Champion, at least 30 real Forward days and three independent events, one-time holdout and explicit human adoption"
+  ],
+  "deployment": {
+    "schema": "0065",
+    "changed_services": [
+      "evolver",
+      "mastra"
+    ],
+    "containers": {
+      "evolver": "3009ad579db06706aa2068f616a3884f92ab9c4c0bed77fedcff72225e664eff",
+      "mastra": "434a978f6baaacc5c4a552b486687cdf39aeedfb5a78d66f90344143a287621e"
+    },
+    "both_healthy": true,
+    "backups": [
+      "infra/.env.prod.before-evolver-20261010T042902Z",
+      "infra/.env.prod.before-mastra-20261010T043146Z"
+    ],
+    "backup_permissions_observed": "600",
+    "other_eight_container_ids_unchanged": true,
+    "data_and_paper_continued_running": true
+  },
+  "production_checks": {
+    "unauthenticated_preflight_http": 401,
+    "evolver_guard_module_loaded": true,
+    "mastra_preflight_structured_blocker_fail_closed_markers": true,
+    "active_e1_runs": 0,
+    "loops": 0,
+    "campaigns": 0
+  }
+}
