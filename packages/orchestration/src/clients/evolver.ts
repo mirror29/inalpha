@@ -348,6 +348,21 @@ export class EvolverClient {
     });
   }
 
+  /** Inspect owner-bound selection inputs without creating a loop or redeeming model keys. */
+  async preflightEvolutionLoop(request: EvolutionLoopStartRequest): Promise<{
+    status: "blocked" | "necessary_inputs_present";
+    blocker_codes: string[];
+    selection_start: string | null;
+    selection_end: string | null;
+    selection_fact_count: number;
+    independent_event_upper_bound: number;
+    minimum_matched_event_pairs: number;
+    matched_controls: "not_evaluated";
+    fdr: "not_evaluated";
+  }> {
+    return await this.http.post("/api/v1/evolution-loops/preflight", request);
+  }
+
   /** Start the baseline and its automatic continuation with one bounded authorization. */
   async startEvolutionLoop(options: {
     request: EvolutionLoopStartRequest;

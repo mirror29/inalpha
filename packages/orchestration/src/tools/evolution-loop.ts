@@ -55,6 +55,17 @@ export const evolverStartLoopTool = createTool({
       baseline, campaign,
       max_cost_usd: input.maxCostUsd ?? Math.ceil(((input.budget ?? 4) + 13) * snapshot.pricing.estimated_max_usd_per_candidate * 1e6) / 1e6,
     };
+    const preflight = await client.preflightEvolutionLoop(request);
+    if (preflight.status === "blocked") {
+      return {
+        status: "blocked", code: preflight.blocker_codes[0] ?? "E2_INPUT_PREFLIGHT_INVALID", preflight,
+        execution_started: false, generation_model_calls: 0,
+        frozen_window_backfill_allowed: false,
+      };
+    }
+    if (preflight.status !== "necessary_inputs_present") {
+      throw new Error("E2_INPUT_PREFLIGHT_INVALID: preparation did not confirm necessary inputs");
+    }
     const credentialGrant = await mintEvolutionCredentialGrant({
       authSub, operationId, snapshot, purpose: "evolution_loop_start",
       requestDigest: evolutionLoopRequestDigest(request),
