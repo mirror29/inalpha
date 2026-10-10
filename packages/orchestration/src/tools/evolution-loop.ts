@@ -55,6 +55,16 @@ export const evolverStartLoopTool = createTool({
       baseline, campaign,
       max_cost_usd: input.maxCostUsd ?? Math.ceil(((input.budget ?? 4) + 13) * snapshot.pricing.estimated_max_usd_per_candidate * 1e6) / 1e6,
     };
+    const preflight = await client.preflightEvolutionLoop(request);
+    if (preflight.status === "blocked") {
+      return {
+        status: "blocked", code: "E2_INPUT_COVERAGE_INSUFFICIENT", preflight,
+        message: "选择窗口内的独立事件数量不足，未启动演化、未调用生成模型。新增事件不能补回旧冻结窗口；请为新的明确实验积累真实证据。",
+      };
+    }
+    if (preflight.status !== "necessary_inputs_present") {
+      throw new Error("E2_INPUT_PREFLIGHT_INVALID: preparation did not confirm necessary inputs");
+    }
     const credentialGrant = await mintEvolutionCredentialGrant({
       authSub, operationId, snapshot, purpose: "evolution_loop_start",
       requestDigest: evolutionLoopRequestDigest(request),
