@@ -17,7 +17,7 @@ Inalpha 是 AI agent 编排与多 Python kernel 的量化实验框架。D-12 因
 | E1 正常 owner 预检、冻结审批、生成、刷新读取 | [真实执行回执](validation/evolution-approval-execution-lineage-2026-10-10.json) | 已生产实测；候选与原策略适应度相同，验证段零成交，未证明改善 |
 | E2 必要输入不足拦截 | [正常 owner 回执](validation/evolution-owner-preflight-2026-10-10.json) | 实际 SOL 8760 bars 的选择段为 5 月 16 日至 7 月 28 日，事实数 0；没有启动搜索 |
 | 五代搜索、checkpoint、拒绝路径 | [历史记录](validation/current-state-history-through-2026-10-10.md) | 有自动化与历史拒绝路径证据；不能记为生产冠军通过 |
-| 新实验准备与直接审批 | [本地验收](validation/e2-experiment-preparation-local-2026-10-10.json) | PR #219 已合并、CI/镜像通过并部署；正常 owner 实测待浏览器连接恢复 |
+| 新实验准备与直接审批 | [本地验收](validation/e2-experiment-preparation-local-2026-10-10.json) | PR #219 已合并、CI/镜像通过并部署；Chrome 正常 owner 免费准备、参数修改失效及重新预检已实测；覆盖不足，审批与执行待验收 |
 | 冠军、Forward、holdout、人工采用 | 无完整正向生产回执 | 未完成；Forward 计时尚不能宣称开始 |
 
 旧冻结窗口无法靠未来采集补齐。新闻原文数、事实版本数、24 小时独立事件上界、匹配对照数是不同口径。
@@ -25,7 +25,7 @@ Inalpha 是 AI agent 编排与多 Python kernel 的量化实验框架。D-12 因
 
 最新发布：[PR #219 发布回执](validation/e2-experiment-release-2026-10-10.json)。业务 `ab5fd15b` 的 PR/main CI 与镜像构建均通过；自动 CR 无有效正文，独立专项静态审查无确认新增 P1/P2。用户关闭页面后，活动演化任务为0，三个服务连接在部署前后检查均为0，已仅替换 Dashboard/Mastra/Evolver，全部 healthy；schema0067，其他七个容器未变。配置和数据库备份权限600，迁移前归档目录可读，但 TimescaleDB 循环外键警告及完整恢复演练仍须区分。初次迁移命令交互 stdin 中断后续脚本，确认旧容器未变后以显式关闭交互恢复完成。
 
-新准备/审批接口未登录均401；这仅验证拒绝未授权访问。内置浏览器重新开页仍超时，正常 owner 免费准备/审批/执行实测未完成。本轮新增模型调用0，不能宣称五代搜索、冠军或 Forward 已通过。
+新准备/审批接口未登录均401；这仅验证拒绝未授权访问。内置浏览器自动化仍超时，但已通过 Chrome 正常登录实测免费准备、修改截止时间使旧预检失效、重新预检及恢复默认窗口。SOL 新窗口为 10 月 1 日 14:00 至 10 月 10 日 10:00 UTC，分段行情 127/42/43，选择段事实 1、独立事件上界 1/8，正确阻止审批和搜索。见 [Chrome 实测回执](validation/e2-owner-chrome-preparation-2026-10-10.json)；审批与执行仍未验收。本轮新增模型调用0，不能宣称五代搜索、冠军或 Forward 已通过。
 
 ## 本次实现：统一准备新实验
 
@@ -45,7 +45,7 @@ Inalpha 是 AI agent 编排与多 Python kernel 的量化实验框架。D-12 因
 
 ### P0 · 新入口生产验收
 
-1. PR #219 的精确 head CI、主分支 CI、镜像构建、专项审查与三个服务部署已完成；保留旧镜像1dc8fa78和备份，下一步恢复正常 owner 浏览器连接。
+1. PR #219 的精确 head CI、主分支 CI、镜像构建、专项审查与三个服务部署已完成；保留旧镜像1dc8fa78和备份，Chrome 正常 owner 连接已恢复，免费准备与不足拦截已验收。
 2. 正常 owner 验证：页面免费准备新窗口、结构化阻塞、参数修改失效、冻结费用、单次批准、刷新和响应丢失后的原操作恢复。
 3. 核对实际新窗口、来源首次可见时间、闭合连续行情与必要覆盖。输入不足时继续真实采集；不重跑相同付费搜索、不改写历史窗口。
 

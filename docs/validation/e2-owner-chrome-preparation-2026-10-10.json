@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-10",
+  "scope": "Normal signed-in owner via Chrome native accessibility UI; SOL paper-runner preparation only",
+  "checks": {
+    "runner_start_opens_preparation": true,
+    "chat_panel_closed_on_preparation": true,
+    "default_window_utc": [
+      "2026-10-01T14:00",
+      "2026-10-10T10:00"
+    ],
+    "bars_discovery_selection_holdout": [
+      127,
+      42,
+      43
+    ],
+    "selection_window_utc": [
+      "2026-10-06T22:00:00+00:00",
+      "2026-10-08T15:00:00+00:00"
+    ],
+    "selection_facts": 1,
+    "independent_event_upper_bound": 1,
+    "necessary_threshold": 8,
+    "blocked_before_approval": true,
+    "original_strategy_window_display_unchanged": [
+      "2025-10-09T06:00:00.000Z",
+      "2026-10-09T06:25:54.528Z"
+    ],
+    "edit_end_hour_from_10_to_09_invalidates_result": true,
+    "explicit_recheck_bars": [
+      126,
+      42,
+      43
+    ],
+    "explicit_recheck_upper_bound": 1,
+    "default_restored": true
+  },
+  "limits": [
+    "No approval or paid search submitted",
+    "No champion, FDR, Forward, holdout or recovery acceptance claimed",
+    "Native Chrome works; in-app browser automation still times out",
+    "No production identity or credential extraction",
+    "Desktop Chinese UI only; bilingual/mobile acceptance remains outstanding"
+  ]
+}
