@@ -1082,6 +1082,7 @@
     "empty": "No event source has been archived yet."
   },
   "walletAccounting": {
+    "releaseRequiresStopped": "Capital release requires a stopped run",
     "warningSummary": "The wallet has unresolved warnings. See accounting details.",
     "releaseRequiresClose": "Close open positions to release capital",
     "releaseReady": "Released capital returns to the main account",

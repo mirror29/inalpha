@@ -1082,6 +1082,7 @@
     "empty": "尚未归档事件来源。"
   },
   "walletAccounting": {
+    "releaseRequiresStopped": "仅已停止的运行可释放资金",
     "warningSummary": "钱包存在未解决的提示，请查看记账明细。",
     "releaseRequiresClose": "平仓后可释放资金",
     "releaseReady": "释放后资金退回主账户",

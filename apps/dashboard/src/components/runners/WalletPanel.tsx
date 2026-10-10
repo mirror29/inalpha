@@ -22,14 +22,6 @@ export function WalletPanel({
   const [busy, setBusy] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const wallet = data?.wallet;
-  const onlyValuationWarnings = wallet?.warnings.every(
-    (warning) =>
-      warning.includes(
-        "price unavailable or stale; retaining last trusted valuation",
-      ) ||
-      warning ===
-        "Wallet changed during valuation; retaining previous snapshot",
-  );
   async function action(operation: "release_capital" | "resume") {
     setBusy(true);
     setError(null);
@@ -50,6 +42,13 @@ export function WalletPanel({
       {run.accounting_status !== "verified" && (
         <p className="text-gold">{t("legacyWarning")}</p>
       )}
+      {!wallet &&
+        run.accounting_status !== "verified" &&
+        run.accounting_note && (
+          <p className="mt-2 break-words text-xs text-fg-muted">
+            {run.accounting_note}
+          </p>
+        )}
       {wallet ? (
         <>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -84,7 +83,7 @@ export function WalletPanel({
           {wallet.warnings.length > 0 && (
             <p className="mt-2 text-xs text-gold">
               {t(
-                onlyValuationWarnings && wallet.equity !== null
+                !wallet.released_at && wallet.equity !== null
                   ? "valuationWarning"
                   : "warningSummary",
               )}
@@ -118,6 +117,9 @@ export function WalletPanel({
                   {t("original")}:{" "}
                   {run.original_cumulative_pnl ?? run.cumulative_pnl}
                 </p>
+              )}
+              {run.accounting_status !== "verified" && run.accounting_note && (
+                <p className="break-words">{run.accounting_note}</p>
               )}
               {wallet.warnings.map((warning, index) => (
                 <p
@@ -153,7 +155,7 @@ export function WalletPanel({
                 <span className="text-xs text-fg-muted">
                   {t(
                     run.status !== "stopped"
-                      ? "releaseRequiresFlat"
+                      ? "releaseRequiresStopped"
                       : !flat
                         ? "releaseRequiresClose"
                         : "releaseReady",
