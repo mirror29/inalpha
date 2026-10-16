@@ -13,7 +13,7 @@ from typing import Any
 from inalpha_shared.usage import PostgresUsageStore
 
 from .artifacts import PilotArtifacts, digest, safe_json, validate_bundle, validate_run
-from .experiment import AttemptRunner, CampaignBudget, recorder_for, run_arm
+from .experiment import DEFAULT_TEMPERATURE, AttemptRunner, CampaignBudget, recorder_for, run_arm
 from .materials import write_private
 from .report import build_report, intervention_plans
 
@@ -87,6 +87,7 @@ async def campaign(
             ),
             rounds=configuration["rounds"],
             replay=replay,
+            sample_temperature=float(configuration.get("sample_temperature", DEFAULT_TEMPERATURE)),
         )
         result["artifact_validation"] = validate_run(artifacts.path)
         return result
@@ -149,7 +150,13 @@ def main() -> None:
         outcomes = json.loads(args.outcomes.read_text())
         if not result.get("outcomes_hash") or digest(outcomes) != result["outcomes_hash"]:
             parser.error("outcome hash differs from the pre-run input commitment")
-        output = build_report(result["runs"], outcomes, result["replays"])
+        protocol = json.loads((args.directory / "campaign.json").read_text())["protocol"]
+        output = build_report(
+            result["runs"],
+            outcomes,
+            result["replays"],
+            climatology=protocol.get("climatology"),
+        )
         output["estimated_cost_or_reserved_usd"] = result["estimated_cost_or_reserved_usd"]
         write_private(args.directory / "report.json", output)
         print(json.dumps(output, indent=2))
@@ -170,7 +177,13 @@ def main() -> None:
             timeout=90,
         ) as client:
 
-            async def invoke(*, system: str, user: str, max_tokens: int) -> Any:
+            async def invoke(
+                *,
+                system: str,
+                user: str,
+                max_tokens: int,
+                temperature: float = DEFAULT_TEMPERATURE,
+            ) -> Any:
                 options: dict[str, Any] = (
                     {"extra_body": {"thinking": {"type": "disabled"}}}
                     if config["model"] == "deepseek-flash"
@@ -183,7 +196,7 @@ def main() -> None:
                         {"role": "user", "content": user},
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.2,
+                    temperature=temperature,
                     max_tokens=max_tokens,
                     **options,
                 )

@@ -17,8 +17,13 @@ from inalpha_research.pilot.experiment import (
     recorder_for,
     validate_decision,
 )
-from inalpha_research.pilot.materials import build_materials
-from inalpha_research.pilot.report import build_report, intervention_plans
+from inalpha_research.pilot.materials import build_materials, excess
+from inalpha_research.pilot.report import (
+    NEUTRAL_CORPUS,
+    build_report,
+    intervention_plans,
+    sample_mean_run,
+)
 
 CONFIG = {
     "provider": "deepseek",
@@ -181,7 +186,15 @@ async def test_complete_four_arm_campaign_and_replays(tmp_path):
         "downstream_noise",
     }
     plans = intervention_plans(d, data["development"][0])
-    assert next(p for p in plans if p["name"] == "delete_contribution")["prefix"][-1]["removed"]
+    assert next(p for p in plans if p["name"] == "delete_contribution")["prefix"][-1]["omitted"]
+    # Omitted turns are never model-visible and no payload carries removal or meta markers.
+    assert all(
+        all(not h.get("omitted") for h in p.get("history", []))
+        and '"removed"' not in json.dumps(p)
+        and "Intervention" not in json.dumps(p)
+        and "unrelated" not in json.dumps(p)
+        for p in captured
+    )
     assert d["history"][3]["output"] == decision() | {"action_probability_violation": False}
 
 
@@ -207,7 +220,8 @@ async def test_unknown_usage_stops_entire_campaign_and_keeps_all_cases(tmp_path)
     assert all(r["status"] == "invalid" for r in result["runs"])
     report = build_report(result["runs"], data["labels"][:2], result["replays"])
     assert report["arms"]["A"]["invalid"] == 1
-    assert report["arms"]["A"]["brier"] == pytest.approx(2 / 3)
+    assert report["arms"]["A"]["brier"] == 2.0
+    assert report["itt_sensitivity_brier"]["uniform"]["A"] == pytest.approx(2 / 3)
 
 
 async def test_intent_failure_never_invokes_model(tmp_path):
@@ -333,3 +347,111 @@ def test_neutral_conclusion_flip_is_explicitly_skipped():
     flip = next(plan for plan in plans if plan["name"] == "flip_conclusion")
     assert flip["skip"] == "NEUTRAL_CONCLUSION_HAS_NO_DIRECTIONAL_REVERSE"
     assert "prefix" not in flip
+
+
+def test_benchmark_dividends_are_opt_in_and_use_entry_exit_window():
+    source = market()
+    cases = source["sessions"][260:270]
+    default = build_materials(source, cases)
+    i = 100
+    source["benchmark"][i + 3]["dividends"] = 2.0  # ex-date inside (entry, exit]
+    source["benchmark"][i + 1]["dividends"] = 5.0  # ex-date on entry: already ex, excluded
+    price_only = excess(source["asset"], source["benchmark"], i)
+    total = excess(source["asset"], source["benchmark"], i, benchmark_dividends=True)
+    assert total == pytest.approx(price_only - 2.0 / source["benchmark"][i + 1]["open"])
+    unchanged = build_materials(source, cases)
+    assert unchanged["protocol"]["tau"] == default["protocol"]["tau"]
+    adjusted = build_materials(source, cases, benchmark_dividends=True)
+    assert adjusted["protocol"]["tau"] != default["protocol"]["tau"]
+    assert "dividends" in adjusted["protocol"]["benchmark_return"]
+    assert not validate_materials(adjusted)
+
+
+def test_tau_window_and_climatology_recorded():
+    source = market()
+    cases = source["sessions"][260:270]
+    trailing = build_materials(source, cases, tau_windows=50)
+    protocol = trailing["protocol"]
+    assert protocol["tau_calibration_windows"] == 50
+    assert set(protocol["climatology"]) == {"UP", "FLAT", "DOWN"}
+    assert sum(protocol["climatology"].values()) == pytest.approx(1)
+    with pytest.raises(ValueError, match="insufficient calibration"):
+        build_materials(source, cases, tau_windows=10_000)
+
+
+def test_flip_keeps_rationale_and_replacement_uses_neutral_prose():
+    out = {**decision(), "rationale": "momentum and range position support upside"}
+    run = {
+        "status": "completed",
+        "decision": out,
+        "history": [{"role": "bull", "round": 0, "output": out}],
+    }
+    plans = {p["name"]: p for p in intervention_plans(run, materials()["development"][0])}
+    flipped = plans["flip_conclusion"]["prefix"][-1]["output"]
+    assert flipped["rationale"] == out["rationale"]
+    assert (flipped["p_up"], flipped["p_down"], flipped["action"]) == (0.1, 0.6, -1)
+    replaced = plans["replace_contribution"]["prefix"][-1]
+    assert set(replaced) == {"role", "round", "message"}
+    assert replaced["message"] and replaced["message"] in " ".join(NEUTRAL_CORPUS) * 4
+    assert not any(ch.isdigit() for ch in replaced["message"])
+
+
+async def test_sample_temperature_applies_only_to_b_samples(tmp_path):
+    data = materials()
+    seen = []
+
+    async def invoke(**kwargs):
+        payload = json.loads(kwargs["user"])
+        seen.append((payload.get("role"), payload["instruction"], kwargs["temperature"]))
+        return response(decision([payload["evidence"][0]["id"]]))
+
+    await campaign(
+        {"protocol": data["protocol"], "cases": data["development"][:1]},
+        tmp_path / "campaign",
+        {**CONFIG, "sample_temperature": 0.8},
+        Store(),
+        "test:owner",
+        invoke,
+        intervention_cases=0,
+    )
+    samples = [t for role, instruction, t in seen if instruction == "independent assessment"]
+    others = [t for role, instruction, t in seen if instruction != "independent assessment"]
+    assert samples and set(samples) == {0.8}
+    assert others and set(others) == {0.2}
+
+
+def test_report_references_skill_and_b_mean():
+    data = materials()
+    label = {**data["labels"][0], "value": "UP"}
+    sample = lambda p_up, p_down, action: {  # noqa: E731
+        "role": "sample",
+        "round": 0,
+        "output": {**decision(), "p_up": p_up, "p_flat": 0.2, "p_down": p_down, "action": action},
+    }
+    b_history = [sample(0.7, 0.1, 1), sample(0.1, 0.7, -1)]
+    runs = [
+        {
+            "case_id": label["case_id"],
+            "arm": arm,
+            "status": "completed",
+            "decision": {**decision(), "p_up": 0.8, "p_flat": 0.1, "p_down": 0.1},
+            "history": b_history if arm == "B" else [],
+            "calls": [],
+        }
+        for arm in "ABCD"
+    ]
+    climatology = {"UP": 0.25, "FLAT": 0.5, "DOWN": 0.25}
+    report = build_report(runs, [label], [], climatology=climatology)
+    assert report["references_brier"]["uniform"] == pytest.approx(2 / 3)
+    clim = 0.75**2 + 0.5**2 + 0.25**2
+    assert report["references_brier"]["climatology"] == pytest.approx(clim)
+    arm_brier = 0.2**2 + 0.1**2 + 0.1**2
+    assert report["brier_skill_vs_climatology"]["A"] == pytest.approx(1 - arm_brier / clim)
+    b_mean = sample_mean_run(runs[1])["decision"]
+    assert b_mean["p_up"] == pytest.approx(0.4) == b_mean["p_down"]
+    assert b_mean["action"] == 0
+    assert "B-mean" in report["variants"] and "B-mean-B" in report["paired_brier"]
+    assert report["b_sample_action_disagreement"] == 1.0
+    assert report["reliability"]["A"]["UP"] == {"mean_predicted": 0.8, "observed": 1.0}
+    with pytest.raises(ValueError, match="climatology"):
+        build_report(runs, [label], [], climatology={"UP": 0.5, "FLAT": 0.5, "DOWN": 0.5})

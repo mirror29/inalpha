@@ -36,6 +36,19 @@ report command. The deterministic pre-run process rubric is not a human annotati
 inter-rater agreement claim. The formal split is empty; do not reuse these development
 windows as formal evaluation cases.
 
+### Review options (#206, opt-in until the protocol freezes them)
+
+Defaults reproduce the 2026-10-12 development packet exactly (tau 3.79538%). The #206 review
+proposals are explicit flags so neither packet is silently changed:
+
+- `--benchmark-dividends` adds benchmark cash dividends whose ex-date falls in
+  (entry, exit] to the benchmark return. On the 542-session packet this moves tau to
+  3.79096% and changes no development label.
+- `--tau-windows N` estimates tau from the trailing N eligible windows instead of all of
+  them. With N = 252, tau is 3.01326% and two development labels move from FLAT.
+- The protocol always records `tau_calibration_windows`, `benchmark_return` and the
+  calibration-window `climatology` (UP/FLAT/DOWN base rates) used by the report.
+
 ## Run after budget authorization
 
 Use an authorized local/test Postgres database with migration 0066 applied. Set
@@ -92,15 +105,45 @@ If the selected contribution is neutral, conclusion flipping is explicitly skipp
 there is no directional reverse; the runner does not inject an arbitrary long stance.
 Evidence removal drops the first cited evidence block and replays from round zero, with
 an uncited similar-length placebo where available. Missing controls receive explicit skip
-reasons. Fresh stochastic noise reruns use the same replay boundaries; no unsupported
+reasons. Intervention stimuli carry no meta signal: a deleted contribution keeps its step slot for
+replay alignment but is omitted from every model-visible history (no removal marker); a
+flipped conclusion swaps `p_up`/`p_down` and the action but keeps the original rationale
+verbatim, so the rationale/conclusion inconsistency is itself part of the stimulus; the
+replacement control is digit-free, topic-unrelated prose from the versioned
+`neutral-prose-v1` corpus, under a neutral `message` key, matched by characters.
+Fresh stochastic noise reruns use the same replay boundaries; no unsupported
 provider seed guarantee is made. Literal ID/numeric scans report possible evidence re-entry,
 with rounded/inferred reconstruction remaining a limitation.
 
+Optional `sample_temperature` in the campaign configuration applies only to B's independent
+samples (default 0.2, unchanged); the #206 review proposes 0.8 for the formal arm definition.
+Every other call, including B's aggregation, stays at 0.2.
+
+Invalid runs are scored strictly by default: the probability forecast receives the maximum
+Brier (2.0) with action 0, so a failure can never score better than a real forecast. Uniform
+and climatology fallbacks are reported as `itt_sensitivity_brier`. The report also gives
+uniform and climatology reference Brier scores, Brier skill vs climatology for every arm,
+per-class reliability (mean predicted vs observed), `B-mean` (mean of the completed B
+sample probabilities, argmax action, neutral on ties; same calls, so a scoring variant
+rather than a separately budgeted arm) with a paired B-mean minus B interval, and B's
+pairwise sample action disagreement.
+
 The report includes multiclass Brier, hit/coverage/invalid rates, net excess returns,
-intention-to-treat uniform probabilities for invalid runs, complete-case results,
-paired moving-block bootstrap intervals, usage, intervention flip/probability/Brier changes
-and noise-adjusted flip differences. Character matching is not exact tokenizer matching;
-formal intervention controls and blinded human process scoring still need protocol review.
+intention-to-treat scoring with the strict invalid-run rule (Brier 2.0, action 0) as the
+primary analysis, uniform and climatology fallbacks as sensitivity analyses only,
+complete-case results, paired moving-block bootstrap intervals, usage, intervention
+flip/probability/Brier changes and noise-adjusted flip differences. Character matching is
+not exact tokenizer matching; formal intervention controls and blinded human process
+scoring still need protocol review.
+
+Not yet covered by the report (tracked on #206, not part of this development change):
+
+- Budget dispersion (#206 review §2b): per-case input-plus-output usage, its IQR per arm,
+  and each case's ratio to an agreed budget target. The report currently checks only
+  per-arm medians (`compute_match_within_10_percent`).
+- Formal intervention selection (#206 review §3d): a preregistered selection rule in place
+  of the first N cases, and per-intervention eligible/attempted/completed/skipped counts with
+  explicit skip-rate denominators. The runner currently retains individual skip reasons only.
 
 A 10-case run validates the machinery. Retain negative/inconclusive results and limitations.
 

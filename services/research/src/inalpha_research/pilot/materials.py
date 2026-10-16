@@ -77,18 +77,43 @@ def features(rows: list[dict[str, Any]], i: int) -> list[tuple[str, dict[str, fl
 
 
 def excess(
-    asset: list[dict[str, Any]], benchmark: list[dict[str, Any]], i: int, horizon: int = 5
+    asset: list[dict[str, Any]],
+    benchmark: list[dict[str, Any]],
+    i: int,
+    horizon: int = 5,
+    *,
+    benchmark_dividends: bool = False,
 ) -> float:
-    """Decision i enters i+1 and exits i+1+H, using matching unadjusted opens."""
+    """Decision i enters i+1 and exits i+1+H, using matching unadjusted opens.
+
+    With ``benchmark_dividends`` the benchmark also earns cash dividends whose ex-date
+    falls in (entry, exit]: an open-to-open holder owns the share before those ex-dates.
+    """
     entry, exit_ = i + 1, i + 1 + horizon
-    return float(
-        asset[exit_]["open"] / asset[entry]["open"]
-        - benchmark[exit_]["open"] / benchmark[entry]["open"]
-    )
+    benchmark_return = benchmark[exit_]["open"] / benchmark[entry]["open"] - 1
+    if benchmark_dividends:
+        cash = sum(row.get("dividends", 0.0) for row in benchmark[entry + 1 : exit_ + 1])
+        benchmark_return += cash / benchmark[entry]["open"]
+    return float(asset[exit_]["open"] / asset[entry]["open"] - 1 - benchmark_return)
 
 
-def build_materials(market: dict[str, Any], case_sessions: list[str]) -> dict[str, Any]:
-    """Freeze evidence and deterministic labels in separate output objects."""
+def classify(r: float, tau: float) -> str:
+    return "UP" if r > tau else "DOWN" if r < -tau else "FLAT"
+
+
+def build_materials(
+    market: dict[str, Any],
+    case_sessions: list[str],
+    *,
+    benchmark_dividends: bool = False,
+    tau_windows: int | None = None,
+) -> dict[str, Any]:
+    """Freeze evidence and deterministic labels in separate output objects.
+
+    Defaults reproduce the 2026-10-12 development packet. ``benchmark_dividends`` and
+    ``tau_windows`` (trailing calibration windows; None = all eligible) are the #206 review
+    proposals and stay opt-in until the protocol freezes them.
+    """
     sessions = market["sessions"]
     if (
         sessions != sorted(set(sessions))
@@ -102,11 +127,30 @@ def build_materials(market: dict[str, Any], case_sessions: list[str]) -> dict[st
     indices = [sessions.index(s) for s in case_sessions]
     if indices[0] < 252 or indices[-1] + 6 >= len(sessions):
         raise ValueError("insufficient lookback or future outcome coverage")
-    calibration = [excess(asset, benchmark, i) for i in range(indices[0] - 6)]
+    if tau_windows is not None and tau_windows < 2:
+        raise ValueError("tau calibration needs at least two windows")
+    calibration = [
+        excess(asset, benchmark, i, benchmark_dividends=benchmark_dividends)
+        for i in range(indices[0] - 6)
+    ]
+    if tau_windows is not None:
+        if len(calibration) < tau_windows:
+            raise ValueError("insufficient calibration windows for tau")
+        calibration = calibration[-tau_windows:]
     tau = 0.5 * statistics.stdev(calibration)
+    climatology = {
+        cls: sum(classify(r, tau) == cls for r in calibration) / len(calibration)
+        for cls in ("UP", "FLAT", "DOWN")
+    }
     protocol = {
         **PROTOCOL,
         "tau": tau,
+        "tau_calibration_windows": len(calibration),
+        "benchmark_return": "price plus cash dividends with ex-date in (entry, exit]"
+        if benchmark_dividends
+        else "price only; benchmark dividends excluded",
+        "climatology": climatology,
+        "climatology_source": "label frequencies of the tau calibration windows",
         "calibration_last_exit": sessions[indices[0] - 1],
         "market_hash": digest(market),
         "development_dates": case_sessions,
@@ -133,8 +177,8 @@ def build_materials(market: dict[str, Any], case_sessions: list[str]) -> dict[st
             )
         case = freeze(case_id, close, evidence)
         cases.append(case)
-        r = excess(asset, benchmark, i)
-        value = "UP" if r > tau else "DOWN" if r < -tau else "FLAT"
+        r = excess(asset, benchmark, i, benchmark_dividends=benchmark_dividends)
+        value = classify(r, tau)
         labels.append(
             {
                 "case_id": case_id,
@@ -237,6 +281,16 @@ def main() -> None:
     parser.add_argument("--end", default="2026-07-08", help="exclusive")
     parser.add_argument("--case-start", default="2026-05-01")
     parser.add_argument("--cases", type=int, default=10)
+    parser.add_argument(
+        "--benchmark-dividends",
+        action="store_true",
+        help="add benchmark cash dividends with ex-date in (entry, exit] (#206 proposal)",
+    )
+    parser.add_argument(
+        "--tau-windows",
+        type=int,
+        help="estimate tau from this many trailing eligible windows (default: all)",
+    )
     args = parser.parse_args()
     if not 1 <= args.cases <= 20:
         parser.error("development cases must be between 1 and 20")
@@ -248,7 +302,9 @@ def main() -> None:
     chosen = [s for s in market["sessions"] if s >= args.case_start][: args.cases]
     if len(chosen) != args.cases:
         parser.error("insufficient development sessions")
-    materials = build_materials(market, chosen)
+    materials = build_materials(
+        market, chosen, benchmark_dividends=args.benchmark_dividends, tau_windows=args.tau_windows
+    )
     args.directory.mkdir(parents=True, exist_ok=False, mode=0o700)
     write_private(args.directory / "market.json", market)
     write_private(args.directory / "materials.json", materials)
