@@ -1,0 +1,14 @@
+# Line-ending policy.
+#
+# Shell scripts must keep LF in the working tree: a CRLF checkout makes
+# `bash scripts/*.sh` fail with `$'\r': command not found`, and a Windows
+# working copy is also what a local Docker build would copy into the
+# containers, so the breakage is not limited to the developer's own shell.
+#
+# `text eol=lf` overrides core.autocrlf for the matched paths, so the outcome
+# no longer depends on each contributor's local Git configuration
+# (github.com docs, "Configuring Git to handle line endings": a committed
+# .gitattributes "overrides the core.autocrlf setting for all repository
+# contributors"; gitattributes(5): the eol attribute "sets a specific
+# line-ending style to be used in the working directory").
+*.sh text eol=lf
