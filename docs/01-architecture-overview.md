@@ -18,14 +18,14 @@
 ┌───────────────────────────────▼──────────────────────────────────────┐
 │  编排层 · packages/orchestration · Mastra (TypeScript)                 │
 │                                                                        │
-│   agents/      orchestrator → trader / risk（按市场分类自动路由 venue）│
+│   agents/      单个 orchestrator agent（按市场分类自动路由 venue）     │
 │   tools/       data.* web.* factor.* research.* paper.* trade.* evolver.*│
 │                swarm.*                                                  │
 │                + mcp__<server>__<verb>（可插拔外部 MCP）               │
-│   hooks/       5 类生命周期事件 + Stop（PreToolUse / PostToolUse / …） │
+│   hooks/       6 类生命周期事件（PreToolUse / PostToolUse / Stop …）   │
 │   permissions/ allow / ask / deny 三态（deny > allow > ask > default） │
 │   plan/exec    create_plan → approve_plan → execute_plan（一次性 token）│
-│   memory/      PostgresStore · 用户偏好 / 历史会话；plan 由 paper DB 持久化│
+│   memory/      LibSQL 存储（.data/）· 会话与偏好；plan 由 paper DB 持久化  │
 └───────────────────────────────┬──────────────────────────────────────┘
                                 │ HTTP / MCP（每个 tool 调对应服务）
         ┌──────────┬──────────┬──────────┬──────────┬──────────┐

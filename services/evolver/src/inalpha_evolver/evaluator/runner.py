@@ -105,12 +105,17 @@ class Evaluator:
         initial_cash: float = 10000.0,
         fee_rate: float = 0.001,
     ) -> EvaluationResult:
-        """评估单个候选策略（E1 需要 data service 运行）。"""
+        """在内存里评估单个候选策略。
+
+        注意：本类尚未接 data service，``bars`` 传空列表，因此**没有真实行情**。
+        E1 生产路径走 ``FrozenDatasetEvaluator``（冻结 bars + manifest 校验），
+        不要用本类做真实评估。
+        """
         symbol = universe[0] if universe else "BTCUSDT"
 
         fn = partial(
             run_engine_in_subprocess,
-            bars=[],  # TODO: 从 data service 拉 bars
+            bars=[],  # 未接 data service；生产路径见 FrozenDatasetEvaluator
             instrument_id=symbol,
             timeframe=timeframe,
             strategy_id=None,

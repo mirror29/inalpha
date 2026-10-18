@@ -5,7 +5,8 @@ Mastra / TypeScript 编排层：把 Python services 和外部 MCP 包装成 agen
 
 ## 当前职责
 
-- **Agent 路由**：orchestrator 协调 trader、risk、research-hub，并按市场分类选择数据源。
+- **Agent 路由**：单个 orchestrator agent 直接调用各 tool，并按市场分类选择数据源
+  （trader / risk 子 agent 已在 D-8a′ 移除；下单仍走 plan/exec，模型没有直下单 tool）。
 - **Tool 族**：`data.*` / `web.*` / `factor.*` / `research.*` / `paper.*` / `trade.*` /
   `evolver.*` / `swarm.*` / `skill.*` / `risk.*` / `scheduler.*` / `divination.*` /
   `sandbox.*`，以及可插拔 `mcp__<server>__<verb>`。

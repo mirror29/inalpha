@@ -21,14 +21,14 @@
  * 如果 caller 漏传 ``resourceId``，Mastra 默认会用空字符串 → **不同用户共享同一空
  * 桶** → 历史互窜 + 隐私泄漏。
  *
- * 上 prod 前必须：
+ * 约束：
  *
- * 1. 在 agent.generate / stream 入口（apps/web Next.js API route）强制
- *    ``assertScopedRequest({ resourceId, threadId })``
- * 2. ``resourceId`` 从 session.user.id 派生，**不能**让客户端任意传
- * 3. LibSQLStore 换成 PostgresStore 走与业务表同一 PG（按 user_id 分区）
- *
- * 改成多实例 / 隔离的触发条件：上多用户 / live trading 时按 ADR-0011 §isolation 拆。
+ * 1. 调用方（dashboard BFF → mastra agent 入口）必须传 ``resourceId`` / ``threadId``，
+ *    并自行调用 ``assertScopedRequest``——它不会自动生效
+ * 2. ``resourceId`` 必须来自已认证会话（identity middleware 写入的 sub），**不能**让
+ *    客户端任意传
+ * 3. LibSQL 是单写者文件库：单实例部署够用；要改成多实例 / 按 owner 隔离时再换
+ *    PostgresStore，走与业务表同一 PG
  */
 import { LibSQLStore } from "@mastra/libsql";
 import { Memory } from "@mastra/memory";
