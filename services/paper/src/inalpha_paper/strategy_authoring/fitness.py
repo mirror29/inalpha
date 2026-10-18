@@ -7,7 +7,7 @@
 
     fitness = sharpe
             + 0.3 * calmar
-            - 0.10 * turnover_penalty       # turnover / 252（年化换手）
+            - 0.10 * turnover_penalty       # 每根 bar 平均交易数 × 100
             - 1.0 * (drawdown > 0.30)       # 30% 回撤一票否决
 
 MVP 留空：``capacity_penalty``（需 ADV 数据，D-10+ 引入）。

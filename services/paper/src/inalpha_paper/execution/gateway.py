@@ -1,13 +1,13 @@
 """Gateway 抽象 —— 经纪商 / 交易所接入。
 
-设计依据 [refs/vnpy.md §3 §7](../../../../docs/refs/vnpy.md)，把 vnpy 的 7 个抽象方法
-裁剪到 MVP 需要的：
+设计依据 vnpy 的 Gateway 抽象（§3 §7），把它的 7 个抽象方法裁剪到当前需要的：
 
 - ``send_order`` —— 唯一必须实现
 - ``cancel_order`` / ``modify_order`` —— 可选（不实现就 raise NotImplementedError）
 
-D-5 起只有 ``SimulatedExchange`` 一个实现（同时承担 venue 撮合职责）。D-6 起加
-``LiveGateway``（CCXT Binance）。
+当前只有 ``SimulatedExchange`` 一个实现（同时承担 venue 撮合职责）。没有连接真实经纪商
+的 gateway：模拟盘成交由 ``SimulatedExchange`` + DB 侧 ``OrderExecutor`` 完成，回测与
+模拟盘共用同一份策略代码，只换 Clock。
 """
 from __future__ import annotations
 

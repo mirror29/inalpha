@@ -146,11 +146,12 @@ class LiveClock(Clock):
 
     def set_timer(self, name: str, interval_ns: int, callback: TimerCallback) -> None:
         raise NotImplementedError(
-            "LiveClock.set_timer requires asyncio loop, attached in Engine (D-5)"
+            "LiveClock.set_timer is not implemented; the live path drives TestClock "
+            "from closed bars instead (see engine/live_session.py)"
         )
 
     def cancel_timer(self, name: str) -> None:
-        # D-5 起会实现，目前 noop（保持接口对称）
+        # 未实现定时器，保持接口对称；实时路径不经 timer
         pass
 
 

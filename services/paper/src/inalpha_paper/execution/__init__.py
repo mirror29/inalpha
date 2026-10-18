@@ -1,15 +1,14 @@
 """执行链：Strategy → RiskEngine → ExecutionEngine → Gateway → Exchange / 真实经纪商。
 
-D-5 范围：
+当前内容：
 
-- ``Gateway`` 抽象 + ``SimulatedExchange``（一并实现 venue 撮合，回测专用）
-- ``RiskEngine`` —— D-5 简化版 pass-through，规则化校验在 ADR-0011 落地（Mastra 编排层）
+- ``Gateway`` 抽象 + ``SimulatedExchange``（一并实现 venue 撮合）
+- ``RiskEngine`` —— 内核内风控守门（Order 进 Execution 前必经）
 - ``ExecutionEngine`` —— Order 状态机管理 + 路由
+- 规则化风控已落地在 ``risk_rules/``：回测路径由 ``RiskEngine`` 执行、HTTP 路径由
+  ``RiskGuard`` 执行并落 ``risk_locks``；运行状态见 ``docs/04-current-state.md``
 
-D-6+ 范围：
-
-- ``LiveGateway`` 接 Binance via CCXT
-- Risk 规则化校验（hook + permission 体系）
+没有 ``LiveGateway``：不接真实经纪商，模拟盘成交走 ``SimulatedExchange`` + DB 侧 executor。
 """
 from .exchange import EXECUTION_ENGINE_ENDPOINT, SimulatedExchange
 from .execution_engine import ExecutionEngine

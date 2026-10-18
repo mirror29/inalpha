@@ -13,7 +13,8 @@ router = APIRouter(tags=["health"])
 async def health() -> HealthResponse:
     """liveness。
 
-    paper service D-6 不直接连 DB（只调 data-service），所以不做 DB ping。
-    D-7 持久化 backtest_runs 之后会加 DB ping。
+    paper 的业务数据（accounts / orders / positions / runs / plans / wallets）都在
+    PostgreSQL，但本端点**刻意只做进程探活**：不连 DB、不反映依赖健康，DB 不可用时
+    仍会返回 200。需要依赖健康时另做 readiness 检查。
     """
     return HealthResponse(status="ok", service="paper", version=__version__)
