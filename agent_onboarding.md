@@ -199,8 +199,9 @@ Never claim a change works from a compile or a single unit test. Climb as far as
    changed behavior. This repository explicitly separates "code + automated tests" from
    "real-environment acceptance" (see `docs/04-current-state.md`); leases, fills, and approvals behave
    differently in a live stack than under fixtures.
-6. Python type checking is **best-effort** in CI (`uv run mypy . || true`) even though `CLAUDE.md` calls
-   it a red line. Do not report mypy as passing CI.
+6. Python type checking is **best-effort**, and nothing in this repository claims otherwise: CI runs
+   `uv run mypy . || true` and `CONTRIBUTING.md §9` says "ruff must pass, mypy best-effort". Do not
+   report mypy as passing CI.
 
 ---
 
@@ -221,26 +222,39 @@ Never claim a change works from a compile or a single unit test. Climb as far as
 
 ---
 
-## 9. Traps: documentation that is already known to be wrong
+## 9. Documentation you must not trust
 
-Do not trust these claims; the code says otherwise.
+Where documentation and code disagree, the code wins. A read-only audit of HEAD `4822bb9` found the
+misstatements below. Anything marked **fixed** was corrected on branch `docs/agent-onboarding` — read
+that branch's commits for the exact edits, and re-verify any other page against the code.
+
+Still open (deliberately not changed — each needs an owner or design decision):
 
 | Claim | Reality |
 |---|---|
-| `docs/01-architecture-overview.md`: agents are orchestrator + trader + risk | One agent only; subagents were removed. `traderTools`/`riskTools` survive as dead wiring |
-| `docs/01-architecture-overview.md`: `memory/` is PostgresStore | `LibSQLStore` under `packages/orchestration/.data/` |
-| README / docs: "5 lifecycle hook events" | Six are defined (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`) |
-| `CLAUDE.md` and the PR template: mypy is a CI red line | CI runs `mypy . \|\| true` |
-| `AGENTS.md`: public docs are `docs/00-03` and `docs/brand/` | `docs/brand/` does not exist |
-| Private-ADR policy ("ADRs live in gitignored `docs/miro/`") | A committed ADR-style doc exists under `docs/designs/`, and `docs/04` cites ADR ids the consistency check cannot see |
-| `services/paper/execution/gateway.py`: a `LiveGateway` will be added | No live gateway exists; only `SimulatedExchange` and a capture gateway. "Live" trading is DB-simulated |
-| `services/paper/strategy_authoring/fitness.py` docstring turnover formula | Code uses `(trades / bars_processed) * 100` |
-| `services/paper/api/health.py`: paper does not touch the DB | Paper is fully DB-backed; `/health` does no DB check |
-| README: "79 factors" | No such count in source |
-| Release metadata (`CITATION.cff` 0.9.0, `SECURITY.md` alpha tag) | Tags stop earlier; treat version claims as unverified |
+| Private-ADR policy ("ADRs live in gitignored `docs/miro/`; public docs must not cite them") | `docs/designs/e2-event-evolution-loop.md` is ADR-shaped and `docs/04` cites ADR ids; the consistency check (C2) only scans `docs/00,01,03`, so it cannot catch this |
+| README: "79 factors" | No such count in source; establishing it needs a runtime `GET /catalog` |
+| Release metadata (`CITATION.cff` version, `SECURITY.md` alpha tag) | Tag set stops earlier than claimed — maintainer-owned, do not edit |
+| `packages/orchestration` `pnpm lint` | A stub (`echo 'TODO: add eslint or biome'`); no linter runs in CI for that package |
+| `services/evolver/runtime/executor.py::_service_token` | Signs `{sub, exp}` with no `token_use` / audience / purpose, unlike every other evolver outbound token. Data's `/bars` only needs a valid signature + `sub`, so it works — but such a token is also accepted as a *user* token by any service sharing `JWT_SECRET`. Deviation, not a proven breach; tightening it needs a coordinated data-side change |
 
-Also: `services/data/src/inalpha_data/cache_manager.py` is dead code that would raise if touched
-(imports a non-existent symbol). `packages/orchestration` `pnpm lint` is a stub.
+Corrected in this branch (listed so nobody re-reports them as open):
+
+| Was | Now |
+|---|---|
+| `docs/01-architecture-overview.md`: agents are orchestrator + trader + risk | single orchestrator agent |
+| `docs/01-architecture-overview.md`: `memory/` is PostgresStore | LibSQL store under `.data/` |
+| Docs/README said 5 lifecycle hook events | six |
+| This onboarding doc claimed `CLAUDE.md` / the PR template make mypy a CI red line | no such claim exists in either file; `CONTRIBUTING.md §9` and CI both say best-effort |
+| `AGENTS.md` pointed at a non-existent `docs/brand/` | now `docs/00-05` |
+| `packages/orchestration/README.md`: orchestrator coordinates trader / risk subagents | single agent |
+| `services/paper/execution/*`: promised a `LiveGateway` | no live gateway; docstring now says so |
+| `services/paper/api/health.py`: "paper does not touch the DB" | paper is DB-backed; `/health` is liveness-only by design |
+| `services/paper/strategy_authoring/fitness.py`: turnover = `turnover / 252` | `(trades / bars_processed) * 100` |
+| `services/paper/kernel/clock.py`: `set_timer` framed as a pending D-5 gap | states it is unimplemented and that the live path drives `TestClock` |
+| `apps/dashboard/src/i18n/routing.ts` pointed at `src/middleware.ts` | `src/proxy.ts` |
+| `services/evolver/.../evaluator/runner.py` implied it used the data service | documents that `bars` is empty; production path is `FrozenDatasetEvaluator` |
+| `services/data/src/inalpha_data/cache_manager.py`: dead module with an import that would raise | deleted |
 
 ---
 
