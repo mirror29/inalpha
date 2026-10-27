@@ -156,3 +156,9 @@ RESEARCH_USAGE_PRICING='[{"provider":"deepseek","model":"deepseek-flash","versio
 Verify current rates with the provider before use. DeepSeek applies cache and time-of-day
 discounts; this conservative estimate intentionally does not claim those discounts.
 Source checked 2026-10-10: https://api-docs.deepseek.com/quick_start/pricing/.
+
+## Maintainer evidence verification
+
+For offline packet integrity, data coverage and exposure checks supporting #208, see
+[maintainer evidence checks](maintainer-evidence.md). These checks preserve existing
+artifacts and remain separate from the #206 rescoring and budget-report implementation.
