@@ -1,0 +1,49 @@
+{
+  "study_id": "issue_209_btc_1h_single_asset_validation",
+  "issue_number": 209,
+  "dataset_file": "btcusdt_1h_20250701_20261001.csv",
+  "dataset_sha256": "2dde8428dadc0019ce9a9c6df0049d4babb329e10050af8282a4730706dcd0b4",
+  "dataset_size_bytes": 1046260,
+  "instrument": "BTC/USDT",
+  "venue_symbol": "BTCUSDT",
+  "venue": "binance_spot",
+  "source_endpoint": "https://data-api.binance.vision/api/v3/klines",
+  "timeframe": "1h",
+  "timestamp_convention": "UTC bar-open timestamp; completed 1h bars only in [start, end)",
+  "extracted_at_utc": "2026-10-30T01:48:00Z",
+  "software_git_revision": "230d67da5b869842a25ed30c9849e01c9b583c27",
+  "frozen_interval": {
+    "start": "2025-07-01T00:00:00Z",
+    "end": "2026-10-01T00:00:00Z",
+    "start_inclusive": true,
+    "end_exclusive": true
+  },
+  "coverage": {
+    "row_count": 10968,
+    "expected_bar_count": 10968,
+    "first_timestamp": "2025-07-01T00:00:00Z",
+    "last_timestamp": "2026-09-30T23:00:00Z",
+    "missing_bar_count": 0,
+    "missing_timestamps": [],
+    "duplicate_count": 0,
+    "duplicate_timestamps": [],
+    "window_bar_counts": {
+      "dev": 4416,
+      "oos_2026_q1": 2160,
+      "oos_2026_q2": 2184,
+      "oos_2026_q3": 2208
+    }
+  },
+  "hygiene_checks": {
+    "status": "ok",
+    "is_utc": true,
+    "is_monotonic_increasing": true,
+    "is_hour_aligned": true,
+    "within_frozen_bounds": true,
+    "non_finite_row_count": 0,
+    "non_positive_price_row_count": 0,
+    "invalid_ohlc_row_count": 0,
+    "negative_volume_row_count": 0,
+    "errors": []
+  }
+}
