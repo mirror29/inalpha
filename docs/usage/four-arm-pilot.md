@@ -147,6 +147,41 @@ Not yet covered by the report (tracked on #206, not part of this development cha
 
 A 10-case run validates the machinery. Retain negative/inconclusive results and limitations.
 
+## Multi-ticker formal scaffolding (#206 v0.3 §3)
+
+These library functions run offline and are tested on synthetic fixtures only. No formal
+packet has been built with them yet.
+
+- `pilot.universe.screen` walks the pre-run dollar-volume ranking. It excludes TSLA and
+  replaces any candidate with a missing market file or invalid data by the next-ranked
+  member, recording the reason. It must run before any model call.
+- `pilot.universe.build_universe` builds cases and separate labels for every ticker-date,
+  using the same decision dates for all tickers.
+  - Corporate actions are treated identically for stocks and SPY: cash dividends with
+    ex-date in (entry, exit] are added, and splits in that window scale the exit open
+    (`holding_return`).
+  - Declared non-cash actions (`exclusions`: ticker, session, reason) exclude the case and
+    any calibration window they fall in. Excluded cases are listed in the protocol.
+  - τ and climatology come from each ticker's last 252 eligible windows that exit before
+    `calibration_before` (default: the first decision). Pass the primary period's first
+    decision when building the forward period, so τ stays frozen.
+- `pilot.inference.formal_inference` scores runs against those labels:
+  - strict-ITT Brier per arm;
+  - pooled BSS `1 − ΣBrier_arm / ΣBrier_clim`, using each case's ticker climatology, plus
+    per-ticker BSS;
+  - the contrasts D−A, D−B, D−C under a moving-block bootstrap over decision dates (all
+    tickers on a date move together): block 4, 10,000 resamples, seed 206, sensitivity at
+    blocks 2 and 8;
+  - two-sided p-values from the centred bootstrap distribution, Holm-adjusted across the
+    three contrasts at α = 0.05.
+
+  A missing run for any arm is an error, never a silent drop. A block length that is not
+  shorter than the number of decision dates returns `TOO_FEW_DATES` instead of an interval,
+  because the only possible block would reproduce the estimate in every resample.
+- `pilot.inference.claims` claims a contrast only when the retrospective test rejects
+  after Holm and the forward period estimates the same nonzero direction; a zero difference
+  in either period has no direction and is never claimed.
+
 ## Real-provider development acceptance (2026-10-12)
 
 Under an explicitly approved total $5 limit, DeepSeek completed a one-case calibration
