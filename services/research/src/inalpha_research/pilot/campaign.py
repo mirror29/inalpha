@@ -13,9 +13,12 @@ from typing import Any
 from inalpha_shared.usage import PostgresUsageStore
 
 from .artifacts import PilotArtifacts, digest, safe_json, validate_bundle, validate_run
+from .budget import budget_diagnostics
 from .experiment import DEFAULT_TEMPERATURE, AttemptRunner, CampaignBudget, recorder_for, run_arm
+from .interventions import select_cases, selection_rule
 from .materials import write_private
 from .report import build_report, intervention_plans
+from .rescore import arm_tokens
 
 
 async def campaign(
@@ -30,6 +33,9 @@ async def campaign(
 ) -> dict[str, Any]:
     """Run sequentially with shared spend reservations and no automatic paid resume."""
     configuration = {**configuration, "tau": inputs["protocol"]["tau"]}
+    # Fail on a bad selection rule before any directory, reservation or provider call; the
+    # valid-D draw itself still happens after the base runs.
+    rule = selection_rule(configuration.get("intervention_selection"), intervention_cases)
     cases = inputs["cases"]
     if not cases or len({c["case_id"] for c in cases}) != len(cases):
         raise ValueError("unique nonempty development cases required")
@@ -95,7 +101,8 @@ async def campaign(
     for case in cases:
         for arm in "ABCD":
             runs.append(await execute(case, arm))
-    for case in cases[:intervention_cases]:
+    selection = select_cases(runs, [c["case_id"] for c in cases], **rule)
+    for case in (c for c in cases if c["case_id"] in selection["selected"]):
         base = next(r for r in runs if r["case_id"] == case["case_id"] and r["arm"] == "D")
         for plan in intervention_plans(base, case):
             if "skip" in plan:
@@ -121,6 +128,7 @@ async def campaign(
     result = {
         "runs": runs,
         "replays": replays,
+        "intervention_selection": selection,
         "estimated_cost_or_reserved_usd": str(budget.spent),
         "stopped_on_unknown_or_accounting": budget.stopped,
         "inputs_hash": digest(inputs),
@@ -150,12 +158,20 @@ def main() -> None:
         outcomes = json.loads(args.outcomes.read_text())
         if not result.get("outcomes_hash") or digest(outcomes) != result["outcomes_hash"]:
             parser.error("outcome hash differs from the pre-run input commitment")
-        protocol = json.loads((args.directory / "campaign.json").read_text())["protocol"]
+        setup = json.loads((args.directory / "campaign.json").read_text())
+        protocol, configuration = setup["protocol"], setup.get("configuration", {})
         output = build_report(
             result["runs"],
             outcomes,
             result["replays"],
             climatology=protocol.get("climatology"),
+            selection=result.get("intervention_selection"),
+        )
+        declared = configuration.get("matching_target_tokens")
+        output["budget_diagnostics"] = budget_diagnostics(
+            result["runs"],
+            caps=arm_tokens(configuration, "caps", None),
+            targets=arm_tokens(configuration, "targets", declared) if declared else {},
         )
         output["estimated_cost_or_reserved_usd"] = result["estimated_cost_or_reserved_usd"]
         write_private(args.directory / "report.json", output)
