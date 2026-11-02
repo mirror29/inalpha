@@ -9,6 +9,7 @@ import statistics
 from typing import Any
 
 from .artifacts import safe_json
+from .interventions import accounting
 
 CLASSES = (("p_up", "UP"), ("p_flat", "FLAT"), ("p_down", "DOWN"))
 PROBS = tuple(key for key, _ in CLASSES)
@@ -210,6 +211,7 @@ def build_report(
     replays: list[dict[str, Any]],
     *,
     climatology: dict[str, float] | None = None,
+    selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Require paired four-arm coverage; never silently drop missing or invalid cases.
 
@@ -433,6 +435,7 @@ def build_report(
         else {},
         "budgets": budgets,
         "interventions": intervention_rows,
+        "intervention_accounting": accounting(replays, runs, selection),
         "limitations": [
             "budget matching requires development calibration before formal freeze",
             "model revision and training cutoff unknown",

@@ -74,7 +74,13 @@ def rescore(
         target_source = "rescoring parameter"
     caps = arm_tokens(configuration, "caps", None)
     climatology = setup.get("protocol", {}).get("climatology")
-    report = build_report(result["runs"], outcomes, result["replays"], climatology=climatology)
+    report = build_report(
+        result["runs"],
+        outcomes,
+        result["replays"],
+        climatology=climatology,
+        selection=result.get("intervention_selection"),
+    )
     budgets = budget_diagnostics(result["runs"], caps=caps, targets=targets)
     if hash_tree(campaign) != before:
         raise ValueError("campaign inputs changed during rescoring")

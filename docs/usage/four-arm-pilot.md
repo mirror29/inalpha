@@ -172,10 +172,26 @@ caps, the climatology used, the full scored report and the budget diagnostics. R
 cannot validate settings or stimuli the saved run did not use, such as a new sampling
 temperature or intervention text.
 
-Not yet covered (tracked on #206): formal intervention selection (v0.3 §4), meaning a
-preregistered seeded selection rule in place of the first N cases, and full-pool / valid-D /
-selected / skipped / attempted / failed / valid-pair counts with explicit denominators. The
-runner currently retains individual skip reasons only.
+Intervention selection (#206 v0.3 §4) is set by `intervention_selection` in the campaign
+configuration and recorded in `results.json`:
+
+- `{"rule": "seeded_random", "size": 40, "seed": <preregistered>}` draws min(size, valid-D
+  pool) cases from cases whose D base run completed. Conclusions are conditional on D
+  validity. A shortfall is reported, never filled from invalid runs or other arms.
+- Without it, the development behaviour is unchanged: the first `--intervention-cases`
+  cases in input order (`first_n`).
+- The rule, size and seed are validated before the campaign directory is created or any
+  provider call is made; an invalid configuration costs nothing. Only the valid-D draw waits
+  for the base runs.
+
+Every report carries `intervention_accounting`: the selection rule, seed, full pool, valid-D
+pool and shortfall, then, per intervention, selected / skipped (with reasons) / attempted /
+failed-or-invalid / valid, and valid intervention–noise pairs. A pair needs a completed base,
+a completed intervention replay and a completed matching noise replay on the same case.
+Contribution edits pair with `downstream_noise`; evidence removals pair with
+`round_zero_noise`. Skip rate = skipped / selected and failure rate = failed / attempted.
+Controls that were never planned because their prerequisite was skipped (for example, the
+evidence placebo when nothing was cited) are counted as `NOT_PLANNED:<reason>`.
 
 A 10-case run validates the machinery. Retain negative/inconclusive results and limitations.
 
