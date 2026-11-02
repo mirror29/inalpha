@@ -4,16 +4,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 import json
 
-def generate_powerbi_dataset():
-    output_dir = "fixture_output"
-    
-    if os.path.exists(output_dir):
-        print(f"Error: The directory '{output_dir}' already exists.")
-        print("Please delete or rename it to prevent overwriting existing data.")
-        sys.exit(1)
-        
-    os.makedirs(output_dir)
-
+def generate_raw_data(equity_defect_run="R002", equity_defect_amount=50.0, inject_structural_defect=False):
+    """Generates the base DataFrames in memory, allowing defect injection for testing."""
     configs = [
         {"symbol": "BTC/USDT", "timeframe": "1h", "venue": "binance", "strategy_kind": "trend_following"},
         {"symbol": "ETH/USDT", "timeframe": "4h", "venue": "binance", "strategy_kind": "mean_reversion"},
@@ -25,7 +17,6 @@ def generate_powerbi_dataset():
     candidates = []
     runs = []
     trades = []
-
     global_run_counter = 1
     
     for c_idx in range(1, 6):
@@ -59,68 +50,45 @@ def generate_powerbi_dataset():
                 trade_dt = run_start_date + timedelta(days=seq - 1)
                 bar_ts_utc = trade_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
                 is_entry = (seq % 2 != 0)
-                intent = 'entry' if is_entry else 'exit'
-                side = 'buy' if is_entry else 'sell'
                 
                 bar_close = 100.0 + (global_run_counter * 10) + seq
                 qty = 0.5 + (seq * 0.1)
-                fill_price = bar_close
-                fee = round(qty * fill_price * 0.001, 2)
+                fee = round(qty * bar_close * 0.001, 2)
                 
                 if is_entry:
                     realized_pnl = 0.0
                 else:
                     exit_idx = (seq // 2) - 1
-                    base_pnl = pnl_pattern[exit_idx % len(pnl_pattern)]
-                    realized_pnl = base_pnl * (1.0 + (global_run_counter * 0.05))
+                    realized_pnl = round(pnl_pattern[exit_idx % len(pnl_pattern)] * (1.0 + (global_run_counter * 0.05)), 2)
                     
-                realized_pnl = round(realized_pnl, 2)
-                
                 run_trades.append({
                     'run_key': run_key,
                     'seq': seq,
                     'bar_ts_utc': bar_ts_utc,
                     'bar_close': bar_close,
-                    'side': side,
+                    'side': 'buy' if is_entry else 'sell',
                     'quantity': round(qty, 4),
                     'order_type': 'limit' if seq % 3 == 0 else 'market',
-                    'fill_price': fill_price,
+                    'fill_price': bar_close,
                     'fee': fee,
                     'realized_pnl': realized_pnl,
-                    'intent': intent
+                    'intent': 'entry' if is_entry else 'exit'
                 })
                 run_fees += fee
                 
             trades.extend(run_trades)
-            
             total_pnl = sum([t['realized_pnl'] for t in run_trades])
-            expected_final_eq = initial_cash + total_pnl - run_fees
-            final_eq = expected_final_eq
+            final_eq = initial_cash + total_pnl - run_fees
             
-            if run_key == "R002":
-                final_eq += 50.0 
+            if run_key == equity_defect_run:
+                final_eq += equity_defect_amount 
                 
-            # FIX: Calculate return and immediately lock in the 6-decimal rounding
             ret_pct = round((final_eq - initial_cash) / initial_cash * 100, 6)
-            
             all_realized = [t['realized_pnl'] for t in run_trades if t['realized_pnl'] != 0]
-            winning_trades = [p for p in all_realized if p > 0]
-            win_rate = len(winning_trades) / len(all_realized) if all_realized else 0.0
-            best_pnl = max(all_realized) if all_realized else 0.0
-            worst_pnl = min(all_realized) if all_realized else 0.0
+            win_rate = len([p for p in all_realized if p > 0]) / len(all_realized) if all_realized else 0.0
             
             num_bars = 1000 + (global_run_counter * 100)
-            if config['venue'] == 'binance':
-                if config['timeframe'] == '1h':
-                    bars_per_year = 365 * 24
-                elif config['timeframe'] == '4h':
-                    bars_per_year = 365 * 6
-                else:
-                    bars_per_year = 365
-            else:
-                bars_per_year = 252
-                
-            # FIX: Calculate annualized return strictly from the already-rounded ret_pct to prevent SQL tolerance failure
+            bars_per_year = 365 * 24 if config['timeframe'] == '1h' else (365 * 6 if config['timeframe'] == '4h' else (252 if config['venue'] != 'binance' else 365))
             annualized_return_pct = round(ret_pct * (bars_per_year / num_bars), 6)
             
             runs.append({
@@ -153,13 +121,13 @@ def generate_powerbi_dataset():
                 'expectancy': round(5.0 + global_run_counter, 2),
                 'exposure_pct': round(45.0 + (global_run_counter * 2.0), 2),
                 'total_fees': round(run_fees, 2),
-                'best_trade_pnl': best_pnl,
-                'worst_trade_pnl': worst_pnl,
+                'best_trade_pnl': max(all_realized) if all_realized else 0.0,
+                'worst_trade_pnl': min(all_realized) if all_realized else 0.0,
                 'max_consecutive_wins': 3,
                 'max_consecutive_losses': 1,
                 'max_drawdown_duration_bars': 20 + global_run_counter,
                 'fitness': round(1.0 + (global_run_counter * 0.2), 2),
-                'validation_json': json.dumps({"structural_checks_passed": True, "metrics_validated": False}),
+                'validation_json': json.dumps({"structural_checks_passed": False, "metrics_validated": False}),
                 'created_at_utc': '2023-01-01T10:00:00Z',
                 'updated_at_utc': '2023-01-02T10:00:00Z'
             })
@@ -169,21 +137,111 @@ def generate_powerbi_dataset():
     r_df = pd.DataFrame(runs)
     t_df = pd.DataFrame(trades)
 
-    # Automatically map the exact math for R002 to the exception dataset
-    exceptions = [{
-        "run_key": "R002",
-        "check_name": "equity_consistency_check",
-        "status": "failed",
-        "details": "Equity mismatch detected: expected 12110.87, actual 12160.87"
-    }]
-    e_df = pd.DataFrame(exceptions)
+    if inject_structural_defect:
+        broken_run = r_df.iloc[0].copy()
+        broken_run['run_key'] = r_df.iloc[1]['run_key'] 
+        broken_run['candidate_key'] = 'C999' 
+        r_df = pd.concat([r_df, pd.DataFrame([broken_run])], ignore_index=True)
+
+    return c_df, r_df, t_df
+
+def validate_data(c_df, r_df, t_df):
+    """Executes dynamic structural checks and mathematical consistency validation."""
+    exceptions = []
+    structural_passed = True
     
+    # 1. Structural Checks (Uniqueness, Ref Integrity, Fill-Count, Nulls)
+    if c_df['candidate_key'].duplicated().any() or r_df['run_key'].duplicated().any():
+        structural_passed = False
+        
+    if not r_df['candidate_key'].isin(c_df['candidate_key']).all() or not t_df['run_key'].isin(r_df['run_key']).all():
+        structural_passed = False
+        
+    trade_counts = t_df.groupby('run_key').size()
+    for _, run in r_df.iterrows():
+        if run['reported_num_trades'] != trade_counts.get(run['run_key'], 0):
+            structural_passed = False
+            
+    if c_df['candidate_key'].isnull().any() or r_df['run_key'].isnull().any():
+        structural_passed = False
+
+    # 2. Dynamic Equity Consistency Check
+    grouped = t_df.groupby('run_key').agg({'realized_pnl': 'sum', 'fee': 'sum'}).reset_index()
+    merged = pd.merge(r_df, grouped, on='run_key', how='left').fillna({'realized_pnl': 0, 'fee': 0})
+    
+    for _, row in merged.iterrows():
+        expected = round(row['initial_cash'] + row['realized_pnl'] - row['fee'], 2)
+        actual = round(row['final_equity'], 2)
+        if expected != actual:
+            exceptions.append({
+                "run_key": row['run_key'],
+                "check_name": "equity_consistency_check",
+                "status": "failed",
+                "details": f"Equity mismatch detected: expected {expected:.2f}, actual {actual:.2f}"
+            })
+            
+    return exceptions, structural_passed
+
+def apply_validations(c_df, r_df, t_df):
+    exceptions, structural_passed = validate_data(c_df, r_df, t_df)
+    
+    def update_val_json(j_str):
+        d = json.loads(j_str)
+        d["structural_checks_passed"] = structural_passed
+        return json.dumps(d)
+        
+    r_df['validation_json'] = r_df['validation_json'].apply(update_val_json)
+    return r_df, pd.DataFrame(exceptions)
+
+def run_tests():
+    print("Running Regression Coverage & Negative Fixtures...")
+    
+    # Test 1: Original fixture emits exact intended exception
+    c1, r1, t1 = generate_raw_data(equity_defect_run="R002", equity_defect_amount=50.0)
+    e1, s1 = validate_data(c1, r1, t1)
+    assert s1 is True, "Structural checks should pass for standard fixture"
+    assert len(e1) == 1 and e1[0]['run_key'] == "R002", "Must emit exactly R002 exception"
+    assert "expected 12110.87, actual 12160.87" in e1[0]['details'], "Exception values mismatch"
+    
+    # Test 2: Removing defect produces no exception
+    c2, r2, t2 = generate_raw_data(equity_defect_run="R002", equity_defect_amount=0.0)
+    e2, _ = validate_data(c2, r2, t2)
+    assert len(e2) == 0, "Removing defect must produce NO exceptions"
+    
+    # Test 3: Changing discrepancy updates values dynamically
+    c3, r3, t3 = generate_raw_data(equity_defect_run="R002", equity_defect_amount=100.0)
+    e3, _ = validate_data(c3, r3, t3)
+    assert "expected 12110.87, actual 12210.87" in e3[0]['details'], "Exception values must update dynamically"
+    
+    # Test 4: Negative fixture (broken relationships and duplicate keys)
+    c4, r4, t4 = generate_raw_data(inject_structural_defect=True)
+    _, s4 = validate_data(c4, r4, t4)
+    assert s4 is False, "Structural checks MUST fail on duplicate keys or broken FKs"
+    
+    print("All regression tests passed successfully.\n")
+
+def generate_powerbi_dataset():
+    output_dir = "fixture_output"
+    if os.path.exists(output_dir):
+        print(f"Error: The directory '{output_dir}' already exists.")
+        sys.exit(1)
+        
+    os.makedirs(output_dir)
+
+    c_df, r_df, t_df = generate_raw_data(equity_defect_run="R002", equity_defect_amount=50.0)
+    r_df, e_df = apply_validations(c_df, r_df, t_df)
+    
+    # Handle edge case where no exceptions are generated so a blank CSV is still exported
+    if e_df.empty:
+        e_df = pd.DataFrame(columns=["run_key", "check_name", "status", "details"])
+        
     e_df.to_csv(os.path.join(output_dir, "validation_exceptions.csv"), index=False)
     c_df.to_csv(os.path.join(output_dir, "candidates.csv"), index=False)
     r_df.to_csv(os.path.join(output_dir, "backtest_runs.csv"), index=False)
     t_df.to_csv(os.path.join(output_dir, "backtest_trades.csv"), index=False)
 
-    print(f"Power BI synthetic dataset generated successfully in '{output_dir}/'.\n")
+    print(f"Power BI synthetic dataset generated successfully in '{output_dir}/'.")
 
 if __name__ == "__main__":
+    run_tests()
     generate_powerbi_dataset()
