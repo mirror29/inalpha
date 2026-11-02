@@ -13,9 +13,11 @@ from typing import Any
 from inalpha_shared.usage import PostgresUsageStore
 
 from .artifacts import PilotArtifacts, digest, safe_json, validate_bundle, validate_run
+from .budget import budget_diagnostics
 from .experiment import DEFAULT_TEMPERATURE, AttemptRunner, CampaignBudget, recorder_for, run_arm
 from .materials import write_private
 from .report import build_report, intervention_plans
+from .rescore import arm_tokens
 
 
 async def campaign(
@@ -150,12 +152,19 @@ def main() -> None:
         outcomes = json.loads(args.outcomes.read_text())
         if not result.get("outcomes_hash") or digest(outcomes) != result["outcomes_hash"]:
             parser.error("outcome hash differs from the pre-run input commitment")
-        protocol = json.loads((args.directory / "campaign.json").read_text())["protocol"]
+        setup = json.loads((args.directory / "campaign.json").read_text())
+        protocol, configuration = setup["protocol"], setup.get("configuration", {})
         output = build_report(
             result["runs"],
             outcomes,
             result["replays"],
             climatology=protocol.get("climatology"),
+        )
+        declared = configuration.get("matching_target_tokens")
+        output["budget_diagnostics"] = budget_diagnostics(
+            result["runs"],
+            caps=arm_tokens(configuration, "caps", None),
+            targets=arm_tokens(configuration, "targets", declared) if declared else {},
         )
         output["estimated_cost_or_reserved_usd"] = result["estimated_cost_or_reserved_usd"]
         write_private(args.directory / "report.json", output)

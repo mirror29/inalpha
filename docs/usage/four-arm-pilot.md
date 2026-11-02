@@ -136,14 +136,46 @@ flip/probability/Brier changes and noise-adjusted flip differences. Character ma
 not exact tokenizer matching; formal intervention controls and blinded human process
 scoring still need protocol review.
 
-Not yet covered by the report (tracked on #206, not part of this development change):
+Budget diagnostics (#206 v0.3 §1) are in every report under `budget_diagnostics`. They
+keep the matching target T and the safety cap separate. The cap comes from
+`baseline_tokens` (A) and `arm_tokens` (B/C/D); the target comes only from an explicitly
+declared `matching_target_tokens` (an int for B/C/D, or a per-arm mapping) and is never
+inferred from observed usage. Per arm and per case they report:
 
-- Budget dispersion (#206 review §2b): per-case input-plus-output usage, its IQR per arm,
-  and each case's ratio to an agreed budget target. The report currently checks only
-  per-arm medians (`compute_match_within_10_percent`).
-- Formal intervention selection (#206 review §3d): a preregistered selection rule in place
-  of the first N cases, and per-intervention eligible/attempted/completed/skipped counts with
-  explicit skip-rate denominators. The runner currently retains individual skip reasons only.
+- known input/output tokens, median, quartiles and IQR, and each case's ratio to T and to
+  the cap;
+- the share of cases within ±25% of T and the preregistered verdict (median within ±10% and
+  at least 80% of cases within ±25%), or null when no target is declared;
+- attempts, retries and failed attempts; token budget stops and accounting stops
+  (unconfirmed ledger or unknown usage) by reason;
+- invalid runs and rate, and the distribution of completed units.
+
+A case with any unknown attempt keeps its known subtotal but is excluded from matching
+statistics and counted separately; unknown usage is never zero-filled.
+
+## Offline rescoring
+
+Rescore saved outputs into a separate, versioned report without provider or database access:
+
+```bash
+uv run python -m inalpha_research.pilot.rescore \
+  /private/path/campaign /private/path/materials/outcomes.json /private/path/rescore-v1 \
+  --target-tokens 9400 --code-revision "$(git rev-parse HEAD)"
+```
+
+The command verifies the outcome hash against the pre-run commitment, hashes every file in
+the campaign directory before and after, and fails if any changed. It writes only
+`rescore.json` into a new directory, which must lie outside the campaign directory. The
+report carries the version (`pilot-rescore-v1`), the source file hashes (including the
+original `report.json`, which is left untouched), the declared target and its source, the
+caps, the climatology used, the full scored report and the budget diagnostics. Rescoring
+cannot validate settings or stimuli the saved run did not use, such as a new sampling
+temperature or intervention text.
+
+Not yet covered (tracked on #206): formal intervention selection (v0.3 §4), meaning a
+preregistered seeded selection rule in place of the first N cases, and full-pool / valid-D /
+selected / skipped / attempted / failed / valid-pair counts with explicit denominators. The
+runner currently retains individual skip reasons only.
 
 A 10-case run validates the machinery. Retain negative/inconclusive results and limitations.
 
