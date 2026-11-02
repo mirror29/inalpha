@@ -1,0 +1,108 @@
+{
+  "study_id": "issue_209_btc_1h_single_asset_validation",
+  "issue_number": 209,
+  "issue_url": "https://github.com/mirror29/inalpha/issues/209",
+  "confirmation_comment_url": "https://github.com/mirror29/inalpha/issues/209#issuecomment-6513022958",
+  "instrument": "BTC/USDT",
+  "venue_symbol": "BTCUSDT",
+  "venue": "binance_spot",
+  "data_source_endpoint": "https://data-api.binance.vision/api/v3/klines",
+  "timeframe": "1h",
+  "timestamp_convention": "UTC bar-open timestamp; completed 1h bars only in [start, end)",
+  "frozen_start": "2025-07-01T00:00:00Z",
+  "frozen_end": "2026-10-01T00:00:00Z",
+  "expected_total_bars": 10968,
+  "horizons": [
+    1,
+    6,
+    24
+  ],
+  "quantiles": 5,
+  "min_samples": 120,
+  "ic_direction_threshold": 0.02,
+  "decay_stable_retention": 0.6,
+  "icir_segments": 5,
+  "null_benchmark_candidates": 4,
+  "regime_vol_lookback_bars": 24,
+  "regime_trend_lookback_bars": 24,
+  "windows": [
+    {
+      "window_id": "dev",
+      "label": "Development (2025 H2)",
+      "role": "development",
+      "start": "2025-07-01T00:00:00Z",
+      "end": "2026-01-01T00:00:00Z",
+      "expected_bars": 4416
+    },
+    {
+      "window_id": "oos_2026_q1",
+      "label": "OOS Q1 2026",
+      "role": "oos",
+      "start": "2026-01-01T00:00:00Z",
+      "end": "2026-04-01T00:00:00Z",
+      "expected_bars": 2160
+    },
+    {
+      "window_id": "oos_2026_q2",
+      "label": "OOS Q2 2026",
+      "role": "oos",
+      "start": "2026-04-01T00:00:00Z",
+      "end": "2026-07-01T00:00:00Z",
+      "expected_bars": 2184
+    },
+    {
+      "window_id": "oos_2026_q3",
+      "label": "OOS Q3 2026",
+      "role": "oos",
+      "start": "2026-07-01T00:00:00Z",
+      "end": "2026-10-01T00:00:00Z",
+      "expected_bars": 2208
+    }
+  ],
+  "descriptive_full_window": {
+    "window_id": "full_period",
+    "label": "Full Frozen Period (2025-07 to 2026-10)",
+    "role": "descriptive_full",
+    "start": "2025-07-01T00:00:00Z",
+    "end": "2026-10-01T00:00:00Z",
+    "expected_bars": 10968
+  },
+  "factors": [
+    {
+      "factor_id": "pandas_ta.rsi_14",
+      "name": "RSI(14)",
+      "role": "core",
+      "category": "mean_reversion",
+      "formula": "100 - 100 / (1 + RMA(gain, 14) / RMA(loss, 14))",
+      "warmup_bars": 14,
+      "direction_hint": -1
+    },
+    {
+      "factor_id": "pandas_ta.macd_hist",
+      "name": "MACD hist(12,26,9)/close",
+      "role": "core",
+      "category": "momentum",
+      "formula": "((EMA(close, 12) - EMA(close, 26)) - EMA(MACD, 9)) / close",
+      "warmup_bars": 33,
+      "direction_hint": 1
+    },
+    {
+      "factor_id": "pandas_ta.atr_pct_14",
+      "name": "ATR(14)/close",
+      "role": "core",
+      "category": "volatility",
+      "formula": "RMA(TrueRange, 14) / close",
+      "warmup_bars": 14,
+      "direction_hint": null
+    },
+    {
+      "factor_id": "pandas_ta.roc_10",
+      "name": "ROC(10)",
+      "role": "baseline",
+      "category": "momentum",
+      "formula": "(close[t] / close[t-10] - 1) * 100",
+      "warmup_bars": 10,
+      "direction_hint": 1
+    }
+  ]
+}
