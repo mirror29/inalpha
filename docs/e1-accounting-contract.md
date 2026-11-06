@@ -232,15 +232,40 @@ These fields represent run retry lineage. They do not, by themselves, establish 
 
 ### 4.3 Search relationship
 
-A documented relationship between two runs indicating that one continued, reused or was influenced by the other's search activity.
+A directed, evidence-backed relationship between two runs indicating that one run continued, reused or was influenced by the search activity of another.
 
-A search relationship is evidence about how runs are connected. It is not automatically a declaration of statistical independence or dependence under every statistical method.
+Relationship records must identify:
+
+- The run whose search activity is being described.
+- The related source run.
+- The relationship type.
+- Supporting evidence where available.
+
+The direction must be explicit.
+
+In a relationship record, `from_run_id` identifies the run that continued or reused earlier search activity. `to_run_id` identifies the earlier run from which that activity originated.
+
+A shared dataset is recorded as data provenance. It is not, by itself, a search-history relationship.
+
+A confirmed search relationship establishes a connection in search history. It does not automatically establish statistical dependence or independence under every statistical method.
 
 ### 4.4 Search family
 
-A grouping of runs connected by relevant search relationships under an explicitly defined grouping policy.
+A search family is a derived grouping of one or more runs connected through confirmed, family-connecting search relationships.
 
-The contract does not require a permanent `search_family_id` in its first version. Family membership can be derived from recorded relationships when the grouping rules are defined.
+For family membership, confirmed connecting relationships are treated as graph connectivity, regardless of their stored direction. The original relationship direction must remain available as provenance.
+
+All runs connected through a path of confirmed, family-connecting relationships belong to the same derived search family.
+
+A separately initiated search may form a singleton search family when its separate origin is supported by recorded evidence.
+
+A new run ID, the absence of a recorded relationship, or a shared or different dataset identity is not sufficient by itself to establish a separate search family.
+
+Where the available evidence cannot establish whether a run belongs to an existing family or represents a separately initiated search, its family membership remains unresolved.
+
+Search-family membership describes search lineage. It is not an effective-trial estimate and does not establish statistical independence.
+
+The contract does not require a permanent `search_family_id` in its first version. Family membership may be derived from the recorded relationship graph and documented search-start evidence.
 
 ### 4.5 Generation
 
@@ -297,9 +322,19 @@ An attempt retains its own lifecycle and outcome. Multiple attempts can refer to
 
 ### 4.12 Evaluator invocation
 
-A confirmed entry into the evaluator execution boundary.
+A confirmed entry into the candidate evaluator boundary.
 
-A scheduled attempt does not necessarily establish that an evaluator invocation occurred.
+For the inspected E1 execution path, the proposed boundary is entry into `FrozenDatasetEvaluator.evaluate()` for a candidate evaluation, reached through `evaluate_slot()`.
+
+Creating an attempt record, allocating a candidate slot, scheduling evaluation or entering `evaluate_slot()` does not, by itself, confirm that the evaluator was invoked.
+
+A confirmed invocation requires durable evidence that entry into `FrozenDatasetEvaluator.evaluate()` occurred.
+
+The candidate evaluator invocation and the subsequent `evaluate_strategy_source()` and `run_engine()` execution stages are distinct events.
+
+Confirmation of evaluator entry does not, by itself, establish that the backtest engine started or that evaluation completed successfully.
+
+The current E1 implementation does not persist this as an append-only evaluator-invocation event. The definition describes the proposed accounting boundary, not existing runtime instrumentation.
 
 ### 4.13 Statistical trial
 
@@ -311,63 +346,125 @@ Its definition and estimation depend on the statistical method and its assumptio
 
 ## 5. Relationships between runs and search families
 
-Runs must retain their individual identities while recording known relationships to earlier runs.
+Runs must retain their individual identities while recording known relationships to earlier search activity.
 
-Relevant relationship categories include:
+The contract must distinguish search-history relationships from shared evaluation-data provenance.
 
-| Relationship | Meaning |
+### 5.1 Search relationship types
+
+Relevant confirmed relationship types include:
+
+| Relationship type | Meaning |
 |---|---|
 | `continuation` | A run continues an earlier search. |
-| `reused_candidate` | A candidate source from an earlier run was reused. |
-| `reused_result` | An earlier evaluation result was reused. |
-| `reused_feedback` | Earlier feedback influenced candidate generation. |
-| `informed_selection` | Earlier results influenced a selection decision. |
-| `unknown` | The relationship cannot currently be established. |
+| `reused_candidate` | A candidate artifact originating from an earlier run is reused as part of the later search. |
+| `reused_result` | An evaluation result from an earlier run is reused by the later run. |
+| `reused_feedback` | Feedback derived from an earlier run influences later candidate generation or evaluation decisions. |
+| `informed_selection` | Results from an earlier run influence candidate selection in the later run. |
 
 These are conceptual relationship categories, not a requirement to implement a particular database enum or schema.
 
-A relationship should identify the relevant runs and supporting evidence where available.
+A confirmed relationship must identify the relevant runs and provide supporting provenance where available.
 
-The direction of a relationship should be clear. For example, a run that reused feedback from another run should identify the earlier run as the source of that feedback.
+A matching candidate source hash alone does not prove that one run reused the other's candidate. The relationship requires evidence of artifact provenance or actual reuse.
 
-A run may have relationships with multiple earlier runs.
+Likewise, the appearance of the same evaluation data in multiple runs does not establish that one run continued or reused the search activity of another.
 
-### 5.1 Search-family identity
+The category `unknown` must not be treated as a confirmed relationship type.
 
-The first contract should require explicit relationship records rather than a mandatory permanent `search_family_id`.
+### 5.2 Search-family derivation
 
-Reasons:
+For the first contract, the following confirmed relationships connect runs into the same derived search family:
 
-- A run may be related to multiple earlier runs.
-- A relationship may be discovered after the runs were originally recorded.
-- Previously separate groups may later be found to share search history.
-- A permanent identifier would introduce family-merging and reassignment semantics before they are needed.
+- `continuation`
+- `reused_candidate`
+- `reused_result`
+- `reused_feedback`
+- `informed_selection`
 
-A stable family identifier may be introduced later as a derived grouping or query optimization.
+These relationships establish a documented connection in search history.
 
-It must not replace the underlying relationship evidence.
+Family membership is derived using the connected components of the confirmed relationship graph.
 
-The grouping policy must define which relationships connect runs into the same search family.
+The records must preserve relationship direction even though family grouping treats confirmed connecting relationships as undirected connections.
 
-It must not assume that every relationship category has identical statistical implications.
+For example:
 
-### 5.2 Separate-search protocol evidence
+- Run B continues Run A.
+- Run C reuses feedback from Run B.
+- Runs A, B and C belong to the same derived search family.
 
-Protocol evidence supporting a separate search must be recorded independently from run-relationship categories.
+The family grouping is transitive. A run does not need a direct relationship with every other member if a confirmed relationship path connects them.
 
-An explicit protocol may establish that two searches were designed to be separate. It does not automatically establish statistical independence.
+A relationship discovered after the original runs were recorded may change the derived grouping. The underlying relationship records and their evidence must remain available.
 
-The applicable statistical method must determine whether the available evidence supports an independence assumption.
+A permanent `search_family_id` is not required for this first contract. A derived family key may be used for presentation or querying, but must not replace the underlying relationship evidence.
 
-A protocol declaration must not be used as a substitute for actual search-history evidence.
+### 5.3 Shared dataset identity
 
-### 5.3 Unknown relationships
+Dataset provenance must be recorded separately for every run.
+
+Relevant evidence includes:
+
+- Frozen dataset manifest identity.
+- Dataset content hash.
+- Data epoch or version where applicable.
+- Relevant data-source provenance.
+
+Two runs may use the same frozen dataset without belonging to the same search family.
+
+Shared dataset identity alone:
+
+- Does not create a search relationship.
+- Does not establish search-family membership.
+- Does not establish that the searches were separate.
+- Does not establish statistical independence.
+
+A run that reuses prior evaluation results or search feedback has a search-history relationship even when its dataset is unchanged.
+
+A run that merely evaluates candidates against the same dataset does not thereby become part of another run's search family.
+
+### 5.4 Separate-search evidence
+
+Evidence supporting a separately initiated search must be recorded independently from search-relationship records.
+
+Relevant evidence may include:
+
+- Search-start provenance.
+- Initial candidate or seed provenance.
+- Initial search configuration.
+- The source of candidate-generation instructions.
+- Whether prior candidate artifacts, evaluation results or feedback were consumed.
+- A documented protocol or initialization record.
+
+Such evidence may support classifying a run as a separately initiated search grouping.
+
+A protocol declaration does not establish statistical independence.
+
+It must not override a confirmed search-history relationship. If later evidence establishes continuation or reuse of prior search activity, the derived family grouping must reflect that relationship.
+
+A separate search grouping is not a declaration that its statistical trials are independent of those in another grouping.
+
+### 5.5 Unknown relationships and unresolved membership
 
 Where a relationship cannot be established, preserve that uncertainty.
 
-The absence of a recorded relationship does not prove independence.
+An unknown relationship assessment is not a confirmed relationship edge and must not connect runs into the same derived family.
 
-A shared dataset should be recorded separately. Dataset reuse alone does not establish search-family membership or independence.
+Where useful, the system may retain an explicit relationship assessment containing:
+
+- The runs whose relationship was assessed.
+- An `unknown` status.
+- The reason the relationship could not be established.
+- Available investigation or provenance references.
+
+The `unknown` status belongs to the assessment of the relationship, not to the confirmed relationship-type vocabulary.
+
+Where available evidence does not establish either a connecting relationship or a separately initiated search, family membership remains unresolved.
+
+The absence of a recorded relationship does not prove that two searches were independent.
+
+Shared dataset identity must remain separate evidence and must not resolve an otherwise unknown search relationship.
 
 ## 6. Observable accounting
 
@@ -526,15 +623,26 @@ These statuses describe attempt lifecycle and outcome. They are not statistical 
 The system should distinguish:
 
 - An attempt record being created.
-- The evaluator invocation being confirmed.
+- Entry into the candidate evaluator boundary.
+- The evaluator invocation being durably confirmed.
+- The strategy evaluation being initiated.
+- The backtest engine being started.
 - The evaluator returning a result.
 - The final outcome being persisted.
 
-A confirmed invocation requires evidence that execution crossed the defined evaluator invocation boundary.
+For the inspected E1 path, the proposed candidate evaluator boundary is entry into `FrozenDatasetEvaluator.evaluate()`, reached from `evaluate_slot()`.
 
-If the process crashes after an attempt is recorded but before invocation can be confirmed, the invocation state is unknown.
+A confirmed invocation requires durable evidence that this boundary was reached.
 
-If the invocation is confirmed but its final result cannot be recovered, the attempt outcome is indeterminate.
+Scheduling an attempt, allocating a candidate slot or entering the caller function does not establish a confirmed evaluator invocation.
+
+Evaluator entry and backtest-engine execution are separate events. A confirmed evaluator invocation does not automatically establish that `evaluate_strategy_source()` or `run_engine()` completed or even started.
+
+If the process crashes after the attempt is recorded but before evaluator entry can be confirmed, the invocation state remains unknown.
+
+If evaluator entry is confirmed but the final result cannot be recovered, the attempt outcome is indeterminate.
+
+The implementation must not infer a confirmed invocation from a candidate-slot status or a summary counter that does not represent actual evaluator-boundary evidence.
 
 ### 8.2 Indeterminate attempts
 
@@ -987,57 +1095,98 @@ The second proposal did undergo evaluation, and its failed attempt remains recor
 
 Neither outcome may disappear from the accounting history.
 
-### Case 6: Related runs and shared data
+### Case 6: Related runs, separate search starts and shared data
 
 Setup:
 
-- Run A begins a search.
+- Run A begins a documented search.
 - Run B reuses feedback from A.
-- Run C uses the same frozen dataset, but there is no reliable evidence establishing whether it reused A's results or feedback.
+- Run C has evidence of a separately initiated search and does not consume A's candidate artifacts, evaluation results or feedback.
+- Run D has insufficient provenance to establish whether it reused or continued A's search activity.
+- All four runs use the same frozen dataset.
 
-Expected relationships:
+Expected records:
 
 ```json
 {
   "runs": [
     {
-      "run_id": "run-a"
+      "run_id": "run-a",
+      "dataset_identity": "sha256:dataset-a",
+      "search_start_evidence_ref": "search-start-a"
     },
     {
-      "run_id": "run-b"
+      "run_id": "run-b",
+      "dataset_identity": "sha256:dataset-a"
     },
     {
-      "run_id": "run-c"
+      "run_id": "run-c",
+      "dataset_identity": "sha256:dataset-a",
+      "search_start_evidence_ref": "search-start-c"
+    },
+    {
+      "run_id": "run-d",
+      "dataset_identity": "sha256:dataset-a"
     }
   ],
-  "relationships": [
+  "search_relationships": [
     {
       "from_run_id": "run-b",
       "to_run_id": "run-a",
-      "relationship": "reused_feedback",
+      "relationship_type": "reused_feedback",
+      "status": "confirmed",
       "evidence_ref": "feedback-a"
-    },
-    {
-      "from_run_id": "run-c",
-      "to_run_id": "run-a",
-      "relationship": "unknown"
     }
   ],
-  "dataset_identity": {
-    "run-a": "sha256:dataset-a",
-    "run-b": "sha256:dataset-a",
-    "run-c": "sha256:dataset-a"
-  }
+  "separate_search_evidence": [
+    {
+      "run_id": "run-c",
+      "status": "documented_separate_start",
+      "evidence_ref": "search-start-c"
+    }
+  ],
+  "relationship_assessments": [
+    {
+      "from_run_id": "run-d",
+      "to_run_id": "run-a",
+      "status": "unknown",
+      "reason": "INSUFFICIENT_SEARCH_HISTORY"
+    }
+  ],
+  "derived_search_groups": [
+    {
+      "group_key": "family-ab",
+      "run_ids": [
+        "run-a",
+        "run-b"
+      ],
+      "basis": "confirmed_relationship_graph"
+    },
+    {
+      "group_key": "family-c",
+      "run_ids": [
+        "run-c"
+      ],
+      "basis": "documented_separate_search_start"
+    }
+  ],
+  "unresolved_run_ids": [
+    "run-d"
+  ]
 }
 ```
 
-Runs A and B have a documented search relationship.
+Expected interpretation:
 
-Run C remains unknown.
+- Runs A and B belong to the same derived search family because B reused feedback from A.
+- Run C has a documented separate search origin. Its use of the same dataset does not connect it to A or B.
+- Run C's separate search grouping does not establish statistical independence from A or B.
+- Run D remains unresolved. The unknown assessment is not a confirmed relationship edge.
+- The common dataset identity is retained for all four runs but does not determine their family membership.
 
-A later grouping policy may group related runs into search families. This example does not require a permanent family identifier.
+The illustrative group keys are derived labels, not a requirement for permanent family identifiers.
 
-Shared dataset identity alone does not prove family membership or independence.
+No run may be declared statistically independent merely because it has a separate group key, a different run ID or no recorded relationship.
 
 ## 15. Test classification
 
@@ -1123,3 +1272,4 @@ Later statistical integration should consume trustworthy accounting and evidence
 **Core rule:**
 
 > Record what happened. Preserve how it happened. Distinguish what was evaluated from what was statistically tested. Never infer independence from an identifier.
+```
