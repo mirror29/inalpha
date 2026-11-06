@@ -88,7 +88,7 @@ async def test_run_idempotency_owner_scope_and_slot() -> None:
 
 
 @pytest.mark.asyncio
-async def test_candidate_source_duplicate_detection_is_exact_and_run_scoped() -> None:
+async def test_source_exists_is_exact_and_run_scoped() -> None:
     url = os.environ.get("EVOLVER_TEST_DATABASE_URL")
     if not url:
         pytest.skip("EVOLVER_TEST_DATABASE_URL is required for database integration tests")
@@ -122,57 +122,58 @@ async def test_candidate_source_duplicate_detection_is_exact_and_run_scoped() ->
         }
 
         async with get_conn() as conn:
-            first_run, first_created = await runs.insert_run(conn, **kwargs)
+            async with conn.transaction(force_rollback=True):
+                first_run, first_created = await runs.insert_run(conn, **kwargs)
 
-            second_kwargs = {
-                **kwargs,
-                "idempotency_key": f"source-test-{uuid4()}",
-                "request_hash": "source-test-hash-b",
-            }
-            second_run, second_created = await runs.insert_run(
-                conn, **second_kwargs
-            )
+                second_kwargs = {
+                    **kwargs,
+                    "idempotency_key": f"source-test-{uuid4()}",
+                    "request_hash": "source-test-hash-b",
+                }
+                second_run, second_created = await runs.insert_run(
+                    conn, **second_kwargs
+                )
 
-            assert first_created is True
-            assert second_created is True
-            assert first_run["run_id"] != second_run["run_id"]
+                assert first_created is True
+                assert second_created is True
+                assert first_run["run_id"] != second_run["run_id"]
 
-            await candidates.insert_slot(
-                conn,
-                first_run["run_id"],
-                0,
-                "source duplicate test",
-            )
+                await candidates.insert_slot(
+                    conn,
+                    first_run["run_id"],
+                    0,
+                    "source duplicate test",
+                )
 
-            source = "class TestStrategy:\n    value = 1\n"
-            source_hash = hashlib.sha256(source.encode()).hexdigest()
-            different_hash = hashlib.sha256(b"different source").hexdigest()
+                source = "class TestStrategy:\n    value = 1\n"
+                source_hash = hashlib.sha256(source.encode()).hexdigest()
+                different_hash = hashlib.sha256(b"different source").hexdigest()
 
-            await candidates.update_slot(
-                conn,
-                first_run["run_id"],
-                0,
-                stage="evaluation",
-                source_code=source,
-                source_hash=source_hash,
-            )
+                await candidates.update_slot(
+                    conn,
+                    first_run["run_id"],
+                    0,
+                    stage="evaluation",
+                    source_code=source,
+                    source_hash=source_hash,
+                )
 
-            assert await candidates.source_exists(
-                conn, first_run["run_id"], source_hash
-            ) is True
+                assert await candidates.source_exists(
+                    conn, first_run["run_id"], source_hash
+                ) is True
 
-            assert await candidates.source_exists(
-                conn, first_run["run_id"], different_hash
-            ) is False
+                assert await candidates.source_exists(
+                    conn, first_run["run_id"], different_hash
+                ) is False
 
-            assert await candidates.source_exists(
-                conn, second_run["run_id"], source_hash
-            ) is False
+                assert await candidates.source_exists(
+                    conn, second_run["run_id"], source_hash
+                ) is False
 
-            summary = await candidates.summarize(conn, first_run["run_id"])
+                summary = await candidates.summarize(conn, first_run["run_id"])
 
-            assert summary["attempted"] == 1
-            assert summary["succeeded"] == 0
+                assert summary["attempted"] == 1
+                assert summary["succeeded"] == 0
 
     finally:
         await close_pool()
