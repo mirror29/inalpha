@@ -8,11 +8,13 @@ from typing import Any
 from uuid import UUID
 
 from inalpha_shared.db import get_conn
+from inalpha_shared.usage import usage_stage
 
 from ..evaluator.frozen import FrozenDatasetEvaluator
-from ..exceptions import DiffApplyError, LLMError
+from ..exceptions import DiffApplyError, LLMError, UnconfirmedModelCall
 from ..governor.hint_generator import HintGenerator
 from ..storage import candidates, runs
+from .repair import prepare_repair
 from .slots import evaluate_slot, persist_mutation, reject_slot
 
 
@@ -49,8 +51,20 @@ async def execute_generation(
         if persisted["stage"] == "evaluation" and persisted["source_code"]:
             await evaluate_slot(run["run_id"], slot, persisted["source_code"], evaluator)
             continue
+        if persisted.get("usage_status") in ("unknown", "legacy_unknown"):
+            await reject_slot(
+                run["run_id"], slot, "mutation_failed",
+                UnconfirmedModelCall("上次调用用量未确认，恢复时不重复发送；请检查记录后显式审批重试"),
+            )
+            continue
+        async with get_conn() as conn:
+            hint = await prepare_repair(conn, run, persisted)
+            claimed = await candidates.claim_model_call(conn, run["run_id"], slot)
+        if not claimed:
+            raise asyncio.CancelledError
         try:
-            mutation = await mutator.mutate(source, seed_result.report, hint)
+            with usage_stage(f"mutation:slot:{slot}"):
+                mutation = await mutator.mutate(source, seed_result.report, hint)
         except LLMError as exc:
             await reject_slot(run["run_id"], slot, "mutation_failed", exc)
             continue

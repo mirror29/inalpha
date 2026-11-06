@@ -14,6 +14,8 @@ import httpx
 from inalpha_shared import get_logger
 from inalpha_shared.errors import InalphaError
 
+from .schemas import ReviewedFactAcknowledgement
+
 _logger = get_logger(__name__)
 
 
@@ -60,6 +62,34 @@ class DataClient:
         if not isinstance(payload, dict):
             raise DataServiceError("raw event response must be an object")
         return payload
+
+    async def get_event_fact(self, fact_id: str) -> dict[str, Any]:
+        """Read one immutable version using the existing extraction service token."""
+        response = await self._client.get(f"/events/facts/{fact_id}")
+        if response.status_code >= 400:
+            raise DataServiceError("review source fact unavailable", code="EVENT_REVIEW_SOURCE_UNAVAILABLE")
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise DataServiceError("review source fact must be an object")
+        return payload
+
+    async def correct_event_fact(self, fact_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Submit one reviewed correction without automatically retrying a lost response."""
+        response = await self._client.post(f"/events/facts/{fact_id}/corrections", json=payload)
+        if response.status_code == 409:
+            from inalpha_shared.errors import ConflictError
+
+            raise ConflictError("reviewed source or correction changed", code="EVENT_FACT_CORRECTION_CONFLICT")
+        if response.status_code >= 400:
+            raise DataServiceError("event fact correction failed", code="EVENT_FACT_CORRECTION_FAILED")
+        try:
+            acknowledgement = ReviewedFactAcknowledgement.model_validate(response.json())
+        except ValueError as exc:
+            raise DataServiceError("correction acknowledgement cannot be verified", code="EVENT_FACT_CORRECTION_RESPONSE_UNKNOWN") from exc
+        audit, fact = acknowledgement.correction, acknowledgement.fact
+        if str(audit.correction_id) != payload.get("correction_id") or str(audit.source_fact_id) != fact_id or audit.corrected_fact_id != fact.fact_id:
+            raise DataServiceError("correction acknowledgement cannot be verified", code="EVENT_FACT_CORRECTION_RESPONSE_UNKNOWN")
+        return acknowledgement.model_dump(mode="json")
 
     async def write_event_fact(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Persist one normalized fact while keeping raw text out of the response path."""

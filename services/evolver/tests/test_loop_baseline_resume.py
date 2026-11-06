@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -104,6 +105,8 @@ async def test_automatic_baseline_uses_discovery_and_restarts_without_model_call
                 input_tokens=0, output_tokens=0,
             )
 
+    # This test isolates persisted baseline resumption; coverage guards have their own tests.
+    monkeypatch.setattr("inalpha_evolver.runtime.loop_baseline.require_loop_event_coverage", AsyncMock())
     model = Model()
     settings = EvolverSettings()
     await execute_loop_baseline(worker, settings, mutator=model)

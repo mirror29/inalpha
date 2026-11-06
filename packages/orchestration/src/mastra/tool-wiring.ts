@@ -11,6 +11,7 @@ import { withHooks } from "../hooks/with-hooks.js";
 import { PermissionEngine } from "../permissions/engine.js";
 import type { PendingApprovalsStore } from "../permissions/pending.js";
 import type { Decision } from "../permissions/types.js";
+import { evolutionApprovalPreflight } from "../tools/evolution-preflight.js";
 import { loadDefaultPermissions } from "../permissions/yaml_loader.js";
 
 /** 通用 tool wiring 的可注入依赖。 */
@@ -54,12 +55,16 @@ export function wireToolList(
   const runner = options.hookRunner ?? buildDefaultRunner(options.auditSink);
   const engine =
     options.permissionEngine ?? new PermissionEngine(loadDefaultPermissions());
-  const resolver = (toolName: string, input: unknown): Decision =>
-    engine.authorize(toolName, input).decision;
+  const resolver = (toolName: string, input: unknown): Decision => {
+    const decision = engine.authorize(toolName, input).decision;
+    /** Durable loops always bind explicit cost consent; custom allow rules cannot bypass it. */
+    return toolName === "evolver.start_evolution_loop" && decision === "allow" ? "ask" : decision;
+  };
   return tools.map((tool) =>
     withHooks(tool as WiredTool, {
       runner,
       permissionResolver: resolver,
+      approvalPreflight: evolutionApprovalPreflight,
       pendingApprovals: options.pendingApprovals,
       askTimeoutMs: options.askTimeoutMs,
     }),

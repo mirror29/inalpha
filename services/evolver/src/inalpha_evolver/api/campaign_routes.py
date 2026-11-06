@@ -17,7 +17,7 @@ from ..config import get_evolver_settings
 from ..event_client import fetch_event_snapshot
 from ..hypothesis.feedback import build_source_simulation_feedback
 from ..storage import campaigns as store
-from ..storage import candidates, runs
+from ..storage import candidates, chat_costs, lineage, runs
 from ..storage import loops as loop_store
 from .approval import verify_evolution_approval
 from .schemas import (
@@ -294,6 +294,8 @@ async def get_campaign(
     )
     if row is None:
         raise NotFoundError("campaign not found", code="CAMPAIGN_NOT_FOUND")
+    row["chat_preparation_costs"] = await chat_costs.for_e2_task(db, campaign_id, account_id_from_user(user), kind="campaign")
+    row["lineage"] = await lineage.for_e2_task(db, campaign_id, account_id_from_user(user), kind="campaign")
     return _response(row)
 
 

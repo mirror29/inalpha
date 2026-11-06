@@ -49,4 +49,4 @@ ENV MODULE=inalpha_${SERVICE}.main:app
 
 # PORT / WORKERS 由 compose 按服务注入（paper 必须 WORKERS=1）
 # 健康检查端点统一 /health（见 scripts/dev.sh 约定）
-CMD ["sh", "-c", "uv run uvicorn ${MODULE} --host 0.0.0.0 --port ${PORT:-8000} --workers ${WORKERS:-1}"]
+CMD ["sh", "-c", "exec .venv/bin/uvicorn ${MODULE} --host 0.0.0.0 --port ${PORT:-8000} --workers ${WORKERS:-1}"]

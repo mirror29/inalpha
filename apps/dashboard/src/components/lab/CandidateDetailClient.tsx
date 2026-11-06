@@ -352,7 +352,7 @@ function RunInstancesPanel({
                       pnlColor(r.cumulative_pnl),
                     )}
                   >
-                    {fmtSigned(r.cumulative_pnl, null, locale)}
+                    {r.accounting_status === "verified" ? fmtSigned(r.cumulative_pnl, null, locale) : "—"}
                   </span>
                   <span className="font-mono text-[10px] text-fg-muted/60 tabular-nums">
                     {fmtDateTime(r.started_at, locale)}

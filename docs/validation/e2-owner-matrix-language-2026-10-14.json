@@ -1,0 +1,158 @@
+{
+  "date": "2026-10-14",
+  "status": "normal_owner_free_matrix_and_english_preparation_verified_inputs_insufficient",
+  "sampled_at": "2026-10-14T03:14:24.850Z",
+  "access": "Existing logged-in Chrome owner session; native CUA controls; no credentials read or fabricated.",
+  "runtime_image_check": {
+    "dashboard_mastra_evolver": "76727f6d7a77d3015d6e9a604e11874b3caf3b0d",
+    "data_research": "9fdb8b8aa0d49a36eddc344c0955b41e28cd9848",
+    "scope": "Independent SSH image/health observation during UI acceptance, not client bundle digest verification."
+  },
+  "assets": [
+    {
+      "asset": "BTC",
+      "timeframe": "1h",
+      "target_id": "8ec05df8-522b-48b6-9dc5-fdd45aba0205",
+      "suggested_from": "2026-09-30T10:00:00Z",
+      "suggested_to": "2026-10-14T03:00:00Z",
+      "bars": [
+        197,
+        66,
+        66
+      ],
+      "selection_from": "2026-10-08T16:00:00Z",
+      "selection_to": "2026-10-11T09:00:00Z",
+      "selection_facts": 22,
+      "independent_upper_bound": 3,
+      "required_threshold": 8,
+      "upper_bound_by_type": {
+        "other": 2,
+        "exploit": 1
+      },
+      "legacy_regulatory_risks": 2,
+      "quality_inspected_facts": 91,
+      "quality_versions": {
+        "deterministic-event-extractor-v2": 91
+      },
+      "snapshot_fact_versions": 120,
+      "first_snapshot_available_at": "2026-09-30T10:36:41.860008Z"
+    },
+    {
+      "asset": "ETH",
+      "timeframe": "1h",
+      "target_id": "33ef02a0-dcf7-47a3-a708-9d4ca1433860",
+      "suggested_from": "2026-09-30T10:00:00Z",
+      "suggested_to": "2026-10-14T03:00:00Z",
+      "bars": [
+        197,
+        66,
+        66
+      ],
+      "selection_from": "2026-10-08T16:00:00Z",
+      "selection_to": "2026-10-11T09:00:00Z",
+      "selection_facts": 0,
+      "independent_upper_bound": 0,
+      "required_threshold": 8,
+      "upper_bound_by_type": {},
+      "quality_inspected_facts": 10,
+      "quality_versions": {
+        "deterministic-event-extractor-v2": 10
+      },
+      "snapshot_fact_versions": 13,
+      "first_snapshot_available_at": "2026-09-30T10:36:41.887149Z"
+    },
+    {
+      "asset": "SOL",
+      "timeframe": "1h",
+      "target_id": "7c09cdb0-cd8a-43b6-8e66-787eb9f7aaed",
+      "suggested_from": "2026-10-01T14:00:00Z",
+      "suggested_to": "2026-10-14T03:00:00Z",
+      "bars": [
+        180,
+        60,
+        61
+      ],
+      "selection_from": "2026-10-09T03:00:00Z",
+      "selection_to": "2026-10-11T14:00:00Z",
+      "selection_facts": 1,
+      "independent_upper_bound": 1,
+      "required_threshold": 8,
+      "upper_bound_by_type": {
+        "upgrade": 1
+      },
+      "quality_inspected_facts": 5,
+      "quality_versions": {
+        "deterministic-event-extractor-v2": 5
+      },
+      "snapshot_fact_versions": 6,
+      "first_snapshot_available_at": "2026-10-01T14:37:01.079456Z"
+    }
+  ],
+  "all_assets_latest_bar_open_and_required": "2026-10-14T02:00:00Z",
+  "freshness_caveat": "UI reports zero difference from the required closed final bar opening timestamp, not wall-clock age. bars[-1].ts is 02:00, 4464.850 seconds before sampled_at; this 1h bar closes at 03:00, 864.850 seconds before sampled_at. Continuous bars were reported by normal preparation, not independently re-audited here.",
+  "selection": "No asset selected: all independent upper bounds below 8; BTC also blocked by legacy quality. No comparison of returns or alternate windows to obtain eligibility.",
+  "english_preparation": {
+    "url": "https://dashboard.inalpha.dev/evolution/prepare?targetKind=paper_runner&targetId=7c09cdb0-cd8a-43b6-8e66-787eb9f7aaed",
+    "query_parameters_preserved": true,
+    "suggested_window_preflight": "blocked 1/8, same SOL bars and window as matrix",
+    "configuration_ui_invalidation": "Cutoff hour changed 03 to 02 using native Down then Tab; old result disappeared. Use suggested window restored 03 and 1/8 result. AX setValue alone did not visibly change the value; not counted.",
+    "original_strategy_window_display": [
+      "2025-10-09T06:00:00Z",
+      "2026-10-09T06:25:54.528Z"
+    ],
+    "return_to_zh_url_preserved": true,
+    "no_old_approval_server_rejection_proven": true
+  },
+  "mobile": "Attempted DevTools toggle, but no reliable mobile viewport dimensions/rendering obtained; not passed. DevTools closed afterward.",
+  "initial_browser_issue": "Old tab AX stale, refresh blank. New tab with explicit address-bar navigation rendered and completed the free checks. This supersedes the earlier browser-blocked observation; cause not diagnosed.",
+  "new_model_calls": 0,
+  "approval_submitted": false,
+  "e2_search_started": false,
+  "boundaries": [
+    "Normal owner free matrix, English desktop preparation and UI invalidation only.",
+    "No matched-control/FDR evaluation, frozen approval, five-generation execution, response-loss/service recovery, champion, Forward or holdout.",
+    "BTC legacy risk two is provenance guard output, not proof both facts are semantically wrong.",
+    "No manual evidence exclusion or change to original frozen window."
+  ],
+  "comparison_with_october_13": {
+    "historical_receipt": "e2-coverage-matrix-production-2026-10-13.json",
+    "same_frozen_input": false,
+    "old_sampled_at": "2026-10-13T04:46:26.189Z",
+    "old_dashboard_mastra_release": "3c8aa3898491d9034162049cd2c5e069e2283021",
+    "new_dashboard_mastra_evolver_release": "76727f6d7a77d3015d6e9a604e11874b3caf3b0d",
+    "old_selection_windows": {
+      "BTC": [
+        "2026-10-08T02:00:00Z",
+        "2026-10-10T14:00:00Z"
+      ],
+      "ETH": [
+        "2026-10-08T02:00:00Z",
+        "2026-10-10T14:00:00Z"
+      ],
+      "SOL": [
+        "2026-10-08T13:00:00Z",
+        "2026-10-10T20:00:00Z"
+      ]
+    },
+    "new_selection_windows": {
+      "BTC": [
+        "2026-10-08T16:00:00Z",
+        "2026-10-11T09:00:00Z"
+      ],
+      "ETH": [
+        "2026-10-08T16:00:00Z",
+        "2026-10-11T09:00:00Z"
+      ],
+      "SOL": [
+        "2026-10-09T03:00:00Z",
+        "2026-10-11T14:00:00Z"
+      ]
+    },
+    "interpretation": "Normal suggested-window cutoff advanced, moving the natural 60/20/20 selection segments. These are different snapshots and release versions, not a controlled coverage regression comparison. Exact per-event contributions to the count difference were not reconciled.",
+    "guard_behavior": "Current inspect_event_coverage calculates the raw independent upper bound before adding quality blockers; known legacy risk does not subtract facts from that bound. The quality guard was added after the October 13 matrix release.",
+    "event_provenance": "Both recorded contexts contain v2 evidence; different windows, evolving snapshots and guard release must be distinguished."
+  },
+  "all_assets_lag_vs_required_bar_open_seconds": 0,
+  "all_assets_bar_open_age_at_sample_seconds": 4464.85,
+  "all_assets_bar_close_age_at_sample_seconds": 864.85
+}

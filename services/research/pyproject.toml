@@ -25,6 +25,10 @@ dev = [
     "mypy>=2.1.0",
     "ruff>=0.15.0",
 ]
+pilot = [
+    "exchange-calendars>=4.5",
+    "yfinance>=0.2.40",
+]
 
 [tool.uv.sources]
 inalpha-shared = { path = "../_shared", editable = true }
@@ -58,5 +62,5 @@ strict = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["openai", "openai.*", "anthropic", "anthropic.*", "google", "google.*"]
+module = ["openai", "openai.*", "anthropic", "anthropic.*", "google", "google.*", "exchange_calendars", "yfinance"]
 ignore_missing_imports = true

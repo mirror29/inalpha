@@ -8,6 +8,7 @@
 running（DB 部分唯一索引，撞 → 409 ``STRATEGY_RUN_ALREADY_RUNNING``）。下单走 plan/exec
 机器自动审批，正当性靠"人先 promote + 人显式 start"两道（见 ``live_runner`` 模块注释）。
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,21 +16,25 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Path, Query, Request
 from inalpha_shared.auth import User, get_current_user
 from inalpha_shared.db import DBConn
 from inalpha_shared.errors import InalphaError, NotFoundError
 
 from ..account_id import account_id_from_user
 from ..config import PaperSettings, get_paper_settings
+from ..data_client import DataClient
 from ..execution import perp_margin
-from ..fx import BaseCurrencyConverter, convert_cash_balances
+from ..execution.currency_resolver import resolve_currency
+from ..fx import BaseCurrencyConverter
 from ..schemas import (
     StartStrategyRunRequest,
     StrategyRunDecisionRecord,
     StrategyRunRecord,
 )
 from ..storage import accounts as accounts_store
+from ..storage import positions as positions_store
+from ..storage import run_wallets as wallets_store
 from ..storage import strategy_candidates as candidates_store
 from ..storage import strategy_runs as runs_store
 
@@ -83,14 +88,17 @@ async def start_strategy_run(
     background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user)],
     settings: Annotated[PaperSettings, Depends(get_paper_settings)],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> StrategyRunRecord:
     """给一个 promoted candidate 起 live run（后台按 timeframe 自动跑）。"""
     account_id = account_id_from_user(user)
 
     # perp 资格硬 gate(perp 须 crypto + USDT-M 永续标的 + 杠杆 1..20,否则 422)。spot 放行。
     perp_margin.validate_perp_eligibility(
-        venue=req.venue, symbol=req.symbol,
-        trading_mode=req.trading_mode, leverage=req.leverage,
+        venue=req.venue,
+        symbol=req.symbol,
+        trading_mode=req.trading_mode,
+        leverage=req.leverage,
     )
 
     candidate = await candidates_store.get_candidate(db, req.candidate_id)
@@ -122,85 +130,55 @@ async def start_strategy_run(
             details={"candidate_id": str(req.candidate_id)},
         )
 
-    # per-account running 上限（issue #36.2）：防单用户起任意多长驻 task。
-    # count + insert 间有 TOCTOU 窗口，模拟盘可接受（上限是资源软护栏，非安全边界）。
-    running = await runs_store.count_running_by_account(db, account_id)
-    if running >= settings.live_max_running_runs_per_account:
-        raise TooManyRunningRunsError(
-            f"account already has {running} running strategy_runs "
-            f"(limit {settings.live_max_running_runs_per_account}); stop one before starting another",
-            details={
-                "running": running,
-                "limit": settings.live_max_running_runs_per_account,
-            },
+    # Fetch conversion before acquiring account locks; stale/missing rates fail closed.
+    acct = await accounts_store.get_or_create(db, account_id)
+    quote = resolve_currency(req.venue, req.symbol)
+    token = authorization.removeprefix("Bearer ").strip() if authorization else None
+    async with DataClient(settings.data_service_url, token or "") as dc:
+        converter = BaseCurrencyConverter(acct["base_currency"], dc)
+        rate = await converter.rate(quote)
+        for currency in acct["cash_balances"]:
+            await converter.rate(currency)
+    if rate is None or converter.warnings:
+        raise wallets_store.WalletConflict("Fresh conversion rate required to allocate capital")
+    async with db.transaction():
+        acct = await accounts_store.get_or_create(db, account_id, for_update=True)
+        if acct["base_currency"] != converter.base:
+            raise wallets_store.WalletConflict("Account currency changed; retry allocation")
+        running = await runs_store.count_running_by_account(db, account_id)
+        if running >= settings.live_max_running_runs_per_account:
+            raise TooManyRunningRunsError("Stop a running strategy before creating another")
+        offline = converter.offline_copy()
+        available = await wallets_store.available_cash(db, acct, offline)
+        allocation = (
+            Decimal(str(req.allocation))
+            if req.allocation is not None
+            else min(Decimal("10000"), available)
         )
-
-    # 同标的守门（issue #108）：positions 一标的一行,同账户同 (venue, symbol) 两个 run
-    # 会共享同一行持仓互相打架 → 拒第二个（与 candidate 唯一性约束同风格,check + insert
-    # 间的 TOCTOU 窗口与上方 running 上限同级,模拟盘可接受）。
-    dup = await runs_store.get_running_by_symbol(
-        db, account_id, venue=req.venue, symbol=req.symbol
-    )
-    if dup is not None:
-        raise SymbolRunConflictError(
-            f"account already has a running strategy_run on {req.venue}/{req.symbol} "
-            f"(run {dup['id']}, candidate {dup['candidate_id']}); positions are keyed by "
-            "(account, venue, symbol) so two runs on the same symbol would share one "
-            "position row and corrupt each other — stop it before starting another",
-            details={
-                "venue": req.venue,
-                "symbol": req.symbol,
-                "running_run_id": str(dup["id"]),
-                "running_candidate_id": str(dup["candidate_id"]),
-            },
-        )
-
-    # per-run 资金额度:显式传则原样落库(可大于账户可用——下单时账户级购买力硬底会
-    # 显式拒单,run 不死);省略则取 min(10000, 账户折算可用现金 − 其他 running run
-    # 已分配额度)——不扣减已分配额度会让 N 个 run 集体超额认领资本(∑allocation ≫
-    # 现金,per-run 钱包虚高,表现为连环静默拒单)。start 时确定并落库,使 sizing 行为
-    # 可复现、可审计。折算只用本地汇率(USD 稳定币 1:1;拿不到汇率的币种桶排除,保守),
-    # 避免 start 路径依赖 data 服务。
-    allocation = Decimal(str(req.allocation)) if req.allocation is not None else None
-    if allocation is None:
-        acct = await accounts_store.get_or_create(db, account_id)
-        converter = BaseCurrencyConverter(acct["base_currency"], None)
-        available = await convert_cash_balances(
-            converter,
-            {
-                cur: Decimal(str(amt))
-                for cur, amt in (acct.get("cash_balances") or {}).items()
-            },
-        )
-        already_allocated = await runs_store.sum_running_allocation(db, account_id)
-        allocation = min(Decimal("10000"), available - already_allocated)
         if allocation <= 0:
-            raise InsufficientCashForRunError(
-                f"account has no unallocated cash for a new run "
-                f"(converted available {available:.2f} {acct['base_currency']}, "
-                f"already allocated to running runs {already_allocated:.2f}); "
-                "stop a run / close positions first, or pass an explicit allocation",
-                details={
-                    "available_cash_base": str(available),
-                    "already_allocated": str(already_allocated),
-                    "base_currency": acct["base_currency"],
-                    "fx_warnings": converter.warnings,
-                },
-            )
-
-    # 撞同 candidate 已 running → runs_store.insert 抛 StrategyRunConflict(409)
-    run = await runs_store.insert(
-        db,
-        candidate_id=req.candidate_id,
-        account_id=account_id,
-        venue=req.venue,
-        symbol=req.symbol,
-        timeframe=req.timeframe,
-        params=req.params,
-        trading_mode=req.trading_mode,
-        leverage=req.leverage,
-        allocation=allocation,
-    )
+            raise InsufficientCashForRunError("No available main-account cash")
+        run = await runs_store.insert(
+            db,
+            candidate_id=req.candidate_id,
+            account_id=account_id,
+            venue=req.venue,
+            symbol=req.symbol,
+            timeframe=req.timeframe,
+            params=req.params,
+            trading_mode=req.trading_mode,
+            leverage=req.leverage,
+            allocation=allocation,
+        )
+        await wallets_store.create(
+            db,
+            account_id,
+            run["id"],
+            allocation,
+            quote_currency=quote,
+            quote_rate=rate,
+            converter=offline,
+        )
+        run["accounting_status"] = "verified"
 
     # 策略误投软告警(不硬拦):perp 模式下若策略疑似 long-only(有 _is_long、无做空标记),
     # 其出场 SELL 会被当开空,可能漂移(d4404933 同型)。只 warn 让用户知情,放行。
@@ -209,7 +187,9 @@ async def start_strategy_run(
         looks_long_only = "_is_long" in code and "_is_short" not in code and "is_short" not in code
         if looks_long_only:
             await runs_store.append_log(
-                db, run["id"], "warn",
+                db,
+                run["id"],
+                "warn",
                 "perp 模式但策略疑似 long-only(无做空/cover 逻辑):出场 SELL 会被当开空、"
                 "可能漂移成平不掉的空头。请确认该策略含做空入场/出场/cover 逻辑。",
             )
@@ -233,9 +213,7 @@ async def stop_strategy_run(
     account_id = account_id_from_user(user)
     run = await runs_store.get(db, run_id)
     if run is None or run["account_id"] != account_id:
-        raise NotFoundError(
-            f"strategy_run {run_id} not found", details={"run_id": str(run_id)}
-        )
+        raise NotFoundError(f"strategy_run {run_id} not found", details={"run_id": str(run_id)})
 
     manager = request.app.state.live_runner_manager
     await manager.stop(run_id)
@@ -279,9 +257,7 @@ async def get_strategy_run(
     account_id = account_id_from_user(user)
     run = await runs_store.get(db, run_id)
     if run is None or run["account_id"] != account_id:
-        raise NotFoundError(
-            f"strategy_run {run_id} not found", details={"run_id": str(run_id)}
-        )
+        raise NotFoundError(f"strategy_run {run_id} not found", details={"run_id": str(run_id)})
     return _row_to_record(run)
 
 
@@ -296,9 +272,7 @@ async def list_strategy_run_decisions(
     account_id = account_id_from_user(user)
     run = await runs_store.get(db, run_id)
     if run is None or run["account_id"] != account_id:
-        raise NotFoundError(
-            f"strategy_run {run_id} not found", details={"run_id": str(run_id)}
-        )
+        raise NotFoundError(f"strategy_run {run_id} not found", details={"run_id": str(run_id)})
     rows = await runs_store.list_decisions(db, run_id, limit=limit)
     return [_row_to_decision(r) for r in rows]
 
@@ -342,14 +316,110 @@ def _row_to_record(row: dict[str, Any]) -> StrategyRunRecord:
         params=row.get("params") or {},
         trading_mode=row.get("trading_mode") or "spot",
         leverage=int(row.get("leverage") or 1),
-        allocation=(
-            float(row["allocation"]) if row.get("allocation") is not None else None
-        ),
+        allocation=(float(row["allocation"]) if row.get("allocation") is not None else None),
         last_bar_ts=row.get("last_bar_ts"),
         cumulative_pnl=float(row["cumulative_pnl"]),
+        accounting_status=row.get("accounting_status", "legacy_unverified"),
+        accounting_note=row.get("accounting_note"),
+        original_cumulative_pnl=row.get("original_cumulative_pnl"),
         run_log=row.get("run_log") or [],
         factor_baseline=row.get("factor_baseline"),
         factor_alerts=row.get("factor_alerts") or {},
         started_at=row["started_at"],
         stopped_at=row.get("stopped_at"),
     )
+
+
+async def _owned_run(db: Any, user: User, run_id: UUID) -> dict[str, Any]:
+    """Validate the human JWT owner before any wallet lookup."""
+    row = await runs_store.get(db, run_id)
+    if row is None or row["account_id"] != account_id_from_user(user):
+        raise NotFoundError("Strategy run not found")
+    return row
+
+
+@router.get("/strategy_runs/{run_id}/wallet")
+async def get_run_wallet(
+    run_id: UUID,
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[PaperSettings, Depends(get_paper_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    """Owner-scoped equity, exact book positions and net PnL components."""
+    from ..wallet_accounting import snapshot
+
+    run = await _owned_run(db, user, run_id)
+    token = authorization.removeprefix("Bearer ").strip() if authorization else None
+    return await snapshot(db, run, settings, token)
+
+
+@router.get("/strategy_runs/{run_id}/positions")
+async def get_run_positions(
+    run_id: UUID, db: DBConn, user: Annotated[User, Depends(get_current_user)]
+) -> list[dict[str, Any]]:
+    """Never substitute the legacy account's same-symbol position."""
+    run = await _owned_run(db, user, run_id)
+    return await positions_store.list_by_account(db, run["account_id"], run_id=run_id)
+
+
+@router.post("/strategy_runs/{run_id}/release_capital")
+async def release_run_capital(
+    run_id: UUID,
+    db: DBConn,
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[PaperSettings, Depends(get_paper_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    """Release a stopped flat book once; never implicitly close a position."""
+    run = await _owned_run(db, user, run_id)
+    wallet = await wallets_store.get(db, run["account_id"], run_id)
+    if wallet is None:
+        raise wallets_store.WalletConflict("Legacy runs have no wallet")
+    if wallet["released_at"] is not None:
+        return wallet
+    token = authorization.removeprefix("Bearer ").strip() if authorization else None
+    async with DataClient(settings.data_service_url, token or "") as dc:
+        converter = BaseCurrencyConverter(wallet["base_currency"], dc)
+        for currency in wallet["cash_balances"]:
+            await converter.rate(currency)
+    async with db.transaction():
+        return await wallets_store.release(db, run, converter.offline_copy())
+
+
+@router.post("/strategy_runs/{run_id}/resume", response_model=StrategyRunRecord)
+async def resume_strategy_run(
+    run_id: UUID,
+    request: Request,
+    db: DBConn,
+    background_tasks: BackgroundTasks,
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[PaperSettings, Depends(get_paper_settings)],
+) -> StrategyRunRecord:
+    """Explicitly resume the same owned book; never adopt legacy holdings or allocate again."""
+    run = await _owned_run(db, user, run_id)
+    if run["accounting_status"] != "verified":
+        raise wallets_store.WalletConflict("Legacy runs cannot resume automatic management")
+    candidate = await candidates_store.get_candidate(db, run["candidate_id"])
+    if (
+        not candidate
+        or candidate["status"] != "promoted"
+        or candidate["owner_account_id"] != run["account_id"]
+    ):
+        raise CandidateNotOwnedError("Resume requires your own promoted candidate")
+    async with db.transaction():
+        await wallets_store.lock(db, run)
+        current = await runs_store.get(db, run_id)
+        if current is None or current["status"] not in ("stopped", "errored"):
+            raise wallets_store.WalletConflict("Only a stopped or errored book can resume")
+        active = await runs_store.list_by_account(db, run["account_id"], status="running")
+        if len(active) >= settings.live_max_running_runs_per_account:
+            raise wallets_store.WalletConflict("Active run limit reached")
+        if any(row["candidate_id"] == run["candidate_id"] for row in active):
+            raise wallets_store.WalletConflict("Candidate already has an active run")
+        await runs_store.set_status(db, run_id, "running", only_if_status=current["status"])
+        await runs_store.append_log(db, run_id, "info", "用户恢复原运行钱包；未重新划拨资金")
+        updated = await runs_store.get(db, run_id)
+        assert updated is not None
+    background_tasks.add_task(request.app.state.live_runner_manager.start_async, updated)
+    return _row_to_record(updated)

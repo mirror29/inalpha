@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local E2 preparation lineage and shared UI; not deployed",
+  "commits": {
+    "backend": "e800c073",
+    "dashboard": "fcdf6f0f"
+  },
+  "schema_head": "0065",
+  "checks": {
+    "orchestration_tests_passed": 605,
+    "default_orchestration_database_tests_skipped": 6,
+    "dedicated_evolver_database_tests_passed": 23,
+    "dedicated_orchestration_database_tests_passed": 6,
+    "migration_tests_passed": 8,
+    "dashboard_tests_passed": 167,
+    "typechecks": "passed",
+    "dashboard_build": "passed",
+    "evolver_default_tests_passed": 244,
+    "evolver_database_tests_skipped": 58,
+    "existing_short_test_jwt_warnings": 3,
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "evidence": [
+    "Trusted owner chat receipt is required before E2 operation association",
+    "Association persists before tool execution and failure blocks launch",
+    "Operation reuse preserves its first preparation invocation",
+    "Loop reuse reads the original operation rather than the latest chat request",
+    "Automatic baseline and campaign share the original launch turn",
+    "An existing standalone E1 source does not inherit a later E2 preparation cost",
+    "Standalone campaigns retain their exact operation provenance",
+    "Missing and shared costs remain explicit; stage views cannot be added together",
+    "Migration rollback cannot destroy stored association audit"
+  ],
+  "temporary_database_removed": true,
+  "existing_databases_modified": false,
+  "pending": [
+    "Complete experiment lineage presentation",
+    "Rendered desktop/mobile workflows",
+    "CI and review before coordinated production migration/deployment",
+    "Actual owner approval/recovery/cost acceptance",
+    "Complete real E2 positive evidence and provider invoice reconciliation"
+  ]
+}

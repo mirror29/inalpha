@@ -5,6 +5,7 @@
 ``UNIQUE(candidate_id) WHERE status='running'`` 在 DB 层硬保证同 candidate 同时只一个
 running——并发 insert 第二个会撞 UniqueViolation，转成 :class:`StrategyRunConflict`。
 """
+
 from __future__ import annotations
 
 import json
@@ -52,11 +53,18 @@ async def insert(
                 RETURNING id, candidate_id, account_id, status, venue, symbol,
                           timeframe, params, trading_mode, leverage, allocation,
                           last_bar_ts, cumulative_pnl, run_log,
-                          started_at, stopped_at
+                          accounting_status, accounting_note, original_cumulative_pnl, started_at, stopped_at
                 """,
                 (
-                    str(candidate_id), str(account_id), venue, symbol, timeframe,
-                    json.dumps(params or {}), trading_mode, leverage, allocation,
+                    str(candidate_id),
+                    str(account_id),
+                    venue,
+                    symbol,
+                    timeframe,
+                    json.dumps(params or {}),
+                    trading_mode,
+                    leverage,
+                    allocation,
                 ),
             )
             row = await cur.fetchone()
@@ -75,7 +83,7 @@ async def get(conn: AsyncConnection, run_id: UUID) -> dict[str, Any] | None:
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
             "params, trading_mode, leverage, allocation, last_bar_ts, cumulative_pnl, "
-            "run_log, started_at, stopped_at, factor_baseline, factor_alerts "
+            "run_log, accounting_status, accounting_note, original_cumulative_pnl, started_at, stopped_at, factor_baseline, factor_alerts "
             "FROM strategy_runs WHERE id = %s",
             (str(run_id),),
         )
@@ -96,7 +104,7 @@ async def list_by_account(
     sql = (
         "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
         "params, trading_mode, leverage, allocation, last_bar_ts, cumulative_pnl, "
-        "run_log, started_at, stopped_at "
+        "run_log, accounting_status, accounting_note, original_cumulative_pnl, started_at, stopped_at "
         "FROM strategy_runs WHERE account_id = %s"
     )
     args: list[Any] = [str(account_id)]
@@ -120,8 +128,7 @@ async def count_running_by_account(conn: AsyncConnection, account_id: UUID) -> i
     """当前账户 status='running' 的 run 数量（per-account 上限校验 issue #36.2）。"""
     async with conn.cursor() as cur:
         await cur.execute(
-            "SELECT COUNT(*) AS n FROM strategy_runs "
-            "WHERE account_id = %s AND status = %s",
+            "SELECT COUNT(*) AS n FROM strategy_runs WHERE account_id = %s AND status = %s",
             (str(account_id), _RUNNING),
         )
         row = await cur.fetchone()
@@ -192,7 +199,7 @@ async def set_status(
                 stopped_at = CASE WHEN %s <> 'running' THEN NOW() ELSE stopped_at END
             WHERE id = %s{guard_sql}
             RETURNING id, candidate_id, account_id, status, venue, symbol, timeframe,
-                      params, last_bar_ts, cumulative_pnl, run_log, started_at, stopped_at
+                      params, last_bar_ts, cumulative_pnl, run_log, accounting_status, accounting_note, original_cumulative_pnl, started_at, stopped_at
             """,
             params,
         )
@@ -293,8 +300,8 @@ async def list_all_running(conn: AsyncConnection) -> list[dict[str, Any]]:
         await cur.execute(
             "SELECT id, candidate_id, account_id, status, venue, symbol, timeframe, "
             "params, trading_mode, leverage, allocation, last_bar_ts, cumulative_pnl, "
-            "run_log, started_at, stopped_at, factor_baseline, factor_alerts "
-            "FROM strategy_runs WHERE status = %s ORDER BY started_at",
+            "run_log, accounting_status, accounting_note, original_cumulative_pnl, started_at, stopped_at, factor_baseline, factor_alerts "
+            "FROM strategy_runs WHERE status = %s AND accounting_status='verified' ORDER BY started_at",
             (_RUNNING,),
         )
         rows = await cur.fetchall()
@@ -356,9 +363,7 @@ async def set_factor_baseline(
         )
 
 
-async def set_factor_alerts(
-    conn: AsyncConnection, run_id: UUID, alerts: dict[str, Any]
-) -> None:
+async def set_factor_alerts(conn: AsyncConnection, run_id: UUID, alerts: dict[str, Any]) -> None:
     """整写告警状态机 ``{factor_id: {state, alerted_at}}``（巡检每轮对比后落）。"""
     async with conn.cursor() as cur:
         await cur.execute(
@@ -407,10 +412,23 @@ async def insert_decision(
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                str(run_id), bar_ts, bar_close, side, quantity, order_type, limit_price,
-                tag, intent, outcome, fill_price, fee,
-                str(plan_id) if plan_id is not None else None, order_id, reason,
-                closed_profit_abs, closed_profit_pct,
+                str(run_id),
+                bar_ts,
+                bar_close,
+                side,
+                quantity,
+                order_type,
+                limit_price,
+                tag,
+                intent,
+                outcome,
+                fill_price,
+                fee,
+                str(plan_id) if plan_id is not None else None,
+                order_id,
+                reason,
+                closed_profit_abs,
+                closed_profit_pct,
             ),
         )
 

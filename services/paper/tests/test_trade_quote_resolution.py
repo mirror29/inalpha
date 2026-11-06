@@ -467,6 +467,9 @@ def test_a_share_plan_retries_same_token_after_fresh_quote_recovers(
 
     from inalpha_shared.db import get_conn
 
+    respx.get("http://data-mock.test/fx", params={"base": "CNY", "quote": "USD"}).mock(
+        return_value=Response(200, json={"rate": 0.14, "is_stale": False})
+    )
     _, token = fresh_account_token("fresh-a-share-plan")
     headers = {"Authorization": f"Bearer {token}"}
     route = respx.get(

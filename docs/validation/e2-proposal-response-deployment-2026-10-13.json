@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-13",
+  "pr": 229,
+  "reviewed_head": "fd2d7d5a5f362818b9b8a7d6be0cfad945c5b7fe",
+  "deployed_merge": "655e2179ab589bf1cb0278de962b9bdb87b4aa06",
+  "tree": "fe40722c5391205ea0ae3b0170e9f0f90d0933ed",
+  "ci": {
+    "pr": 38331397640,
+    "main": 38331938697,
+    "images": 38331938848,
+    "result": "success",
+    "review": 38331397643,
+    "review_medium": 2,
+    "triage": "Both reviewed against full source. Unknown provider errors retain reservations; above-reservation or over-1-MiB responses are not persisted/reused. Explicit reconciliation and a new authorized experiment remain necessary. No claim of zero findings or universal recovery."
+  },
+  "deployment": {
+    "service": "evolver",
+    "container": "b1281b8a1f1338c2e470e210182cbdf73d9a323bc576dd2017f39e57b50b15f5",
+    "health": "healthy",
+    "schema": "0068",
+    "database": "inalpha",
+    "active_e1_loop_campaign": [
+      0,
+      0,
+      0
+    ],
+    "http_connection_checks": [
+      0,
+      0,
+      0
+    ],
+    "other_nine_container_ids_unchanged": true,
+    "config_backup": "infra/.env.prod.before-proposal-response-20261013T012847Z",
+    "database_backup": "infra/backups/proposal-response-before-20261013T012847Z.dump",
+    "backup_modes": "600",
+    "backup_toc_readable": true,
+    "backup_limitation": "TimescaleDB continuous_agg circular foreign-key warning; full restore not exercised.",
+    "rollback_image": "ghcr.io/mirror29/inalpha-evolver:ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+    "rollback_policy": "Restore prior application image; retain schema and audit rows."
+  },
+  "verification": {
+    "module_sha256": "c44e47426edc224a5b6807d50c71c207c0e54aaf4758082b1bc9b2fd13a87ef2",
+    "module_matches_local": true,
+    "health_http": 200,
+    "unauthenticated_prepare_http": 401,
+    "proposal_response_rows": 0,
+    "owner_ui": "Existing authenticated Chrome preparation page readable; no fresh preflight result obtained after action. Screenshot and accessibility content disagreed. Not an owner execution acceptance."
+  },
+  "dashboard_attempt": {
+    "target": "655e2179ab589bf1cb0278de962b9bdb87b4aa06",
+    "reason": "Previously merged locale target-preservation fix; Dashboard source unchanged from PR228.",
+    "connections": [
+      0,
+      1
+    ],
+    "result": "Aborted before container replacement; configuration restored",
+    "actual_image": "12ac65d551fb75277645b5ee02c14b0e69653924",
+    "container": "8e7decdc7d9e58ffe690043b2108daf61790a3a2a1a6aeb9b7dd63221fb0924e",
+    "health": "healthy"
+  },
+  "data": {
+    "raw_versions": 366,
+    "fact_versions": 366,
+    "completed_extractions": 366,
+    "sol_unretracted_versions": {
+      "other": 4,
+      "upgrade": 1
+    },
+    "limit": "Not independent matched events or a formal coverage evaluation."
+  },
+  "new_model_calls": 0,
+  "acceptance_not_claimed": [
+    "Production crash recovery during a paid call",
+    "Normal owner new approval and execution",
+    "Five-generation production search",
+    "Champion or strategy improvement",
+    "Forward or holdout"
+  ]
+}

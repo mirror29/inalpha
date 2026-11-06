@@ -11,6 +11,7 @@
 - **FX 拿不到不静默**：把该币种标 ``fx_warning`` 并**排除**出折算（宁可漏算不乱猜，
   金融时效硬约束）。stale 汇率仍用但附 warning。
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -96,6 +97,7 @@ class BaseCurrencyConverter:
         """
         c = BaseCurrencyConverter(self._base, None)
         c._cache = dict(self._cache)
+        c._warnings = dict(self._warnings)
         return c
 
     def _warn(self, currency: str, reason: str) -> None:

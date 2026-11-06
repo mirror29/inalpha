@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local E1 approval preparation association and UI; not deployed",
+  "commits": {
+    "backend": "86d6b0f1",
+    "dashboard": "12fdeeea"
+  },
+  "checks": {
+    "orchestration_tests_passed": 603,
+    "default_database_tests_skipped": 5,
+    "dedicated_evolver_database_tests_passed": 21,
+    "dedicated_orchestration_database_tests_passed": 5,
+    "migration_tests_passed": 7,
+    "dashboard_tests_passed": 167,
+    "final_dashboard_copy_targeted_tests_passed": 5,
+    "typechecks": "passed",
+    "dashboard_build": "passed",
+    "evolver_default_tests_passed": 244,
+    "evolver_database_tests_skipped": 56,
+    "evolver_existing_short_test_jwt_warnings": 3,
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "verification_note": "Two pre-existing wall-time checks failed under concurrent build/database load; full isolated rerun passed without loosening thresholds. Final scope-clearing change also passed 10 targeted processor/provenance tests.",
+  "evidence": [
+    "Only in-process owner-bound invocation provenance enters approval lineage",
+    "Approval reuse retains the original preparation turn",
+    "Approved command persistence and recovery retain the association",
+    "Exact operation, owner and invocation joins exclude foreign and service calls",
+    "Expired approval audit remains readable without renewing authorization",
+    "Missing amounts remain unknown",
+    "Shared preparation turns are labelled and must not be summed per task"
+  ],
+  "pending": [
+    "E2 automatic task chat association",
+    "Complete experiment lineage presentation",
+    "Rendered desktop/mobile flow",
+    "Production migration/deployment and actual owner acceptance",
+    "Provider invoice reconciliation"
+  ]
+}

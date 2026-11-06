@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-09",
+  "pr": 195,
+  "merge_sha": "18bbd1898db55930a549f243246da5dbb92f3dba",
+  "baseline_dashboard_sha": "60a2691fbb4684b6491867fb158cc75b458a2052",
+  "before_fix": {
+    "normal_authenticated_new_chat_reply_verified": true,
+    "restored_thread_reply_verified": false,
+    "browser_error": "CHAT_REQUEST_FAILED / Failed to fetch",
+    "dashboard_error": "aborted / ECONNRESET",
+    "archive_read_only": true,
+    "stored_messages": 151,
+    "expanded_messages": 852,
+    "tool_calls": 291,
+    "expanded_content_bytes": 8540188,
+    "tool_result_bytes": 7462592,
+    "scope": "One uniquely matched existing owner thread; no conversation text, identities, credentials or raw exceptions exported."
+  },
+  "repair": {
+    "request_scope": "orchestrator single-route agent/run and agent/connect only",
+    "context": "latest user turn plus assistant/tool suffix; extend to prior declaring tool turn for interleaved approval; unknown or malformed requests pass through",
+    "archive": "full UI and stored archive preserved; backend retrieves owner-scoped durable thread memory with lastMessages=50",
+    "boundaries": "authentication, resource/thread identity, cancellation, tool IDs/results and run metadata preserved"
+  },
+  "validation": {
+    "dashboard_tests": 125,
+    "typecheck": "passed",
+    "production_build": "passed locally",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "sdk_fixture": {
+      "archive_bytes": 8500000,
+      "compacted_envelope_bytes_less_than": 1000,
+      "ui_archive_preserved": true,
+      "run_and_connect": true,
+      "interleaved_approval_pair": true
+    },
+    "local_synthetic_performance": {
+      "body_bytes": 8540381,
+      "samples": 10,
+      "median_ms": 10.47,
+      "maximum_ms": 11.42,
+      "production_ui_performance_claim": false
+    },
+    "ci_run": 37870991723,
+    "ci": "passed",
+    "review_head": "e09ab53b516cb04314397b3651824a03ba080cd2",
+    "review": "0 critical / 0 major; safe passthrough and parse-cost observations triaged",
+    "browser": {
+      "normal_owner_session": true,
+      "same_restored_thread": true,
+      "prompt": "Minimal acknowledgement; page context removed, no tools requested",
+      "reply": "收到",
+      "run_ended": true,
+      "new_request_failure": false,
+      "archive_retained": true,
+      "reply_restored_after_reload": true,
+      "rendered_bubbles_after_reload": 564,
+      "scope": "852 protocol messages include invisible resolved assistant tool-call entries; 564 rendered bubbles are not a storage-message count."
+    }
+  },
+  "deployment": {
+    "build_run": 37871451256,
+    "status": "healthy",
+    "service": "dashboard",
+    "image": "ghcr.io/mirror29/inalpha-dashboard:18bbd1898db55930a549f243246da5dbb92f3dba",
+    "container": "0812aff0a4e2",
+    "backup": "infra/.env.prod.before-dashboard-20261009T015414Z",
+    "other_container_ids_unchanged": 9,
+    "pre_replace_connections": {
+      "dashboard_incoming": 1,
+      "mastra_outgoing": 4,
+      "mastra_log_lines_last_15m": 0,
+      "interpretation": "Established sockets are not a count of active model runs. Original UI run had ended, no recent Mastra run logs, graceful Dashboard-only replacement with 60s timeout."
+    }
+  },
+  "real_restored_chat_turn_verified": true,
+  "positive_e2_passed": false,
+  "model_accounting": {
+    "paid_diagnostic_prompts_before_deployment": 2,
+    "additional_e2_search_calls": 0,
+    "exact_diagnostic_cost_usd": null,
+    "note": "Normal owner chat probes are not E2 search evidence. Unknown usage/cost is not zero; reconcile before further automated paid search.",
+    "paid_diagnostic_prompts_after_deployment": 1,
+    "unknown_cost_reservation": "Do not treat unknown diagnostic usage as zero or spend the automated search budget again until reconciled."
+  }
+}

@@ -30,6 +30,7 @@ export type ToolState =
   // ── 已接线（inferToolState 会产出）──
   | "input-available" // 参数就绪，执行中（Running）
   | "output-available" // 执行成功（Completed）
+  | "output-blocked"
   | "output-error" // 执行失败（Error）
   // ── 预留（样式已备，待 mastra 上报后点亮，当前无生产者）──
   | "input-streaming" // 正在接收工具参数（Pending）
@@ -69,6 +70,7 @@ export const TOOL_STATE_MAP: Record<ToolState, ToolStateProps> = {
     expandable: true,
     pulse: false,
   },
+  "output-blocked": { label: "Inputs blocked", Icon: Clock, color: "text-gold", expandable: true, pulse: false },
   "output-error": {
     label: "Error",
     Icon: XCircle,
@@ -110,6 +112,7 @@ export const TOOL_STATE_I18N_KEY: Record<ToolState, string> = {
   "input-streaming": "toolPending",
   "input-available": "toolRunning",
   "output-available": "toolDone",
+  "output-blocked": "toolBlocked",
   "output-error": "toolError",
   "output-denied": "toolDenied",
   "approval-requested": "toolAwaitingApproval",
@@ -137,11 +140,13 @@ export function inferToolState(
 export function inferToolResultState(raw: string): ToolState {
   try {
     const result = JSON.parse(raw) as {
+      status?: string;
+      deniedBy?: string;
       isError?: boolean;
       requiresApproval?: boolean;
       requestId?: string;
-      deniedBy?: string;
     };
+    if (result.status === "blocked" || result.deniedBy === "preflight") return "output-blocked";
     if (result.requiresApproval && result.requestId) return "approval-requested";
     if (result.deniedBy === "permission" && result.isError) return "output-denied";
     return inferToolState(true, Boolean(result.isError));

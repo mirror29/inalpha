@@ -17,9 +17,10 @@ D-9.1a 增强：apply_fill 现在返回 ``ClosedTradeInfo | None``，让调用�
 写入 ``closed_trades`` 表。同时记录 ``ts_opened`` / ``open_order_id`` 供平仓时
 构造完整的 closed_trade 行。
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -43,8 +44,11 @@ async def _migrate_legacy_market_identity(
     account_id: UUID,
     venue: str,
     symbol: str,
+    run_id: UUID | None = None,
 ) -> tuple[str, str]:
     """锁住单个旧市场仓位并迁到 canonical key；重复 key 时 fail-closed。"""
+    if run_id is not None:
+        return canonicalize_market_identity(venue, symbol)
     variants = a_share_identity_variants(venue, symbol)
     market_label = "A-share"
     if variants is None:
@@ -66,7 +70,7 @@ async def _migrate_legacy_market_identity(
     _, canonical_symbol, legacy_symbol = variants
     async with conn.cursor() as cur:
         await cur.execute(
-            "SELECT venue, symbol, currency FROM positions WHERE account_id = %s "
+            "SELECT venue, symbol, currency FROM positions WHERE account_id = %s AND run_id IS NULL "
             + venue_predicate
             + "AND LOWER(BTRIM(symbol)) IN (%s, %s) FOR UPDATE",
             (
@@ -90,13 +94,13 @@ async def _migrate_legacy_market_identity(
             stored_symbol = rows[0]["symbol"]
             stored_currency = rows[0]["currency"]
             canonical_currency = resolve_currency(canonical_venue, canonical_symbol)
-            if (
-                (stored_venue, stored_symbol) != (canonical_venue, canonical_symbol)
-                or stored_currency != canonical_currency
-            ):
+            if (stored_venue, stored_symbol) != (
+                canonical_venue,
+                canonical_symbol,
+            ) or stored_currency != canonical_currency:
                 await cur.execute(
                     "UPDATE positions SET venue = %s, symbol = %s, currency = %s, "
-                    "updated_at = NOW() WHERE account_id = %s AND venue = %s AND symbol = %s",
+                    "updated_at = NOW() WHERE account_id = %s AND venue = %s AND symbol = %s AND run_id IS NULL",
                     (
                         canonical_venue,
                         canonical_symbol,
@@ -144,6 +148,8 @@ async def apply_fill(
     ts_event: datetime,
     order_id: str,
     currency: str | None = None,
+    run_id: UUID | None = None,
+    isolated_leverage: int | None = None,
 ) -> tuple[dict[str, Any], ClosedTradeInfo | None]:
     """一笔 fill 应用到 positions 表。返回 (更新后的持仓行, 平仓信息或 None)。
 
@@ -160,6 +166,7 @@ async def apply_fill(
         account_id=account_id,
         venue=venue,
         symbol=symbol,
+        run_id=run_id,
     )
 
     # 1. 读当前持仓（不存在视为 flat）
@@ -168,8 +175,9 @@ async def apply_fill(
             "SELECT quantity, avg_open_price, realized_pnl, generation, "
             "ts_opened, open_order_id "
             "FROM positions WHERE account_id = %s AND venue = %s AND symbol = %s "
+            "AND run_id IS NOT DISTINCT FROM %s::uuid "
             "FOR UPDATE",
-            (str(account_id), venue, symbol),
+            (str(account_id), venue, symbol, run_id),
         )
         row = await cur.fetchone()
 
@@ -183,14 +191,28 @@ async def apply_fill(
     # 2. 应用 fill
     signed_fill = fill_qty if side == "BUY" else -fill_qty
     new_qty, new_avg, new_pnl, new_gen, close_result = _reduce_position_with_close(
-        cur_qty, cur_avg, cur_pnl, generation,
-        signed_fill, fill_price,
+        cur_qty,
+        cur_avg,
+        cur_pnl,
+        generation,
+        signed_fill,
+        fill_price,
     )
+
+    if isolated_leverage is not None and close_result is not None:
+        # 逐仓保险基金吸收超过被平仓位初始保证金的损失；现金和成交统计同口径。
+        floor = -close_result.closed_qty * cur_avg / Decimal(isolated_leverage)
+        realized = max(Decimal(str(close_result.close_profit_abs)), floor)
+        new_pnl = cur_pnl + realized
+        close_result = replace(
+            close_result,
+            close_profit_abs=float(realized),
+            close_profit_pct=float(realized / (close_result.closed_qty * cur_avg)),
+        )
 
     # 3. 决定 ts_opened / open_order_id
     prev_was_flat = cur_qty == 0
-    position_reversed = (cur_qty != 0 and new_qty != 0
-                         and (new_qty > 0) != (cur_qty > 0))
+    position_reversed = cur_qty != 0 and new_qty != 0 and (new_qty > 0) != (cur_qty > 0)
     should_reset_open = prev_was_flat or position_reversed
 
     new_ts_opened = ts_event if should_reset_open else cur_ts_opened
@@ -199,15 +221,21 @@ async def apply_fill(
         new_ts_opened = None
         new_open_order_id = None
 
+    conflict = (
+        "(account_id, venue, symbol) WHERE run_id IS NULL"
+        if run_id is None
+        else "(account_id, run_id, venue, symbol) WHERE run_id IS NOT NULL"
+    )
+
     # 4. UPSERT（currency 用 COALESCE：传 None 时保留旧值，不覆盖成 NULL）
     async with conn.cursor() as cur:
         await cur.execute(
-            """
+            f"""
             INSERT INTO positions (
                 account_id, venue, symbol, quantity, avg_open_price,
-                realized_pnl, generation, ts_opened, open_order_id, currency, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-            ON CONFLICT (account_id, venue, symbol) DO UPDATE
+                realized_pnl, generation, ts_opened, open_order_id, currency, run_id, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT {conflict} DO UPDATE
               SET quantity       = EXCLUDED.quantity,
                   avg_open_price = EXCLUDED.avg_open_price,
                   realized_pnl   = EXCLUDED.realized_pnl,
@@ -221,9 +249,17 @@ async def apply_fill(
                       currency, updated_at
             """,
             (
-                str(account_id), venue, symbol,
-                new_qty, new_avg, new_pnl, new_gen,
-                new_ts_opened, new_open_order_id, currency,
+                str(account_id),
+                venue,
+                symbol,
+                new_qty,
+                new_avg,
+                new_pnl,
+                new_gen,
+                new_ts_opened,
+                new_open_order_id,
+                currency,
+                run_id,
             ),
         )
         new_row = await cur.fetchone()
@@ -256,6 +292,7 @@ async def apply_fill(
 @dataclass(frozen=True, slots=True)
 class _CloseResult:
     """_reduce_position_with_close 的平仓检测结果。"""
+
     closed_qty: Decimal
     side: str
     close_profit_pct: float
@@ -292,34 +329,48 @@ def _reduce_position_with_close(
 
     # 平仓盈亏百分比
     close_profit_abs = float(realized)
-    close_profit_pct = (
-        close_profit_abs / float(cur_avg * closed_qty)
-        if cur_avg > 0
-        else 0.0
-    )
+    close_profit_pct = close_profit_abs / float(cur_avg * closed_qty) if cur_avg > 0 else 0.0
     close_side = "long" if cur_qty > 0 else "short"
 
     new_qty = cur_qty + signed_fill
     if new_qty == 0:
-        return Decimal(0), Decimal(0), new_pnl, generation, _CloseResult(
-            closed_qty=closed_qty,
-            side=close_side,
-            close_profit_pct=close_profit_pct,
-            close_profit_abs=close_profit_abs,
+        return (
+            Decimal(0),
+            Decimal(0),
+            new_pnl,
+            generation,
+            _CloseResult(
+                closed_qty=closed_qty,
+                side=close_side,
+                close_profit_pct=close_profit_pct,
+                close_profit_abs=close_profit_abs,
+            ),
         )
     if (new_qty > 0) == (cur_qty > 0):
-        return new_qty, cur_avg, new_pnl, generation, _CloseResult(
+        return (
+            new_qty,
+            cur_avg,
+            new_pnl,
+            generation,
+            _CloseResult(
+                closed_qty=closed_qty,
+                side=close_side,
+                close_profit_pct=close_profit_pct,
+                close_profit_abs=close_profit_abs,
+            ),
+        )
+    # 跨过 0 → 反向开新仓
+    return (
+        new_qty,
+        fill_price,
+        new_pnl,
+        generation + 1,
+        _CloseResult(
             closed_qty=closed_qty,
             side=close_side,
             close_profit_pct=close_profit_pct,
             close_profit_abs=close_profit_abs,
-        )
-    # 跨过 0 → 反向开新仓
-    return new_qty, fill_price, new_pnl, generation + 1, _CloseResult(
-        closed_qty=closed_qty,
-        side=close_side,
-        close_profit_pct=close_profit_pct,
-        close_profit_abs=close_profit_abs,
+        ),
     )
 
 
@@ -336,7 +387,12 @@ def _reduce_position(
     保留用于向后兼容——新代码请用 _reduce_position_with_close。
     """
     new_qty, new_avg, new_pnl, new_gen, _ = _reduce_position_with_close(
-        cur_qty, cur_avg, cur_pnl, generation, signed_fill, fill_price,
+        cur_qty,
+        cur_avg,
+        cur_pnl,
+        generation,
+        signed_fill,
+        fill_price,
     )
     return new_qty, new_avg, new_pnl, new_gen
 
@@ -348,6 +404,7 @@ async def get(
     venue: str,
     symbol: str,
     for_update: bool = False,
+    run_id: UUID | None = None,
 ) -> dict[str, Any] | None:
     """读单个 (account, venue, symbol) 持仓行；不存在返 None（live PnL / resume 重建用）。
 
@@ -363,17 +420,19 @@ async def get(
             account_id=account_id,
             venue=venue,
             symbol=symbol,
+            run_id=run_id,
         )
     sql = (
         "SELECT venue, symbol, quantity, avg_open_price, realized_pnl, "
         "generation, ts_opened, open_order_id, currency, updated_at, "
-        "leverage, margin_used, liquidation_price "
-        "FROM positions WHERE account_id = %s AND venue = %s AND symbol = %s"
+        "leverage, margin_used, liquidation_price, run_id "
+        "FROM positions WHERE account_id = %s AND venue = %s AND symbol = %s "
+        "AND run_id IS NOT DISTINCT FROM %s::uuid"
     )
     if for_update:
         sql += " FOR UPDATE"
     async with conn.cursor() as cur:
-        await cur.execute(sql, (str(account_id), venue, symbol))
+        await cur.execute(sql, (str(account_id), venue, symbol, run_id))
         row = await cur.fetchone()
     return row  # type: ignore[return-value]
 
@@ -383,6 +442,8 @@ async def list_by_account(
     account_id: UUID,
     *,
     include_flat: bool = False,
+    run_id: UUID | None = None,
+    include_runs: bool = False,
 ) -> list[dict[str, Any]]:
     """列出账户持仓；默认过滤 flat，并在读侧规范化历史市场 identity/币种。
 
@@ -392,17 +453,24 @@ async def list_by_account(
     sql = (
         "SELECT venue, symbol, quantity, avg_open_price, realized_pnl, "
         "generation, ts_opened, open_order_id, currency, updated_at, "
-        "leverage, margin_used, liquidation_price "
+        "leverage, margin_used, liquidation_price, run_id "
         "FROM positions WHERE account_id = %s"
     )
+    if not include_runs:
+        sql += " AND run_id IS NOT DISTINCT FROM %s::uuid"
     if not include_flat:
         sql += " AND quantity <> 0"
     sql += " ORDER BY updated_at DESC"
 
     async with conn.cursor() as cur:
-        await cur.execute(sql, (str(account_id),))
+        await cur.execute(sql, (str(account_id),) if include_runs else (str(account_id), run_id))
         rows = await cur.fetchall()
 
+    return normalize_rows(list(rows))
+
+
+def normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalize historical market aliases without changing their ledger ownership."""
     from ..execution.currency_resolver import resolve_currency
 
     normalized_rows: list[dict[str, Any]] = []
@@ -422,8 +490,7 @@ async def list_by_account(
         if (
             identity_changed
             or a_share_identity_variants(canonical_venue, canonical_symbol) is not None
-            or legacy_global_identity_variants(canonical_venue, canonical_symbol)
-            is not None
+            or legacy_global_identity_variants(canonical_venue, canonical_symbol) is not None
         ):
             normalized["currency"] = resolve_currency(
                 canonical_venue,
@@ -440,6 +507,7 @@ async def sum_other_margin_used(
     currency: str,
     exclude_venue: str,
     exclude_symbol: str,
+    run_id: UUID | None = None,
 ) -> Decimal:
     """同账户同计价货币**其他**活跃仓已占用保证金之和(perp 跨仓聚合守门用)。
 
@@ -455,9 +523,9 @@ async def sum_other_margin_used(
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT venue, symbol, currency, margin_used FROM positions "
-            "WHERE account_id = %s AND quantity <> 0 AND margin_used <> 0 "
+            "WHERE account_id = %s AND run_id IS NOT DISTINCT FROM %s::uuid AND quantity <> 0 AND margin_used <> 0 "
             "AND NOT (venue = %s AND symbol = %s)",
-            (str(account_id), exclude_venue, exclude_symbol),
+            (str(account_id), run_id, exclude_venue, exclude_symbol),
         )
         rows = await cur.fetchall()
     total = Decimal(0)
@@ -478,6 +546,6 @@ async def delete_by_account(conn: AsyncConnection, account_id: UUID) -> int:
     """
     async with conn.cursor() as cur:
         await cur.execute(
-            "DELETE FROM positions WHERE account_id = %s", (str(account_id),)
+            "DELETE FROM positions WHERE account_id = %s AND run_id IS NULL", (str(account_id),)
         )
         return cur.rowcount or 0

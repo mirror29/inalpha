@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-14",
+  "scope": "Read-only production metadata and public Python package source parity, no deployment performed by this task.",
+  "server_repository": "0319b57d91476228046a7b74067fe6812c0777c6",
+  "concurrent_change": "Server repository identifies merged PR241 disk retention/log rotation; container IDs differ from this task earlier receipts. Historical unchanged-container claims apply only to their own deployments.",
+  "services": [
+    {
+      "service": "data",
+      "container_id": "c56d386bb37054ac486c8788d8b63e31fdb8e44c62597f0bc233acec8653af9d",
+      "image_digest": "sha256:adbe7989226e4925ab214c09c907c3566618a9dbeb115df3c1fded320e066a12",
+      "health": "healthy",
+      "oci_revision": "ea4560831e503c6ce34d18739476a71ac6e9a9de",
+      "tags": [
+        "ghcr.io/mirror29/inalpha-data:9fdb8b8aa0d49a36eddc344c0955b41e28cd9848"
+      ]
+    },
+    {
+      "service": "research",
+      "container_id": "855add3b73f90e051d11559ed8d5743b160ba57987d60141429167fc3cdcf671",
+      "image_digest": "sha256:3dbebba4ab0a06673c419c521b778637a07539943f918b331c679a47449fe6ec",
+      "health": "healthy",
+      "oci_revision": "ea4560831e503c6ce34d18739476a71ac6e9a9de",
+      "tags": [
+        "ghcr.io/mirror29/inalpha-research:9fdb8b8aa0d49a36eddc344c0955b41e28cd9848"
+      ]
+    },
+    {
+      "service": "dashboard",
+      "container_id": "9b61d5813f85960de3cf5b127abd9dcf48f9c6563698f38429a957d6a43a8d63",
+      "image_digest": "sha256:ed93f7714ed0cd035309687adcbef48d606d02032ebe09bf10bdfe5563733ece",
+      "health": "healthy",
+      "oci_revision": null,
+      "tags": [
+        "ghcr.io/mirror29/inalpha-dashboard:76727f6d7a77d3015d6e9a604e11874b3caf3b0d"
+      ]
+    },
+    {
+      "service": "mastra",
+      "container_id": "51f1dbad74ccfc5ea9027c4fdb38746e6ba457608ff276a9656cfd33c868f278",
+      "image_digest": "sha256:10e0b50b58b50facced89fff26a482d60d075d0d9e95b3cce7b1dd9dffd5e6ed",
+      "health": "healthy",
+      "oci_revision": null,
+      "tags": [
+        "ghcr.io/mirror29/inalpha-mastra:76727f6d7a77d3015d6e9a604e11874b3caf3b0d"
+      ]
+    },
+    {
+      "service": "evolver",
+      "container_id": "c55a5efecf6946b82b4993697f68092f8ae5e94259e9423f97c4f133c250f671",
+      "image_digest": "sha256:2587420863671943cbbe310cd174f19643cd4f1b0ca4f3bb40476ef75026d8c7",
+      "health": "healthy",
+      "oci_revision": "ea4560831e503c6ce34d18739476a71ac6e9a9de",
+      "tags": [
+        "ghcr.io/mirror29/inalpha-evolver:76727f6d7a77d3015d6e9a604e11874b3caf3b0d"
+      ]
+    }
+  ],
+  "database": {
+    "name": "inalpha",
+    "schema": "0069",
+    "correction_audits": 3,
+    "v2_fact_versions": 375,
+    "v3_fact_versions": 41,
+    "loops": 0,
+    "campaigns": 0
+  },
+  "source_parity": {
+    "reference_commit": "9fdb8b8aa0d49a36eddc344c0955b41e28cd9848",
+    "method": "Hash imported public package *.py files in each running container; compare SHA256 to git show reference path.",
+    "files": {
+      "data": 57,
+      "research": 52,
+      "evolver": 91
+    },
+    "mismatches": 0,
+    "extra_files": 0,
+    "limits": "200 package files only; excludes shared packages, dependencies, full image reproducibility and Dashboard/Mastra bundles. Tags and OCI labels do not independently prove the exact source revision."
+  },
+  "probes": {
+    "unauthenticated_data_read": 401,
+    "unauthenticated_data_correction": 401,
+    "unauthenticated_research_review": 401,
+    "public_login": 200
+  },
+  "new_model_calls": 0,
+  "production_e2_searches_started": 0
+}

@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-14",
+  "status": "merged_and_built_deployment_deferred_by_live_connection_guard",
+  "business_pr": 242,
+  "reviewed_head": "cea74c9234641934b01eb518d26bd506619eab12",
+  "merge_commit": "a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+  "merged_at": "2026-10-14T04:57:21Z",
+  "reviewed_and_merge_tree": "1c6e982ad91cecbe2cdc5d9210bbf1d41e79f6b0",
+  "ci": {
+    "head": 38513735909,
+    "main": 38514078608,
+    "images": 38514078419,
+    "result": "all_success",
+    "built_images": 7
+  },
+  "review": {
+    "run": 38513735892,
+    "valid_body": true,
+    "medium": 1,
+    "resolution_comment": "https://github.com/mirror29/inalpha/pull/242#issuecomment-6161217355",
+    "decision": "Full route/schema/dictionary-row consumer inspection and independent scoped review found no confirmed new P1/P2; not an automated zero-finding review.",
+    "limitations": "Static review; not production owner execution."
+  },
+  "deployment_attempts": [
+    {
+      "guard_counts": [
+        0,
+        2
+      ],
+      "result": "Stopped after image pull/config and DB backup; before env edit or service replacement."
+    },
+    {
+      "guard_counts": [
+        1
+      ],
+      "result": "Stopped at first guard; no replacement."
+    },
+    {
+      "guard_counts": [
+        2
+      ],
+      "result": "Prepared resume rejected at first guard; no replacement."
+    },
+    {
+      "read_only_stable_window": "45 observations; no three consecutive zeros, final counts one",
+      "result": "Stopped before any deployment mutation; no socket was closed or ignored."
+    },
+    {
+      "after_browser_unlocked": "Own new verification tab closed; original tabs kept. Read-only stable watch still did not obtain three consecutive zeros, so no replacement.",
+      "result": "deferred"
+    }
+  ],
+  "server_repository": "a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+  "running_evolver": {
+    "container_id": "c55a5efecf6946b82b4993697f68092f8ae5e94259e9423f97c4f133c250f671",
+    "config_image": "sha256:2587420863671943cbbe310cd174f19643cd4f1b0ca4f3bb40476ef75026d8c7",
+    "image_id": "sha256:2587420863671943cbbe310cd174f19643cd4f1b0ca4f3bb40476ef75026d8c7",
+    "health": "healthy",
+    "requested_by_sub_projection_present": false,
+    "result": "Original container remains, new fix is not yet running."
+  },
+  "backups": {
+    "config": "infra/.env.prod.before-campaign-usage-20261014T050141Z",
+    "database": "infra/backups/campaign-usage-before-20261014T050141Z.dump",
+    "mode": "600",
+    "config_matches_current": "cmp verified for resume preparation",
+    "database_toc_readable": true,
+    "restore_exercise": false,
+    "warning": "pg_dump recorded existing continuous aggregate circular foreign-key warning; archive listing is not full restore validation."
+  },
+  "final_read_only_check": {
+    "database": "inalpha",
+    "schema": "0069",
+    "loops": 0,
+    "campaigns": 0,
+    "public_login_after_redirects": 200
+  },
+  "browser": "Chrome unlocked after follow-up; task-created verification tab closed, other tabs retained. A temporary blank tab was used during maintenance preparation. No new model prompt or approval.",
+  "new_model_calls": 0,
+  "new_e2_searches": 0,
+  "next_action": "Wait for naturally idle HTTP window, revalidate task/connection guards and unchanged original image, then deploy only Evolver with exact image rollback. Do not force-close user connections or claim production five-generation recovery.",
+  "built_image_probe": {
+    "image": "ghcr.io/mirror29/inalpha-evolver:a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+    "network": "none",
+    "ephemeral_container_removed": true,
+    "identity_projection_present": true,
+    "public_schema_excludes_identity": true,
+    "campaign_module_sha256": "4b2cff25407847e718fc609c257e9a85f9b9fc56014e72a27d0fc6e4ea177cd1",
+    "source_hash_matches_reviewed_business_file": true,
+    "scope": "Pure package/schema import in actual built image, not application lifespan, real owner or production execution."
+  }
+}

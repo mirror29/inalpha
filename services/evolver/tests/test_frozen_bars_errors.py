@@ -61,7 +61,7 @@ async def _load(client: FakeDataClient):
         venue="binance",
         symbol="BTCUSDT",
         timeframe="1h",
-        from_ts=_AS_OF - timedelta(days=1),
+        from_ts=_AS_OF - timedelta(hours=3),
         as_of=_AS_OF,
     )
 

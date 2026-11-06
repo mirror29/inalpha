@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local lossless approval command encryption and recovery; not deployed",
+  "commit": "76aee847",
+  "schema_head": "0065",
+  "supersedes_finding_in": "evolution-review-fixes-local-2026-10-09.json",
+  "checks": {
+    "orchestration_passed": 613,
+    "default_database_skipped": 7,
+    "targeted_passed": 14,
+    "isolated_evolver_database_passed": 27,
+    "isolated_orchestration_database_passed": 7,
+    "migration_passed": 8,
+    "typecheck": "passed",
+    "orchestration_build": "passed",
+    "offline_agent_pr_eval": "4/4 passed"
+  },
+  "verified": [
+    "Lossless recovery of legal token and wallet strategy parameters after rebuilding approval storage",
+    "Ciphertext authenticated against owner, operation, session, tool and original input digest",
+    "Tampered ciphertext, identity substitution and key rotation reject without exposing payload",
+    "Atomic storage rollback and separately redacted approval history remain intact",
+    "Immutable preparation audit remains available after expired approval replacement"
+  ],
+  "key_rotation_limit": "JWT_SECRET must remain stable through the existing approval recovery window (up to 24 hours). No old-key reader exists; already submitted runs are unaffected.",
+  "pending": [
+    "Approval component mount, GET recovery, failure retry and unmount interaction tests",
+    "PR CI/CR and coordinated deployment",
+    "Normal owner cross-service approval and restart/response-loss verification",
+    "Production result visibility and real mutation quality/cost evaluation",
+    "Real E2 Forward and holdout acceptance"
+  ],
+  "temporary_database_removed": true,
+  "production_modified": false,
+  "followup": {
+    "commit": "46577b87",
+    "cause": "Full CI exposed API contract fixtures leaving queued submissions available to later global queue-claim tests.",
+    "fix": "Mock dispatcher lifecycle only in submission contract fixture, restore environment and clean only generated fixture subjects. Production dispatcher behavior is unchanged.",
+    "fresh_database_checks": {
+      "evolver_full_suite_passed": 306,
+      "existing_short_test_jwt_warnings": 3,
+      "orchestration_storage_passed": 7,
+      "migration_passed": 8
+    },
+    "temporary_database_removed": true,
+    "pull_request": "https://github.com/mirror29/inalpha/pull/202",
+    "ci_cr": "Pending latest head; automated provider review twice returned no publishable review, not counted as passed."
+  }
+}

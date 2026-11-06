@@ -48,22 +48,55 @@ if ! grep -qE '^CLOUDFLARE_TUNNEL_TOKEN=.+$' "$HOST_ENV_FILE"; then
   exit 1
 fi
 
+command -v python3 >/dev/null
+command -v flock >/dev/null
+mkdir -p "$ROOT/.cache"
+exec 9>"$ROOT/.cache/deploy.lock"
+flock -n 9 || { echo "已有部署正在运行" >&2; exit 1; }
+
 if [ "$do_git_pull" -eq 1 ]; then
   echo "==> git pull --ff-only"
   git pull --ff-only
 fi
 
+protected_images="$(mktemp)"
+trap 'rm -f "$protected_images"' EXIT
+container_ids="$(docker ps -aq)"
+if [ -n "$container_ids" ]; then
+  docker inspect --format '{{.Image}}' $container_ids > "$protected_images"
+fi
+image_refs="$("${DC[@]}" config --images)"
+cleanup_args=()
+while IFS= read -r ref; do
+  repository="${ref%@*}"
+  if [[ "${repository##*/}" == *:* ]]; then
+    repository="${repository%:*}"
+  fi
+  case "${repository##*/}" in
+    inalpha-data|inalpha-paper|inalpha-research|inalpha-factor|inalpha-evolver|inalpha-mastra|inalpha-dashboard)
+      cleanup_args+=(--repository "$repository") ;;
+  esac
+done <<< "$image_refs"
+
 if [ "$mode" = "image" ]; then
   echo "==> 拉取镜像(GHCR)"
   "${DC[@]}" pull
   echo "==> 起栈(migrate 先跑 alembic upgrade head,再起各服务)"
-  "${DC[@]}" up -d
+  "${DC[@]}" up -d --wait --wait-timeout 300
 else
   echo "==> 就地构建并起栈(--build;小内存机注意 OOM)"
-  "${DC[@]}" up -d --build
+  "${DC[@]}" up -d --build --wait --wait-timeout 300
 fi
 
 echo "==> 当前状态"
 "${DC[@]}" ps
+
+if [ "${#cleanup_args[@]}" -gt 0 ]; then
+  echo "==> 清理旧应用镜像（保留最近两个版本、部署前版本及容器引用）"
+  if ! python3 scripts/cleanup-images.py "${cleanup_args[@]}" \
+    --protect-file "$protected_images" --apply; then
+    echo "警告：服务已部署，但镜像清理失败；请检查后重试。" >&2
+  fi
+fi
 
 echo "==> 完成。排障:'${DC[*]} logs -f <service>';健康看上方 ps 的 STATUS。"

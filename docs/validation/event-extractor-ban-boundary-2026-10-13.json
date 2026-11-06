@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-13",
+  "scope": "Prospective deterministic extractor correction; not E2 research acceptance",
+  "root_cause": "Unbounded ban substring classified bank, banking, bankruptcy and urban as regulatory events",
+  "production_audit": {
+    "database": "inalpha",
+    "schema": "0068",
+    "mode": "BEGIN READ ONLY, statement_timeout 10 seconds",
+    "v2_fact_versions": 375,
+    "regulatory_rows_with_only_unbounded_ban": 17,
+    "interpretation": "Matches only the loose substring, without a standalone prohibition word or other configured regulatory keyword; not full human semantic adjudication"
+  },
+  "change": {
+    "extractor_version": "deterministic-event-extractor-v3",
+    "prohibition_terms": [
+      "ban",
+      "bans",
+      "banned",
+      "banning"
+    ],
+    "matching": "ASCII letter/digit/underscore boundaries after lowercase normalization, allowing adjacent CJK text",
+    "rule_precedence": "unchanged",
+    "availability_semantics": "unchanged",
+    "historical_rewrite_or_reextraction": false
+  },
+  "verification": {
+    "regression_before": {
+      "failed": 4,
+      "passed": 7
+    },
+    "related_tests_after": {
+      "passed": 29
+    },
+    "research_non_integration": {
+      "passed": 235,
+      "skipped_database_unconfigured": 3,
+      "deselected_integration": 4
+    },
+    "ruff": "passed",
+    "mypy": "Two existing raw_payload narrowing errors reproduced from origin/main; not clean",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "independent_review": "871edc74 reviewed independently with 24 tests; subsequent CJK-boundary increment reviewed separately"
+  },
+  "deployment": "pending; production remains v2 until a separately recorded fixed-image deployment",
+  "boundaries": [
+    "No historical facts, available_at, frozen windows or statistical thresholds changed",
+    "No new model calls",
+    "No evidence that five-generation research, matching, FDR or Forward passed",
+    "Other substring rules and different-URL semantic duplication remain outside this narrow correction",
+    "Current v2 coverage observations cannot certify semantic input quality"
+  ],
+  "follow_up": "https://github.com/mirror29/inalpha/issues/234"
+}

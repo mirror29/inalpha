@@ -1,0 +1,49 @@
+{
+  "result": "passed",
+  "scope": "isolated runtime executor subprocess with offline model and real engine/database; not full app or production",
+  "checkout_head": "56ecbec90ebcc3435c6a5fe576f9fc7b201d883c",
+  "database": "inalpha_checkpoint_audit_6c9d6d814f90462eb5f907db1920429f",
+  "schema": "0067 (fresh full migration chain)",
+  "evidence_kind": "Exploratory temporary process harness; application runtime, engine, compiler, database and budget client; offline model. Not maintained regression suite.",
+  "injection": {
+    "forced_exit_code": -9,
+    "completed_before_kill": 2,
+    "proposal_checkpoints_before_kill": 1,
+    "handover": "waited for natural lease expiry; restarted with a different worker and new lease token"
+  },
+  "outcome": {
+    "generation": 5,
+    "implementations_succeeded": 120,
+    "proposal_checkpoints": 5,
+    "status": "insufficient_evidence",
+    "existing_completed_ids_and_source_hashes_preserved": true,
+    "generation_one_proposal_digest_and_cost_unchanged": true,
+    "offline_calls_before": 2,
+    "offline_calls_after": 8,
+    "synthetic_budget_ledger": {
+      "spent_usd": "0.000780",
+      "reserved_usd": "0E-7",
+      "max_cost_usd": "1",
+      "attempts": 10
+    },
+    "champion": null,
+    "forward": null,
+    "holdout_consumed_at": null
+  },
+  "limits": [
+    "Direct runtime executor processes, not the complete application lifespan or normal owner credential renewal.",
+    "Synthetic snapshot/dataset; seed-stage snapshot fetch substituted locally. No production facts changed.",
+    "Offline provider returned invalid DSL and exercised deterministic fallback; this proves no strategy improvement.",
+    "Synthetic usage ledger amounts are not real supplier costs; no paid provider invoked.",
+    "Interruption occurs after proposal persistence; does not cover provider response received but checkpoint not yet committed.",
+    "Preserved candidate IDs/source hashes verified; individual engine invocations were not instrumented.",
+    "RLIMIT_DATA warnings observed; this does not validate memory isolation."
+  ],
+  "harness_sha256": {
+    "worker.py": "bc312f9be2aeb84e642ed1ab01c40176c61a117b2c731aebe69bfee0c25af7cf",
+    "run.py": "3d71dda2baec8fb50759bf2c2800f0bcf176c645db7f0c1283c799dff3738736",
+    "seed.py": "e55563a201538d4d1e542bdc4be6afd1aaa6b922cc716d48f1bb2263535b2e91"
+  },
+  "earlier_failed_probe": "Initial temporary worker lacked a multiprocessing main guard and failed; corrected harness only. Failed audit database retained.",
+  "audit_database_retained": true
+}

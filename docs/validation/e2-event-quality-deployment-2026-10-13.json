@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-13",
+  "scope": "Known legacy regulatory-ban/provenance guard deployed; E2 remains incomplete",
+  "release": {
+    "pr": 236,
+    "reviewed_head": "965518d665093102490d7fd1198c2bc37731fd8c",
+    "deployed_merge": "76727f6d7a77d3015d6e9a604e11874b3caf3b0d",
+    "tree": "565e76aefa35c9561f2e2c386ec088bce0a8eebd",
+    "reviewed_merge_diff": "empty",
+    "head_ci": 38378299910,
+    "head_cr": 38378299857,
+    "main_ci": 38378949331,
+    "images": 38378949184,
+    "ci_images": "success",
+    "review": "Latest automatic CR has3 MEDIUM findings. Legacy remediation acknowledged pending; current four call sites audited, matrix reuses preparation; finite-code fallback intentional, future code parity is a maintenance limit. Independent incremental static review found no confirmed new blocker; not zero-findings or full E2 certification."
+  },
+  "deployment": {
+    "images": "Dashboard/Mastra/Evolver fixed to deployed_merge",
+    "containers": {
+      "dashboard": "7e6dece8153ce0b6e432808ed77820d24619994fe5c4117f3c25d0396e6d986f",
+      "mastra": "335421482e5c3418c372b957dbdceb5b7151a08ef208e95bc24151fe0eefd08d",
+      "evolver": "f71be598b79f504173f285979b84a9ec2703cc57f7d9cadfd6313b4fa0d6f074"
+    },
+    "health": "healthy",
+    "unchanged_other_containers": 7,
+    "schema": "0068",
+    "migrations": false,
+    "guards": "Four read-only DB/task and three-service established-connection guards all0 before final replacement",
+    "earlier_guard_rejections": [
+      "Mastra connection1: stopped before replacement",
+      "Evolver connection1 after backup: stopped before replacement; old images independently verified healthy"
+    ],
+    "config_backup": "infra/.env.prod.before-event-quality-20261013T101119Z",
+    "database_backup": "infra/backups/event-quality-before-20261013T101119Z.dump",
+    "backup_permissions": "600",
+    "backup_toc_readable_in_deploy_script": true,
+    "restore_drill": false,
+    "backup_warning": "TimescaleDB continuous_agg circular foreign keys; listing is not a restore drill",
+    "rollback": {
+      "dashboard": "3c8aa3898491d9034162049cd2c5e069e2283021",
+      "mastra": "3c8aa3898491d9034162049cd2c5e069e2283021",
+      "evolver": "655e2179ab589bf1cb0278de962b9bdb87b4aa06"
+    }
+  },
+  "independent_postcheck": {
+    "method": "Separate SSH invocation read exact image and healthy for all3 services",
+    "passed": "Exact images and healthy; repeated backup600/TOC, public login final200, unauthenticated preparation401 on bothservices, databaseinalpha/schema0068/Loop0/campaign0",
+    "additional_checks": "Earlier SSH timeouts recovered. An initial host-port probe was invalid because Evolver is not published there; corrected container-local API probe returned401.",
+    "login_http_followed": 200,
+    "evolver_prepare_no_auth": 401,
+    "mastra_prepare_no_auth": 401,
+    "backup_permissions": "600",
+    "backup_toc_readable": true,
+    "prepare_probe_scope": {
+      "mastra": "container-local localhost4111/evolution/prepare",
+      "evolver": "container-local localhost8005/api/v1/evolution-loops/prepare",
+      "public_preparation_path_verified": false
+    }
+  },
+  "latest_stored_fact_observation": {
+    "timing": "Read-only observation after deployment",
+    "database": "inalpha",
+    "schema": "0068",
+    "extractor_versions": {
+      "deterministic-event-extractor-v2": 375,
+      "deterministic-event-extractor-v3": 5
+    },
+    "latest_v3_available_at": "2026-10-13T09:57:24.843018Z",
+    "loops": 0,
+    "campaigns": 0,
+    "scope": "Five genuine prospective v3 facts observed; not independent matched coverage or semantic certification"
+  },
+  "normal_owner_ui": {
+    "status": "pending",
+    "observation": "Existing Chrome Inalpha preparation tab selected and refreshed; content blank with no accessibility web-content tree. Normal navigation to evolution remained blank. Concurrent SSH connectivity timeouts; cause not established, not classified as browser-tool-only or product-only failure. Later fresh Chrome state was an unrelated project, confirming shared-focus interference during this attempt. No reliable owner preparation/quality result read; no product-only or tool-only cause assigned.",
+    "approval_or_model_request_submitted": false,
+    "english_mobile": "pending"
+  },
+  "validation": {
+    "local_receipt": "e2-event-quality-local-2026-10-13.json",
+    "full_suite_scope": "355 passed/1 skipped before final message/metadata changes; latest20Python/16orchestration/5UI and typechecks pass; exact-head and main CI passed",
+    "intermittent_failure": "One earlier full-suite candidate-outcome assertion failure remains unexplained; retained audits, subsequent passes do not erase it",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "evidence_levels": {
+    "code": "Known-defect guard sub-delivery complete",
+    "automated": "Passed with skip/typecheck/intermittent-failure scope recorded",
+    "complete_isolated_service": "Not newly verified by this release",
+    "production": "Exact images/container health verified; owner UI and execution pending"
+  },
+  "new_model_calls_this_followup": 0,
+  "remaining": [
+    "Diagnose/finish normal owner blank-page and bilingual/mobile acceptance",
+    "Audited immutable legacy-evidence remediation; v3 accumulation alone does not release old discovery context",
+    "Listing/SEC and different-URL semantic duplication audits",
+    "Qualified real five-generation search and complete service fault matrix",
+    "Champion then30real days/3independent events Forward, once-only holdout and explicit adoption"
+  ],
+  "follow_up": "https://github.com/mirror29/inalpha/issues/234"
+}

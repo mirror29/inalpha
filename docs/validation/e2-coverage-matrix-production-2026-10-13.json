@@ -1,0 +1,241 @@
+{
+  "date": "2026-10-13",
+  "scope": "Coverage matrix deployment and normal-owner Chinese desktop observation; E2 remains incomplete",
+  "release": {
+    "pr": 231,
+    "reviewed_head": "d1da79c364fd8c654c11f5cd7a25fd247f15012a",
+    "merge": "3c8aa3898491d9034162049cd2c5e069e2283021",
+    "reviewed_to_merge_diff": "empty",
+    "main_ci": 38346843769,
+    "image_build": 38346843768,
+    "ci_and_images": "success",
+    "review": "Final automated CR retained two MEDIUM items: Paper limit support was verified in actual API/storage source; fixed BTC/ETH/SOL cohort is explicitly user-approved. Independent review found no new blocking business issue; static review is not runtime acceptance."
+  },
+  "deployment": {
+    "services": [
+      "dashboard",
+      "mastra"
+    ],
+    "fixed_image_sha": "3c8aa3898491d9034162049cd2c5e069e2283021",
+    "dashboard_container": "c716f972760398c6c7c73fd6265a985d85d6b5a7c10d4b0c0916a0835d2a91ea",
+    "mastra_container": "7e1db18ec9656366890e91059807f62df2879ed3a3715864ca58780aa82c3761",
+    "health": "both healthy; independently re-read over SSH",
+    "other_container_ids_unchanged": 8,
+    "schema": "0068",
+    "migration_run": false,
+    "idle_checks": "Four checks: active E1/Loop/campaign tasks zero; both service established HTTP connections zero",
+    "config_backup": "infra/.env.prod.before-coverage-20261013T044301Z",
+    "database_backup": "infra/backups/coverage-before-20261013T044301Z.dump",
+    "backup_modes": "600",
+    "backup_toc_readable": true,
+    "restore_drill": false,
+    "backup_warning": "TimescaleDB continuous_agg circular foreign keys; no full restore claim",
+    "rollback": {
+      "dashboard": "12ac65d551fb75277645b5ee02c14b0e69653924",
+      "mastra": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c"
+    }
+  },
+  "owner_observation": {
+    "method": "Existing logged-in owner in native Chrome accessibility UI; free matrix button once, expanded diagnostics and screenshot",
+    "sampled_at": "2026-10-13T04:46:26.189Z",
+    "timeframe": "1h",
+    "selection_rule": "Necessary input qualification, then independent upper bound descending, BTC/ETH/SOL tie; normal suggested windows only",
+    "selected_asset": null,
+    "reason": "All assets blocked by E2_INPUT_COVERAGE_INSUFFICIENT",
+    "required_minimum_matched_event_pairs": 8,
+    "latest_bar_and_required_cutoff": "2026-10-13T03:00:00Z",
+    "rows": [
+      {
+        "asset": "BTC",
+        "seed": "Existing owner running strategy, oldest supported per asset; no performance selection",
+        "suggested_window": [
+          "2026-09-30T10:00:00Z",
+          "2026-10-13T04:00:00Z"
+        ],
+        "discovery_selection_holdout_bars": [
+          183,
+          61,
+          62
+        ],
+        "selection_window": [
+          "2026-10-08T02:00:00Z",
+          "2026-10-10T14:00:00Z"
+        ],
+        "selection_facts": 48,
+        "independent_event_upper_bound": 6,
+        "independent_upper_bound_by_type": {
+          "other": 3,
+          "regulatory": 1,
+          "upgrade": 1,
+          "exploit": 1
+        },
+        "first_available_at": "2026-09-30T10:36:41.860008Z",
+        "snapshot_fact_versions": 103,
+        "necessary_inputs": "blocked"
+      },
+      {
+        "asset": "ETH",
+        "seed": "Existing owner running strategy, oldest supported per asset; no performance selection",
+        "suggested_window": [
+          "2026-09-30T10:00:00Z",
+          "2026-10-13T04:00:00Z"
+        ],
+        "discovery_selection_holdout_bars": [
+          183,
+          61,
+          62
+        ],
+        "selection_window": [
+          "2026-10-08T02:00:00Z",
+          "2026-10-10T14:00:00Z"
+        ],
+        "selection_facts": 3,
+        "independent_event_upper_bound": 3,
+        "independent_upper_bound_by_type": {
+          "upgrade": 1,
+          "exploit": 1,
+          "other": 1
+        },
+        "first_available_at": "2026-09-30T10:36:41.887149Z",
+        "snapshot_fact_versions": 11,
+        "necessary_inputs": "blocked"
+      },
+      {
+        "asset": "SOL",
+        "seed": "Existing owner running strategy, oldest supported per asset; no performance selection",
+        "suggested_window": [
+          "2026-10-01T14:00:00Z",
+          "2026-10-13T04:00:00Z"
+        ],
+        "discovery_selection_holdout_bars": [
+          166,
+          56,
+          56
+        ],
+        "selection_window": [
+          "2026-10-08T13:00:00Z",
+          "2026-10-10T20:00:00Z"
+        ],
+        "selection_facts": 3,
+        "independent_event_upper_bound": 2,
+        "independent_upper_bound_by_type": {
+          "other": 1,
+          "upgrade": 1
+        },
+        "first_available_at": "2026-10-01T14:37:01.079456Z",
+        "snapshot_fact_versions": 5,
+        "necessary_inputs": "blocked"
+      }
+    ],
+    "lag_vs_required_closed_bar_seconds": 0,
+    "bar_open_age_at_sample_seconds": 6386.189,
+    "bar_close_age_at_sample_seconds": 2786.189,
+    "timestamp_interpretation": "03:00 is the opening timestamp of the last closed 1h candle, closing at 04:00; sample 04:46:26.189. Zero lag compares with required closed-bar timestamp, not wall-clock age.",
+    "selection_window_convention": "Inclusive first/last selection bar_known_at (close/availability timestamps), not half-open bar-open timestamps. Existing inspect_event_coverage uses selection[0].bar_known_at <= event.available_at <= selection[-1].bar_known_at. BTC/ETH 02:00 through 14:00 inclusive contains 61 hourly known-at timestamps; SOL 13:00 through 20:00 inclusive contains 56. Suggested window uses bar-open half-open bounds."
+  },
+  "source_poll_observation": {
+    "window": "Two hours ending before 2026-10-13T04:00Z",
+    "sources": [
+      "coindesk",
+      "kraken_blog",
+      "bitcoin_core_announcements",
+      "cointelegraph"
+    ],
+    "successful_fetches_per_source": 8,
+    "last_success_utc": "2026-10-13T03:55:05Z",
+    "limits": "Filtered read-only collector logs; fetch status is not asset mapping/extraction completeness or independent event coverage. Structured source-health UI remains pending."
+  },
+  "postcheck": {
+    "database": "inalpha",
+    "schema": "0068",
+    "loops": 0,
+    "campaigns": 0,
+    "sql": "BEGIN READ ONLY and statement_timeout 10s"
+  },
+  "evidence_levels": {
+    "code": "complete for coverage matrix sub-delivery",
+    "automated": "Dashboard 203 tests; orchestration 13 related tests; both typechecks; Dashboard build; consistency 19/0/12 existing warnings; exact release CI passed",
+    "complete_isolated_service": "Not newly validated by this receipt",
+    "production": "Deployment and normal-owner Chinese desktop free coverage matrix verified"
+  },
+  "boundaries": {
+    "new_model_calls": 0,
+    "approval_submitted": false,
+    "five_generation_search": false,
+    "matched_controls_or_fdr_evaluated": false,
+    "holdout_consumed": false,
+    "champion_or_forward_started": false,
+    "historical_unknown_costs": "unchanged; not zeroed",
+    "locale_fix": "Included in deployed tree; browser query-preservation verification pending",
+    "english_mobile": "Pending; native Chrome foreground changed to unrelated project during follow-up. Stopped interaction. This is not a product pass/fail."
+  },
+  "next": [
+    "Investigate asset mapping, extraction and dedup gaps before adding sources",
+    "Structured source poll-health diagnostics",
+    "English/mobile and locale-query owner acceptance",
+    "Remaining complete-service fault matrix and error/cost presentation",
+    "Bounded owner-approved real search only when necessary input qualifies",
+    "Actual champion then 30 real days/3 events Forward, single holdout and explicit adoption"
+  ],
+  "gap_audit": {
+    "method": "Read-only production SQL; database inalpha/schema0068; 10s timeout",
+    "completed_extraction_jobs": 371,
+    "raw_without_job": 0,
+    "completed_jobs_without_fact": 0,
+    "asset_labelled_fact_versions": {
+      "BTC": 138,
+      "ETH": 18,
+      "SOL": 5
+    },
+    "labelled_versions_with_empty_asset_ids": {
+      "BTC": 0,
+      "ETH": 0,
+      "SOL": 0
+    },
+    "source_raw_versions_and_distinct_source_ids": {
+      "bitcoin_core_announcements": [
+        5,
+        5
+      ],
+      "coindesk": [
+        244,
+        194
+      ],
+      "cointelegraph": [
+        100,
+        91
+      ],
+      "kraken_blog": [
+        22,
+        22
+      ]
+    },
+    "limits": "No backlog or missing job/fact/empty asset-ID observed. This does not prove semantic asset mapping, extraction quality, cross-source dedup correctness or matched event coverage. Global versions differ from sampled snapshot and selection counts."
+  },
+  "semantic_audit": {
+    "fact_versions_at_later_sample": 375,
+    "extractor_versions": {
+      "deterministic-event-extractor-v2": 375
+    },
+    "full_name_mentions_without_asset_fact": {
+      "BTC": {
+        "raw_versions": 136,
+        "missing": 0
+      },
+      "ETH": {
+        "raw_versions": 14,
+        "missing": 0
+      },
+      "SOL": {
+        "raw_versions": 4,
+        "missing": 0
+      }
+    },
+    "cross_source_identical_url_groups": 0,
+    "regulatory_versions_matching_only_unbounded_ban": 17,
+    "finding": "Substring ban matches unrelated words such as bank. Seventeen regulatory rows lack a standalone ban/banned/banning/bans or another configured regulatory keyword. Prospective rule correction is required; no historical mutation or claim of human semantic adjudication. Different-URL semantic duplicates remain unverified.",
+    "correction_pr": "https://github.com/mirror29/inalpha/pull/233",
+    "target_extractor": "deterministic-event-extractor-v3",
+    "historical_affected_rows": "Remain immutable and included in existing stored facts; no retrospective exclusion or backdating was applied. Matrix observations are not semantic qualification."
+  }
+}

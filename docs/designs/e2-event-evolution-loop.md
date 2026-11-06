@@ -3,6 +3,12 @@
 Status: Accepted behind `EVENT_EVOLUTION_ENABLED`
 Scope: PR #164 (`codex/evolution-task27`)
 
+Implementation checked: 2026-09-30. The durable Loop, lease fencing, proposal checkpoints,
+atomic handoffs and bounded model authorization are implemented with automated tests. Controlled
+real-model execution, restart recovery and full Forward/holdout evidence remain to be validated;
+this ADR is not deployment certification. Current priorities are maintained in
+[`04-current-state.md`](../04-current-state.md).
+
 ## Context
 
 E1 mutates one existing strategy generation. It cannot reliably explore event mechanisms, survive
@@ -45,6 +51,12 @@ target_resolved → baseline_ready → campaign_running → candidate_locked
 
 - Event writes and extraction use short-lived purpose/audience-bound service JWTs.
 - Every worker write is fenced by its current lease token.
+- An explicit owner click or instruction authorizes the bounded research Loop; internal generations
+  do not require separate approval. The start grant is owner/operation/config-digest bound and
+  valid for five minutes; the 90-day durable authorization and a current lease guard later model
+  requests. Credential-exchange grants last at most 30 hours and do not replace Loop authority. Credentials
+  are fetched in memory, never stored in Loop records. Each network attempt reserves its frozen
+  maximum cost first; missing usage receipts retain that reservation.
 - Owner-scoped reads return 404 outside the owner boundary.
 - `GET /capabilities` is the only E2 availability authority; every mutation checks it server-side.
 - Terminal Paper evidence is HMAC-authenticated over sandbox, campaign, candidate, status, event
@@ -55,7 +67,9 @@ target_resolved → baseline_ready → campaign_running → candidate_locked
 Campaign, Forward, and holdout steps are persisted before external work. Workers use `SKIP LOCKED`,
 expiring leases, fresh fencing tokens and compare-and-swap transitions. Provider/network errors are
 retryable without changing candidate or attempt identity. Deterministic evaluation errors consume the
-single holdout attempt and reject the campaign.
+single holdout attempt and reject the campaign. Proposal checkpoints reuse committed proposals,
+and immutable phase handoffs plus their UI events commit atomically. This does not promise exactly
+once model billing across every crash: an uncommitted provider response may require a bounded retry.
 
 ## Consequences
 

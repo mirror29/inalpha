@@ -1,0 +1,95 @@
+{
+  "validated_at": "2026-10-12",
+  "scope": "real-provider development pilot; no formal evaluation claim",
+  "source": "Yahoo Finance via yfinance",
+  "auto_adjust": false,
+  "sessions": 542,
+  "start": "2024-05-07",
+  "end": "2026-07-07",
+  "market_hash": "c63fecf18f6d3228957876ae43d4dbb1eb07ae6ef90e992a37effb356c26ddd0",
+  "cases": 10,
+  "first_decision": "2026-05-01T20:00:00+00:00",
+  "last_decision": "2026-05-14T20:00:00+00:00",
+  "threshold": 0.037953797953122995,
+  "checks": {
+    "material_validator": "passed",
+    "research_tests": {
+      "passed": 214,
+      "postgres_skipped": 0,
+      "dedicated_postgres_passed": 3
+    },
+    "new_module_mypy": "passed",
+    "ruff": "passed",
+    "consistency_failures": 0,
+    "pilot_regression_tests": 18,
+    "independent_review": "one P2 label-validation issue fixed with seven regression cases"
+  },
+  "real_model_campaign": {
+    "model": "deepseek-flash",
+    "budget_limit_usd": "5",
+    "calibration_calls": 14,
+    "main_calls": 296,
+    "total_estimated_cost_usd": "0.1601403",
+    "base_runs_completed": 40,
+    "base_runs_invalid": 0,
+    "replays_completed": 6,
+    "replays_skipped": 1,
+    "skip_reason": "NO_UNCITED_EVIDENCE",
+    "main_call_ids_exactly_match_ledger": true,
+    "pending_calls": 0,
+    "unknown_usage_calls": 0,
+    "artifact_validation": "all completed runs passed",
+    "input_tokens_including_calibration": 279813,
+    "output_tokens_including_calibration": 63497,
+    "parameters": {
+      "samples": 11,
+      "revisions": 6,
+      "rounds": 2
+    },
+    "observed_budgets": {
+      "A": {
+        "median_actual_known_tokens": 593.0,
+        "unknown_attempts": 0
+      },
+      "B": {
+        "median_actual_known_tokens": 9348.0,
+        "unknown_attempts": 0
+      },
+      "C": {
+        "median_actual_known_tokens": 9383.0,
+        "unknown_attempts": 0
+      },
+      "D": {
+        "median_actual_known_tokens": 9324.0,
+        "unknown_attempts": 0
+      }
+    },
+    "compute_match_within_10_percent": true,
+    "cost_basis": "frozen peak/non-cache estimated price; not provider invoice"
+  },
+  "remaining": [
+    "exact tokenizer-matched intervention control",
+    "human blinded process annotation/review",
+    "formal protocol freeze and separate formal cases"
+  ],
+  "model_metadata": {
+    "alias": "deepseek-flash",
+    "provider_documented_version": "DeepSeek-V4.1-Flash",
+    "immutable_revision": null,
+    "training_cutoff": null,
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "checked_at": "2026-10-12"
+  },
+  "interpretation": {
+    "brier_by_arm": {
+      "A": 0.81066,
+      "B": 0.7736,
+      "C": 0.6891,
+      "D": 0.72692
+    },
+    "superiority_claim": false,
+    "intervention_action_flips": 0,
+    "evidence_removal_review": "Literal ID scan flags returns inside benchmark_returns; no removed ID is cited. Outputs misattribute benchmark returns to the asset: a retained factual error, not evidence of clean process quality. Numeric exact-match scan does not detect rounded/inferred reconstruction.",
+    "calibration_split": "Calibration reused dev-001; all ten cases remain development-only, not held-out evaluation."
+  }
+}

@@ -48,6 +48,11 @@ import {
 import { createOrchestrator } from "./create-orchestrator.js";
 import { loadWiredMcpTools, wiredOrchestratorTools } from "../wired-tools.js";
 
+import { createChatUsageProcessor } from "../llm/chat-usage-processor.js";
+import { createProductionChatUsageStore } from "../llm/chat-usage-store.js";
+
+const chatUsageProcessor = createChatUsageProcessor(createProductionChatUsageStore());
+
 export const orchestrator = createOrchestrator({
   model: buildUserAwareModel(),
   // D-8a'：不挂 subagent，全部能力 tool 化直接调
@@ -62,7 +67,9 @@ export const orchestrator = createOrchestrator({
   memory: sharedMemory,
   // issue #65 / ADR-0010 §Stop hook：chat 路径的 pending plan 残留警示。
   // Mastra 1.36 无"turn 结束后强制续 loop"钩子位，chat 侧降级为输出警示。
+  inputProcessors: [chatUsageProcessor],
   outputProcessors: [
+    chatUsageProcessor,
     createPendingPlanNoticeProcessor({ fetcher: createPaperPendingPlanFetcher() }),
   ],
   maxSteps: 40,

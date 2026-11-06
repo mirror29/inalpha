@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { normalizeLoginReturnPath, pickLoginLocale } from "./login-locale";
@@ -16,6 +17,8 @@ const STRINGS = {
     subtitle: "Sign in to continue",
     email: "Email",
     password: "Password",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
     submit: "Sign in",
     submitting: "Signing in…",
     invalid: "Incorrect email or password",
@@ -30,6 +33,8 @@ const STRINGS = {
     subtitle: "登录以继续",
     email: "邮箱",
     password: "密码",
+    showPassword: "显示密码",
+    hidePassword: "隐藏密码",
     submit: "登录",
     submitting: "登录中…",
     invalid: "邮箱或密码不正确",
@@ -45,11 +50,13 @@ export function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const from = params.get("from");
-  const browserLanguage = typeof navigator === "undefined" ? undefined : navigator.language;
+  const browserLanguage =
+    typeof navigator === "undefined" ? undefined : navigator.language;
   const t = STRINGS[pickLoginLocale(from, browserLanguage)];
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -69,7 +76,9 @@ export function LoginForm() {
         router.refresh();
         return;
       }
-      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
       setError(
         res.status === 401
           ? t.invalid
@@ -102,7 +111,9 @@ export function LoginForm() {
           draggable={false}
         />
         <div className="text-center">
-          <div className="font-display text-2xl leading-none tracking-tight text-fg">Inalpha</div>
+          <div className="font-display text-2xl leading-none tracking-tight text-fg">
+            Inalpha
+          </div>
           <div className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-fg-muted">
             {t.title}
           </div>
@@ -125,19 +136,40 @@ export function LoginForm() {
             className="rounded-md border border-border-subtle bg-bg-deep/60 px-3 py-2 text-sm text-fg outline-none transition-colors focus:border-cyan/50"
           />
         </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="font-mono text-[11px] uppercase tracking-wider text-fg-muted">
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="login-password"
+            className="font-mono text-[11px] uppercase tracking-wider text-fg-muted"
+          >
             {t.password}
-          </span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="rounded-md border border-border-subtle bg-bg-deep/60 px-3 py-2 text-sm text-fg outline-none transition-colors focus:border-cyan/50"
-          />
-        </label>
+          </label>
+          <div className="relative">
+            <input
+              id="login-password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-md border border-border-subtle bg-bg-deep/60 py-2 pl-3 pr-12 text-sm text-fg outline-none transition-colors focus:border-cyan/50"
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? t.hidePassword : t.showPassword}
+              aria-pressed={showPassword}
+              aria-controls="login-password"
+              title={showPassword ? t.hidePassword : t.showPassword}
+              onClick={() => setShowPassword((visible) => !visible)}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-md text-fg-muted transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-cyan"
+            >
+              {showPassword ? (
+                <EyeOff aria-hidden="true" size={18} />
+              ) : (
+                <Eye aria-hidden="true" size={18} />
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {error && (

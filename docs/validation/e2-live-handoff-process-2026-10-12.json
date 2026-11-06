@@ -1,0 +1,51 @@
+{
+  "database": "inalpha_process_audit_1be55f4a154f47caa9be6a4a23b82005",
+  "scope": "isolated complete Evolver application; synthetic E2 live synthetic-authority handoff records",
+  "e2_authorized_baseline_recovery": "not tested",
+  "production_recovery": "not tested",
+  "fixture": "live synthetic authority; completed baseline; no real user grant or paid candidate",
+  "provider_credentials": "none; unusable fixture only",
+  "result": "passed",
+  "checkout_head": "68eb0daa2bc7ddb0dfdc7bc23e7bd93ab3268f6e",
+  "runtime_source_trees": {
+    "services/evolver/src": "c0d4747d354ea8f275a1f2b5a4006570f2a615c7",
+    "services/paper/src": "e5e0c93175b2a9567a8aa965099adbb0f7fa7acc",
+    "services/_shared": "82bb0aae53142fda8e5784536b8f775e6a6dba93"
+  },
+  "dotenv_files_absent": true,
+  "runtime_source_clean": true,
+  "audit_database_retained": true,
+  "schema": "0067",
+  "forced_exit_code": -9,
+  "sigterm_exit_code": -15,
+  "restart_count": 2,
+  "configured_downstream_requests": 3,
+  "snapshot_reads": 2,
+  "recovered": {
+    "status": "campaign_running",
+    "failure_code": null,
+    "campaign_id": "d5cbf0e7-2fcd-460e-a669-191dea598ead",
+    "baseline_status": "completed",
+    "campaigns": 1
+  },
+  "after_second_restart": {
+    "status": "campaign_running",
+    "failure_code": "EVOLUTION_CREDENTIAL_UNAVAILABLE",
+    "campaign_id": "d5cbf0e7-2fcd-460e-a669-191dea598ead",
+    "baseline_status": "completed",
+    "campaigns": 1
+  },
+  "evidence_kind": "Exploratory unmodified full-application process check; temporary harness, not maintained regression.",
+  "harness_sha256": "276cc4cfbbdb5b80d1e2aa0313501b913089c960df5e411375893d03042a3846",
+  "limits": [
+    "Synthetic persisted authority and completed baseline only; no normal-owner approval or valid model credential.",
+    "Two snapshot HTTP reads observed; no exactly-once read claim. Exactly one campaign and identical campaign ID verified across restart.",
+    "Configured downstream HTTP dependencies used loopback fixtures; no complete outbound network audit.",
+    "No paid candidate, running-baseline recovery, container restart, production recovery, Forward or holdout acceptance.",
+    "SIGTERM -15 does not establish exit-zero graceful shutdown."
+  ],
+  "earlier_probe_failures": [
+    "Full-row equality assertion incorrectly required asynchronous status to remain unchanged.",
+    "Exactly-one snapshot-read assertion failed; two reads observed. Both failed audit databases retained."
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-13",
+  "scope": "Known legacy event-quality diagnostics and model-access guard; E2 remains incomplete",
+  "policy": {
+    "version": "legacy-regulatory-ban-provenance-v1",
+    "known_legacy_extractors": [
+      "deterministic-event-extractor-v1",
+      "deterministic-event-extractor-v2"
+    ],
+    "corrected_extractor": "deterministic-event-extractor-v3",
+    "legacy_regulatory": "Potentially affected; not a claim each flagged fact is one of the 17 audited substring matches",
+    "missing_unknown_provenance": "Blocks with E2_EVENT_PROVENANCE_UNVERIFIED; explicit version set, no lexical comparison",
+    "scope": "Complete discovery context consumed by proposer (including before window start and other discovery assets), plus asset-relevant selection events; holdout outcomes uninspected",
+    "facts_and_counts": "Preserved; no exclusions, reclassification, PIT backdating or threshold changes"
+  },
+  "integration": [
+    "Normal owner preparation and loop preflight return event_quality and concrete blocker codes",
+    "Coverage matrix recommendation requires necessary_inputs_present; quality blocks remain excluded",
+    "Cost-approval preflight returns actual blocker codes",
+    "Baseline and standalone campaign recheck before model credential access"
+  ],
+  "verification": {
+    "new_regressions_before": {
+      "failed": 5,
+      "reason": "Missing quality contract"
+    },
+    "targeted_python_initial": 44,
+    "final_quality_tests": 10,
+    "full_evolver_isolated_database": {
+      "tests": 356,
+      "passed": 355,
+      "skipped": 1,
+      "failures": 0,
+      "errors": 0,
+      "migration": "Fresh wallet0058 -> diagnostics0059 -> 0068",
+      "database_retained": true,
+      "duration_seconds": 240.556,
+      "scope": "Existing full automated suite in isolated database; not complete-service fault injection or real-owner paid execution"
+    },
+    "dashboard_tests": 208,
+    "orchestration_related_tests": 16,
+    "dashboard_typecheck": "passed",
+    "orchestration_typecheck": "passed",
+    "dashboard_build": "passed",
+    "ruff": "passed",
+    "mypy": "One pre-existing campaign float(object) error in changed-path check, also observed in baseline source; no clean full-typecheck claim",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "independent_review": "Found discovery-context lower-bound bypass, corrected and regression added; subsequent four-call-site/credential-order review found no new blocker",
+    "intermittent_full_suite_failure": {
+      "failed_test": "test_five_generations_reject_insufficient_evidence_with_real_engine[False]",
+      "observed": "One full run had candidate outcomes failing the success assertion; 354 passed, 1 failed, 1 skipped",
+      "standalone_reproduction": "Same code and retained isolated database: passed without changing engine/test timeouts",
+      "subsequent_full_suite": "355 passed, 1 skipped; fresh correctly migrated database",
+      "cause": "Not established; do not infer resource-limit warnings caused this failure",
+      "audit_databases_retained": true
+    },
+    "review_corrections": [
+      "Nonempty events with omitted facts fail closed as missing provenance",
+      "Standalone Campaign checks coverage and provenance before credential access",
+      "UI explicit blocker codes override an unexpected status",
+      "Stable input-blocked code and finite allowlisted blocker array survive approval middleware; complete backend failure message preserves every reason"
+    ],
+    "latest_message_contract_tests": {
+      "python": 20,
+      "orchestration": 16,
+      "ui": 5,
+      "typecheck": "Dashboard and orchestration passed",
+      "full_suite_scope": "355/1 full run preceded final policy/text and structured-error-only changes; exact-head CI must pass"
+    }
+  },
+  "production_observation": {
+    "research_image": "4441cb07297aaa89e719bf7f164e7792084cfd3e",
+    "database": "inalpha",
+    "schema": "0068",
+    "fact_versions": {
+      "deterministic-event-extractor-v2": 375
+    },
+    "extraction_completed": 375,
+    "new_v3_fact_observed": false,
+    "quality_guard_deployed": false,
+    "new_model_calls": 0
+  },
+  "evidence_levels": {
+    "code": "Complete for known-defect guard sub-delivery",
+    "automated": "Passed with explicit skip/typecheck limits",
+    "full_isolated_service": "Not newly verified",
+    "production_owner_ui": "Pending deployment and normal owner UI"
+  },
+  "remaining": [
+    "Normal owner bilingual desktop/mobile validation after affected-service deployment",
+    "Explicit audited legacy-evidence remediation workflow; accumulating v3 alone does not unblock existing proposer context",
+    "Remaining listing/SEC classification and different-URL duplicate audit",
+    "Structured source health",
+    "Actual qualified five-generation search and complete service fault matrix",
+    "Real champion then Forward30 days/3 independent events, one-shot holdout and explicit adoption"
+  ],
+  "issue": "https://github.com/mirror29/inalpha/issues/234"
+}

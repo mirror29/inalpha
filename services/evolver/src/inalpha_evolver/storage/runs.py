@@ -13,7 +13,7 @@ _COLUMNS = """run_id,owner_account_id,requested_by_sub,seed_strategy_id,budget,c
 llm_snapshot,llm_config_digest,llm_credential_grant,status,llm_cost_usd,queued_at,started_at,updated_at,finished_at,
 venue,symbol,request_timeframe,data_timeframe,engine_timeframe,requested_as_of,
 seed_source_snapshot,seed_source_hash,seed_report_snapshot,baseline_snapshot,dataset_manifest,
-active_stage,failure_code,failure_message"""
+active_stage,failure_code,failure_message,experiment_id,retry_of_run_id,attempt_number"""
 
 
 async def insert_run(
@@ -31,16 +31,25 @@ async def insert_run(
     llm_snapshot: dict[str, Any],
     llm_credential_grant: str,
     queued_at: datetime,
+    retry_parent: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], bool]:
+    existing = await find_idempotent(conn, owner_account_id, idempotency_key)
+    if existing is not None:
+        return existing, False
     run_id = uuid4()
+    experiment_id = retry_parent["experiment_id"] if retry_parent is not None else run_id
     async with conn.cursor() as cur:
+        attempt_number = 1
+        if retry_parent is not None:
+            await cur.execute("SELECT COALESCE(max(attempt_number),0)+1 n FROM strategy_evo_runs WHERE experiment_id=%s", (experiment_id,))
+            attempt_number = int((await cur.fetchone())["n"])
         await cur.execute(
             f"""INSERT INTO strategy_evo_runs(run_id,owner_account_id,requested_by_sub,
 seed_strategy_id,budget,config,llm_snapshot,llm_config_digest,llm_credential_grant,status,idempotency_key,
 request_hash,queued_at,llm_snapshot_required,llm_credential_grant_required,
 venue,symbol,request_timeframe,data_timeframe,engine_timeframe,
-requested_as_of,seed_source_snapshot,seed_source_hash) VALUES
-(%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,TRUE,TRUE,%s,%s,%s,%s,%s,%s,%s,%s)
+requested_as_of,seed_source_snapshot,seed_source_hash,experiment_id,retry_of_run_id,attempt_number) VALUES
+(%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,TRUE,TRUE,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
 ON CONFLICT(owner_account_id,idempotency_key) DO NOTHING RETURNING {_COLUMNS},request_hash""",
             (
                 run_id,
@@ -63,6 +72,9 @@ ON CONFLICT(owner_account_id,idempotency_key) DO NOTHING RETURNING {_COLUMNS},re
                 config["as_of"],
                 seed_source,
                 seed_hash,
+                experiment_id,
+                retry_parent["run_id"] if retry_parent is not None else None,
+                attempt_number,
             ),
         )
         row = await cur.fetchone()
@@ -128,5 +140,12 @@ async def transition(
             f"UPDATE strategy_evo_runs SET {assignments} WHERE run_id=%s AND status=ANY(%s) RETURNING {_COLUMNS}",
             params,
         )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def find_idempotent(conn: AsyncConnection, owner: UUID, key: str) -> dict[str, Any] | None:
+    async with conn.cursor() as cur:
+        await cur.execute(f"SELECT {_COLUMNS},request_hash FROM strategy_evo_runs WHERE owner_account_id=%s AND idempotency_key=%s", (owner, key))
         row = await cur.fetchone()
     return dict(row) if row else None

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 
 import { cn } from "@/lib/cn";
 import { ToolOutput } from "./ToolOutput";
@@ -43,6 +44,10 @@ export function ChatToolChip({
   state: ToolState;
   stateLabel: string;
 }) {
+  const t = useTranslations("activity.approval");
+  const [open, setOpen] = useState(false);
+  const [terminalResult, setTerminalResult] = useState<string>();
+  const onApprovalTerminal = useCallback(() => setTerminalResult(result), [result]);
   const [showRaw, setShowRaw] = useState(false);
   const { Icon, color, expandable, pulse } = TOOL_STATE_MAP[state];
 
@@ -71,7 +76,7 @@ export function ChatToolChip({
           color,
         )}
       >
-        {stateLabel}
+        {state === "approval-requested" && terminalResult === result ? t("record") : stateLabel}
       </span>
     </>
   );
@@ -90,7 +95,7 @@ export function ChatToolChip({
   }
 
   return (
-    <details className="group w-full max-w-[90%] overflow-hidden rounded-md border border-border-subtle bg-bg/40 text-xs transition-colors hover:border-cyan/40 hover:bg-bg-elev/50">
+    <details onToggle={(event) => setOpen(event.currentTarget.open)} className="group w-full max-w-[90%] overflow-hidden rounded-md border border-border-subtle bg-bg/40 text-xs transition-colors hover:border-cyan/40 hover:bg-bg-elev/50">
       <summary
         className={cn(
           "flex items-center gap-2 px-2.5 py-1.5 font-mono transition-transform hover:translate-x-0.5 motion-reduce:transition-none",
@@ -99,7 +104,7 @@ export function ChatToolChip({
       >
         {head}
       </summary>
-      {result && (
+      {result && (state !== "approval-requested" || open) && (
         <div className="border-t border-border-subtle bg-bg-deep/50">
           <div className="flex items-baseline justify-between pr-2.5">
             <div className={sectionCaption}>{resultLabel}</div>
@@ -123,7 +128,7 @@ export function ChatToolChip({
           ) : view ? (
             <div className="max-h-72 overflow-auto px-2.5 py-1.5">{view}</div>
           ) : (
-            <ToolOutput raw={result} />
+            <ToolOutput raw={result} onApprovalTerminal={onApprovalTerminal} />
           )}
         </div>
       )}

@@ -49,6 +49,7 @@ class _CredentialClient:
 
 def _settings() -> SimpleNamespace:
     return SimpleNamespace(
+        database_url="postgresql://unused/test",
         dashboard_service_url="http://dashboard:3001",
         service_token_ttl_s=3600,
         jwt_secret="test-secret-at-least-32-bytes-long",
@@ -60,6 +61,7 @@ def _settings() -> SimpleNamespace:
 
 def _run(snapshot: dict | None = None) -> dict:
     return {
+        "run_id": "00000000-0000-0000-0000-000000000001",
         "requested_by_sub": "user:alice",
         "llm_snapshot": snapshot or llm_snapshot(),
         "llm_credential_grant": "signed-credential-grant",
@@ -86,6 +88,7 @@ async def test_owner_mutator_uses_frozen_snapshot_and_credential_reference(
     assert "api_key" not in run["llm_snapshot"]
     client = await mutator.llm_client._ensure_client()
     assert type(client).__name__ == "AsyncOpenAI"
+    assert client.max_retries == 0
     await mutator.close()
 
 

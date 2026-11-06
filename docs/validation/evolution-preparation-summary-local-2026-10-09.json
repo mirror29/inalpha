@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local preparation and SSR checks; not production acceptance",
+  "commits": {
+    "seed_context": "de65782d",
+    "readable_summary": "4c621f72"
+  },
+  "checks": {
+    "orchestration_tests_passed": 587,
+    "database_checks_skipped_in_default_suite": 3,
+    "dashboard_tests_passed": 165,
+    "typechecks": "passed",
+    "dashboard_build": "passed",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "policy": [
+    "Resolve candidate context through normal owner APIs before cost approval",
+    "Normalize bare Paper candidate IDs to canonical references",
+    "Inherit omitted configuration from completed evaluation context",
+    "Block unfinished or missing context even when replacement parameters are supplied",
+    "Retain original explicit retry configuration",
+    "Display frozen request and estimated model cost without assigning missing costs zero",
+    "Keep complete fingerprints inside diagnostics rather than primary summary"
+  ],
+  "pending": [
+    "Rendered desktop/mobile normal owner flow",
+    "Production deployment and real approval/preparation acceptance",
+    "Chat cost attribution and complete experiment lineage",
+    "E2 positive evidence remains incomplete"
+  ]
+}

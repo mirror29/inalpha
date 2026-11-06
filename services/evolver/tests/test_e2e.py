@@ -5,16 +5,21 @@ from __future__ import annotations
 import os
 import time
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
+from psycopg import connect
 
 from inalpha_evolver.api.request_hash import approval_request_digest
 from inalpha_evolver.api.schemas import StartRunRequest
 from inalpha_evolver.config import get_evolver_settings
+from inalpha_evolver.governor.seed import SEED_STRATEGY_CODE
 from inalpha_evolver.main import app
+from inalpha_evolver.runtime import EvolutionRunManager
 
 from .llm_snapshot_fixtures import (
     EVOLUTION_GRANT_PUBLIC_KEY_B64,
@@ -23,6 +28,7 @@ from .llm_snapshot_fixtures import (
 )
 
 _SECRET = "evolver-test-secret-at-least-32-bytes-long"
+_OWNED_SUBJECTS: set[str] = set()
 
 
 def _headers(
@@ -32,6 +38,7 @@ def _headers(
     include_grant: bool = True,
 ) -> dict[str, str]:
     subject = f"test:{uuid4()}"
+    _OWNED_SUBJECTS.add(subject)
     token = jwt.encode(
         {"sub": subject, "exp": int(time.time()) + 3600},
         _SECRET,
@@ -55,12 +62,26 @@ def client() -> TestClient:
     database_url = os.environ.get("EVOLVER_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("EVOLVER_TEST_DATABASE_URL is required for database integration tests")
-    os.environ["DATABASE_URL"] = database_url
-    os.environ["JWT_SECRET"] = _SECRET
-    os.environ["EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64"] = EVOLUTION_GRANT_PUBLIC_KEY_B64
-    get_evolver_settings.cache_clear()
-    with TestClient(app) as value:
-        yield value
+    # API contracts exercise durable submission; worker execution has separate tests.
+    # A real dispatcher here leaks queued jobs and makes global claim tests order-dependent.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("DATABASE_URL", database_url)
+        patch.setenv("JWT_SECRET", _SECRET)
+        patch.setenv("EVOLUTION_CREDENTIAL_PUBLIC_KEY_B64", EVOLUTION_GRANT_PUBLIC_KEY_B64)
+        patch.setattr(EvolutionRunManager, "start", AsyncMock())
+        patch.setattr(EvolutionRunManager, "close", AsyncMock())
+        get_evolver_settings.cache_clear()
+        try:
+            with TestClient(app) as value:
+                yield value
+        finally:
+            with connect(database_url.replace("postgresql+psycopg://", "postgresql://")) as conn:
+                conn.execute(
+                    "DELETE FROM strategy_evo_runs WHERE requested_by_sub = ANY(%s)",
+                    (list(_OWNED_SUBJECTS),),
+                )
+            _OWNED_SUBJECTS.clear()
+            get_evolver_settings.cache_clear()
     get_evolver_settings.cache_clear()
 
 
@@ -69,6 +90,10 @@ def _payload() -> dict:
     return {
         "seed_strategy_id": "sma_cross_v1",
         "budget": 1,
+        "preparation": {
+            "seed_source_hash": sha256(SEED_STRATEGY_CODE.encode()).hexdigest(),
+            "dataset_content_sha256": "a" * 64,
+        },
         "config": {
             "venue": "binance",
             "symbol": "BTCUSDT",

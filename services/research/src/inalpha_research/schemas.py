@@ -55,6 +55,72 @@ class ExtractEventFactsResponse(BaseModel):
     failed_event_ids: list[UUID]
 
 
+class ReviewedFactEvidenceSpan(BaseModel):
+    """Hash-only evidence contract returned by Data."""
+
+    start: int
+    end: int
+    quote_hash: str
+
+
+class ReviewedFactRecord(BaseModel):
+    """Validate the complete Data fact acknowledgement without cross-service imports."""
+
+    fact_id: UUID
+    raw_event_id: UUID
+    fact_key: str = Field(min_length=1)
+    version: int = Field(ge=1)
+    fact_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    event_type: Literal[
+        "listing",
+        "delisting",
+        "exploit",
+        "chain_halt",
+        "regulatory",
+        "upgrade",
+        "unlock",
+        "burn",
+        "partnership",
+        "macro",
+        "other",
+    ]
+    assets: list[str]
+    asset_ids: list[str]
+    actor: str | None
+    action: str
+    severity: float
+    confidence: float
+    effective_at: datetime
+    available_at: datetime
+    evidence_spans: list[ReviewedFactEvidenceSpan]
+    extractor_version: str
+    policy_version: str
+    supersedes_fact_id: UUID | None
+    retracted: bool
+    created_at: datetime
+
+
+class ReviewedFactAudit(BaseModel):
+    """Immutable operation/source/replacement lineage returned by Data."""
+
+    correction_id: UUID
+    source_fact_id: UUID
+    corrected_fact_id: UUID
+    retired_fact_id: UUID | None = None
+    request_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    service_subject: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    available_at: datetime
+
+
+class ReviewedFactAcknowledgement(BaseModel):
+    """An incomplete or malformed acknowledgement remains an unknown result."""
+
+    correction: ReviewedFactAudit
+    fact: ReviewedFactRecord
+    created: bool = Field(strict=True)
+
+
 # ────────────────────────────────────────────────────────────────────
 # 输入
 # ────────────────────────────────────────────────────────────────────

@@ -1,0 +1,4 @@
+name: inalpha-alpha-fox
+logs:
+  file: build/rive.log
+  problems: build/problems.log

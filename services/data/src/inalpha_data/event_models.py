@@ -198,6 +198,61 @@ class EventFactWriteResponse(BaseModel):
     created: bool
 
 
+class EventFactCorrectionValue(BaseModel):
+    """Reviewed classification only; identity and availability are server-controlled."""
+
+    model_config = ConfigDict(extra="forbid")
+    event_type: EventType
+    assets: list[str] = Field(default_factory=list, max_length=64)
+    actor: str | None = Field(default=None, max_length=500)
+    action: str = Field(min_length=1, max_length=2_000)
+    severity: float = Field(ge=0, le=1)
+    confidence: float = Field(ge=0, le=1)
+    evidence_spans: list[EvidenceSpan] = Field(default_factory=list, max_length=32)
+    extractor_version: Literal["deterministic-event-extractor-v3"]
+    retracted: bool = False
+
+
+class EventFactCorrectionRequest(BaseModel):
+    """Bind an idempotent reviewed correction to the exact original version."""
+
+    model_config = ConfigDict(extra="forbid")
+    correction_id: UUID
+    expected_fact_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reason: str = Field(min_length=1, max_length=2_000)
+    value: EventFactCorrectionValue
+
+    @field_validator("reason", mode="after")
+    @classmethod
+    def require_review_reason(cls, value: str) -> str:
+        """Require actual audit text rather than a whitespace placeholder."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("review reason must contain text")
+        return normalized
+
+
+class EventFactCorrectionRecord(BaseModel):
+    """Immutable correction provenance, without authentication credentials."""
+
+    correction_id: UUID
+    source_fact_id: UUID
+    corrected_fact_id: UUID
+    retired_fact_id: UUID | None = None
+    request_hash: str
+    service_subject: str
+    reason: str
+    available_at: datetime
+
+
+class EventFactCorrectionResponse(BaseModel):
+    """Recover the same correction and appended fact after a lost response."""
+
+    correction: EventFactCorrectionRecord
+    fact: EventFactRecord
+    created: bool
+
+
 class EventFactListResponse(BaseModel):
     """Latest visible fact versions for a bounded point-in-time consumer window."""
 

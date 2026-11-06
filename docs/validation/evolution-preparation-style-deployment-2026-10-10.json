@@ -1,0 +1,42 @@
+{
+  "business_sha": "12ac65d551fb75277645b5ee02c14b0e69653924",
+  "pr": 223,
+  "head_ci": 38045955869,
+  "main_ci": 38046224370,
+  "image_build": 38046224354,
+  "checks": "success",
+  "review": "Two MEDIUM concerns addressed with test and UTC contract evidence; no confirmed blocker. Static review scope only.",
+  "dashboard": {
+    "container": "8e7decdc7d9e58ffe690043b2108daf61790a3a2a1a6aeb9b7dd63221fb0924e",
+    "health": "healthy",
+    "previous_sha": "7be04661eb697116cd25bf56bd5ce36130bbc69e",
+    "previous_sha_context": "Intermediate wallet UI deployment observed before this change; PR219 had earlier deployed ab5fd15b. Preserve the actual pre-change 7be04661 image when rolling back."
+  },
+  "backup": {
+    "path": "infra/.env.prod.before-dashboard-20261010T122921Z",
+    "mode": "600"
+  },
+  "safety": {
+    "pre_deploy_connection_checks": [
+      0,
+      0
+    ],
+    "active_e1": 0,
+    "active_loops": 0,
+    "database": "inalpha",
+    "schema": "0067",
+    "other_nine_container_ids_unchanged": true
+  },
+  "verification": {
+    "server_public_login_http": 200,
+    "local_public_http": "network failure; not an application failure diagnosis",
+    "dashboard_tests": 193,
+    "typecheck": "passed",
+    "post_deploy_visual": "pending",
+    "dashboard_tests_scope": "193 local Dashboard tests after code commit 4a4ec192; later f8fb9dec changes were documentation only. Exact-head CI and merge CI are separately identified above."
+  },
+  "limitations": [
+    "SSH deployment command did not return its final receipt; independent SSH reads verified image, health, backup mode and container identities.",
+    "No new model call or E2 search; no E2 completion claim."
+  ]
+}

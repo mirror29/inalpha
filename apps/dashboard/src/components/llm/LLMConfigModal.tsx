@@ -26,7 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 
 interface SettingsResponse {
@@ -250,17 +250,19 @@ export function LLMConfigModal({ open, onClose }: { open: boolean; onClose: () =
                   <div className="space-y-2">
                     <Label htmlFor="provider">{t("provider")}</Label>
                     <Select
-                      id="provider"
                       value={formData.provider}
-                      onChange={(e) => setFormData({ ...formData, provider: e.target.value as LLMProvider })}
+                      onValueChange={(value) => setFormData({ ...formData, provider: value as LLMProvider })}
                     >
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="anthropic">Anthropic</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="gemini">Gemini</option>
-                      <option value="kimi">Kimi</option>
-                      <option value="zhipu">智谱 AI</option>
-                      <option value="custom">{t("customProvider")}</option>
+                      <SelectTrigger id="provider"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="deepseek">DeepSeek</SelectItem>
+                        <SelectItem value="anthropic">Anthropic</SelectItem>
+                        <SelectItem value="openai">OpenAI</SelectItem>
+                        <SelectItem value="gemini">Gemini</SelectItem>
+                        <SelectItem value="kimi">Kimi</SelectItem>
+                        <SelectItem value="zhipu">智谱 AI</SelectItem>
+                        <SelectItem value="custom">{t("customProvider")}</SelectItem>
+                      </SelectContent>
                     </Select>
                   </div>
 

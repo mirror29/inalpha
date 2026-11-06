@@ -13,7 +13,7 @@ from ..loop_fencing import fenced_baseline_write
 
 _COLUMNS = """candidate_id,run_id,slot,generation,parent_id,stage,outcome,source_code,
 source_hash,unified_diff,mutation_hint,llm_cost_usd,cache_hit_tokens,input_tokens,
-output_tokens,fitness,evaluation_snapshot,audit_snapshot,contract_snapshot,error_code,
+output_tokens,usage_status,fitness,evaluation_snapshot,audit_snapshot,contract_snapshot,error_code,
 error_message,overfitting_risk,data_epoch,created_at,updated_at"""
 
 
@@ -125,8 +125,24 @@ async def summarize(conn: AsyncConnection, run_id: UUID) -> dict[str, int | floa
         await cur.execute(
             """SELECT count(*) attempted,count(*)FILTER(WHERE outcome='succeeded') succeeded,
 count(*)FILTER(WHERE outcome NOT IN('pending','succeeded')) rejected,
-COALESCE(sum(llm_cost_usd),0) llm_cost_usd FROM strategy_evo_candidates WHERE run_id=%s""",
+COALESCE(sum(llm_cost_usd),0) llm_cost_usd,
+COALESCE(sum(llm_cost_usd)FILTER(WHERE usage_status='known'),0) known_cost_usd,
+count(*)FILTER(WHERE usage_status IN('unknown','legacy_unknown')) unknown_usage_count,
+COALESCE(sum(llm_cost_usd),0) recorded_cost_usd FROM strategy_evo_candidates WHERE run_id=%s""",
             (run_id,),
         )
         row = await cur.fetchone()
     return dict(row)
+
+
+@fenced_baseline_write
+async def claim_model_call(conn: AsyncConnection, run_id: UUID, slot: int) -> bool:
+    """Persist uncertain liability before the network request, preventing hidden replay."""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """UPDATE strategy_evo_candidates SET usage_status='unknown',llm_cost_usd=NULL,
+updated_at=NOW() WHERE run_id=%s AND slot=%s AND outcome='pending'
+AND stage='mutation' AND usage_status='not_called' RETURNING candidate_id""",
+            (run_id, slot),
+        )
+        return await cur.fetchone() is not None

@@ -324,3 +324,37 @@ def test_run_dto_exposes_manifest_cutoff_and_lag() -> None:
         "data_epoch",
         "backfill",
     } <= required
+
+
+def test_preparation_is_bound_to_cross_language_approval_digest_and_storage():
+    from inalpha_evolver.api.schemas import EvolutionPreparation
+
+    request = _request()
+    request.preparation = EvolutionPreparation(seed_source_hash="a" * 64, dataset_content_sha256="b" * 64)
+    assert approval_request_digest(request) == "6ed7ff34b286ff1f3849286be3bce66a39cf31bff09f2dac1291f88a79bbfc07"
+    config, first_hash = normalized_request(request)
+    assert config["preparation"] == request.preparation.model_dump()
+    request.preparation = EvolutionPreparation(seed_source_hash="a" * 64, dataset_content_sha256="c" * 64)
+    assert approval_request_digest(request) != "6ed7ff34b286ff1f3849286be3bce66a39cf31bff09f2dac1291f88a79bbfc07"
+    assert normalized_request(request)[1] != first_hash
+
+
+def test_legacy_unprepared_internal_request_keeps_its_idempotency_identity():
+    import hashlib
+    import json
+
+    request = _request()
+    legacy_payload = request.model_dump(mode="json", exclude={"preparation", "retry_of_run_id"})
+    expected = hashlib.sha256(json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert normalized_request(request)[1] == expected
+
+
+def test_retry_parent_is_bound_to_cross_language_approval_digest():
+    from uuid import UUID
+
+    from inalpha_evolver.api.schemas import EvolutionPreparation
+
+    request = _request()
+    request.preparation = EvolutionPreparation(seed_source_hash="a" * 64, dataset_content_sha256="b" * 64)
+    request.retry_of_run_id = UUID("11111111-1111-4111-8111-111111111111")
+    assert approval_request_digest(request) == "8f8f105aa32ddf46ac1660822b0b732e022adb849bdb6104451aa91addf46884"

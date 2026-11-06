@@ -430,6 +430,8 @@
     ]
   },
   "cta": {
+    "trial": "申请账号试用",
+    "trialNote": "在线体验 Inalpha：提交申请，审核通过后通过邮件获取激活链接。已有账号可直接登录。",
     "eyebrow": "开始",
     "title": "Star 它。读它。彻底拆解它。",
     "sub": "Inalpha 仍在 alpha 阶段，AGPL-3.0 协议。请暂缓真金部署——但每一行代码都在 GitHub 公开。",

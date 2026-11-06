@@ -26,6 +26,8 @@
 
 <p>Inalpha is a <strong>professional quant agent framework</strong> — an open-source system where LLM agents research (with a panel of investing legends), pick the factors that work <em>now</em>, write and evolve strategy code, and route every order through machine approval, all under an <strong>audit-grade engineering harness</strong>. A unified kernel (one strategy codebase — swap only the Clock and Gateway), multi-market routing (crypto, US equities, A-shares, global indices, macro), and a Claude Code-style hooks/permissions/plan-exec layer back it — built for teams that demand <strong>every decision be provable and every order path be unreachable by the LLM directly</strong>.</p>
 
+<p><a href="https://dashboard.inalpha.dev"><strong>Hosted console</strong></a> &nbsp;·&nbsp; <a href="https://dashboard.inalpha.dev/register?from=/en"><strong>Request trial access</strong></a><br /><sub>Apply for an account. After approval, an activation link is sent by email.</sub></p>
+
 </div>
 
 ---
@@ -50,6 +52,15 @@ The name combines **Ina**ri (the Japanese fox deity of prosperity) with **alpha*
 > **Status:** Inalpha is in **alpha** — 79 factors with lineage & decay watch, restricted-DSL factor discovery, a three-party research debate, multi-market paper trading, and E1/E2 strategy evolution. Feature-flagged E2 adds point-in-time event snapshots, deterministic hypothesis DSL compilation, five-generation campaigns, Forward evidence, and one-shot sealed holdout. Evolution never auto-promotes, starts, or trades a candidate. Read the code, weigh in on design — **do not run this against real money** (real-money trading is out of scope).
 
 ---
+
+
+> Code checked on **2026-09-30**: owner-scoped EvolutionLoop reuse, durable dispatch with
+> leases/checkpoints, atomic stage handoffs, and bounded loop authorization/cost accounting
+> are implemented. Automated tests cover recovery and gate behavior; complete real-environment
+> runs and restart validation still need recorded evidence. Final adoption remains manual and
+> experimental candidates remain Runner-ineligible. See the [current state and next steps](docs/04-current-state.md#未完成--下一步).
+
+> E2 update (2026-10-10): explicit experiment preparation and frozen cost approval are implemented; the central checklist tracks deployment and normal-owner acceptance. E1 owner execution and E2 insufficient-input rejection have production evidence; the positive champion/Forward/holdout path remains unverified. See the [current-state checklist](docs/04-current-state.md#未完成--下一步).
 
 ## The Operator Console
 

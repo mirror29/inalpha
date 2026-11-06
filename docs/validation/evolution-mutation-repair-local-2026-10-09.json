@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local implementation and isolated database verification; not production acceptance",
+  "commits": {
+    "provider_finish_reason": "191c31b1",
+    "classification": "8b56c94a",
+    "sdk_retries": "c28d5c45",
+    "bounded_repair": "6d811e9e"
+  },
+  "policy": {
+    "max_repairs_per_run": 1,
+    "repair_uses_existing_approved_slot": true,
+    "extra_slots_created": 0,
+    "implicit_sdk_retries": 0,
+    "parent_failure_retained": true,
+    "parent_candidate_link_persisted": true,
+    "untrusted_failed_output_in_repair_prompt": false
+  },
+  "checks": {
+    "evolver_passed": 241,
+    "evolver_skipped_without_database": 52,
+    "existing_short_test_secret_warnings": 3,
+    "isolated_database_passed": 17,
+    "migration_tests_passed": 3,
+    "shared_llm_tests_passed": 8,
+    "touched_evolver_ruff": "passed",
+    "diff_check": "passed"
+  },
+  "database": {
+    "chain": "0001 -> 0058 wallet -> 0059 diagnostics -> 0060 attempt lineage",
+    "temporary_database_removed": true,
+    "existing_databases_modified": false
+  },
+  "pending": [
+    "Production deployment and real effective-candidate rate/cost validation",
+    "Unknown provider usage and interrupted-call cost reconciliation",
+    "Candidate lineage UI and readable approval preparation summary",
+    "In-flight restart/fencing verification; completed-slot replay tests do not prove exactly-once network execution",
+    "Comparison results and reliable approval submission",
+    "E2 champion, real-time Forward, holdout and manual adoption"
+  ],
+  "cost_evidence": "Returned usage and rejected outputs retained; unavailable usage is not established as zero cost by these tests"
+}

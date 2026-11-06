@@ -21,8 +21,10 @@ class _Hunk:
     body: tuple[tuple[str, str], ...]
 
 
-def _fail(message: str, original: str, diff: str) -> DiffApplyError:
-    return DiffApplyError(message, original=original, failed_diff=diff)
+def _fail(
+    message: str, original: str, diff: str, code: str = "MUTATION_DIFF_INVALID"
+) -> DiffApplyError:
+    return DiffApplyError(message, original=original, failed_diff=diff, code=code)
 
 
 def _clean(raw_diff: str, original: str) -> list[str]:
@@ -127,12 +129,12 @@ def apply_diff(original: str, unified_diff: str, max_fuzz: int = 0) -> str:
         old_index = hunk.old_start - 1 if hunk.old_count else hunk.old_start
         new_index = hunk.new_start - 1 if hunk.new_count else hunk.new_start
         if old_index < cursor or old_index > len(source):
-            raise _fail("hunk 重叠或 old_start 越界", original, unified_diff)
+            raise _fail("hunk 重叠或 old_start 越界", original, unified_diff, "MUTATION_POSITION_INVALID")
         if new_index != old_index + delta:
             raise _fail("hunk new_start 与前序变更不一致", original, unified_diff)
         expected = [text for prefix, text in hunk.body if prefix in {" ", "-"}]
         if source[old_index : old_index + len(expected)] != expected:
-            raise _fail("hunk 上下文与声明位置不完全匹配", original, unified_diff)
+            raise _fail("hunk 上下文与声明位置不完全匹配", original, unified_diff, "MUTATION_CONTEXT_MISMATCH")
         output.extend(source[cursor:old_index])
         output.extend(text for prefix, text in hunk.body if prefix in {" ", "+"})
         cursor = old_index + len(expected)

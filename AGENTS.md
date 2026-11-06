@@ -24,6 +24,10 @@ Inalpha = AI agent 编排 + 多 Python kernel 的**量化实验框架**：agent 
 
 ## 3. 协作硬约束（任何 AI 工具必须遵守）
 
+- **前端 UI 一致性**：Dashboard 改动先读 `apps/dashboard/design.md`，优先复用
+  `src/components/ui/` 的 shadcn/Radix 组件及现有业务封装（PageHeader / Panel / Table / StatusBadge）。
+  已有组件不得绕过后另写原生控件样式；缺失通用能力先补共享组件，统一主题 token、间距和交互态。
+  验收必须实际检查深浅主题、窄屏、键盘操作及加载/空/错误/禁用态，不能只以编译和接口测试代替 UI 验收。
 - **品牌名**：始终大写 **Inalpha**（不写 inalpha / InAlpha / inAlpha） <!-- check-consistency: skip -->（元用法）
 - **市场覆盖**：crypto + 美股 + A股 + 港股 + 全球单股 / 指数 + FRED 宏观；
   orchestration 按市场类型路由 venue，交易时段由市场日历处理
@@ -117,7 +121,11 @@ E1 已拆出 `services/evolver:8005`：真实 frozen bars、单代 unified-diff 
 owner-scoped 状态、显式逐次审批与可复现实验元数据。E2 在 feature flag 后增加双时态事件
 snapshot、HypothesisSpec 确定性编译、五代 8×3 共演化、单冠军 Forward、一次性 holdout 与
 `runner_eligible=false` 的人工实验性采用；不会自动 promote、启动策略或下单。
-下一步是在小流量运行中校准事件覆盖与信用分配；MAP-Elites / Island Model 继续后置。
+2026-09-30 代码核对：持久化 EvolutionLoop、重复触发复用、租约恢复与原子阶段交接已落地；
+已有自动化测试，真实运行验证仍待完成。下一步优先真实 E2 链路与重启幂等验证，
+再校准事件覆盖、费用与评估；优先级统一见 `docs/04-current-state.md`「未完成 / 下一步」。
+
+> E2 更新（2026-10-10）：显式新实验准备与冻结费用审批代码已落地；最新部署与正常 owner 验收状态以中央清单为准。E1 正常 owner 执行和 E2 输入不足拦截有生产证据；冠军、Forward、holdout 正向生产验收仍未完成。优先级统一见 `docs/04-current-state.md`。
 详见 [`docs/04-current-state.md`](docs/04-current-state.md) / `CLAUDE.md` §3 /
 仓库根 `README.md`。
 

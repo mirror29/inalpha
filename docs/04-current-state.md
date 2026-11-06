@@ -1,574 +1,79 @@
-# 04 · 当前状态：D-12 + E2 事件驱动自动演化
+# 04 · 当前状态与下一步
 
-> 状态：**D-12 因子库闭环 + E2 事件驱动 Evolver 已落地（更新至 2026-09-20）**——因子血缘 + 衰减巡检 + monthly
-> 宏观 + 因子发现 L1，在 D-11（多市场模拟盘）/ D-10（web 搜索 + 财报基本面 +
-> 多市场数据）/ D-9（Plan/Exec 闭环 + LLM 自创策略 + 风控引擎）/ D-9.1a 基础上落地。
-> research-hub（issue #6）已于 2026-06-12 收口；E1 生产代码由 PR #159 合入 main；
-> E2 在 `EVENT_EVOLUTION_ENABLED` 后提供事件账本、确定性 DSL、五代共演化和实验性采用，
-> 原 E1 run API 与逐次审批语义保持不变。
->
-> 本文回答的问题：**clone 仓库后，"现在到底做到哪里、决策链路长什么样"。**
-> 详细架构与设计取舍见 [`docs/03-kernel-design.md`](./03-kernel-design.md)；
-> 本文只描述**当前代码已落地的状态**。
+> 更新：2026-10-14。本页维护最新结论、证据边界和唯一优先级清单；历史采样与部署日志见 [截至本轮的存档](validation/current-state-history-through-2026-10-14.md) 和各项回执。
 
-## 一句话
+## 当前结论
 
-**Trader agent 不能直接下单**——所有下单意图必须走 `trade.create_plan →
-trade.approve_plan → trade.execute_plan` 三段式；其中 **Hooks**（5 类生命周期事件）
-与 **Permission Engine**（allow / ask / deny 三态）作为 tool 中间件双层护栏，
-LLM 视野里**不存在**绕过 plan 直接下单的可达路径。
+Inalpha 是 AI agent 编排与多 Python kernel 的量化实验框架。D-12 与 E2 闭环代码已落地，**完整 E2 工程验收与真实正向生产验收都尚未完成**，不新增 Phase 完成结论。
 
----
+- **E1 已生产跑通审批→生成→刷新读取**：真实候选与种子适应度相同，验证段零成交，未证明改善。见 [正常 owner 执行回执](validation/evolution-approval-execution-lineage-2026-10-10.json)。
+- **E2 当前不选择启动资产**：最近可靠 owner 免费矩阵采样为 `2026-10-14T07:55:26.260Z`，BTC / ETH / SOL 独立事件上界为 **3/8、0/8、0/8**。未提交费用审批或付费搜索。匹配对照、FDR 和研究结果未评估。见 [owner 预检](validation/e2-owner-free-matrix-followup-2026-10-14.json)。
+- **执行阻断已修复并合并，线上仍待发布**：PR #242 的 `a275f8be` 补 campaign 调度使用身份；357 项本地测试通过、1 跳过，精确 head/main CI 与七镜像成功。自动 CR 的1项MEDIUM已按完整消费者核对回应，独立复核无确认新增阻断。发布被活跃连接守卫拦截，原 Evolver `c55a5efe` / image `25874208` 保持 healthy、内部投影仍缺该字段；服务器仓库更新和镜像缓存不等于服务已替换。见 [发布与守卫回执](validation/e2-campaign-identity-release-2026-10-14.json)。
+- **同镜像两项完整 Evolver 隔离检查已通过**：已保存响应在强杀后复用、未知响应在充足预算下拒绝自动重发。采用正式业务镜像、本地 AMD64 架构模拟和外围 HTTP/provider 夹具，不能替代正常 owner、完整外围服务栈或生产恢复证据。
 
-## 决策链路（一次下单端到端）
+下单仍必须经过机器审批与风控。演化不会自动 promote、启动 Runner 或下单；最终采用必须由用户明确选择。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as User
-    participant O as Orchestrator
-    participant T as Trader
-    participant R as Risk
-    participant H as Hooks
-    participant P as Permission
-    participant PS as Paper DB Plan Store
-    participant Paper as services/paper
+## 输入与数据质量
 
-    U->>O: "Open 0.01 BTC long"
-    O->>T: delegate
-    T->>H: trade.create_plan(...)
-    H->>H: PreToolUse: risk-precheck
-    H->>P: authorize
-    P-->>H: allow (create_plan 不下单)
-    H->>PS: write status=pending_approval
-    H->>H: PostToolUse: notify-approver + audit-log
-    H-->>T: { planId, status: pending }
+| 资产 | 选择段事实 | 独立事件上界 | 当前动作 |
+|---|---:|---:|---|
+| BTC | 21 | 3 / 8 | 不启动搜索 |
+| ETH | 0 | 0 / 8 | 不启动搜索 |
+| SOL | 0 | 0 / 8 | 不启动搜索 |
 
-    Note over O,R: 可异步等待 1s ~ 1h
+上述数字只对应07:55采样的正常建议窗口；截止时点推进会移动自然60/20/20分段，不能直接与旧窗口作回归或因果比较。最新闭合1h末根开盘06:00、收盘07:00，与要求末根差值0；这不表示墙钟年龄为0。SOL选择段变为10/09 06:00至10/11 18:00，此次0/8不能归因于数据回退。
 
-    O->>R: review plan
-    R->>H: trade.approve_plan(planId)
-    H->>PS: status=approved, issue token
-    H-->>R: { approvalToken }
+[04:05采样回执](validation/e2-owner-post-confirmation-2026-10-14.json)中BTC旧监管质量提示消失，07:55未展开质量面板复核；语义准确性仍未评估。原文数量、事实版本、24小时独立上界与实际匹配对照是不同口径；上界达到8也只具备必要条件。
 
-    R->>T: handoff token
-    T->>H: trade.execute_plan(planId, token)
-    H->>H: PreToolUse: verify token + re-run risk
-    H->>P: authorize
-    P-->>H: ask / allow
-    H->>PS: consume token (one-shot)
-    H->>Paper: POST /orders/submit
-    Paper-->>H: { orderId }
-    H->>H: PostToolUse: audit log
-    H->>PS: status=executed
-    H-->>T: { orderId, status: submitted }
+- v3抽取器已修复ban误命中bank等缺陷；历史v2保持不可变。可信Research→Data审核已逐条实测一条跨类型纠正和两条BTC同类确认，原哈希、证据与有效时间保留，纠正按数据库当前可见时间追加。不是全部历史事实审核通过，普通owner无全局事实写权限。见 [单条纠正](validation/event-fact-single-production-2026-10-14.json) / [BTC确认](validation/event-fact-btc-confirmation-2026-10-14.json)。
+- 运行版本曾有OCI标签与tag不一致；三Python业务包200源码文件的独立比对范围不含共享包、依赖或客户端bundle，不能据标签认定整个镜像可复现。见 [运行源码核对](validation/e2-runtime-source-parity-2026-10-14.json)。
+- 旧冻结窗口不能靠未来事件补齐。新实验必须独立准备、重新预检并审批，不根据收益试窗，不回溯首次可见时间。
 
-    Note over T,O: Stop hook 检查 pending plan 残留<br/>(scheduler 路径强制再 turn；chat 路径在最终回复追加警示)
-```
+## 验收证据分层
 
----
+| 环节 | 代码 / 自动化 | 完整隔离服务证据 | 正常 owner / 生产证据 |
+|---|---|---|---|
+| 新实验准备、覆盖矩阵、配置失效 | 已实现并有测试 | 相关数据库与路由测试 | 中文矩阵、英文桌面准备、目标参数保留和UI修改使旧结果隐藏；移动和服务端旧审批拒绝仍待核验 |
+| 冻结审批与执行身份 | 已实现；内部身份遗漏已修复 | 镜像导入、公开schema排除字段及真实Evolver调用路径检查 | E1已通过；新E2审批/执行尚未通过，修复部署待安全窗口 |
+| 模型响应已存、整代提案未存时退出 | 已有维护中的回归 | 同镜像完整Evolver五代恢复通过，离线调用2+8，120实现，合成已知费用0.000780、预留0；FDR不足拒绝 | 未取得真实模型响应恢复或owner五代证据 |
+| 在途响应未知时退出 | 已有费用/响应回归 | 同镜像重启及再次重启均停在`LOOP_PROPOSAL_RESPONSE_UNCONFIRMED`；调用总数2，未知预留0.0340608保持，额度1充足 | 未取得真实供应商对账与生产未知费用恢复证据 |
+| 其他故障、交接与一次性holdout | 已有相关状态机与自动化 | 部分源码进程/受控数据库证据；完整矩阵待补 | 生产恢复、冠军与长期正向链路未完成 |
 
-## 已落地的模块
+已将双进程探索整理为 [固定镜像接手工具](../services/evolver/scripts/validate_campaign_takeover.py)，新增镜像/连接边界与清理超时、已退出竞争和夹具契约9项回归。最终同镜像运行先以相同reservation/参数在有效租约下完成并回滚写入作为对照，再在新租约仍为`replaying`且未过期时，直接旧token调用`proposal_responses.complete()`收到`LOOP_AUTHORIZATION_UNAVAILABLE`；预留0.0340608、非空响应0和阶段保持不变。两容器退出0，env删除及独立Docker清理确认；9项测试、Ruff/格式、一致性19/0/12通过。见 [维护工具回执](validation/e2-maintained-takeover-validator-2026-10-14.json)。这是实际存储调用拒绝证据，不是旧SDK回调收包、完整外围授权栈或生产fencing通过；其他故障场景尚未整理为维护套件。
 
-| 模块 | 位置 | 关键文件 |
-|---|---|---|
-| 三 agent 拆分 | `packages/orchestration/src/mastra/agents/` | `orchestrator.ts` · `trader.ts` · `risk.ts` |
-| Plan/Exec 三 tool | `packages/orchestration/src/tools/` | `trade-plan.ts`（`createTradePlan` / `approveTradePlan` / `executeTradePlan`） |
-| Hooks runner（5 类事件） | `packages/orchestration/src/hooks/` | `runner.ts` · `with-hooks.ts` · `matcher.ts`（`SessionStart` / `UserPromptSubmit` / `PreToolUse` / `PostToolUse` / `PostToolUseFailure` + Stop） |
-| Permission Engine（三态） | `packages/orchestration/src/permissions/` | `engine.ts` · `predicate.ts` · `defaults.ts`（YAML 化在 D-8b） |
-| Plan/approval 持久化 | `services/paper/src/inalpha_paper/api/` · `storage/` | `trade_plans.py` 与 owner-scoped DB 查询；approval_token 一次性 + expire_at |
-| paper 单笔下单 endpoint | `services/paper/src/inalpha_paper/api/` | `orders.py` → `POST /orders/submit` |
-| 策略与评估内核 | `services/paper/src/inalpha_paper/strategies/` · `strategy_evaluation.py` | 内置 baseline/教学/adapter + 候选审计、回测与市场网格评估 |
-| paper 内核 | `services/paper/src/inalpha_paper/kernel/` · `execution/` | `clock.py` · `msgbus.py` · `risk_engine.py` · `execution_engine.py` · `order_executor.py` · `gateway.py` |
-| data 多市场服务 | `services/data/` | CCXT / akshare / yfinance / FRED / web → Postgres + TimescaleDB |
-| research + factor | `services/research/` · `services/factor/` | 三方研究辩论；因子血缘、IC、衰减与发现工作流 |
-| E1/E2 Evolver | `services/evolver/` | E1 frozen bars + unified diff；E2 事件 DSL + 五代 campaign + Forward/Holdout 门禁 |
-| 认证控制台 | `apps/dashboard/` | 登录/session、注册 waitlist、admin 审核、agent 对话、逐用户 LLM 配置、演化/回测/runner/因子/风控看板 |
+同镜像双进程补充：旧应用SIGSTOP后租约自然过期，新应用接手并拒绝未知响应重发；恢复旧应用、释放离线响应后连续20秒观察费用预留、零非空响应、零提案及阶段均未变化。未直接采样旧SDK成功收包或旧complete()调用，不能区分心跳取消与写入fencing；仍不视为整个旧worker矩阵完成。见 [暂停worker接手回执](validation/e2-paused-worker-takeover-2026-10-14.json)。
 
-### 注册与试用准入（2026-08-28）
+同镜像回执：[已知响应恢复](validation/e2-same-image-response-recovery-2026-10-14.json) / [未知响应阻断](validation/e2-same-image-unknown-response-2026-10-14.json)。无效DSL使用既有回退，成功实现数不代表有效变异或改善；两项都是临时探索脚本，尚非CI维护套件。前期失败与观察端超时保留在回执，不删除审计库。
 
-- 登录页提供中英文“申请试用”入口；公开注册只创建 `users.access_status='pending'`，
-  不接收密码、不签 session，也不会立即获得控制台访问权。
-- 管理员批准后账号进入 `invited`，API 只返回一次明文激活令牌并在数据库保存 SHA-256
-  哈希。管理员必须通过邮件把 fragment 激活链接发到申请邮箱；链接 48 小时过期，可重发。
-  申请人设置 Argon2 密码后才原子转换为 `active`，令牌随即失效。
-- 批准、拒绝、激活链接轮换和最终激活会追加写入 `user_access_events`；事件记录操作者、
-  前后状态、令牌哈希指纹和 trace id，不保存明文令牌或密码。
-- `admin@inalpha.dev` 需通过 `create-user --roles admin` 显式授予角色；审核 API 每次从
-  数据库实时读取角色，不信任前端菜单或旧 session。迁移不会按邮箱静默提权。
-- 注册对重复邮箱统一返回 202，不覆盖原申请也不泄露邮箱是否存在；服务内有 per-email +
-  global 双层限流。登录/激活的 Argon2 工作分别使用独立、非排队并发门控，计算期间
-  不占数据库连接。
-- 公网部署必须在反向代理 / CDN 对 `/api/auth/register` 启用持久化 per-IP 限流或人机
-  验证；应用进程内限流仅作为第二道防线。
-
----
-
-## 工程硬约束（已通过 deny + tool 集双层落地）
-
-- `live.submit_order` → permissions `deny`（LLM 视野中**不存在**直下单路径）
-- `live.close_all_positions` / `live.cancel_all_orders` → `modelInvocable: false`
-  （list 级隔离，LLM 看不见这些 tool）
-- `approval_token` **一次性**（execute 消费后立即作废）+ 默认 `expire_at = 5 分钟`
-- `trade.create_plan` 必填 `rationale`（LLM 推理落盘，可复盘、可统计）
-- 详细决策原文（hooks / permissions / plan-exec）保留在仓库 owner 的私有
-  `docs/miro/decisions/` 下，不在开源范围；本文给出实现摘要与代码入口已足够
-
----
-
-## D-8c（2026-05-22）研究 → 策略 → 回测 闭环
-
-把 `research.deep_dive` 产物和"跑回测"打通的 MVP：
-
-- **research 输出结构化**：`ResearchPlan` 加 `research_id` / `factors` / `signals` /
-  `strategy_hint`（家族 + 参数 + reasoning）。analyst brief 也加 `factors` 列表。
-  文件 `services/research/src/inalpha_research/{schemas.py,manager.py,analysts/}`。
-- **compose 引擎**：`services/paper/src/inalpha_paper/strategies/compose.py` +
-  `POST /strategies/compose`。把 `strategy_hint` 路由到 `sma_cross /
-  mean_reversion / buy_and_hold` 之一并 clip 参数到合法区间；`family='none'` 直接拒绝。
-- **回测落库**：migration `0003_backtest_lineage.py` 给 `backtest_runs` 加
-  `research_id` / `params_hash` / `strategy_code` / `strategy_hint`；每次回测完
-  写一行。新增 `storage/backtest_runs.py` + `GET /backtest_runs?research_id=...`。
-- **Orchestration 串起来**：新 tool `paper.compose_strategy` /
-  `paper.list_backtest_runs`；`paper.run_backtest` 入参加可选 `researchId` /
-  `strategyHint`；`trade.create_plan` 入参加 `researchId` / `backtestRunId`，
-  自动 prefix 进 rationale（`[research:<id>] [backtest:<id>] 用户原因`）。
-- **orchestrator prompt 重写**：4 步标准链路 `deep_dive → compose_strategy →
-  (list_backtest_runs 或 run_backtest) → 报告 / create_plan`。
-
----
-
-## D-9（2026-05-25）LLM 自创策略 E1 MVP + baseline 重定位
-
-让 orchestrator **默认**走"自己写完整 `Strategy` 子类源码 → 沙盒 → 回测自动并跑 baseline"。
-内置策略从"穷举库出口"降级为"基线 / 教学 / 适配器"三类角色：
-
-- **沙盒三道关**（`services/paper/src/inalpha_paper/strategy_authoring/`）：
-  - `ast_audit.py`：AST 白名单（import / name / dunder access），拒绝 `os/sys/subprocess`、
-    `eval/exec/__import__`、`.__class__.__bases__` 等越狱路径
-  - `dynamic_loader.py`：受限 namespace `exec`，注入内核符号（`Strategy / Bar / Order / ...`），
-    裁剪 `__builtins__`，LLM 写策略**零 import**
-  - `contract_check.py`：协议校验（必继承 `Strategy`、覆写 `on_bar`、`__init__` 签名）
-- **多目标 fitness**（`strategy_authoring/fitness.py`）：`sharpe + 0.3*calmar -
-  0.10*turnover_penalty - 1.0*(drawdown>30%)`；回测响应同时返 `fitness` 字段；
-  排序候选不允许裸 Sharpe
-- **候选表**：migration `0005_strategy_candidates.py` + `storage/strategy_candidates.py` +
-  `POST/GET /strategy_candidates`；`BacktestRequest` 加 `candidate_id`（与 `strategy_id`
-  二选一）；`runner.run_backtest` candidate 分支自动从 DB 读 code → 二次审计 → 子进程加载
-- **Orchestration**：新 tool `paper.author_strategy` / `list_candidates` / `get_candidate`；
-  `paper.run_backtest` inputSchema 加 `candidateId`（superRefine 互斥）；
-  `strategy-code-audit` PreToolUse hook 拦超长 + prompt injection；
-  orchestrator prompt **默认走 author**，compose 降级为"用户明确点名内置时的快速通道"；
-  author tool description 内嵌 few-shot 模板降低协议错误率
-- **内置策略重定位**（`services/paper/.../strategies/__init__.py`）：`buy_and_hold` 作首要
-  基线、`sma_cross` / `mean_reversion` 作教学样本 + compose 快速通道、`signal_replay` 作
-  adapter；不再积累新内置策略
-- **baseline 自动并跑**：`runner.run_backtest` candidate 分支用 `asyncio.gather` 同时跑
-  candidate + `buy_and_hold` 同 bars/cash/fee；`BacktestResponse` 加 `baseline` 字段；
-  alpha 判定 = `candidate.fitness` 显著高于 `baseline.fitness`
-- **审批门（D-9 当时 → 当前）**：`POST /strategy_candidates/{id}/promote` 端点 +
-  orchestration 端 `paper.promote_candidate` tool。D-9 MVP 曾因审批交互未接通临时使用
-  permission `allow`；D-9.1b 起已经恢复 `ask`，首次调用登记 owner-scoped 待审批项，用户
-  明确同意后以相同操作身份重调才会执行。后端仍硬校验 `fitness IS NOT NULL` + 当前
-  `status='candidate'`，并把 `reason / promoted_by / promoted_at` 写到候选
-  `audit.promotion`。promote 仅做状态切换；按行情 tick 调 `on_bar` 的 live runner 在
-  **D-11 已接入**（见下方 D-11 小节）。
-- **RiskEngine 真接入 paper HTTP 层**（ADR-0006 / issue #3）：lifespan 加载
-  `configs/risk_rules.toml` → 构造 async `RiskGuard`（独立于 backtest 的 sync
-  `RiskEngine`）→ `POST /orders/submit` 与 `POST /plans/{id}/execute` 撮合前过
-  `risk_guard.enforce`，命中返 409 `RISK_REJECTED` + 写入 `risk_locks` 表（独立
-  connection 显式 commit，不被调用方 endpoint 异常 rollback）。trade_repo / market_calendar
-  目前是 Noop / crypto-only 实现，cooldown / stoploss_guard 真激活留 follow-up
-  issue；前端 askUserChoice 接通前 ask 路径仍是 workaround
-
-- **D-9.1a · closed_trades 写入链路接入**（2026-05-28）：
-  `positions` 表加 `ts_opened` / `open_order_id` 列（migration 0008）；
-  `positions.apply_fill()` 增强为返回 `ClosedTradeInfo | None`，在 HTTP
-  订单流同事务内写入 `closed_trades` 表。至此 trade-based RiskRule 5 件套
-  （Cooldown / LowProfit / MaxDrawdown / StoplossGuard / MarketHoursRule）
-  在 HTTP 路径全可触发——前提是 `closed_trades` 表有平仓数据（HTTP 订单流
-  本身产生）。MarketHoursRule 通过 `RoutingCalendar` 接 `exchange_calendars`，
-  按 `(venue, symbol)` 解析真实交易所，对全 D-9 市场（crypto 24/7 / 美股 / A股 /
-  港股 / 日英德 / 韩澳印 / 全球指数）生效——含节假日 / 午休 / 半日市 / DST，锁
-  粒度按交易所 code（issue #8 收口）。D-9 闭环完成。
-
-不在范围（后续评估）：MAP-Elites / Island Model；五代选择与代际继承已由 E2 落地。
-E1 已拆出 `services/evolver/` 独立服务，完成 unified-diff 单代变异、真实 frozen bars、
-seed / buy-and-hold / 全候选同数据哈希评估、owner 隔离、数据库幂等与异步 run/slot 状态机；
-演化需用户显式授权，不会在候选采纳后自动产生额外 LLM 费用。
-（注：promoted 候选的 live runner 原列在此处，已在 D-11 落地，见下方 D-11 小节。）
-
-### E1 生产闭环（2026-08-25 · PR #159）
-
-- **独立服务与部署**：`services/evolver:8005` 已接入 dev/selfhost/prod Compose、镜像构建、
-  health check 和 CI；Paper/Evolver pytest 与 migration 测试进入主 CI。
-- **真实、可复现评估**：run 先按 `requested_as_of` 拉取并冻结已收盘 bars，保存 manifest 与
-  dataset hash；seed、buy-and-hold baseline、候选共享同一数据和年化口径，数据错误 fail closed。
-- **异步持久化**：run/slot/candidate 全部落 PostgreSQL，支持 owner-scoped 列表/详情、幂等
-  创建、全局并发与账户 active 限制、abort、超时和终态收口。
-- **候选边界**：LLM 只返回 unified diff；应用后继续经过 AST audit、受限 loader、Strategy
-  contract 与独立回测子进程。该子进程有超时/内存限制，但不是 hardened container/VM。
-- **显式审批**：`evolver.run_evolution` 是 costful ask；审批按认证 owner 隔离，聊天文字、
-  model output 或另一 turn 不能代替可信审批。Evolver 不自动 promote、start 或 order。
-- **Dashboard**：已有演化列表、run 详情、候选详情、取消、能力开关、多租户错误隔离，以及
-  活动页内的显式批准/拒绝入口；审批内容展示冻结模型与本次预算费用上限估算。
-
-### 当前分支收口：冻结 LLM 审批快照（migration 0041）
-
-- 编排层在展示审批前冻结 `config_id/provider/model/base_url/pricing/version/最大单候选估算`，
-  生成稳定 `config_digest` 和 operation id；E1 经可信 UI 审批，E2 由 owner 明确指令直接授权。
-- orchestration 随后签发最长 30 小时、绑定 owner/operation/purpose/request digest 的 Ed25519 grant；
-  Evolver 创建 run/campaign 时校验 grant 与 snapshot digest，再持久化非密钥 `llm_snapshot`；数据库
-  check constraint 要求新写入具备完整快照，升级前仍在 queued/running 的历史任务会显式
-  abort，避免在缺少冻结授权的情况下继续执行。
-- 批准后由 orchestration 用独立 Ed25519 私钥签发短时 credential grant，绑定 owner、operation、
-  config 与 digest；Evolver 只转交、不能签发。Dashboard 用公钥验签并以 `jti` 在 PostgreSQL
-  记录并校验同 scope 的兑换；首次响应丢失时仅允许 2 分钟内补偿重试一次，再按 owner +
-  config_id 即时解密 API key；队列中的 grant
-  在成功兑换后立即清除，
-  明文 key 不写入 snapshot、run/candidate、异常或日志。
-- credential grant 有效期 30 小时，queued 最长保留 24 小时；超时任务以
-  `EVOLUTION_QUEUE_TIMEOUT` 显式 abort，不会等到执行时才因凭据过期失败。
-- 演化只接受每家已有冻结价格条目的精确模型；未知模型 fail closed。DeepSeek 官方
-  `https://api.deepseek.com` 与 `/v1` alias 统一规范化，不会误判为自定义代理。
-- 输入 prompt 以 UTF-8 字节数保守约束在冻结 input token 上限内，输出 token 同样硬限制；
-  因此 Dashboard 展示的 `budget × 最大单候选估算` 不只是提示，也是本次执行的费用硬边界。
-- LLM 成功、diff 被拒和其它已发生调用的路径都记录 input/output/cache-hit tokens 与实际或
-  按冻结单价计算的 `llm_cost_usd`；`DASHBOARD_SERVICE_URL` 与
-  `EVOLVER_LLM_TIMEOUT_S`、凭据签名公私钥已进入环境模板和生产 Compose；Dashboard 暂时
-  不可用或返回 5xx 时 run 回到队列重试，不会在依赖启动窗口直接进入失败终态。
-
-### E2 事件驱动自动演化（feature flag）
-
-- Data 新增 append-only 双时态事件账本、事实版本与 cutoff snapshot；CoinMarketCal
-  Professional 可导入历史首次添加时间，精选 crypto 新闻仅从首次抓取开始 forward 归档。
-- Paper 明确 `bar_open_at` / `bar_known_at`，在同一决策点按稳定顺序先发布规范事件、再发布
-  已关闭 bar；事件订单最早下一根开盘成交，并使用上一根成交量容量、此前 ATR 与严重度的
-  `event-fill-v1` adverse slippage。空事件输入保持 E1 路径不变。
-- Evolver 新增 `HypothesisSpec` DSL、direct/confirmed/hybrid 消融、匹配无事件窗口、block
-  bootstrap + BH-FDR、2 elite + 4 mutation + 1 crossover + 1 restart 的五代状态机。每代固定
-  两个 owner-scoped proposer 调用；只接收 DSL，凭据仍通过短时 owner grant 即时解析。
-- Champion 锁定后进入独立 Forward 状态，30 天/3 个独立事件/90 天上限；Forward 通过才可
-  一次性消费 holdout。赢家只能以 `runner_eligible=false` 的实验性 adoption 进入策略实验室，
-  不会自动 promote、启动 Runner 或下单。
-- Dashboard 已增加 Campaign 工作台、代际/血缘/消融/Forward/Holdout 视图、首页摘要、实验性
-  策略标签、过滤后的 Agent Activity 和事件数据健康页。通过 `EVENT_EVOLUTION_ENABLED` 分阶段开放。
-- 策略、模拟盘与 E1 结果详情可一键或用一句“开始进化”创建 owner-scoped `EvolutionLoop`；重复
-  触发复用同一活动 loop。当前默认模型为 DeepSeek `deepseek-flash`（V4.1 Flash）。
-
----
-
-## D-10（2026-06-01）web 搜索 + 财报基本面 + 多市场数据源扩展
-
-D-9 把决策护栏（Plan/Exec + 风控 + 沙盒）做扎实后，D-10 在**数据侧**补齐多市场
-研究所需的两类信息源——让 analyst 不再只盯 K 线，能拉财报基本面 + 实时网络情报，
-且全球品种（A股 / 港股 / 美股 / 日欧等单股 / 全球指数）都覆盖：
-
-- **web 搜索（零 key）**：`services/data` 新增 `GET /web/search` + `/web/news`
-  （`connectors/web_search.py` 用 DDGS 聚合多引擎，按语言自动选后端；ddgs 未装或
-  网络失败时返空列表降级，不阻断链路）。orchestration 侧 `tools/web.ts` 暴露
-  `web.search` / `web.search_news` 两 tool。
-- **财报基本面（多市场）**：`services/data` 新增 `GET /fundamentals`
-  （`api/fundamentals.py` 按 venue 路由：A股 `sh./sz.` + 港股 `hk.` 走
-  `connectors/akshare.py`，美股 / 日欧等全球走 `connectors/yfinance_conn.py`）；
-  字段映射总市值 / 市盈率 / ROE / 营收增速，缺失置 None，拿不到返
-  `available=False` 而非 5xx。orchestration 侧 `data.get_fundamentals` tool。
-- **research analyst 接入**：`FundamentalAnalyst` 调 `/fundamentals`，财报不可用时
-  自动 web 搜索兜底；`SentimentAnalyst` 非 crypto 走 yfinance news + web 搜索，
-  crypto 的 FNG 不可用时 web 搜索兜底（`services/research/.../analysts/`）。
-- **orchestrator 多市场编排**：`agents/orchestrator.ts` 接入新 tool，并按市场分化
-  `lookbackDays`（crypto 1h/4h ≈30d；A股/港股/日股 akshare 1d ≈180d；美股/全球指数
-  yfinance 1d ≈90d），避免"30 天 K 线＜20 根交易日"无统计意义；research client
-  超时放宽到 300s 给 A股慢路径留余量。
-- **统一多市场新闻**：`GET /news` 与 `data.get_news` 统一 `market_news` / `media` /
-  `disclosure` 契约，首批接入东财、SEC、HKEX 与 Crypto 专业 feed；股票市场级快讯
-  用代表指数/ETF 的 Yahoo 新闻代理并在条目中保留代理 ticker，不冒充完整新闻线。
-  `as_of` / `since` 只在当前 provider 快照上做截止过滤，不是历史新闻库；历史窗口用
-  `coverage_complete=false` 与逐 provider `coverage=snapshot_only` 显式标注覆盖不足，
-  不能把空结果解读为“当时没有新闻”。响应另保留逐 provider 状态、`is_partial` 与
-  来源等级；无 provider 覆盖的 market/symbol/kinds/language 组合返
-  `422 NEWS_SCOPE_NOT_SUPPORTED`。旧 `venue + symbol` 请求继续兼容。
-  `SentimentAnalyst` 与 `MacroAnalyst` 已消费结构化新闻，外部内容以不可执行证据块
-  送入 LLM，来源不可用时再显式降级 web 搜索。
-- **金融时效**：web/news 与基本面均无 API key 依赖；analyst 数据源不可用时降级到
-  LLM-only 并标低 confidence，不静默用过时数据。
-
----
-
-## D-10 · MCP 生态兼容 + 相对估值 analyst（借鉴 anthropics/financial-services）
-
-调研 Anthropic 官方 [`anthropics/financial-services`](https://github.com/anthropics/financial-services)
-后落地的两个增量（两者定位互补：Inalpha 做量化交易闭环 / 自动回测下单，该仓库做
-卖方文档工作流 / 不下单；MCP 决策详见内部 ADR-0009「MCP 作为可插拔 tool 协议」2026-06-01 补充）：
-
-- **MCP client 路径产品化（ADR-0009 从 spike → 落地）**：新增
-  `packages/orchestration/src/mcp/`（`config.ts` + `manager.ts` + `schema.ts`），
-  采用与 financial-services `.mcp.json` **同构**的配置 schema。MCP tool 命名
-  `mcp__<server>__<verb>`，经**现有** `wireToolList` 套同一套 hooks + permissions；
-  orchestrator 的 `tools` 改 dynamic 异步函数，把内置 tool + MCP tool 合并。
-  - **免费优先（硬约束）**：默认 `config/mcp.config.json` 只启用零密钥公开端点
-    （CoinGecko）；FactSet / Morningstar / S&P 等**付费连接器以 `disabled:true` 作模板**，
-    持订阅者改 flag + 配 `requiredEnv` 即用。缺 key / 连接失败 → 跳过 + 不阻塞启动。
-  - 权限：`mcp__coingecko__*`（只读公开源）显式 allow；其余 `mcp__*` 由
-    `defaultMode: ask` fail-closed 兜底。验证：`pnpm smoke:mcp`。
-- **相对估值 analyst（research 第 6 个 analyst）**：新增
-  `services/research/.../analysts/valuation.py`，分析框架借鉴 financial-services
-  的 `comps-analysis` skill（Apache-2.0）——可比公司 / 相对估值。复用免费
-  `/fundamentals` 快照（PE/PB/ROE/margins）+ web 搜索喂入，沿用 D-9 freshness
-  纪律：**只做相对估值、禁止完整 DCF**（无现金流数据会逼 LLM 编数），缺数据降
-  confidence（cap 0.55）。已并入 `ALL_ANALYSTS` 自动参与并行 + bull/bear 辩论。
-
----
-
-## D-11（2026-06-02）多市场模拟盘：跨币种 cash + live runner
-
-把"promote 一个策略 → 放到模拟盘"从"只是状态切换"做成"真按行情自动跑"，并让
-跨市场组合估值正确。两半场：
-
-**A · 跨币种 cash model**（PR #32，已并 main）：
-- `accounts.cash` 单标量 → `cash_balances` JSONB 按币种桶 + `base_currency`（migration 0009）；
-  `positions.currency` 列；`execution/currency_resolver.py`（venue/symbol → 计价货币，
-  复用 `exchange_resolver`）。
-- `services/data` 新增 `GET /fx`（identity / USD 稳定币本地 1.0，真实汇率走 yfinance
-  forex，拿不到抛 502 不乱猜）；`/accounts/me` 多币种桶 + 持仓按 FX 折算到 base_currency，
-  透出 `fx_warnings`（FX 不可用 / 偏旧的币种不静默）。架构取舍：跨币种是**账户聚合层**
-  问题（单次回测 / 单 run 是单币种），engine Portfolio 保持单币种。
-
-**B · paper live runner**（PR #34）：
-- 新 migration 0010 `strategy_runs`（`UNIQUE(candidate_id) WHERE status='running'`）；
-  `LiveRunnerManager`（`live_runner.py`）每个 run 一个后台 asyncio task，按 timeframe
-  拉 fresh bar → 喂 `LiveEngineSession`（`engine/live_session.py`，复用回测内核 +
-  `CaptureGateway` 拦截下单不撮合 + `confirm_fill` 回灌保持持仓视图一致）→ 下单意图
-  走**护栏内 plan/exec**（`risk_guard.enforce` + plan create/approve/consume + fills，
-  `approved_by='system:live_runner'` 机器审批）。
-- **启动冷启动预热**：拉 N 根历史 bar 喂策略建指标（不真下单），SMA 等策略 start 后即可出信号。
-- **决策复盘日志**（migration 0011 `strategy_run_decisions`）：每次 on_bar 产生下单意图
-  记一行（bar 上下文 / 订单意图 / outcome filled|rejected|risk_rejected / plan_id /
-  order_id），交叉引用 trade_plans(rationale) + closed_trades(盈亏)。
-- API：`POST /strategy_runs`（promoted 校验）/ `/stop` / `GET` / `GET .../decisions`；
-  orchestration：`paper.start_strategy` / `stop_strategy` / `list_strategy_runs` /
-  `list_strategy_run_decisions`。lifespan 启动 reconcile 残留 running → errored。
-- **信任边界**：机器审批靠"人先 promote + 人显式 start"两道人工闸门（ADR-0020 精神）。
-- **CR 加固（PR #34 收口）**：① 只在**已收盘 bar** 上决策（`_closed_bars` 丢弃未收盘那根，
-  避免半根 K 线幻影信号）；② 自动化路径**风控 fail-closed**（factory=None 默认拒跑置 errored，
-  `INALPHA_LIVE_RUNNER_REQUIRE_RISK_GUARD=false` 可显式放行）；③ 后台 task 经
-  `BackgroundTasks` 在事务提交后才起（防孤儿 run）；④ 决策时间线排序加 tiebreaker。
-- follow-up（非阻塞，已开 issue #36/#37/#38）：跨用户 candidate 归属校验 / per-account
-  run 上限 / 多实例 reconcile / 沙盒子进程隔离 / service token audience。
-
----
-
-## D-11.1（2026-06-03）live runner 信任边界 + 健壮性收口（#36 / #37）
-
-live runner 是无人值守自动下单路径（CLAUDE.md 硬约束"信任边界"），在堆新特性前先
-收口 PR #34 review 留下的 P1 安全洞与健壮性缺口：
-
-- **跨用户 candidate 归属校验**（#36.1）：`strategy_candidates` 加 `owner_account_id`
-  （migration 0013），创建时由 `account_id_from_user` 写入（与 run 的 `account_id` 同源，
-  非 UUID sub 也可比；不能直接拿 `author_id` 比，它对非 UUID sub 为 NULL）。
-  `POST /strategy_runs` 起跑前校验 owner == 调用者账户，否则 403 `CANDIDATE_NOT_OWNED`；
-  pre-migration 老数据 owner=NULL → 有界放行 + warning。
-- **per-account run 上限**（#36.2）：`INALPHA_LIVE_MAX_RUNNING_RUNS_PER_ACCOUNT`
-  （默认 10）+ `count_running_by_account`，超限 429 `TOO_MANY_RUNNING_RUNS`，防单用户
-  起任意多长驻 task 打爆事件循环。
-- **错误可重试分类**（#37.3）：`_is_retryable` 把 4xx `InalphaError`（确定性：校验 /
-  约束 / symbol 非法）判为不可重试，`_run_loop` 立即 errored 跳过退避；网络 / 超时 /
-  未知错误仍走 streak 退避。风控拒单（409）已在 route 层消化为 risk_rejected 决策行、
-  不冒泡杀 run。
-- **健壮性测试**（#37.4）：补 `_run_loop` 错误循环（可重试攒 streak / 不可重试立即 errored /
-  CancelledError 干净退出 / build_session 失败）、LIMIT 未成交 reject、reconcile、
-  归属 403 / 上限 429 / 老数据放行。
-- 已确认 PR #34 已落地项（不重做）：风控 fail-closed（#36.3）、已收盘 bar 守门（#37.1）。
-  未做：session 持仓重建（#37.2，绑定未来 resume run 特性，#37 保留开着）；#38 Phase F。
-
----
-
-## D-11.2（2026-06-05）live runner 运维收口 + PnL 净口径
-
-live runner 跑起来后的运维 / 正确性收尾，把"无人值守长驻"剩余的几处隐患补齐：
-
-- **PnL 净口径**（#45）：`cumulative_pnl` 原是**毛盈亏**（已实现 + 未实现），手续费虽在
-  `fills` 阶段从 cash 扣，但没补回展示盈亏 → 高频策略 cumulative_pnl 虚高、看起来比真实
-  净值更赚。`_read_run_pnl_quote` 改为减去 run 期间手续费（`orders` 表 `SUM(fee) WHERE
-  status='FILLED'`，与已实现 / 未实现同计价货币一起折算）；dashboard 累计盈亏 label 标注
-  「净 / (net)」+ 决策时间线新增单笔 fee 列。
-- **运行时长 TTL auto-stop**（#44）：`INALPHA_LIVE_RUNNER_MAX_RUNTIME_S`（默认 0 = 不限），
-  run 自 `started_at` 起超时 → `_ttl_exceeded` 置 `stopped` + error_log，与回撤熔断同口径
-  （正常终态非 bug），防策略卡死 / 无限空跑的长尾僵尸 run。用现成 `started_at` 列，无迁移。
-- **build 阶段退避 + 错误分类**（#41）：build 失败原本裸 `except → errored`，分不清"data
-  服务暂时不可用"与"策略代码确定性错"。现按 `_classify_build_error` 分类：data 不可达 /
-  data 5xx（`DataServiceError` 502）→ `infra_unavailable` 退避重试；`InalphaError` 4xx /
-  策略代码 `RuntimeError`（AST / 契约 / candidate）→ `strategy_error` 立即 errored。
-  `error_log` 元素扩展为 `{ts, error, code}` 落分类（JSONB，无迁移）。
-
----
-
-## Agent Skills（2026-06-11）投研方法论按需加载 + serenity 首个外来 skill
-
-开源社区 AgentSkills 格式（`SKILL.md` + frontmatter + `references/`）的产品内加载机制，
-让 orchestrator 能吸收外部投研方法论辅助用户研究（ADR-0046）：
-
-- **progressive disclosure**：启动扫描 `packages/orchestration/skills/` 各 skill 的
-  frontmatter，`<skills>` 清单段（每 skill 一行 name — description + 使用纪律）注入
-  dynamic instructions；正文与 references 经新 tool `skill.read` 按需进 context
-  （64KB 截断）。无 skill 时清单段为空串，机制零成本。
-- **fail-open**：单 skill frontmatter 坏 → warn + skip；目录缺失 → 空清单。skill 是
-  增强不是依赖，永不拖挂 orchestrator（同 MCP 加载语义）。
-- **信任边界**：只读 `.md/.json/.txt` 白名单 + 路径越界拒绝；外来 skill 的 `scripts/`
-  不 vendor 不执行（评分逻辑转 markdown rubric 内联）；`examples/` 不 vendor（含具体
-  标的，违反"示例不锁死预期"纪律）。
-- **首个外来 skill**：[muxuuu/serenity-skill](https://github.com/muxuuu/serenity-skill)
-  （MIT）——"热点 → 拆产业链 → 找供应链瓶颈 → 筛优先研究方向"的结构化投研方法论。
-  全文改写接入：description 意图化（去写死触发短语）、市场无关化、所有"查数据"步骤
-  映射到 `web.* / data.*(fresh) / factor.* / research.*` 并强制"禁训练记忆代答 +
-  输出标注数据截止"（金融时效性纪律）、交易动作接 `trade.create_plan` 审批链。
-- 守门：vitest 体检（frontmatter 校验 / 禁引私有路径 / 截断上限）+
-  `check-consistency.sh` C7（skills/ 目录结构 + 禁引私有路径）。
-
-## D-12（2026-06-11）因子库闭环：血缘 + 衰减巡检 + monthly 宏观 + 因子发现 L1
-
-把"衰减值如何确定后期策略方向"这条断链接通，并启动因子发现 L1（四个工作流）：
-
-- **因子血缘 + 衰减巡检告警**（migration 0019）：`author_strategy` 加结构化
-  `factorContext` 入参（研究链路驱动时必传，数值禁编造）→ 落
-  `strategy_candidates.factor_snapshot`；start_strategy 起跑 best-effort 拍
-  `factor_baseline`（入场基准）；paper 新增 `FactorPatrol` 独立巡检 task（不嵌
-  交易 loop，按标的分组去重调 factor `/score`），血缘因子进入 decaying →
-  `run_log` warn（code=`factor_decay`，带入场 vs 当前 rank_ic + 累计盈亏）——
-  同 run×因子只告警一次，恢复重置。**只告警不动仓**（不自动停/调/剔，机器审批
-  边界不变）。衰减三态判定（stable/fading/decaying）下沉 factor 服务为单一权威，
-  前端徽章改读服务端 `decay_state`。
-- **monthly FRED 宏观扩容**（ADR-0044 Phase 2 执行）：CPI / 核心 CPI / 失业率 /
-  非农 / M2 共 8 因子（62→70）。per-series 静态发布滞后表（CPI 45d / 就业 40d /
-  M2 60d——统一 shift 对 M2 是 lookahead bug）；staleness 按频率分档（monthly
-  45d，发布严重延迟如实 NaN）；修 warmup 硬编码 120 天缺口（monthly YoY 需
-  ~520d）；取数按原生频率走 `1mo`。
-- **FRED 宏观 Phase 3 扩容**（2026-06-18）：补**正交新信息维度**——信用利差
-  （HY/IG OAS）、曲线短端（10Y-3M）、实体经济（PPI / 工业产出 / 零售 / 新屋开工
-  YoY）、消费者信心,共 9 因子（70→79）。每序列只取 1-2 个一阶因子,延续"控候选数 /
-  防多重检验"纪律（**因子非越多越好,优先正交信息**）；新序列均录入 per-series 滞后表
-  （daily T+1 / monthly 30~50d）。同源同族多窗口（如 qlib 扩窗口）刻意不做。
-- **横截面因子引擎首个纵切**（2026-06-18）：把因子从"单标的择时信号"用作
-  "横截面选股信号"——`POST /panel/score` 收一篮子标的,算每因子**横截面 rank-IC**
-  （每期对全池按因子排序 vs 跨标的前瞻收益,量化界因子有效性标准口径,正交于单标的
-  时序 IC）+ 最近一期横截面排名（直接选标的,如取 PB 最低者轮动 = 聚宽式策略）。
-  纪律:macro 不参与（全市场单值无横截面区分度）；对齐缺口留 NaN 不 ffill；某期有效
-  标的 < min_symbols 不排名（残缺池排名是伪信号）。**降级标注**:universe 非 PIT
-  （is_pit=false,历史成分快照未建,存活者偏差未挡,显式不静默）。顺带纠正
-  `alpha101.a6 = -corr(open,volume,10)` 误标 needs_universe（纯时序,已下放实装）。
-- **内禀横截面 alpha a1/a3 原生实装**（2026-06-25）：`alpha101.a1
-  = rank(Ts_ArgMax(SignedPower((ret<0?std:close),2),5))-0.5`、`a3 = -corr(rank(open),
-  rank(volume),10)` —— 含 `rank()` 的真·横截面因子，在 Panel 上原生算（共享
-  `cross_sectional_rank` 算子），`panel_score` 自动纳入 ①路径。a3 零方差窗的 ±inf 归 NaN。
-- **横截面选股 tool 接入 agent**（2026-06-25）：`factor.panel_score` orchestration
-  tool（FactorClient.panelScore → `POST /panel/score`）——对话里"给一组标的按因子选哪只 / 轮动"
-  即走它；orchestrator prompt 加路由说明（单标的择时仍走 factor.timing,non-PIT 降级须转述）。
-  **延后**（归后续 PR）:0054 完整 `run_panel_backtest`、PIT 成分（0053 C）、paper 多标的轮动 runner。
-- **null IC 选择效应基准**：score/snapshot 加 `ic_null_benchmark`（Bailey–LdP
-  E[max|null] 近似）——N 个候选、当前样本量下纯噪声能跑出的期望最大 |IC|；
-  top1 不显著高于它 = 选择效应预警。只透出供判断，不剔除。
-- **因子发现 L1**（migration 0020）：受限 qlib 风格表达式 DSL（白名单递归解释器，
-  零 eval/exec；lookahead 三层防线——TS hook 外围 / 服务端解析期 lag·window
-  字面量强制 / 前瞻收益只在服务端算）+ `POST /custom/score` 一站式评估（有效性
-  + p 值 + 与库查重）+ `factor_candidates` 候选池（hypothesis≥20 经济学故事门、
-  expression_hash 幂等、batch_id/n_tested 多重检验审计锚点）+ `factor_discovery`
-  workflow（并发评估 → 批内 BH 校正 → 冗余/衰减/低置信门 → 自动 propose）。
-  **register 门**：review 端点不挂任何 LLM tool，转正唯一入口是 dashboard
-  /factors 候选区块人工按钮；registered 表达式经 custom adapter 自动进
-  catalog/timing/score（注册即生产，无单独生产表）。
-  新 tools：`factor.evaluate_candidate` / `factor.propose` /
-  `factor.list_candidates` / `factor.run_discovery`。
-
-## research-hub（2026-06-12）辩论三方制 + 争议触发 + 决策链路落盘（issue #6 收口）
-
-issue #6 启动前复核发现其大部分提议已被 D-9/D-10 顺手实现（6 analyst 并行 /
-LLM manager 综合 / bull-bear 多轮辩论 / 限时限轮）；本次落收敛后的真实增量：
-
-- **三方制**：辩论加入 `RiskResearcher` 风险官（`researchers/risk.py`）——不站
-  多空，每轮在 Bull/Bear 之后压测双方最薄弱假设 + 失效条件 + 仓位纪律；
-  `RESEARCH_DEBATE_RISK_ENABLED`（默认开）可退回两方制。
-- **争议触发**：`RESEARCH_DEBATE_TRIGGER` 默认 `contested`——briefs 同时存在
-  有信心（confidence ≥ 0.35）的多空对立才辩，全员同向跳过省 token
-  （`debate.assess_disagreement`，确定性规则不走 LLM）；`always` 保留旧行为。
-- **软早停**：从第 2 轮起 Bull/Bear 论证与各自上轮词汇 Jaccard 重合度都过阈
-  （`RESEARCH_DEBATE_CONVERGENCE_THRESHOLD` 默认 0.6）= 没有新论点，提前结束；
-  与硬超时并存。
-- **决策链路落盘**（ResearchPlan 三个新字段，复盘"为什么是这个 rating"）：
-  `debate_trigger`（为什么辩/为什么跳过）、`debate_stop_reason`（completed /
-  converged / timeout）、`synthesis_reasoning`（manager 权衡自述，LLM 输出新增
-  `reasoning` 键）。`run_debate` 返回值升级 `DebateOutcome`（turns + stop_reason）。
-
-不在范围（issue #6 余项后续单独评估）：supervisor 显式编排（当前隐式并行 +
-manager 综合已覆盖）、debate 轮内并行化、reasoning 进活动流前端高亮。
-
----
-
-## 防过拟合工程化 + 财报 PIT（2026-06-18）
-
-借鉴个人量化博主"用方法论（harness）约束 LLM + 回测检验 + 防过拟合 / 防未来函数"的思路，
-落四项（各自独立 PR、均 rebase 合入 main）：
-
-- **Chandelier ATR 移动止损**（ADR-0052 增补 A · #97）：框架级 Position Guard 新增第四闸——
-  基于 ATR 的吊灯移动止损（`mark ≤ 开仓最高价 − mult×ATR`），止损位随波动自适应；复用
-  `trailing_stop_loss` tag 零迁移；激活门用 close-based（与百分比 trailing 同口径，避免上影线
-  误激活）；默认关，回测与 live 共用同组件。
-- **克制型单因子低频骨架**（ADR-0051 增补 A · #98）：原型库第 5 骨架 `single_factor_assistive`
-  ——单主因子（动量）阈值 + 少量辅助过滤（量能 / 波动率上限，可裁）+ 信号 flip 才出手（天然
-  低频）；不自写止损交框架 guard；经 `paper.list_archetypes` / `GET /archetypes` 暴露。
-- **WalkForward / CPCV 时序交叉验证**（ADR-0028 · #99）：`engine/cv.py` 三 splitter
-  （WalkForward / PurgedKFold / CombinatorialPurgedCV）+ `optimal_folds_number`，API 对齐
-  skfolio（不引入该包）、末段 test 含最新 bar、purge+embargo；`run_cv_backtest` 出多路径 OOS
-  Sharpe 分布 + DSR；`POST /backtest/cv`（cpcv 数据不足自动回落 walk_forward，整体甩
-  ProcessPool 不阻塞事件循环）；`paper.cv_backtest` tool。**单策略报 DSR、不报 PBO**（CSCV-PBO
-  需多配置作输入，留 grid 层）。
-- **财报 / bar Point-in-Time（阶段 A）**（ADR-0053 · #100）：Baostock 财报按实际公告日
-  `pubDate ≤ as_of` 过滤未披露报告期（防未来函数）；`GET /fundamentals?as_of=`；paper
-  `DataClient.get_bars_pit` 把 bar 截断到 as_of。yfinance v1 不做 PIT 但响应显式标注；与 FRED
-  宏观 PIT（ADR-0044）口径对齐。
-
-体系定位：**防过拟合** = 单窗口 holdout（D-12）+ Sharpe CI / sensitivity（ADR-0027）+ 多路径
-时序 CV / DSR（本次）；**防未来函数** = 回测 next-bar 撮合 + 因子 DSL 三层 lookahead 防线
-（ADR-0019）+ FRED PIT（ADR-0044）+ 财报 / bar PIT（本次）。
-
----
-
-## 永续做空 / 杠杆（perp）模式（2026-06-26）
-
-crypto-first 的永续合约（USDT-M perp）做空 + 杠杆模式（PR #113），**按 run 选开**——
-spot 仍严格 long-only（裸空 / 超卖翻空被守门拒），做空 / 杠杆只在 perp 标的开放。
-**回测 / HTTP 下单 / live runner 三端同账务**，"回测==实盘"在 perp 这条线成立。
-
-- **标的与开关**：perp 仅 crypto USDT-M 永续（ccxt 记法 `BTC/USDT:USDT`，非现货 `BTC/USDT`）；
-  下单 / 回测传 `trading_mode="perp"` + `leverage`（1..20）。非 crypto / 现货 symbol 开 perp → 拒。
-- **逐仓保证金账务**：初始保证金 `IM = notional/leverage`、分档维持保证金、强平价（mark 穿越即
-  强平）、强平罚金（名义额 1%）、逐仓破产 clamp（单仓亏损封顶在初始保证金）。`GET /positions`
-  露 `leverage / margin_used / liquidation_price`，dashboard 持仓表展示杠杆徽标 + 强平价列。
-- **价格与资金费分离**：K 线（price action）用现货同对作价格 proxy（perp 标记价≈现货，走势一致）；
-  mark price / funding rate 另走真实 `GET /perp/funding`。资金费每结算点（默认 8h）按
-  `qty_signed × mark × rate` 计提进 cash（正费率多头付空头）——**回测用常数费率（v1）、live 拉真实**。
-- **风控**：Position Guard 双向化（多空都能硬止损 + 强平兜底）；风控豁免收紧为**仅 reduce-only**
-  平仓单（按 DB 持仓方向判定，防伪造 guard 单借豁免开大仓）。
-- **agent 全链路**：`paper.run_backtest` / `cv_backtest` / `check_sensitivity` / `start_strategy`
-  均可传 perp 参数；**做空策略必须用 perp 回测**（spot 下做空 = 0 成交，看着像坏策略）；原型库
-  加做空骨架 `perp_short_reversion`（仅 perp）。
-- **回测性能**：backfill 改增量续拉（从已缓存 `max(ts)` 起只补缺口、仍补到当前保新鲜），
-  缓存命中即秒级，修掉长窗口回测 30s 超时。
-
-**v1 已知局限（诚实标注）**：
-
-- **保证金只校单笔、无跨仓聚合**：多个 perp 持仓累计可能超钱包（单仓无影响）→ issue #114
-- **回测用常数 funding、非逐根真实历史**：回测 funding ≠ 实盘 funding，长持仓 + 高费率时显著 → issue #115
-- 空头只有硬止损 + 强平（无移动止损 / 吊灯 / 止盈，多头才有）；穿仓不模拟保险基金（只 clamp）；
-  维持保证金分档暂全 crypto 共用一张表。
-
----
+已有中文/英文桌面UI证据见 [owner语言与参数检查](validation/e2-owner-matrix-language-2026-10-14.json)。工具读取超时和Mac锁定只限定观察范围，不能记为产品通过或失败。
 
 ## 未完成 / 下一步
 
-> 重心：模拟盘（paper）先于实盘（live）。
+### P0 · 发布与正常用户入口
 
-- **E2 运行观测**：在 feature flag 小流量 campaign 上校准事件覆盖、费用、FDR 与 Forward
-  样本积累；MAP-Elites / Island Model 继续后置到真实运行数据证明需要时再做
+1. 在自然空闲窗口仅部署固定业务`a275f8be`的Evolver：复核数据库目标/schema、活动任务和实际HTTP连接；有连接即停止，不关闭用户连接或中断在途任务。保留600配置/数据库备份及精确旧image ID回滚；不因文档SHA重建。最近只读连接归属观察为Dashboard，不能将TCP空队列视为空闲。
+2. 继续核对BTC/ETH/SOL正常建议窗口、来源失败、资产映射、抽取与去重。只据实际缺口增加来源，按真实首次可见时间积累；不重复搜索已知不足的输入。
+3. 补中文/英文移动交互、普通owner隔离与配置修改后的服务端审批失效；确认旧实验不被改写。输入具备必要条件后才冻结费用审批。
+
+### P0 · 可靠性矩阵与真实五代
+
+4. 把探索脚本整理为可维护验收工具，继续同版本完整服务验证：重复点击/请求重发、批准响应丢失、持久化批准命令恢复与授权过期、显式失败retry、新attempt关联、租约失效后的旧worker返回、超额度/超大小响应、冠军交接响应丢失、holdout重复消费。保留现有状态机，区分同镜像Evolver夹具与完整外围授权栈。
+5. 输入真实充分且正常owner授权可用时，按独立上界降序、同分BTC→ETH→SOL选择一个资产，冻结种子、窗口、数据摘要、模型与预算，批准一次运行有界五代。记录有效变异、重复代码、匹配对照、FDR、拒绝原因、耗时与费用。无冠军是有效结果，不能为通过重复搜索相同输入。
+6. 聊天、生成、修复与未知费用分列，失败不记零；未知响应不能证明未计费时禁止自动重发或释放预留。已取消旧自动跟进0.20美元上限，逐任务冻结预算与有界修复仍有效。独立单文件Mypy检查的既有错误不能称通过，正式CI与本地调用范围分开记录。
+
+### P0 · 冠军后的真实长期验证
+
+7. 正式评估通过后锁冠军并幂等交接同一Forward sandbox；至少30个真实日及3个独立事件后执行一次性holdout。保留通过或拒绝结论，不用测试时钟替代生产证据，不反向调整同一封存实验。
+8. 证据具备采用资格后由用户明确决定；不自动promote、启动Runner或下单。现在尚无真实冠军或Forward起点。
+
+### P1 · 以真实结果优化
+
+- 校准事件覆盖、语义质量、消融、FDR、交易样本和费用；首屏明确“改进谁、当前阶段、阻塞和下一步”。
+- 统一任务、审批、attempt、费用与阶段交接诊断，内部ID收进详情；设计安全维护流以解决页面轮询占用连接的运维阻塞，当前发布边界保持不变。
+- MAP-Elites、Island Model和更多agent扩展后置，先取得闭环证据。
+
+## 其他项目待办
+
 - **delegation hop**（issue #5 · ADR-0012 补丁）：sub-strategy 派生计划的转授权链
 
 > 已收口：paper live runner（#1，D-11）、PnL 净口径 / 运行时长 TTL / build 退避（#45 /
@@ -598,9 +103,9 @@ funding（当前常数，#115）、空头移动止损 / 止盈 + 穿仓保险基
 
 ---
 
+
 ## 相关文档
 
-- 总体架构与设计取舍 → [`docs/03-kernel-design.md`](./03-kernel-design.md)
-- 架构总图（mermaid） → [`README.md`](../README.md#architecture)
-- 项目背景 / 边界 → [`docs/00-context.md`](./00-context.md)
-- AI 协作硬约束 → [`AGENTS.md`](../AGENTS.md) · [`CLAUDE.md`](../CLAUDE.md)
+- [项目边界](00-context.md) · [架构](01-architecture-overview.md) · [内核设计](03-kernel-design.md)
+- [Evolver API与授权](../services/evolver/README.md) · [AI协作入口](../AGENTS.md) · [CLAUDE.md](../CLAUDE.md)
+- [本轮完整历史状态](validation/current-state-history-through-2026-10-14.md) · [10月10日前历史](validation/current-state-history-through-2026-10-10.md)

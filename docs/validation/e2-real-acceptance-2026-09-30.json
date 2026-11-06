@@ -1,0 +1,233 @@
+{
+  "validation_date": "2026-09-30",
+  "environment": "isolated local services; real provider API; source code from origin/main plus Research asset fix from PR #183",
+  "scope": "real service-level execution and insufficient-evidence boundary; no production deployment or successful Forward acceptance claimed",
+  "model": "deepseek/deepseek-flash",
+  "input_provenance": {
+    "sources": [
+      "coindesk",
+      "kraken_blog"
+    ],
+    "collector_version": "selected-news-forward@1",
+    "policy_version": "first-seen-only-v1",
+    "independent_raw_records": 345,
+    "fact_records": 345,
+    "btc_automatic_event_facts": 3,
+    "historical_visibility_preserved": true
+  },
+  "loop": {
+    "loop_id": "56b6fa31-339e-4036-8705-39621d197090",
+    "status": "insufficient_evidence",
+    "e1_run_id": "79222af5-f352-426b-84fe-aed78c88319b",
+    "campaign_id": "99edb6fe-4f1b-4231-842e-760706d9b194",
+    "forward_sandbox_id": null,
+    "holdout_attempt_id": null,
+    "state_version": 4,
+    "failure_code": "INSUFFICIENT_FDR_EVIDENCE",
+    "created_at": "2026-09-30 07:14:11.022680+00:00",
+    "finished_at": "2026-09-30 07:19:44.175417+00:00"
+  },
+  "baseline": {
+    "status": "completed",
+    "llm_cost_usd": "0.0055"
+  },
+  "campaign": {
+    "status": "insufficient_evidence",
+    "active_generation": 5,
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": "INSUFFICIENT_FDR_EVIDENCE",
+    "llm_cost_usd": 0.08530649999999998,
+    "data_snapshot_id": "c0abb27b-daf3-4bf5-98d0-8c08d3e8ce17",
+    "event_snapshot_id": "3e1d0b33-eace-4fbc-96a3-1919fe7d2f9a"
+  },
+  "elapsed_seconds": 333.152737,
+  "market_manifest": {
+    "annualization_periods": 8760,
+    "backfill": {
+      "bars_fetched": 1,
+      "bars_inserted": 1,
+      "from_ts": "2026-09-04T00:00:00Z",
+      "symbol": "BTC/USDT:USDT",
+      "timeframe": "1h",
+      "to_ts": "2026-09-30T07:12:59.438000Z",
+      "venue": "binance"
+    },
+    "bar_count": 631,
+    "calendar_code": null,
+    "canonical_timeframe": "1h",
+    "content_sha256": "eeb17876889893038a78a4e06985aaf64102afcb6ef0536549e96b550accd75d",
+    "cutoff_bar_ts": "2026-09-30T06:00:00Z",
+    "data_epoch": 1790748000000,
+    "data_timeframe": "1h",
+    "effective_from": "2026-09-04T00:00:00Z",
+    "effective_to": "2026-09-30T06:00:00Z",
+    "freshness_lag_seconds": 0.0,
+    "hash_algorithm": "sha256:e1-bars-v1",
+    "latest_bar_ts": "2026-09-30T06:00:00Z",
+    "requested_as_of": "2026-09-30T07:12:59.438000Z",
+    "requested_from": "2026-09-04T00:00:00Z",
+    "requested_timeframe": "1h",
+    "schema_version": "e1.dataset.v2",
+    "symbol": "BTC/USDT:USDT",
+    "venue": "binance",
+    "warnings": []
+  },
+  "persisted_dataset_sha256": "8c044516bbc9733fee9f7844c7556565f316e937782bbe03aa3391073c3d7163",
+  "event_snapshot": {
+    "snapshot_id": "3e1d0b33-eace-4fbc-96a3-1919fe7d2f9a",
+    "cutoff": "2026-09-30 07:12:59.438000+00:00",
+    "events_sha256": "f336f61454bd462ad111ea094930178c976ef3b7092484ffb0c6ec77358f67c3",
+    "fact_count": 3
+  },
+  "proposal_checkpoints": [
+    {
+      "generation": 1,
+      "content_sha256": "a29ff73e8db4a059686c69d0ba0e9311a161693f1b644b60deaad78911ed0bc3",
+      "cost_usd": "0.0179052",
+      "fallback_calls": 1
+    },
+    {
+      "generation": 2,
+      "content_sha256": "4ef0af2d97a446c1db0c58ce6832065b233de24cf8fe32cdf41243a81b3885d5",
+      "cost_usd": "0.0128667",
+      "fallback_calls": 0
+    },
+    {
+      "generation": 3,
+      "content_sha256": "5b0e8507e200b13e9cb88eb50bf2d28c0514569653ca2ba1c06014a1b4bcfef1",
+      "cost_usd": "0.0212229",
+      "fallback_calls": 2
+    },
+    {
+      "generation": 4,
+      "content_sha256": "374591bf1f5cb0d719dc25584c5086b2997efb26be50ff2a48513628d25d2613",
+      "cost_usd": "0.0188385",
+      "fallback_calls": 2
+    },
+    {
+      "generation": 5,
+      "content_sha256": "c5991eb18ce587fc80caaf1d0c9aa7dd7983d23dd9d04fcacaa2502f082649c0",
+      "cost_usd": "0.0144732",
+      "fallback_calls": 1
+    }
+  ],
+  "generation_results": [
+    {
+      "generation": 1,
+      "implementations": 24,
+      "succeeded": 24,
+      "failed": 0,
+      "fdr_pass": 0
+    },
+    {
+      "generation": 2,
+      "implementations": 24,
+      "succeeded": 24,
+      "failed": 0,
+      "fdr_pass": 0
+    },
+    {
+      "generation": 3,
+      "implementations": 24,
+      "succeeded": 24,
+      "failed": 0,
+      "fdr_pass": 0
+    },
+    {
+      "generation": 4,
+      "implementations": 24,
+      "succeeded": 24,
+      "failed": 0,
+      "fdr_pass": 0
+    },
+    {
+      "generation": 5,
+      "implementations": 24,
+      "succeeded": 24,
+      "failed": 0,
+      "fdr_pass": 0
+    }
+  ],
+  "implementation_outcomes": [
+    {
+      "outcome": "succeeded",
+      "error_code": null,
+      "count": 120
+    }
+  ],
+  "model_call_receipts": [
+    {
+      "step_key": "baseline:model",
+      "calls": 1,
+      "settled": 1,
+      "cost_usd": "0.0054684"
+    },
+    {
+      "step_key": "campaign:model",
+      "calls": 10,
+      "settled": 10,
+      "cost_usd": "0.0853065"
+    }
+  ],
+  "budget_usage": {
+    "max_cost_usd": "0.5",
+    "spent_usd": "0.0907749",
+    "reserved_usd": "0E-7"
+  },
+  "cost_basis": "provider usage tokens priced by the frozen provider-estimate-2026-09 snapshot; provider billing invoice was not independently verified; baseline API aggregate rounds to four decimal places",
+  "restart": {
+    "generation": 4,
+    "same_loop": true,
+    "same_campaign": true,
+    "same_dataset": true,
+    "previous_checkpoints_and_costs_unchanged": true,
+    "lease_wait_was_natural": true,
+    "interrupted_provider_calls": false
+  },
+  "idempotency_counts": {
+    "loops": 1,
+    "campaigns": 1,
+    "holdout_attempts": 0
+  },
+  "http_boundaries": {
+    "owner_read": 200,
+    "other_owner_read": 404,
+    "unauthenticated_read": 401,
+    "adoption_before_graduation": {
+      "status": 400,
+      "code": "CAMPAIGN_NOT_ADOPTABLE"
+    },
+    "old_phase_credential_after_completion": {
+      "status": 403,
+      "error": "loop_authorization_unavailable"
+    }
+  },
+  "remaining_acceptance": [
+    "Champion/Forward handoff with a genuinely qualified candidate",
+    "Forward real-time 30-day and independent-event evidence",
+    "one-time sealed holdout consumption",
+    "explicit experimental adoption with runner_eligible=false"
+  ],
+  "evidence_gate": {
+    "version": "matched-events-v1",
+    "minimum_matched_event_pairs": 8,
+    "minimum_event_match_ratio": 0.7,
+    "fdr_q": 0.1,
+    "max_scope_event_count": 0,
+    "max_matched_control_count": 0,
+    "fdr_pass_column_includes_evidence_gate": true
+  },
+  "proposal_quality": {
+    "model_calls": 10,
+    "fallback_batches": 6,
+    "accepted_model_batches": 4,
+    "fallback_reason_details": "Not persisted by the current implementation; root cause remains unverified."
+  },
+  "event_windows": {
+    "discovery": 2,
+    "selection": 0,
+    "sealed_holdout": 1
+  }
+}

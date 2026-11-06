@@ -1,0 +1,124 @@
+{
+  "database": "inalpha_container_audit_30bff41f1502481dbc6d09c452de0637",
+  "result": "passed",
+  "scope": "full actual Evolver application lifespan and dispatchers; provider SDK HTTP transport replaced, synthetic local signer/Dashboard/Data; actual fixed business image, local AMD64 emulation, not real owner/production",
+  "initial_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "forced_exit_code": 137,
+  "before": {
+    "status": "replaying",
+    "active_generation": 1,
+    "lease_token": "cd93df5a-c178-46f8-a84f-bc9a2c0604a8",
+    "lease_expires_at": "2026-10-14 06:40:59.933008+00:00",
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": null,
+    "proposal_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0.000156",
+      "reserved_usd": "0E-7",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": false
+  },
+  "restart_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "after": {
+    "status": "insufficient_evidence",
+    "active_generation": 5,
+    "lease_token": "5248d656-0b0a-4ffa-97cf-3b19d1c3472e",
+    "lease_expires_at": "2026-10-14 06:47:32.525269+00:00",
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": "INSUFFICIENT_FDR_EVIDENCE",
+    "proposal_count": 5,
+    "response_count": 10,
+    "succeeded": 120,
+    "ledger": {
+      "spent_usd": "0.000780",
+      "reserved_usd": "0E-7",
+      "max_cost_usd": "1",
+      "attempts": 10
+    },
+    "expired": false
+  },
+  "offline_provider_calls": [
+    "before",
+    "before",
+    "after",
+    "after",
+    "after",
+    "after",
+    "after",
+    "after",
+    "after",
+    "after"
+  ],
+  "local_peripheral_requests": [
+    "snapshot",
+    "local-fixture-grant",
+    "credential",
+    "snapshot",
+    "local-fixture-grant",
+    "credential"
+  ],
+  "observer_transient_failures": [],
+  "cleanup_exit_code": 0,
+  "env_file_removed": true,
+  "owned_container_removed": true,
+  "image": "ghcr.io/mirror29/inalpha-evolver:a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+  "runtime": "local Docker AMD64 emulation on ARM host; CPUs2/memory4GB; no production container restarted",
+  "entrypoint_shim_sha256": "36614d333dbae8accddc8cdec7622bb60a6c90c5281067d9c3da868672093966",
+  "date": "2026-10-14",
+  "business_commit": "a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+  "image_id": "sha256:5aadcaf79089ece40137a11ad39085c3f190b2eff645219e9c9324e19e5be7df",
+  "repo_digests": [
+    "ghcr.io/mirror29/inalpha-evolver@sha256:7d6d8075ca7b1ce83c39d1b1a8a77c97ffe607f8890ba76a5e89a038520ffd1e"
+  ],
+  "host_architecture": "arm64",
+  "image_architecture": "amd64",
+  "limits": [
+    "Full Evolver application lifespan/dispatchers in the actual built business image; local AMD64 emulation, not native production performance.",
+    "Provider SDK transport and in-container Data/signer/credential HTTP peripherals are fixtures; not complete actual Mastra/Dashboard/Data services or real owner approval.",
+    "Completed baseline, ten bars and eight selection event types are synthetic local inputs; formal gates are unchanged.",
+    "Invalid DSL responses use existing fallback; 120 succeeded implementations do not establish useful mutations, strategy improvement or real research sufficiency.",
+    "Temporary exploration scripts, not maintained CI process tests.",
+    "No production model request, real provider invoice, champion, Forward, holdout or adoption.",
+    "Audit databases retained; only owned containers and private test env files cleaned up."
+  ],
+  "new_production_model_calls": 0,
+  "new_production_e2_searches": 0,
+  "cleanup_independent_check": "Docker daemon successfully lists no remaining owned probe containers; no audit DB dropped.",
+  "previous_partial_attempts": [
+    {
+      "database": "inalpha_container_audit_835f057ed9f049c58e09e6c0676a9cd8",
+      "result": "startup failed; test connection hostaddr incorrectly adapted to hostname; no provider call"
+    },
+    {
+      "database": "inalpha_container_audit_0643d2ab6d4848bcb3b67252512c568d",
+      "result": "startup failed; same numeric hostaddr setup defect; no provider call"
+    },
+    {
+      "database": "inalpha_container_audit_45999c8524734569819449525fc5add4",
+      "result": "App started, two responses saved, SIGKILL exit137; observer DB reconnect timed out before restart. Partial evidence retained."
+    }
+  ],
+  "test_setup_fix": "Container URI preserves credentials/port/options, resolves host through explicit host-gateway, removes local numeric-only hostaddr option; peripheral fixtures use container loopback. Persistent read-only observer with bounded transport reconnect; no production settings changed.",
+  "harness_sha256": "b5ef42ae7aa90f8332b4b935159d6a328fbfe8c8f4de2ce994d67db4491552c5",
+  "response_observation_limits": {
+    "response_count_definition": "All proposal response checkpoint rows, including rows whose response is null; this count alone does not prove a saved response.",
+    "before_non_null_response_count": "not directly sampled before SIGKILL; do not backfill a retrospective value",
+    "persistence_evidence": "Recovery reuse is supported indirectly by zero pre-crash reserve, known settled synthetic cost, two provider calls before plus eight after restart, ten total attempts and ten checkpoints for five generations; this receipt does not independently enumerate pre-crash non-null response payloads."
+  }
+}

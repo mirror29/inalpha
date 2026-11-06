@@ -1,0 +1,126 @@
+{
+  "database": "inalpha_container_audit_b7d3d389a06742b7a773902b36a8e456",
+  "result": "passed",
+  "scope": "full actual Evolver application lifespan and dispatchers; provider SDK HTTP transport replaced, synthetic local signer/Dashboard/Data; actual fixed business image, local AMD64 emulation, not real owner/production",
+  "initial_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "forced_exit_code": 137,
+  "before": {
+    "status": "replaying",
+    "active_generation": 1,
+    "lease_token": "0ced6e32-2e5d-495e-a82b-25f11bcaedc9",
+    "lease_expires_at": "2026-10-14 07:07:41.255177+00:00",
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": null,
+    "proposal_count": 0,
+    "stored_response_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0",
+      "reserved_usd": "0.0340608",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": false
+  },
+  "restart_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "after": {
+    "status": "failed",
+    "active_generation": 1,
+    "lease_token": null,
+    "lease_expires_at": null,
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": "LOOP_PROPOSAL_RESPONSE_UNCONFIRMED",
+    "proposal_count": 0,
+    "stored_response_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0",
+      "reserved_usd": "0.0340608",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": null
+  },
+  "offline_provider_calls": [
+    "before",
+    "before"
+  ],
+  "local_peripheral_requests": [
+    "snapshot",
+    "local-fixture-grant",
+    "credential",
+    "snapshot",
+    "local-fixture-grant",
+    "credential"
+  ],
+  "second_restart_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "second_restart": {
+    "status": "failed",
+    "active_generation": 1,
+    "lease_token": null,
+    "lease_expires_at": null,
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": "LOOP_PROPOSAL_RESPONSE_UNCONFIRMED",
+    "proposal_count": 0,
+    "stored_response_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0",
+      "reserved_usd": "0.0340608",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": null
+  },
+  "purpose": "In-flight response unknown; ample budget does not permit automatic repurchase or release reserves",
+  "observer_transient_failures": [],
+  "cleanup_exit_code": 0,
+  "env_file_removed": true,
+  "owned_container_removed": true,
+  "image": "ghcr.io/mirror29/inalpha-evolver:a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+  "runtime": "local Docker AMD64 emulation on ARM host; CPUs2/memory4GB; no production container restarted",
+  "entrypoint_shim_sha256": "36614d333dbae8accddc8cdec7622bb60a6c90c5281067d9c3da868672093966",
+  "date": "2026-10-14",
+  "business_commit": "a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+  "image_id": "sha256:5aadcaf79089ece40137a11ad39085c3f190b2eff645219e9c9324e19e5be7df",
+  "repo_digests": [
+    "ghcr.io/mirror29/inalpha-evolver@sha256:7d6d8075ca7b1ce83c39d1b1a8a77c97ffe607f8890ba76a5e89a038520ffd1e"
+  ],
+  "host_architecture": "arm64",
+  "image_architecture": "amd64",
+  "limits": [
+    "Full Evolver application lifespan/dispatchers in the actual built business image; local AMD64 emulation, not native production performance.",
+    "Provider SDK transport and in-container Data/signer/credential HTTP peripherals are fixtures; not complete actual Mastra/Dashboard/Data services or real owner approval.",
+    "Completed baseline, ten bars and eight selection event types are synthetic local inputs; formal gates are unchanged.",
+    "Invalid DSL responses use existing fallback; 120 succeeded implementations do not establish useful mutations, strategy improvement or real research sufficiency.",
+    "Temporary exploration scripts, not maintained CI process tests.",
+    "No production model request, real provider invoice, champion, Forward, holdout or adoption.",
+    "Audit databases retained; only owned containers and private test env files cleaned up."
+  ],
+  "new_production_model_calls": 0,
+  "new_production_e2_searches": 0,
+  "cleanup_independent_check": "Docker daemon successfully lists no remaining owned probe containers; no audit DB dropped.",
+  "harness_sha256": "9640d2276293022225725db3794a398808951b9b48765b484f994f2557e5660e",
+  "billing_interpretation": "Known spent is zero; two responses/usage remain unconfirmed. Reserved 0.0340608 is retained under max1 despite ample remaining budget; not proof of no actual billing."
+}

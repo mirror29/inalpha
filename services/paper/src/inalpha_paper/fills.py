@@ -11,6 +11,7 @@ closed_trades。统一到这里：
 
 **调用方必须包在事务里**（与 storage.positions.apply_fill 约定一致）。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -23,11 +24,17 @@ from .execution.currency_resolver import resolve_currency
 from .storage import accounts as accounts_store
 from .storage import closed_trades as closed_trades_store
 from .storage import positions as positions_store
+from .storage import run_wallets as wallets_store
 
 
 async def _update_perp_margin(
-    db: Any, account_id: UUID, venue: str, symbol: str,
-    new_row: dict[str, Any], leverage: int,
+    db: Any,
+    account_id: UUID,
+    venue: str,
+    symbol: str,
+    new_row: dict[str, Any],
+    leverage: int,
+    run_id: UUID | None = None,
 ) -> None:
     """按成交后持仓重写 perp 的 leverage / margin_used / liquidation_price(逐仓口径)。
 
@@ -42,15 +49,21 @@ async def _update_perp_margin(
     else:
         margin_used = abs(new_qty) * new_avg / Decimal(leverage)
         side_i = 1 if new_qty > 0 else -1
-        liq = Decimal(str(perp_margin.liquidation_price(
-            side=side_i, qty_abs=float(abs(new_qty)),
-            entry_price=float(new_avg), wallet_balance=float(margin_used),
-        )))
+        liq = Decimal(
+            str(
+                perp_margin.liquidation_price(
+                    side=side_i,
+                    qty_abs=float(abs(new_qty)),
+                    entry_price=float(new_avg),
+                    wallet_balance=float(margin_used),
+                )
+            )
+        )
     async with db.cursor() as cur:
         await cur.execute(
             "UPDATE positions SET leverage=%s, margin_used=%s, liquidation_price=%s "
-            "WHERE account_id=%s AND venue=%s AND symbol=%s",
-            (leverage, margin_used, liq, str(account_id), venue, symbol),
+            "WHERE account_id=%s AND venue=%s AND symbol=%s AND run_id IS NOT DISTINCT FROM %s::uuid",
+            (leverage, margin_used, liq, str(account_id), venue, symbol, run_id),
         )
 
 
@@ -68,6 +81,7 @@ async def apply_fill_to_positions_and_cash(
     order_id: str,
     trading_mode: str = "spot",
     leverage: int = 1,
+    run_id: UUID | None = None,
 ) -> Decimal:
     """把一笔 fill 同时更新 positions + cash + closed_trades（在调用方的事务里）。
 
@@ -80,6 +94,9 @@ async def apply_fill_to_positions_and_cash(
       与 fee 变动;并按成交后持仓重写 ``leverage / margin_used / liquidation_price``
       （逐仓口径,与内存 ``Portfolio`` 同算法）。
     """
+    await accounts_store.get_or_create(db, account_id, for_update=True)
+    if run_id is not None:
+        await wallets_store.lock(db, {"id": run_id, "account_id": account_id})
     currency = resolve_currency(venue, symbol)
     notional = quantity * fill_price
 
@@ -95,6 +112,8 @@ async def apply_fill_to_positions_and_cash(
         ts_event=ts_event,
         order_id=order_id,
         currency=currency,
+        run_id=run_id,
+        isolated_leverage=leverage if trading_mode == "perp" else None,
     )
 
     # 现金 delta:spot 动名义;perp 只动已实现盈亏 + fee
@@ -105,11 +124,17 @@ async def apply_fill_to_positions_and_cash(
         cash_delta = realized - fee
     else:
         cash_delta = (-notional if side == "BUY" else notional) - fee
-    await accounts_store.apply_cash_delta(db, account_id, cash_delta, currency=currency)
+    if run_id is None:
+        await accounts_store.apply_cash_delta(db, account_id, cash_delta, currency=currency)
+    else:
+        await wallets_store.apply_delta(db, account_id, run_id, cash_delta, currency=currency)
+    await wallets_store.event(
+        db, account_id, run_id, f"fill:{order_id}", "fill", currency, cash_delta
+    )
 
     # perp:按成交后持仓重写保证金 / 强平价
     if trading_mode == "perp":
-        await _update_perp_margin(db, account_id, venue, symbol, new_row, leverage)
+        await _update_perp_margin(db, account_id, venue, symbol, new_row, leverage, run_id)
 
     if close_info is not None:
         await closed_trades_store.insert_close(
@@ -128,6 +153,7 @@ async def apply_fill_to_positions_and_cash(
             exit_reason=close_info.exit_reason,
             open_order_id=close_info.open_order_id,
             close_order_id=close_info.close_order_id,
+            run_id=run_id,
         )
         return Decimal(str(close_info.close_profit_abs))
     return Decimal(0)

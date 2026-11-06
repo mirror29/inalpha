@@ -1,0 +1,14 @@
+{
+  "case_id": "synthetic-001",
+  "decision_at": "2026-05-01T21:00:00Z",
+  "evidence": [
+    {
+      "id": "synthetic-price-001",
+      "kind": "price",
+      "content": "Synthetic fixture only: open=100, high=102, low=99, close=101, volume=1000.",
+      "source": "generated-test-fixture",
+      "available_at": "2026-05-01T20:01:00Z",
+      "session_close": "2026-05-01T20:00:00Z"
+    }
+  ]
+}

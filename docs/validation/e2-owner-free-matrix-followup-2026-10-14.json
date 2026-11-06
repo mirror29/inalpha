@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-14",
+  "sampled_at": "2026-10-14T07:55:26.260Z",
+  "status": "normal_owner_free_matrix_all_inputs_insufficient",
+  "access": "Existing logged-in Chrome owner session through native CUA; no hidden credentials read or fabricated. This is the existing owner account, not a separate ordinary non-admin account isolation test.",
+  "suggested_to": "2026-10-14T07:00:00Z",
+  "assets": [
+    {
+      "asset": "BTC",
+      "timeframe": "1h",
+      "target_id": "8ec05df8-522b-48b6-9dc5-fdd45aba0205",
+      "suggested_from": "2026-09-30T10:00:00Z",
+      "bars": [
+        199,
+        67,
+        67
+      ],
+      "selection_from": "2026-10-08T18:00:00Z",
+      "selection_to": "2026-10-11T12:00:00Z",
+      "selection_facts": 21,
+      "independent_upper_bound": 3,
+      "required_threshold": 8,
+      "upper_bound_by_type": {
+        "exploit": 1,
+        "other": 2
+      },
+      "snapshot_fact_versions": 123,
+      "first_snapshot_available_at": "2026-09-30T10:36:41.860008Z",
+      "latest_bar_open": "2026-10-14T06:00:00Z",
+      "required_bar_open": "2026-10-14T06:00:00Z",
+      "lag_vs_required_seconds": 0
+    },
+    {
+      "asset": "ETH",
+      "timeframe": "1h",
+      "target_id": "33ef02a0-dcf7-47a3-a708-9d4ca1433860",
+      "suggested_from": "2026-09-30T10:00:00Z",
+      "bars": [
+        199,
+        67,
+        67
+      ],
+      "selection_from": "2026-10-08T18:00:00Z",
+      "selection_to": "2026-10-11T12:00:00Z",
+      "selection_facts": 0,
+      "independent_upper_bound": 0,
+      "required_threshold": 8,
+      "upper_bound_by_type": {},
+      "snapshot_fact_versions": 13,
+      "first_snapshot_available_at": "2026-09-30T10:36:41.887149Z",
+      "latest_bar_open": "2026-10-14T06:00:00Z",
+      "required_bar_open": "2026-10-14T06:00:00Z",
+      "lag_vs_required_seconds": 0
+    },
+    {
+      "asset": "SOL",
+      "timeframe": "1h",
+      "target_id": "7c09cdb0-cd8a-43b6-8e66-787eb9f7aaed",
+      "suggested_from": "2026-10-01T14:00:00Z",
+      "bars": [
+        183,
+        61,
+        61
+      ],
+      "selection_from": "2026-10-09T06:00:00Z",
+      "selection_to": "2026-10-11T18:00:00Z",
+      "selection_facts": 0,
+      "independent_upper_bound": 0,
+      "required_threshold": 8,
+      "upper_bound_by_type": {},
+      "snapshot_fact_versions": 7,
+      "first_snapshot_available_at": "2026-10-01T14:37:01.079456Z",
+      "latest_bar_open": "2026-10-14T06:00:00Z",
+      "required_bar_open": "2026-10-14T06:00:00Z",
+      "lag_vs_required_seconds": 0
+    }
+  ],
+  "selection": {
+    "selected_asset": null,
+    "reason": "All three normal suggested windows fail necessary independent-event upper-bound threshold 8; no paid experiment requested."
+  },
+  "production_model_calls": 0,
+  "approval_submissions": 0,
+  "limitations": [
+    "UI observations only; no provider or evaluation calls.",
+    "Natural suggested-window partitions moved; changes are not same-window regression or causal evidence.",
+    "Latest required bar gap is zero; this is not zero wall-clock age.",
+    "No mobile or separate-owner authorization rejection was tested.",
+    "Initial navigation showed an offline/previous-frame placeholder; subsequent loaded view became realtime and matrix succeeded. It is not a persistent backend outage."
+  ],
+  "cleanup": "Only the task-created Chrome tab was closed after acceptance; original user tabs retained."
+}

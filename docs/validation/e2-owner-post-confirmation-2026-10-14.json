@@ -1,0 +1,114 @@
+{
+  "date": "2026-10-14",
+  "status": "normal_owner_post_confirmation_free_preflight_inputs_insufficient",
+  "sampled_at": "2026-10-14T04:05:43.619Z",
+  "access": "Existing logged-in Chrome owner session; native CUA controls; no credentials read or fabricated.",
+  "assets": [
+    {
+      "asset": "BTC",
+      "timeframe": "1h",
+      "target_id": "8ec05df8-522b-48b6-9dc5-fdd45aba0205",
+      "suggested_from": "2026-09-30T10:00:00Z",
+      "suggested_to": "2026-10-14T04:00:00Z",
+      "bars": [
+        198,
+        66,
+        66
+      ],
+      "selection_from": "2026-10-08T17:00:00Z",
+      "selection_to": "2026-10-11T10:00:00Z",
+      "selection_facts": 21,
+      "independent_upper_bound": 3,
+      "required_threshold": 8,
+      "upper_bound_by_type": {
+        "other": 2,
+        "exploit": 1
+      },
+      "legacy_regulatory_risks": 0,
+      "quality_inspected_facts": 89,
+      "quality_versions": {
+        "deterministic-event-extractor-v2": 89
+      },
+      "snapshot_fact_versions": 121,
+      "first_snapshot_available_at": "2026-09-30T10:36:41.860008Z"
+    },
+    {
+      "asset": "ETH",
+      "timeframe": "1h",
+      "target_id": "33ef02a0-dcf7-47a3-a708-9d4ca1433860",
+      "suggested_from": "2026-09-30T10:00:00Z",
+      "suggested_to": "2026-10-14T04:00:00Z",
+      "bars": [
+        198,
+        66,
+        66
+      ],
+      "selection_from": "2026-10-08T17:00:00Z",
+      "selection_to": "2026-10-11T10:00:00Z",
+      "selection_facts": 0,
+      "independent_upper_bound": 0,
+      "required_threshold": 8,
+      "upper_bound_by_type": {},
+      "quality_inspected_facts": 10,
+      "quality_versions": {
+        "deterministic-event-extractor-v2": 10
+      },
+      "snapshot_fact_versions": 13,
+      "first_snapshot_available_at": "2026-09-30T10:36:41.887149Z"
+    },
+    {
+      "asset": "SOL",
+      "timeframe": "1h",
+      "target_id": "7c09cdb0-cd8a-43b6-8e66-787eb9f7aaed",
+      "suggested_from": "2026-10-01T14:00:00Z",
+      "suggested_to": "2026-10-14T04:00:00Z",
+      "bars": [
+        181,
+        60,
+        61
+      ],
+      "selection_from": "2026-10-09T04:00:00Z",
+      "selection_to": "2026-10-11T15:00:00Z",
+      "selection_facts": 1,
+      "independent_upper_bound": 1,
+      "required_threshold": 8,
+      "upper_bound_by_type": {
+        "upgrade": 1
+      },
+      "quality_inspected_facts": 5,
+      "quality_versions": {
+        "deterministic-event-extractor-v2": 5
+      },
+      "snapshot_fact_versions": 6,
+      "first_snapshot_available_at": "2026-10-01T14:37:01.079456Z"
+    }
+  ],
+  "latest_closed_bar": {
+    "open": "2026-10-14T03:00:00Z",
+    "close": "2026-10-14T04:00:00Z",
+    "required_open": "2026-10-14T03:00:00Z",
+    "lag_vs_required_seconds": 0,
+    "open_age_seconds": 3943.619,
+    "close_age_seconds": 343.619
+  },
+  "selection": {
+    "selected_asset": null,
+    "reason": "All three necessary-input upper bounds are below eight; matching, FDR and holdout not evaluated."
+  },
+  "quality_boundary": [
+    "BTC legacy-regulatory warning absent in this fresh normal-owner response; does not certify semantic accuracy.",
+    "Confirmation availability is after the selection end; v3 confirmations are not backdated into selection quality counts.",
+    "Default cutoff moved one hour relative to the 03:14 observation; this is not a controlled same-window causal comparison."
+  ],
+  "interactions": [
+    "Existing owner Chrome session, explicit new tab navigation to /zh/evolution, free three-asset check, expanded coverage/quality/window details."
+  ],
+  "not_tested": [
+    "Mobile viewport",
+    "Frozen approval and model execution",
+    "Response loss or process recovery",
+    "Client bundle digest"
+  ],
+  "new_model_calls": 0,
+  "production_e2_searches_started": 0
+}

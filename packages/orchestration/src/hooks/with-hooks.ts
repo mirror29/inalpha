@@ -1,3 +1,6 @@
+import { EvolutionInputBlockedError } from "../evolution/preparation-error.js";
+import { linkChatOperation, type ChatOperationLink } from "../mastra/llm/chat-operation-store.js";
+import { trustedChatInvocation } from "../mastra/llm/chat-invocation-scope.js";
 /**
  * ``withHooks`` —— Mastra tool execute 中间件。
  *
@@ -37,6 +40,7 @@ import {
 } from "../mastra/llm/evolution-snapshot.js";
 import { projectApprovalInput } from "../permissions/approval-identity.js";
 import {
+  approvalInputDigest,
   type PendingApprovalsStore,
   pendingApprovals as defaultPendingApprovals,
 } from "../permissions/pending.js";
@@ -58,6 +62,7 @@ type GenericTool = {
 
 const DURABLE_EVOLUTION_APPROVAL_TOOLS = new Set([
   "evolver.run_evolution",
+  "evolver.start_evolution_loop",
   "evolver.run_event_campaign",
 ]);
 const E2_CAMPAIGN_RETRY_WINDOW_MS = 2 * 60 * 1_000;
@@ -68,6 +73,8 @@ const E2_CAMPAIGN_RETRY_WINDOW_MS = 2 * 60 * 1_000;
  * 单租户 = console subject（稳定唯一）；多租户 = 每用户隔离，自动生效。
  */
 export const AUTH_SUB_KEY = "inalpha__authSub";
+/** Internal dispatch guard; never populated from model or HTTP body fields. */
+const APPROVED_INPUT_DIGEST_KEY = "inalpha__approvedInputDigest";
 
 /**
  * 提取 conversation 级稳定 ID；明确忽略每轮变化的 ``runId``。
@@ -143,8 +150,12 @@ export type WithHooksOptions = {
    * ``mastra/index.ts`` 注册 HTTP routes 用的 store）。测试可注入 fresh 实例隔离。
    */
   pendingApprovals?: PendingApprovalsStore;
+  /** Injected ledger write keeps E2 chat provenance durable before task execution. */
+  chatOperationLinker?: (link: ChatOperationLink) => Promise<void>;
   /** ask 路径 store 超时毫秒数；缺省 30_000（30 秒）。0 / 负数视作默认。 */
   askTimeoutMs?: number;
+  /** Validate preparation after identity checks and before creating or consuming approval. */
+  approvalPreflight?: (toolName: string, input: unknown, ctx: unknown) => Promise<{ input: unknown; summary?: unknown } | undefined>;
 };
 
 /**
@@ -190,7 +201,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           };
         }
 
-        const effectiveInput = pre.updatedInput !== undefined ? pre.updatedInput : input;
+        let effectiveInput = pre.updatedInput !== undefined ? pre.updatedInput : input;
 
         // 2. permission engine（hook 没 override 时才查）
         let permDecision: "allow" | "ask" | "deny" = pre.permissionOverride ?? "allow";
@@ -206,16 +217,16 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           };
         }
 
+        if (getRequestContextValue<string>(ctx, APPROVED_INPUT_DIGEST_KEY) && permDecision !== "ask") {
+          return { isError: true, deniedBy: "approval-policy-changed", message: "Approved execution requires the original ask policy." };
+        }
+
         if (permDecision === "ask") {
           const store = opts.pendingApprovals ?? defaultPendingApprovals;
-          const projectedInput = projectApprovalInput(toolName, effectiveInput);
           const durableEvolutionApproval = DURABLE_EVOLUTION_APPROVAL_TOOLS.has(toolName);
           const llmSnapshot = durableEvolutionApproval
             ? getRequestContextValue<EvolutionLLMSnapshot>(ctx, USER_LLM_SNAPSHOT_KEY)
             : undefined;
-          const approvalInput = llmSnapshot
-            ? { request: projectedInput, llm_snapshot: llmSnapshot }
-            : projectedInput;
           if (!authSub || !sessionId || (durableEvolutionApproval && !llmSnapshot)) {
             return {
               isError: true,
@@ -230,12 +241,39 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
             };
           }
 
+          let preparation: unknown;
+          try {
+            const prepared = await opts.approvalPreflight?.(toolName, effectiveInput, ctx);
+            if (prepared) {
+              effectiveInput = prepared.input;
+              preparation = prepared.summary;
+            }
+          } catch (error) {
+            return {
+              isError: true,
+              deniedBy: "preflight",
+              ...(error instanceof EvolutionInputBlockedError
+                ? { code: error.code, blocker_codes: error.blocker_codes } : {}),
+              toolName,
+              message: formatToolError(error).message,
+            };
+          }
+
+          const projectedInput = projectApprovalInput(toolName, effectiveInput);
+          const approvalInput = llmSnapshot
+            ? { request: projectedInput, llm_snapshot: llmSnapshot }
+            : projectedInput;
+          const dispatchedDigest = getRequestContextValue<string>(ctx, APPROVED_INPUT_DIGEST_KEY);
+          if (dispatchedDigest && approvalInputDigest(approvalInput) !== dispatchedDigest) {
+            return { isError: true, deniedBy: "approval-input-drift", toolName,
+              message: "APPROVED_INPUT_CHANGED: preparation differs from the approved frozen task; request a new approval." };
+          }
           const operationId = await store.consumeApproved({
             authSub,
             sessionId,
             toolName,
             approvalInput,
-            reuseAfterConsume: toolName === "evolver.run_evolution",
+            reuseAfterConsume: ["evolver.run_evolution", "evolver.start_evolution_loop"].includes(toolName),
             reuseOnceAfterConsumeMs:
               toolName === "evolver.run_event_campaign"
                 ? E2_CAMPAIGN_RETRY_WINDOW_MS
@@ -243,9 +281,13 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           });
           if (!operationId) {
             const approvalViewInput = llmSnapshot
-              ? { request: effectiveInput, llm_snapshot: llmSnapshot }
+              ? { request: effectiveInput, llm_snapshot: llmSnapshot, preparation }
               : effectiveInput;
+            const chatInvocationId = trustedChatInvocation(
+              (ctx as { requestContext?: unknown } | undefined)?.requestContext, authSub,
+            );
             const pending = store.request({
+              ...(chatInvocationId ? { chatInvocationId } : {}),
               authSub,
               sessionId,
               toolName,
@@ -265,6 +307,7 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
               requestId: pending.requestId,
               toolName,
               toolInput: approvalViewInput,
+              preparation,
               message:
                 `APPROVAL_REQUIRED: tool "${toolName}" needs an explicit decision through the ` +
                 `trusted approval UI/API. Chat text, a new turn, or model output cannot approve it. ` +
@@ -290,6 +333,21 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
           && !getRequestContextValue<string>(ctx, APPROVAL_OPERATION_ID_KEY)
         ) {
           setRequestContextValue(ctx, APPROVAL_OPERATION_ID_KEY, randomUUID());
+        }
+
+        if (authSub && (toolName === "evolver.start_evolution_loop" || toolName === "evolver.run_event_campaign")) {
+          const invocationId = trustedChatInvocation(
+            (ctx as { requestContext?: unknown } | undefined)?.requestContext, authSub,
+          );
+          const operationId = getRequestContextValue<string>(ctx, APPROVAL_OPERATION_ID_KEY);
+          if (invocationId && operationId) {
+            try {
+              await (opts.chatOperationLinker ?? linkChatOperation)({ authSub, operationId, invocationId, toolName });
+            } catch {
+              return { isError: true, deniedBy: "chat-lineage-unavailable", toolName,
+                message: "CHAT_LINEAGE_UNAVAILABLE: task preparation could not be recorded; retry after storage recovers." };
+            }
+          }
         }
 
         // 3. execute
@@ -338,6 +396,20 @@ export function withHooks<T extends GenericTool>(tool: T, opts: WithHooksOptions
     },
   };
 
+  if (["evolver.run_evolution", "evolver.start_evolution_loop"].includes(tool.id)) {
+    const store = opts.pendingApprovals ?? defaultPendingApprovals;
+    store.registerApprovedExecution(tool.id, async (command, freshContext) => {
+      const authSub = defaultGetAuthSub(freshContext);
+      const payload = command.view.toolInput as { request?: unknown; llm_snapshot?: EvolutionLLMSnapshot } | null;
+      if (!authSub || !payload?.request || !payload.llm_snapshot) throw new Error("approved execution identity is unavailable");
+      const requestContext = new Map<string, unknown>([
+        [AUTH_SUB_KEY, authSub], ["sessionId", command.view.sessionId],
+        [USER_LLM_SNAPSHOT_KEY, payload.llm_snapshot],
+        [APPROVED_INPUT_DIGEST_KEY, command.view.inputDigest],
+      ]);
+      return await wrapped.execute!(payload.request, { requestContext });
+    });
+  }
   return wrapped as T;
 }
 

@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-10",
+  "pr": 219,
+  "reviewed_head": "957e567f091fd449ba32674f73d0582e3a8ebf0e",
+  "business_sha": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+  "merged": true,
+  "ci": {
+    "pr": 38036239879,
+    "main": 38036966422,
+    "images": 38036966379,
+    "all": "success"
+  },
+  "review": {
+    "automatic_run": 38036239876,
+    "automatic_result": "no_publishable_body_not_approval",
+    "independent": "No confirmed new P1/P2 in identity, preparation, approval, recovery and worker digest scope; static review only"
+  },
+  "deployment": {
+    "status": "deployed_healthy",
+    "business_sha": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+    "safe_window_criteria": [
+      "User confirmed Inalpha pages closed",
+      "Database inalpha/schema0066 or0067 and queued/running/cancelling E1 count0, active Loop count0, nonterminal campaign count0",
+      "Dashboard/Mastra/Evolver established inbound HTTP connections0 at initial, pre-migration and post-migration checks"
+    ],
+    "fallback": "Abort before replacement on any failed check; do not discount a persistent connection because its queues are empty",
+    "configuration_backup": "infra/.env.prod.before-experiment-20261010T091519Z",
+    "database_backup": "infra/backups/experiment-before-20261010T091519Z.dump",
+    "pre_migration_backup": "infra/backups/experiment-before-20261010T090559Z.dump",
+    "backup_mode": "600",
+    "pre_migration_archive_toc_readable": true,
+    "backup_warning": "TimescaleDB continuous_agg circular foreign keys; archive readability is not a restore rehearsal",
+    "migration": "0066 -> 0067",
+    "initial_migration_interruption": "Compose run -T retained interactive stdin and consumed remaining SSH script. Schema reached0067; all old containers unchanged. Retried with --interactive=false after rechecking state.",
+    "containers_replaced": [
+      "dashboard",
+      "mastra",
+      "evolver"
+    ],
+    "other_seven_container_ids_unchanged": true,
+    "rollback_images_sha": "1dc8fa78f7d02857cc1c8968e9255db19b245a9f",
+    "schema_rollback": "Keep backward-compatible0067; downgrade refuses recorded Loop approvals"
+  },
+  "observed_production": {
+    "repo": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+    "database": "inalpha",
+    "schema": "0067",
+    "dashboard": "c55398f60054",
+    "mastra": "c44bd66e6dde",
+    "evolver": "433a620724f8",
+    "three_service_image_sha": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+    "health": "all_three_healthy",
+    "unchanged_containers": {
+      "research": "821100736c43",
+      "data": "e61ae92b2019",
+      "factor": "751f2cbfb280",
+      "paper": "ec25617b1fed",
+      "redis": "4377f3064aa0",
+      "cloudflared": "d993c45012e5",
+      "postgres": "cdd60c8434a9"
+    },
+    "evolution_loops": 0
+  },
+  "browser": {
+    "status": "connection_unavailable",
+    "attempts": "Existing in-app browser tab connection timed out twice",
+    "normal_owner_acceptance": "not_performed",
+    "post_deployment": "Creating a new in-app browser tab also timed out; owner acceptance still not performed"
+  },
+  "model_calls": 0,
+  "next": [
+    "Restore normal browser connection; verify model-free owned experiment preparation and its exact new window/coverage",
+    "Verify frozen approval, direct submit and recovery only when genuine necessary inputs suffice",
+    "Continue isolated process fault injection and real five-generation search; Forward/holdout remain pending"
+  ],
+  "boundaries": [
+    "No invented input or owner identity",
+    "No real five-generation, Forward, holdout or human-adoption pass claimed"
+  ],
+  "deployment_before_user_closed_page": {
+    "status": "deferred_before_mutation",
+    "attempts": 3,
+    "guard": "Dashboard established connection count remained 1",
+    "additional_observation": {
+      "dashboard_tx_queue": 0,
+      "dashboard_rx_queue": 0,
+      "mastra_established_connections": 0
+    },
+    "interpretation": "May be keep-alive; not proof of an active user task or proof that no request is in flight",
+    "configuration_modified": false,
+    "migration_performed": false,
+    "containers_replaced": false
+  },
+  "observed_production_before_deployment": {
+    "repo": "1dc8fa78f7d02857cc1c8968e9255db19b245a9f",
+    "database": "inalpha",
+    "schema": "0066",
+    "dashboard": "5389534ca0a6",
+    "mastra": "d07222ad85e9",
+    "evolver": "750723fb5cd1",
+    "three_service_image_sha": "1dc8fa78f7d02857cc1c8968e9255db19b245a9f",
+    "data": "e61ae92b2019",
+    "evolution_loops": 0
+  },
+  "unauthenticated_checks": {
+    "mastra_prepare": 401,
+    "mastra_approval": 401,
+    "evolver_prepare": 401,
+    "interpretation": "Auth rejection only; not owner workflow acceptance"
+  },
+  "reviewed_to_deployed": {
+    "relationship": "business_sha is the PR219 merge commit; reviewed_head is its second parent",
+    "merge_parents": [
+      "1dc8fa78f7d02857cc1c8968e9255db19b245a9f",
+      "957e567f091fd449ba32674f73d0582e3a8ebf0e"
+    ],
+    "reviewed_tree": "41f35cbcb7ae0d3bfc259ee74fe3af3c922ae046",
+    "deployed_tree": "41f35cbcb7ae0d3bfc259ee74fe3af3c922ae046",
+    "git_diff_empty": true,
+    "main_ci": {
+      "run": 38036966422,
+      "head_sha": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+      "conclusion": "success"
+    },
+    "image_build": {
+      "run": 38036966379,
+      "head_sha": "ab5fd15b1fd3d98469b2d04d2e494fdf4a90ed1c",
+      "conclusion": "success"
+    }
+  }
+}

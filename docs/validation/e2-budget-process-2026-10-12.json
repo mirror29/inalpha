@@ -1,0 +1,27 @@
+{
+  "scope": "Maintained budget-client subprocess regression, not full application or production recovery",
+  "code_commit": "028ccb76",
+  "database": "inalpha_e2_acceptance_582b1018ccb64f71b3ba6b019f41caa0",
+  "migration": "fresh database upgraded through 0067",
+  "tests": {
+    "files": [
+      "test_loop_budget_process.py",
+      "test_loop_llm.py",
+      "test_loop_authorizations.py"
+    ],
+    "passed": 7,
+    "failed": 0
+  },
+  "observations": [
+    "SIGKILL after offline provider entry preserves full unknown reservation 0.0170304 USD; a new process rejects another maximum-sized attempt before provider entry.",
+    "Known synthetic usage settles 0.000078 USD; a new process leaves the ledger unchanged and does not enter the provider again.",
+    "Both cases retain exactly one reservation and one provider entry."
+  ],
+  "limits": [
+    "Offline provider fixture; no HTTP provider request or real cost incurred.",
+    "Worker restarted with same still-valid synthetic lease; no claim of lease takeover or full application startup.",
+    "Single-attempt frozen budget; no proof that a larger budget or unfinished candidate checkpoint cannot regenerate.",
+    "Normal owner authorization, credential redemption, production restart, Forward and holdout remain unverified."
+  ],
+  "audit_database_retained": true
+}

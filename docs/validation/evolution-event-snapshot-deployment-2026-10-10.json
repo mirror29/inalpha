@@ -1,0 +1,122 @@
+{
+  "date": "2026-10-10",
+  "scope": "Pinned orchestration-only production deployment of PR 211 and compiled bundle verification; normal-owner event coverage preflight remains pending",
+  "pr": 211,
+  "merged_at": "2026-10-10T03:07:26Z",
+  "business_sha": "493175aa2554ea195fc60bedb2cfa1dd8590610b",
+  "pr_head_sha": "e73714c9",
+  "checks": {
+    "branch_ci_run": 38019170161,
+    "automated_review_run": 38019170159,
+    "main_ci_run": 38019453372,
+    "image_build_run": 38019453283,
+    "ci": "Branch and main success",
+    "image_build": "All seven images success",
+    "automated_review": {
+      "medium_findings": 2,
+      "topics": [
+        "Snapshot policy version was not bumped",
+        "Nonempty snapshot does not prove event coverage"
+      ],
+      "response": "Each finding addressed with source-level reasoning; not a zero-findings review"
+    },
+    "independent_review": "No new blockers attributable to this PR"
+  },
+  "deployment": {
+    "changed_service": "mastra",
+    "new_container_id": "75f1c51a17094b5057dc08e64584279593bf027c28c198a2ace9495e78744cf5",
+    "health": "healthy",
+    "schema": "0065",
+    "schema_changed": false,
+    "configuration_backup": "infra/.env.prod.before-mastra-20261010T031404Z",
+    "backup_permissions_observed": "600",
+    "unchanged_services": [
+      "dashboard",
+      "evolver",
+      "data",
+      "paper",
+      "factor",
+      "research",
+      "redis",
+      "postgres",
+      "cloudflared"
+    ],
+    "unchanged_container_count": 9,
+    "container_ids_compared_before_after": true,
+    "data_and_paper_runners_continued_running": true,
+    "guarded_attempts": [
+      {
+        "established_http_connections": 4,
+        "container_replacement": false
+      },
+      {
+        "initial_http_connections": 0,
+        "post_pull_http_connections": 4,
+        "container_replacement": false
+      }
+    ],
+    "final_guard": {
+      "idle_http_checks": [
+        0,
+        0
+      ],
+      "active_e1_runs": 0,
+      "active_loops": 0,
+      "active_campaigns": 0
+    }
+  },
+  "input_evidence_limits": {
+    "original_sol_cutoff": "2026-10-09T06:25:54.528Z",
+    "closed_cached_bars": 4319,
+    "cache_contiguous": true,
+    "selection_start": "2026-07-29T07:00:00Z",
+    "selection_end": "2026-09-03T06:00:00Z",
+    "visible_selection_facts": 0,
+    "asset_facts_visible_before_cutoff": {
+      "other": 4,
+      "upgrade": 1
+    },
+    "supported_facts_do_not_prove_qualified_evidence": true,
+    "cache_only_diagnostic_not_runtime_frozen_dataset": true,
+    "statistical_window_first_seen_or_thresholds_changed": false,
+    "positive_e2_acceptance": false
+  },
+  "model_costs": {
+    "new_calls_during_this_deployment": 0,
+    "new_cost_usd_during_this_deployment": 0,
+    "historical_unknown_usage_preserved": true
+  },
+  "pending": [
+    "Normal-owner new event coverage preflight at legitimate cutoff",
+    "Qualified E2 search, champion, real Forward and one-time holdout",
+    "Previously recorded response-loss, complete-restart recovery, explicit retry and fencing acceptance"
+  ],
+  "history": "The preceding local receipt retains its original not-deployed observation; this deployment proves service replacement, health and compiled bundle content, not coverage or normal-owner E2 acceptance",
+  "compiled_bundle": {
+    "artifact": "/app/.mastra/output/mastra.mjs",
+    "automatic_event_types_exact_literals": [
+      "listing",
+      "delisting",
+      "exploit",
+      "chain_halt",
+      "regulatory",
+      "upgrade",
+      "unlock",
+      "burn",
+      "partnership",
+      "macro",
+      "other"
+    ],
+    "event_type_literal_count": 11,
+    "not_checked_marker_present": true,
+    "empty_snapshot_error_present": true,
+    "never_backdate_warning_present": true,
+    "business_api_snapshot_verified": false,
+    "real_e2_acceptance": false,
+    "health_probe": {
+      "path": "/api",
+      "http_status": 404,
+      "qualification": "Meets configured less-than-500 Mastra health condition only; not business request success"
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-14",
+  "status": "two_explicit_same_class_regulatory_reviews_applied",
+  "business_commit": "9fdb8b8aa0d49a36eddc344c0955b41e28cd9848",
+  "database": "inalpha",
+  "schema": "0069",
+  "source_identification": "Read-only candidate query for the two BTC legacy regulatory risks, bounded to the owner matrix selection-context time. Not a replay of the entire snapshot API.",
+  "reviewed_sources": [
+    {
+      "source_fact_id": "6fdea295-f3d6-4363-a5a2-c08edd2256f6",
+      "source": "coindesk",
+      "archived_evidence_characters": 76,
+      "body_archived": false,
+      "decision": "Keep regulatory: archived title explicitly describes SEC approval; full article truth not certified."
+    },
+    {
+      "source_fact_id": "9979f51b-304a-4993-bbf2-05aa7cbb94dd",
+      "source": "cointelegraph",
+      "archived_evidence_characters": 547,
+      "decision": "Keep regulatory: archived title and summary describe regulator rejecting MiCA authorization and trading suspension."
+    }
+  ],
+  "apply_acknowledgements": [
+    {
+      "source_fact_id": "6fdea295-f3d6-4363-a5a2-c08edd2256f6",
+      "reviewed_type": "regulatory",
+      "created": true,
+      "correction_id": "d4900d62-141e-4409-9938-52f65d29e5c8",
+      "corrected_fact_id": "24d77317-0067-4c8d-b966-c55a1d5113f7",
+      "retired_fact_id": null,
+      "available_at": "2026-10-14T03:31:19.864993Z",
+      "source_hash_matches_frozen_request": true
+    },
+    {
+      "source_fact_id": "9979f51b-304a-4993-bbf2-05aa7cbb94dd",
+      "reviewed_type": "regulatory",
+      "created": true,
+      "correction_id": "6d9a9e2f-de4c-435a-b69f-3bf2fdf6887c",
+      "corrected_fact_id": "a22d2eb1-e170-466b-bcec-b0fb57a18bce",
+      "retired_fact_id": null,
+      "available_at": "2026-10-14T03:31:24.446412Z",
+      "source_hash_matches_frozen_request": true
+    }
+  ],
+  "independent_read_only_checks": [
+    {
+      "source_fact_id": "6fdea295-f3d6-4363-a5a2-c08edd2256f6",
+      "audit_count": 1,
+      "same_fact_key": true,
+      "evidence_preserved": true,
+      "effective_time_preserved": true,
+      "available_after_source": true,
+      "no_retirement": true
+    },
+    {
+      "source_fact_id": "9979f51b-304a-4993-bbf2-05aa7cbb94dd",
+      "audit_count": 1,
+      "same_fact_key": true,
+      "evidence_preserved": true,
+      "effective_time_preserved": true,
+      "available_after_source": true,
+      "no_retirement": true
+    }
+  ],
+  "global_audit_count_after": 3,
+  "same_class_confirmation_no_retirement": true,
+  "frozen_source_hashes_verified_via_authenticated_Data_GET": true,
+  "original_evidence_and_effective_time_preserved": true,
+  "availability_current_database_time_not_original_firstseen": true,
+  "remaining_original_31_previews_not_intentionally_written_this_run": 28,
+  "new_e2_model_calls": 0,
+  "loops": 0,
+  "campaigns": 0,
+  "owner_matrix_before_these_reviews": "e2-owner-matrix-language-2026-10-14.json",
+  "owner_preflight_after_these_reviews": "Not yet obtained. User changed the foreground Chrome tab to another project; navigation was halted without changing that tab.",
+  "boundaries": [
+    "Deployed Research maintenance helper via normal Data service token, not authenticated incoming Research HTTP or normal owner E2 approval.",
+    "No production service restart, response-loss injection or replay test for these two new confirmation operations.",
+    "Old immutable snapshots retain old versions. New confirmation does not establish coverage, matching, FDR or a qualified champion.",
+    "Only explicit archived sources reviewed; no blanket reclassification or manual quality-guard bypass.",
+    "No claim that the current BTC guard is cleared until normal owner re-preflight is observed."
+  ]
+}

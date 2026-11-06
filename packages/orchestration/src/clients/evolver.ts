@@ -19,11 +19,18 @@ export type EvolutionConfig = {
   funding_rate?: number;
 };
 
+export type EvolutionPreparation = {
+  seed_source_hash: string;
+  dataset_content_sha256: string;
+};
+
 export type EvolutionStartRequest = {
   budget: number;
   seed_strategy_id: string;
   config: Required<EvolutionConfig>;
   llm: EvolutionLLMSnapshot;
+  preparation?: EvolutionPreparation;
+  retry_of_run_id?: string;
 };
 
 export type EvolutionLoopStartRequest = {
@@ -196,10 +203,14 @@ export function eventCampaignRequestDigest(request: EventCampaignRequest): strin
 export function buildEvolutionStartRequest(options: {
   budget?: number;
   seedStrategyId?: string;
+  retryOfRunId?: string;
+  preparation?: EvolutionPreparation;
   config: EvolutionConfig;
   llmSnapshot: EvolutionLLMSnapshot;
 }): EvolutionStartRequest {
   return {
+    ...(options.retryOfRunId ? { retry_of_run_id: options.retryOfRunId } : {}),
+    ...(options.preparation ? { preparation: options.preparation } : {}),
     budget: options.budget ?? 4,
     seed_strategy_id: options.seedStrategyId ?? "sma_cross_v1",
     config: {
@@ -238,6 +249,10 @@ export function evolutionRequestDigest(request: EvolutionStartRequest): string {
   ];
   if (Object.keys(config.params ?? {}).length) canonical.push(canonicalParams(config.params));
   if (config.funding_rate) canonical.push(["funding_rate", float64Hex(config.funding_rate)]);
+  if (request.preparation) canonical.push([
+    "preparation-v1", request.preparation.seed_source_hash, request.preparation.dataset_content_sha256,
+  ]);
+  if (request.retry_of_run_id) canonical.push(["retry-v1", request.retry_of_run_id.toLowerCase()]);
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
@@ -333,6 +348,26 @@ export class EvolverClient {
     });
   }
 
+  /** Inspect owner-bound selection inputs without creating a loop or redeeming model keys. */
+  async preflightEvolutionLoop(request: EvolutionLoopStartRequest): Promise<{
+    status: "blocked" | "necessary_inputs_present";
+    blocker_codes: string[];
+    selection_start: string | null;
+    selection_end: string | null;
+    selection_fact_count: number;
+    independent_event_upper_bound: number;
+    minimum_matched_event_pairs: number;
+    matched_controls: "not_evaluated";
+    fdr: "not_evaluated";
+  }> {
+    return await this.http.post("/api/v1/evolution-loops/preflight", request);
+  }
+
+  /** Inspect an explicit experiment without requiring any model configuration. */
+  async prepareExperiment(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return await this.http.post("/api/v1/evolution-loops/prepare", request);
+  }
+
   /** Start the baseline and its automatic continuation with one bounded authorization. */
   async startEvolutionLoop(options: {
     request: EvolutionLoopStartRequest;
@@ -343,6 +378,17 @@ export class EvolverClient {
       "Idempotency-Key": options.idempotencyKey,
       "X-Evolution-Credential": options.credentialGrant,
     });
+  }
+
+  /** Prepare an owned seed and complete data window without paid model generation. */
+  async preflightRun(request: EvolutionStartRequest): Promise<{
+    seed_strategy_id: string;
+    seed_source_hash: string;
+    request_digest: string;
+    dataset_manifest: Record<string, unknown>;
+    estimated_max_cost_usd: number;
+  }> {
+    return await this.http.post("/api/v1/runs/preflight", request);
   }
 
   async startRun(options: {
@@ -389,6 +435,13 @@ export class EvolverClient {
 
   async listRuns(limit = 20): Promise<RunListResult> {
     return await this.http.get<RunListResult>("/api/v1/runs", { limit });
+  }
+
+  /** Obtain the original owned experiment intent for an explicit, separately approved retry. */
+  async getRetryPlan(runId: string): Promise<{
+    retryOfRunId: string; seedStrategyId: string; budget: number; config: EvolutionConfig;
+  }> {
+    return await this.http.get(`/api/v1/runs/${runId}/retry-plan`);
   }
 
   async getRun(runId: string): Promise<RunStatusResult> {

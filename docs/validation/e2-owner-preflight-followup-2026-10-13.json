@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-13",
+  "scope": "Normal owner preparation-page follow-up via native Chrome accessibility",
+  "observed": {
+    "target": "SOL/USDT 1h existing Paper runner",
+    "initial_suggested_window_utc": [
+      "2026-10-01T14:00",
+      "2026-10-13T01:00"
+    ],
+    "initial_partition_bars": [
+      165,
+      55,
+      55
+    ],
+    "initial_selection_utc": [
+      "2026-10-08T12:00",
+      "2026-10-10T18:00"
+    ],
+    "selection_fact_versions": 3,
+    "independent_event_upper_bound": 2,
+    "minimum_required": 8,
+    "visible_status": "Data insufficient; search not started",
+    "later_suggested_end_utc": "2026-10-13T02:00",
+    "later_upper_bound": 2,
+    "approval_not_visible": true
+  },
+  "limitations": [
+    "Accessibility text observed in an existing authenticated session; current response was not correlated to a network request or server receipt.",
+    "Native accessibility clicks, setValue and keyboard did not reliably focus or alter the date input; parameter invalidation not newly verified.",
+    "Native screenshot showed blank content while accessibility contained the page; no visual pass claimed.",
+    "Direct Chrome connector unavailable; in-app tab connection timed out at 20 seconds.",
+    "No new approval, execution, paid search, production recovery, champion, Forward or holdout acceptance."
+  ],
+  "new_model_prompts_submitted": 0
+}

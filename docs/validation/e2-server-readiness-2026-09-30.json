@@ -1,0 +1,147 @@
+{
+  "migration": [
+    {
+      "version_num": "0059"
+    }
+  ],
+  "diagnostics_column": [
+    {
+      "count": 1
+    }
+  ],
+  "raw_provenance": [
+    {
+      "source": "coindesk",
+      "collector_version": "selected-news-forward@1",
+      "policy_version": "first-seen-only-v1",
+      "versions": 25,
+      "independent_articles": 25,
+      "earliest": "2026-09-30 10:36:41.830484+00:00",
+      "latest": "2026-09-30 10:36:41.907170+00:00"
+    }
+  ],
+  "facts": [
+    {
+      "source": "coindesk",
+      "versions": 25,
+      "independent_articles": 25,
+      "btc_facts": 10,
+      "latest": "2026-09-30 10:36:41.907170+00:00"
+    }
+  ],
+  "extraction_jobs": [
+    {
+      "status": "completed",
+      "count": 25
+    }
+  ],
+  "loops": [],
+  "campaigns": [],
+  "forward": [],
+  "holdout": [],
+  "readiness": {
+    "1h": {
+      "checked_at": "2026-09-30T10:38:29.952936+00:00",
+      "from_ts": "2026-09-04T00:00:00+00:00",
+      "closed_bars": 634,
+      "timeframe": "1h",
+      "bars_fresh": true,
+      "bars_contiguous": true,
+      "selection_start": "2026-09-19T21:00:00+00:00",
+      "selection_end": "2026-09-25T03:00:00+00:00",
+      "independent_events_by_type": [],
+      "minimum_matched_event_pairs": 8,
+      "ready_to_attempt_search": false,
+      "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+    },
+    "4h": {
+      "checked_at": "2026-09-30T10:38:29.999473+00:00",
+      "from_ts": "2026-09-04T00:00:00+00:00",
+      "closed_bars": 158,
+      "timeframe": "4h",
+      "bars_fresh": true,
+      "bars_contiguous": true,
+      "selection_start": "2026-09-19T20:00:00+00:00",
+      "selection_end": "2026-09-25T00:00:00+00:00",
+      "independent_events_by_type": [],
+      "minimum_matched_event_pairs": 8,
+      "ready_to_attempt_search": false,
+      "qualification": "Necessary input check only; matched controls, FDR, profitability and Forward remain unverified."
+    }
+  },
+  "deployed_commit": "1d8494dd077c731a1d7e507035f6d3998b7ccefb",
+  "scope": "deployed service and genuine input readiness; positive E2 not accepted",
+  "feature_flags": {
+    "EVENT_ARCHIVE_ENABLED": true,
+    "EVENT_EXTRACTION_ENABLED": true,
+    "EVENT_EVOLUTION_ENABLED": true
+  },
+  "service_health": "All seven business containers healthy after targeted recreation",
+  "actions": {
+    "configuration_backup_created": true,
+    "recreated_services": [
+      "data",
+      "research",
+      "evolver"
+    ],
+    "model_calls_started": 0,
+    "model_cost_added_usd": 0,
+    "backfill_api": {
+      "1h": {
+        "http_status": 200,
+        "bars_fetched": 225,
+        "bars_inserted": 225
+      },
+      "4h": {
+        "http_status": 200,
+        "bars_fetched": 159,
+        "bars_inserted": 159
+      }
+    }
+  },
+  "news_provider_probe": [
+    {
+      "provider": "rss:coindesk",
+      "status": "ok",
+      "coverage": "snapshot_only"
+    },
+    {
+      "provider": "rss:kraken_blog",
+      "status": "upstream_error",
+      "coverage": "snapshot_only"
+    }
+  ],
+  "configuration_checks": {
+    "jwt_consistent": true,
+    "grant_public_keys_consistent": true,
+    "grant_private_key_only_in_orchestration": true,
+    "llm_exchange_roundtrip_verified": false
+  },
+  "authentication_checks": {
+    "evolver_api_v1_loops_without_token": 401,
+    "dashboard_api_loops_without_session": 401,
+    "dashboard_zh_without_session": 307,
+    "dashboard_en_without_session": 307
+  },
+  "remaining": [
+    "Selection window has zero qualifying independent events",
+    "Kraken Blog upstream failure observed; underlying cause not diagnosed",
+    "Authenticated owner grant and credential exchange not exercised",
+    "No genuine five-generation server run, champion lock, Forward or holdout execution"
+  ],
+  "evidence_boundaries": [
+    "First accepted event timestamps are actual server observations; publication timestamps were not substituted",
+    "BTC-associated facts are not equivalent to independent evaluable events",
+    "Provider coverage_complete is not historical coverage or sufficient statistical evidence",
+    "Configuration presence checks do not establish credential exchange success"
+  ],
+  "browser_checks": {
+    "scope": "server login page via temporary SSH tunnel; no login submitted",
+    "password_visibility_input_types": [
+      "password",
+      "text",
+      "password"
+    ],
+    "console_errors": 0
+  }
+}

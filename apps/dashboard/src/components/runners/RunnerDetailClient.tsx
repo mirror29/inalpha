@@ -27,6 +27,8 @@ import { RunnerChart } from "./RunnerChart";
 import { RunnerFactors } from "./RunnerFactors";
 import { EvolutionStartButton } from "@/components/evolution/EvolutionStartButton";
 
+import { WalletPanel } from "./WalletPanel";
+
 const REFRESH_MS = 6000;
 
 export function RunnerDetailClient({ runId }: { runId: string }) {
@@ -130,6 +132,7 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
 
           {/* 当前模拟盘指标条(置于 K 线上方)。 */}
           <RunnerStats run={run} decisions={data.decisions} />
+          <WalletPanel run={run} data={data.wallet} flat={!data.position} refresh={() => { void mutate(); }} />
 
           {/* K 线置顶 —— 决策点叠在蜡烛上,先看价格走势。 */}
           <RunnerChart
@@ -139,7 +142,7 @@ export function RunnerDetailClient({ runId }: { runId: string }) {
             decisions={data.decisions}
           />
 
-          {/* 持仓(账户级,同标的多 run 共享;空仓显示空态)与决策时间线并排,
+          {/* 本运行独立持仓与决策时间线并排,
               省纵向空间;min-w-0 防表格内容把 fr 轨道撑爆。 */}
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
             <div className="min-w-0">
@@ -197,7 +200,7 @@ function RunnerStats({
 
   // 盈亏百分比 = 累计盈亏 / 资金额度
   const pnlPct =
-    run.allocation && run.allocation > 0
+    run.accounting_status === "verified" && run.allocation && run.allocation > 0
       ? (run.cumulative_pnl / run.allocation) * 100
       : null;
 
@@ -205,7 +208,7 @@ function RunnerStats({
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <StatCard label={t("cumulativePnl")} accent>
         <Figure className={pnlColor(run.cumulative_pnl)}>
-          {fmtSigned(run.cumulative_pnl, null, locale)}
+          {run.accounting_status === "verified" ? fmtSigned(run.cumulative_pnl, null, locale) : "—"}
         </Figure>
         {pnlPct !== null && (
           <Sub className={pnlColor(pnlPct)}>

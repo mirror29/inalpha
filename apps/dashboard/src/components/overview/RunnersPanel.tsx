@@ -130,7 +130,7 @@ export function RunnersPanel({ runs }: { runs: StrategyRunRecord[] }) {
                   </Td>
                   <Td right mono>
                     <span className={pnlColor(r.cumulative_pnl)}>
-                      {fmtSigned(r.cumulative_pnl, null, locale)}
+                      {r.accounting_status === "verified" ? fmtSigned(r.cumulative_pnl, null, locale) : "—"}
                     </span>
                   </Td>
                   <Td right mono muted>

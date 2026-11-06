@@ -1,0 +1,150 @@
+{
+  "database": "inalpha_full_response_audit_e5df474441d3446a9ed6f6440ba61b26",
+  "result": "passed",
+  "scope": "full actual Evolver application lifespan and dispatchers; provider SDK HTTP transport replaced, synthetic local signer/Dashboard/Data; source process, not production container or real owner",
+  "initial_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "forced_exit_code": -9,
+  "before": {
+    "status": "replaying",
+    "active_generation": 1,
+    "lease_token": "9b92ff4b-c30d-4afb-9a39-54b73894d6a0",
+    "lease_expires_at": "2026-10-14 04:47:35.366994+00:00",
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": null,
+    "proposal_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0.000156",
+      "reserved_usd": "0E-7",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": false
+  },
+  "restart_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "after": {
+    "status": "insufficient_evidence",
+    "active_generation": 5,
+    "lease_token": "eaa2865f-5ce2-4a2c-babe-39cfcecc79d7",
+    "lease_expires_at": "2026-10-14 04:48:58.105346+00:00",
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": "INSUFFICIENT_FDR_EVIDENCE",
+    "proposal_count": 5,
+    "response_count": 10,
+    "succeeded": 120,
+    "ledger": {
+      "spent_usd": "0.000780",
+      "reserved_usd": "0E-7",
+      "max_cost_usd": "1",
+      "attempts": 10
+    },
+    "expired": false
+  },
+  "offline_provider_calls": [
+    "before",
+    "before",
+    "after",
+    "after",
+    "after",
+    "after",
+    "after",
+    "after",
+    "after",
+    "after"
+  ],
+  "local_peripheral_requests": [
+    "snapshot",
+    "local-fixture-grant",
+    "credential",
+    "snapshot",
+    "local-fixture-grant",
+    "credential"
+  ],
+  "cleanup_exit_code": -15,
+  "date": "2026-10-14",
+  "source_commit": "ae9626db981caaaea665fb64ef12f6f480372412",
+  "production_status": "not_deployed",
+  "fault": "Parent pauses offline provider responses, acquires ACCESS EXCLUSIVE lock on proposal table in isolated DB, releases provider responses, observes two durable response checkpoints and no proposals, then SIGKILL. Releasing lock and waiting natural 30-second lease expiration permits full application restart.",
+  "fixtures": {
+    "bars": 10,
+    "selection_facts": 8,
+    "event_types": [
+      "listing",
+      "delisting",
+      "exploit",
+      "depeg",
+      "regulatory",
+      "upgrade",
+      "macro",
+      "other"
+    ],
+    "purpose": "Synthetic necessary-input fixture, no statistical gates changed; not evidence of real asset coverage.",
+    "baseline": "Synthetic completed baseline and persisted local authorization; not original owner approval or baseline recovery.",
+    "provider": "Actual SDK completion parsing/usage path with replaced HTTP transport; invalid DSL uses existing fallback; no paid external model."
+  },
+  "previous_failures": [
+    {
+      "database": "inalpha_full_response_audit_a77f141d0dc247acb575541d786cbbf0",
+      "health": "passed",
+      "outcome": "failed before provider; missing usage identity",
+      "harness_deadline_error": "TimeoutError"
+    },
+    {
+      "database": "inalpha_full_response_audit_5077cb504790429aa7c05c4f294a33fb",
+      "health": "passed",
+      "outcome": "failed before provider even with subject persisted in DB; campaign projection omitted it",
+      "harness_deadline_error": "TimeoutError"
+    }
+  ],
+  "regression": {
+    "before_fix": "1 failed, KeyError requested_by_sub on real claim",
+    "after_fix": "1 passed; API schema excludes internal subject",
+    "test": "services/evolver/tests/test_loop_handoff.py::test_campaign_dispatch_retains_persisted_usage_identity"
+  },
+  "harness": {
+    "temporary_exploration": true,
+    "maintained_regression": "Database projection regression only; this full-process harness is not yet part of CI.",
+    "sha256": {
+      "run.py": "2b3b79ed145888afc22370d6e3b9a6a9b6b613b4ad16e0b8ee67b58ac69e6088",
+      "seed.py": "117e1b37aeead4e32a6b6ead115a798955039e8181be70fb83448b757eeb33ac",
+      "app.py": "d1aa64936654d9562d714c750b84f500069ee1be8498a6cabf9d77a9da928dcf"
+    }
+  },
+  "limits": [
+    "Source process, not same-image container acceptance.",
+    "Actual complete Evolver lifespan/dispatchers; local mocked signer, credential endpoint, event snapshot and provider transport. Not a complete real Mastra/Dashboard/Data service stack.",
+    "Synthetic charges are ledger checks, not real provider invoices.",
+    "No real owner grant, paid search, champion, Forward, holdout or adoption.",
+    "FDR insufficient rejection does not prove strategy improvement.",
+    "Cleanup exit -15 is recorded; no graceful shutdown acceptance claim."
+  ],
+  "production_new_model_calls": 0,
+  "production_e2_searches_started": 0,
+  "automated_checks": {
+    "full_evolver_suite": {
+      "passed": 357,
+      "skipped": 1,
+      "warnings": 3,
+      "duration_seconds": 161.73,
+      "database": "inalpha_campaign_identity_tests_464bad50909b4894a2ad798f9f71e011",
+      "migration": "fresh upgrade head, 0069; correct wallet/diagnostics chain"
+    },
+    "ruff_check": "passed for both modified files",
+    "ruff_format": "Existing formatting differences in both files; new test follows formatter; no unrelated reformat.",
+    "mypy_target": "10 tuple/dict row errors; exact same output with origin/main source shadow, not a passing type check.",
+    "consistency": "19 passed, 0 failed, 12 existing warnings"
+  }
+}

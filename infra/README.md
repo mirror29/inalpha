@@ -72,5 +72,22 @@ TimescaleDB extension 应存在；hypertable 至少包括 bars/ticks。架构和
 
 ## 清理
 
+生产部署脚本 `scripts/deploy.sh` 需要宿主机 `python3`、`flock` 及支持 `up --wait`
+的 Docker Compose。部署之间使用文件锁互斥；服务在 300 秒内通过健康检查后，才清理
+Compose 中明确声明的 Inalpha 应用镜像仓库。每个仓库保留最近两个构建版本，同时保留
+所有容器（包括已停止容器）引用、本次部署前引用、以及构建未满 24 小时的镜像。
+失败部署不清理；清理失败会输出告警。数据库、volume、容器及其他仓库镜像不参与清理。
+无仓库信息的悬空镜像会保留，需要人工确认来源后处理。
+
+手动检查时默认只预览，确认后添加 `--apply`：
+
+```bash
+python3 scripts/cleanup-images.py --repository ghcr.io/mirror29/inalpha-dashboard
+```
+
+生产 Compose 的全部服务均配置 `json-file` 日志轮转，每个文件最多 `10m`，保留
+`3` 个文件，每容器约 30 MB。新配置在容器下次创建或重建时生效，普通 restart
+不会改变已有容器的日志配置。更新配置后应随计划内部署启用，不必重启 Docker daemon。
+
 `docker compose down` 只停止容器并保留 volume。`docker compose down -v` 会永久删除开发
 数据库 volume，只能在明确要重建本地数据时使用。

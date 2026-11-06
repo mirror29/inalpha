@@ -1,0 +1,169 @@
+{
+  "database": "inalpha_container_audit_d07a6eca8383400288522717b23ecdda",
+  "result": "partially_passed",
+  "scope": "full actual Evolver application lifespan and dispatchers; provider SDK HTTP transport replaced, synthetic local signer/Dashboard/Data; actual fixed business image, local AMD64 emulation, not real owner/production",
+  "initial_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "sigstop_completed_at": "2026-10-14T08:01:16.561224+00:00",
+  "fault": "SIGSTOP old application; wait natural lease expiry; second application claims",
+  "before": {
+    "status": "replaying",
+    "active_generation": 1,
+    "lease_token": "1615e279-c5dd-4972-8638-3f5074552cd3",
+    "lease_expires_at": "2026-10-14 08:01:40.500046+00:00",
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": null,
+    "observed_at": "2026-10-14 08:01:16.587397+00:00",
+    "proposal_count": 0,
+    "stored_response_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0",
+      "reserved_usd": "0.0340608",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": false
+  },
+  "expired_lease_observation": {
+    "status": "replaying",
+    "active_generation": 1,
+    "lease_token": "1615e279-c5dd-4972-8638-3f5074552cd3",
+    "lease_expires_at": "2026-10-14 08:01:40.500046+00:00",
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": null,
+    "observed_at": "2026-10-14 08:01:40.936093+00:00",
+    "proposal_count": 0,
+    "stored_response_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0",
+      "reserved_usd": "0.0340608",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": true
+  },
+  "second_application_started_at": "2026-10-14T08:01:40.942875+00:00",
+  "restart_health": {
+    "status": "ok",
+    "service": "inalpha-evolver",
+    "event_evolution": "enabled"
+  },
+  "second_application_claim": {
+    "status": "replaying",
+    "lease_token": "24ea512f-570a-4d78-b7e8-ccfb4fea5c3a",
+    "lease_expires_at": "2026-10-14 08:02:30.464836+00:00",
+    "updated_at": "2026-10-14 08:02:00.464845+00:00",
+    "observed_at": "2026-10-14 08:02:01.023633+00:00"
+  },
+  "after": {
+    "status": "failed",
+    "active_generation": 1,
+    "lease_token": null,
+    "lease_expires_at": null,
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": "LOOP_PROPOSAL_RESPONSE_UNCONFIRMED",
+    "observed_at": "2026-10-14 08:02:01.550045+00:00",
+    "proposal_count": 0,
+    "stored_response_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0",
+      "reserved_usd": "0.0340608",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": null
+  },
+  "offline_provider_calls": [
+    "before",
+    "before"
+  ],
+  "local_peripheral_requests": [
+    "snapshot",
+    "local-fixture-grant",
+    "credential",
+    "snapshot",
+    "local-fixture-grant",
+    "credential"
+  ],
+  "old_application_resumed_and_fixture_released_at": "2026-10-14T08:02:01.746428+00:00",
+  "after_old_worker_return": {
+    "status": "failed",
+    "active_generation": 1,
+    "lease_token": null,
+    "lease_expires_at": null,
+    "locked_candidate_id": null,
+    "forward_sandbox_id": null,
+    "holdout_consumed_at": null,
+    "failure_code": "LOOP_PROPOSAL_RESPONSE_UNCONFIRMED",
+    "observed_at": "2026-10-14 08:02:21.732057+00:00",
+    "proposal_count": 0,
+    "stored_response_count": 0,
+    "response_count": 2,
+    "succeeded": 0,
+    "ledger": {
+      "spent_usd": "0",
+      "reserved_usd": "0.0340608",
+      "max_cost_usd": "1",
+      "attempts": 2
+    },
+    "expired": null
+  },
+  "late_response_observation_seconds": 20,
+  "purpose": "Observe paused-worker resume after lease takeover: no state or cost changes during 20 seconds; SDK receipt, stale write attempt and heartbeat-versus-write-fencing mechanism are not independently demonstrated",
+  "old_worker_cleanup_exit_code": 0,
+  "observer_transient_failures": [],
+  "cleanup_exit_code": 0,
+  "env_file_removed": true,
+  "owned_container_removed": true,
+  "image": "ghcr.io/mirror29/inalpha-evolver:a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+  "runtime": "local Docker AMD64 emulation on ARM host; CPUs2/memory4GB; no production container restarted",
+  "entrypoint_shim_sha256": "36614d333dbae8accddc8cdec7622bb60a6c90c5281067d9c3da868672093966",
+  "business_sha": "a275f8be7679578e4aef62cffb3ff5c6f13a988e",
+  "new_production_model_calls": 0,
+  "production_e2_searches_started": 0,
+  "observation_limits": [
+    "Old application resumed and provider fixture release marker set; this probe did not directly sample successful SDK receipt or an attempted stale complete() call. Heartbeat cancellation and write fencing cannot be separated from this observation.",
+    "Twenty seconds of unchanged database observations do not prove all late-response races.",
+    "Isolated synthetic baseline and local signer/credential/Data HTTP fixtures; not normal-owner authorization or production fencing acceptance.",
+    "No provider invoice exists for offline fixture calls; known spend zero is not evidence that unknown real calls would be free.",
+    "Audit database retained; owned containers absent in a separate successful Docker listing, and temporary environment file removed.",
+    "Current probe is exploratory and not a maintained CI suite."
+  ],
+  "harness_sha256": "b4e35d878e980d418e28ba52c9b80b2d358d9b62d79f61b63fa0f5570f411a86",
+  "timing_scope": "sigstop/start/resume anchors use local UTC; expiry and claim timestamps use PostgreSQL clock_timestamp()/updated_at in the isolated database. Claim updated_at observed with a new token after old lease expiry; proposal-response table briefly locked only in isolated DB to hold recovery while observing the claim, then released.",
+  "prior_attempts": [
+    {
+      "database": "inalpha_container_audit_4d31c92f69b44889ada7870701cc1cc7",
+      "result": "passed",
+      "limits": "No explicit expiry/claim time anchors; preserved as prior exploratory observation."
+    },
+    {
+      "database": "inalpha_container_audit_1db7f2b473ca4e33a5366b98eb925cae",
+      "result": "failed",
+      "error_type": "TimeoutError",
+      "scope": "Authorization-table observation lock prevented second app startup health; probe setup issue, not production failure. Both containers cleaned, environment file removed, audit database retained."
+    }
+  ],
+  "probe_assertions_result": "passed",
+  "not_demonstrated": [
+    "successful old SDK receipt of the released provider payload",
+    "an attempted old-token complete() write and its explicit rejection",
+    "separation of heartbeat cancellation from write fencing",
+    "full old-worker fencing acceptance"
+  ]
+}

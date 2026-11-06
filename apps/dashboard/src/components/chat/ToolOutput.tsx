@@ -1,10 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useTranslations } from "next-intl";
 
+import { Link } from "@/i18n/navigation";
+import { approvalExecutionReceipt } from "@/lib/approval-execution";
+
 import { cn } from "@/lib/cn";
+
+import { EvolutionApprovalSummary } from "./EvolutionApprovalSummary";
 
 import { compact, shortTimestamp } from "./tool-views/format";
 
@@ -20,7 +25,7 @@ import { compact, shortTimestamp } from "./tool-views/format";
  * 解析失败(非 JSON)原样显示纯文本。容量护栏:深度 / 表格行列 / chip 数均有上限,
  * 截断处显式标注剩余条数 —— 完整数据由 ToolChip 的 raw 切换兜底。
  */
-export function ToolOutput({ raw }: { raw: string }) {
+export function ToolOutput({ raw, onApprovalTerminal }: { raw: string; onApprovalTerminal?: () => void }) {
   const parsed = useMemo(() => {
     try {
       return JSON.parse(raw) as unknown;
@@ -38,7 +43,7 @@ export function ToolOutput({ raw }: { raw: string }) {
   }
 
   if (isApprovalEnvelope(parsed)) {
-    return <ChatApprovalActions requestId={parsed.requestId} />;
+    return <><EvolutionApprovalSummary envelope={parsed} /><ChatApprovalActions requestId={parsed.requestId} onTerminal={onApprovalTerminal} /></>;
   }
 
   // mastra 工具报错封套:红标头 + 直接展开 output(不让用户先点开一层 isError)。
@@ -71,10 +76,66 @@ function isApprovalEnvelope(
   );
 }
 
-/** Complete the trusted approval in-place, then resume the same chat operation. */
-function ChatApprovalActions({ requestId }: { requestId: string }) {
+/** Submit a trusted approval and link directly submitted E1 tasks without another model turn. */
+function ChatApprovalActions({ requestId, onTerminal }: { requestId: string; onTerminal?: () => void }) {
   const t = useTranslations("activity.approval");
-  const [state, setState] = useState<"idle" | "allow" | "deny" | "approved" | "failed">("idle");
+  const [state, setState] = useState<"checking" | "statusFailed" | "idle" | "recoverable" | "allow" | "deny" | "approved" | "submitted" | "denied" | "expired" | "failed">("checking");
+
+  const [statusAttempt, setStatusAttempt] = useState(0);
+  const [submittedLoop, setSubmittedLoop] = useState(false);
+  const [submittedRunId, setSubmittedRunId] = useState<string | null>(null);
+  const [approvedRecovery, setApprovedRecovery] = useState(false);
+
+  useEffect(() => {
+    if (state === "expired" || state === "denied" || state === "approved" || state === "submitted") onTerminal?.();
+  }, [state, onTerminal]);
+
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    setState("checking");
+    void (async () => {
+      try {
+        const response = await fetch(`/api/permissions/${encodeURIComponent(requestId)}/respond`, {
+          cache: "no-store", signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("approval status unavailable");
+        const result = await response.json() as { status: string; remainingMs?: number };
+        if (!active) return;
+        if (result.status === "approved") {
+          setApprovedRecovery(true);
+          setState("recoverable");
+          return;
+        }
+        setApprovedRecovery(false);
+        const remaining = result.remainingMs ?? Number.NaN;
+        if (result.status === "unavailable") {
+          setState("expired");
+          return;
+        }
+        if (result.status !== "pending" || !Number.isFinite(remaining)) throw new Error("invalid approval status");
+        if (remaining <= 0) {
+          setState("expired");
+          return;
+        }
+        setState("idle");
+        const deadline = performance.now() + remaining;
+        const checkDeadline = () => {
+          const delay = deadline - performance.now();
+          if (delay > 0) {
+            timer = setTimeout(checkDeadline, Math.min(delay, 2_147_483_647));
+          } else {
+            setState((current) => current === "idle" || current === "failed" ? "expired" : current);
+          }
+        };
+        checkDeadline();
+      } catch {
+        if (active) setState("statusFailed");
+      }
+    })();
+    return () => { active = false; controller.abort(); if (timer) clearTimeout(timer); };
+  }, [requestId, statusAttempt]);
 
   const respond = async (decision: "allow" | "deny") => {
     setState(decision);
@@ -84,17 +145,47 @@ function ChatApprovalActions({ requestId }: { requestId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision }),
       });
+      if (response.status === 404 || response.status === 410) {
+        setState("expired");
+        return;
+      }
       if (!response.ok) throw new Error(`approval failed (${response.status})`);
       if (decision === "allow") {
-        setState("approved");
-        window.dispatchEvent(new CustomEvent("inalpha:approval-resume"));
+        const receipt = approvalExecutionReceipt(await response.json());
+        if (receipt.kind === "failed") throw new Error("approved task submission failed");
+        if (receipt.kind === "submitted") {
+          setSubmittedRunId(receipt.runId);
+          setSubmittedLoop(receipt.loop === true);
+          setState("submitted");
+        } else {
+          setState("approved");
+          window.dispatchEvent(new CustomEvent("inalpha:approval-resume"));
+        }
       } else {
-        setState("idle");
+        setState("denied");
       }
     } catch {
       setState("failed");
     }
   };
+
+  if (state === "statusFailed") {
+    return <div role="status" className="flex items-center gap-3 px-2.5 py-2 text-xs text-fg-muted">
+      <span>{t("statusFailed")}</span>
+      <button type="button" onClick={() => setStatusAttempt((value) => value + 1)} className="underline">{t("retryStatus")}</button>
+    </div>;
+  }
+
+  if (state === "expired" || state === "denied" || state === "checking") {
+    return <p role="status" className="px-2.5 py-2 text-xs text-fg-muted">{t(state)}</p>;
+  }
+
+  if (state === "submitted" && submittedRunId) {
+    return <div role="status" className="flex items-center gap-3 px-2.5 py-2 text-xs text-bull">
+      <span>{t("submitted")}</span>
+      <Link href={`/evolution/${submittedLoop ? "loops/" : ""}${submittedRunId}`} className="underline">{t("viewTask")}</Link>
+    </div>;
+  }
 
   if (state === "approved") {
     return <p className="px-2.5 py-2 font-mono text-[11px] text-bull">{t("working")}</p>;
@@ -103,24 +194,24 @@ function ChatApprovalActions({ requestId }: { requestId: string }) {
   return (
     <div className="flex items-center justify-between gap-3 px-2.5 py-2">
       <span className="font-mono text-[10px] text-fg-muted">
-        {state === "failed" ? t("failed") : requestId.slice(0, 8)}
+        {state === "failed" ? t("failed") : approvedRecovery ? t("recoveryAvailable") : requestId.slice(0, 8)}
       </span>
       <div className="flex items-center gap-1.5">
-        <button
+        {!approvedRecovery && <button
           type="button"
           disabled={state === "allow" || state === "deny"}
           onClick={() => void respond("deny")}
           className="rounded-md border border-fox-red/35 px-2 py-1 font-mono text-[10px] uppercase text-fox-red disabled:opacity-40"
         >
           {state === "deny" ? t("working") : t("deny")}
-        </button>
+        </button>}
         <button
           type="button"
           disabled={state === "allow" || state === "deny"}
           onClick={() => void respond("allow")}
           className="rounded-md border border-bull/35 bg-bull/10 px-2 py-1 font-mono text-[10px] uppercase text-bull disabled:opacity-40"
         >
-          {state === "allow" ? t("working") : t("allow")}
+          {state === "allow" ? t("working") : approvedRecovery ? t("recoverTask") : t("allow")}
         </button>
       </div>
     </div>

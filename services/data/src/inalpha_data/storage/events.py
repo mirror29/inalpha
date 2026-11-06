@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from psycopg import AsyncConnection
+from psycopg.rows import dict_row
 
 from ..event_models import EventFactWriteRequest, EventSnapshotRequest, RawEventIngestRequest
 
@@ -135,16 +136,21 @@ async def write_fact(
     fact_payload = request.model_dump(mode="json", exclude={"raw_event_id"})
     fact_hash = _canonical_hash(fact_payload)
     lock_key = _advisory_lock_key(request.raw_event_id, request.fact_key)
-    async with conn.cursor() as cur:
-        await cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (lock_key,))
+    async with conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(
-            """SELECT version,first_seen_at,accepted_at,source_tier,policy_version
+            """SELECT version,first_seen_at,accepted_at,source_tier,policy_version,source,source_event_id
 FROM raw_market_events WHERE event_id=%s""",
             (request.raw_event_id,),
         )
         raw = await cur.fetchone()
         if raw is None:
             raise LookupError("raw event not found")
+        # Share ingestion/correction serialization before taking the per-version lock.
+        await cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+            (_advisory_lock_key(raw["source"], raw["source_event_id"]),),
+        )
+        await cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (lock_key,))
         # Real-time sources may never be backdated. Structured historical providers
         # may use their frozen first-added policy, but still cannot predate it.
         earliest_available = (
@@ -202,6 +208,14 @@ RETURNING {_FACT_COLUMNS}""",
         row = await cur.fetchone()
     assert row is not None
     return dict(row), True
+
+
+async def get_fact(conn: AsyncConnection, fact_id: UUID) -> dict[str, Any] | None:
+    """Read an immutable fact version for a trusted prospective review."""
+    async with conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(f"SELECT {_FACT_COLUMNS} FROM market_event_facts WHERE fact_id=%s", (fact_id,))
+        row = await cur.fetchone()
+    return dict(row) if row is not None else None
 
 
 async def create_snapshot(

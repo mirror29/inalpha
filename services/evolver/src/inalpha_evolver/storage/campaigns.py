@@ -13,7 +13,7 @@ from psycopg import AsyncConnection
 from ..hypothesis.compiler import canonical_spec_hash
 from ..hypothesis.models import HypothesisSpec
 
-_CAMPAIGN_COLUMNS = """campaign_id,owner_account_id,source_run_id,status,active_generation,
+_CAMPAIGN_COLUMNS = """campaign_id,owner_account_id,requested_by_sub,source_run_id,status,active_generation,
 hypothesis_budget,implementations_per_hypothesis,max_generations,event_snapshot_id,data_snapshot_id,frozen_config,
 llm_snapshot,llm_config_digest,llm_credential_grant,llm_cost_usd,
 locked_candidate_id,holdout_consumed_at,forward_sandbox_id,forward_started_at,forward_deadline_at,

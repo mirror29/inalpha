@@ -272,6 +272,7 @@ async def test_semaphore_limits_concurrent_calls() -> None:
     """max_concurrent=2 + 10 个并发调用 → 同时 in-flight 数 ≤ 2。"""
     c = _make_client(max_concurrent=2, max_retries=0)
     fake = _FakeChat(track_in_flight=True)
+    c._recorder = None
     c._client = fake  # type: ignore[assignment]
 
     coros = [c.complete_json(system="s", user="u") for _ in range(10)]
@@ -292,6 +293,7 @@ async def test_retriable_error_retries_until_success() -> None:
 
     c = _make_client(max_retries=3, retry_base_seconds=0.01)
     fake = _FakeChat(raise_seq=[err1, err2, None])  # None = 不抛、返成功
+    c._recorder = None
     c._client = fake  # type: ignore[assignment]
 
     out = await c.complete_json(system="s", user="u")
@@ -306,6 +308,7 @@ async def test_retriable_error_exhausts_retries_then_raises_llm_error() -> None:
     errs = [RateLimitError.__new__(RateLimitError) for _ in range(5)]
     c = _make_client(max_retries=2, retry_base_seconds=0.01)
     fake = _FakeChat(raise_seq=errs)
+    c._recorder = None
     c._client = fake  # type: ignore[assignment]
 
     with pytest.raises(LLMError) as ei:
@@ -319,6 +322,7 @@ async def test_non_retriable_error_raises_immediately() -> None:
     """非可重试异常（如 ValueError）→ 不重试、直接包成 LLMError 抛。"""
     c = _make_client(max_retries=3, retry_base_seconds=0.01)
     fake = _FakeChat(raise_seq=[ValueError("bad request")])
+    c._recorder = None
     c._client = fake  # type: ignore[assignment]
 
     with pytest.raises(LLMError) as ei:
@@ -331,6 +335,7 @@ async def test_invalid_json_raises_llm_invalid_json() -> None:
     """SDK 成功返回但 content 不是 JSON → 抛 LLM_INVALID_JSON。"""
     c = _make_client(max_retries=0)
     fake = _FakeChat(response_content="not json at all")
+    c._recorder = None
     c._client = fake  # type: ignore[assignment]
 
     with pytest.raises(LLMError) as ei:
@@ -345,6 +350,7 @@ async def test_max_retries_zero_means_one_attempt_only() -> None:
     err = APITimeoutError.__new__(APITimeoutError)
     c = _make_client(max_retries=0, retry_base_seconds=0.01)
     fake = _FakeChat(raise_seq=[err])
+    c._recorder = None
     c._client = fake  # type: ignore[assignment]
 
     with pytest.raises(LLMError):

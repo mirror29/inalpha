@@ -1,0 +1,57 @@
+{
+  "code_commit": "559dcaa0f614bbf519aee69c32265c1eef9dd535",
+  "production_deployed": false,
+  "red_test": "Injected interruption after two returned batches, before proposal commit: provider.calls was 4 instead of 2.",
+  "fix": [
+    "Persist generation/batch dispatch and each returned response with its reservation.",
+    "Commit known usage settlement and response atomically; reuse saved responses after interruption.",
+    "Fence all reads/writes by current owner authority and lease.",
+    "Block a generation with uncertain prior responses before either batch can dispatch again; retain unknown reservations.",
+    "Use campaign-scoped stable first-generation scaffold identities, including parent links."
+  ],
+  "migration": "0068 after 0067; refuses downgrade with recorded attempts",
+  "tests": {
+    "targeted_passed": 53,
+    "ruff": "passed",
+    "mypy": "6 errors reproduced with pre-change source; not a passing type check"
+  },
+  "process_injection": {
+    "database": "inalpha_checkpoint_audit_14c63f8aed354aa58eadc2a5caa0fade",
+    "schema": "0068",
+    "before": {
+      "completed": 0,
+      "proposals": 0,
+      "ledger": {
+        "spent_usd": "0.000156",
+        "reserved_usd": "0E-7",
+        "max_cost_usd": "1",
+        "attempts": 2
+      }
+    },
+    "after": {
+      "generation": 5,
+      "completed": 120,
+      "proposals": 5,
+      "ledger": {
+        "spent_usd": "0.000780",
+        "reserved_usd": "0E-7",
+        "max_cost_usd": "1",
+        "attempts": 10
+      },
+      "status": "insufficient_evidence"
+    },
+    "forced_exit": -9,
+    "calls_before": 2,
+    "calls_after": 8,
+    "natural_lease_expiry": true,
+    "result": "passed"
+  },
+  "limits": [
+    "Offline model with synthetic usage; no actual model charge or proof of improved strategy.",
+    "Runtime executor with explicit pre-commit fault injection, not complete application lifespan or production credentials.",
+    "External response before durable storage remains uncertain after death; it is blocked, not silently refunded or retried.",
+    "Unknown attempt requires usage review and a newly explicitly approved experiment; no automated bypass or release of its reservation.",
+    "Standalone non-Loop campaigns are outside this response-cache path.",
+    "Production still schema0067; migration and affected Evolver deployment await CI/review and safe window."
+  ]
+}

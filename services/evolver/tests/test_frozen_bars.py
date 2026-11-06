@@ -67,7 +67,7 @@ async def test_load_backfills_then_reads_without_fresh_fallback() -> None:
         venue="binance",
         symbol="BTCUSDT",
         timeframe="1h",
-        from_ts=_AS_OF - timedelta(days=1),
+        from_ts=_AS_OF - timedelta(hours=3),
         as_of=_AS_OF,
     )
 
@@ -92,7 +92,7 @@ async def test_forming_bar_is_removed() -> None:
         venue="binance",
         symbol="BTCUSDT",
         timeframe="1h",
-        from_ts=_AS_OF - timedelta(days=1),
+        from_ts=_AS_OF - timedelta(hours=3),
         as_of=_AS_OF,
     )
     assert dataset.manifest.bar_count == 3
@@ -106,7 +106,7 @@ async def test_stale_tail_fails_closed() -> None:
             venue="binance",
             symbol="BTCUSDT",
             timeframe="1h",
-            from_ts=_AS_OF - timedelta(days=1),
+            from_ts=_AS_OF - timedelta(hours=3),
             as_of=_AS_OF,
         )
     assert error.value.code == "EVOLUTION_DATA_FRESHNESS_FAILED"
@@ -128,7 +128,7 @@ async def test_bad_bars_fail_closed(mutation: str) -> None:
             venue="binance",
             symbol="BTCUSDT",
             timeframe="1h",
-            from_ts=_AS_OF - timedelta(days=1),
+            from_ts=_AS_OF - timedelta(hours=3),
             as_of=_AS_OF,
         )
 
@@ -140,7 +140,7 @@ async def test_middle_gap_fails_even_when_tail_is_fresh() -> None:
     with pytest.raises(ValidationError) as error:
         await FrozenBarsLoader(FakeDataClient(bars)).load(  # type: ignore[arg-type]
             venue="binance", symbol="BTCUSDT", timeframe="1h",
-            from_ts=_AS_OF - timedelta(days=1), as_of=_AS_OF)
+            from_ts=_AS_OF - timedelta(hours=4), as_of=_AS_OF)
     assert error.value.code == "EVOLUTION_DATA_GAP_INVALID"
 
 
@@ -167,7 +167,7 @@ async def test_loader_rejects_naive_and_future_as_of() -> None:
     loader = FrozenBarsLoader(FakeDataClient(_hourly_bars()))  # type: ignore[arg-type]
     with pytest.raises(ValidationError) as naive:
         await loader.load(venue="binance", symbol="BTCUSDT", timeframe="1h",
-                          from_ts=_AS_OF - timedelta(days=1),
+                          from_ts=_AS_OF - timedelta(hours=3),
                           as_of=_AS_OF.replace(tzinfo=None))
     assert naive.value.code == "EVOLUTION_DATETIME_NAIVE"
 
@@ -176,3 +176,14 @@ async def test_loader_rejects_naive_and_future_as_of() -> None:
         await loader.load(venue="binance", symbol="BTCUSDT", timeframe="1h",
                           from_ts=_AS_OF, as_of=future)
     assert ahead.value.code == "EVOLUTION_AS_OF_IN_FUTURE"
+
+
+@pytest.mark.asyncio
+async def test_missing_window_prefix_is_rejected_even_with_continuous_fresh_tail() -> None:
+    with pytest.raises(ValidationError) as error:
+        await FrozenBarsLoader(FakeDataClient(_hourly_bars())).load(  # type: ignore[arg-type]
+            venue="binance", symbol="BTCUSDT", timeframe="1h",
+            from_ts=_AS_OF - timedelta(days=1), as_of=_AS_OF)
+    assert error.value.code == "EVOLUTION_DATA_GAP_INVALID"
+    assert error.value.details["missing_count"] == 21
+    assert len(error.value.details["missing"]) == 20

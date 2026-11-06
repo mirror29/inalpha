@@ -1077,11 +1077,11 @@ export const paperStartStrategyTool = createTool({
     坑：
     - **promote ≠ 自动跑**：promote 只是状态切换，必须再调本工具才真正按行情跑
     - 同一个 candidate 同时只能有一个 running（再起会 409）；先 stop 再换 symbol
-    - 同账户同 venue+symbol 同时只能有一个 running（撞会 409 SYMBOL_RUN_CONFLICT，
-      两个 run 会共享同一行持仓互相打架）；换策略先 stop 旧 run
+    - 每次启动创建独立钱包与持仓；同用户不同候选可以同时运行相同标的
+    - 旧运行不会接管旧仓；停止不平仓、不退回资金，空仓后需显式释放资金
     - candidate 表不含 venue/symbol/timeframe，必须在这里指定
     - allocation 是该 run 的资金额度（sizing 上限）；省略时服务端取
-      min(10000, 账户可用现金 − 其他 running run 已分配额度)。默认 1 万的账户起
+      min(10000, 主账户实际可用现金)，创建时真实划拨并扣减主账户余额。默认 1 万的账户起
       **第二个** runner 时未分配额度通常已是 0 → 422——要么显式传较小的 allocation
       （并建议第一个也用显式额度），要么先 paper.deposit_cash 充值
     - 机器自动审批下单（approved_by=system:live_runner），正当性靠"人先 promote + 人显式 start"
@@ -1165,7 +1165,7 @@ export const paperListStrategyRunsTool = createTool({
     已处理到的最新 bar / 错误日志。
 
     何时用：用户问"我有哪些策略在跑 / 跑得怎么样 / 那个策略赚了多少"
-    坑：cumulative_pnl 是 mark-to-market 估算；errored 状态看 error_log 找原因
+    坑：accounting_status 非 verified 的旧统计不可信；cumulative_pnl 包含费用与资金费，估值有时间戳；errored 看 run_log
   `.trim(),
   inputSchema: z.object({
     status: z.enum(["running", "stopped", "errored"]).optional().describe("按状态过滤"),

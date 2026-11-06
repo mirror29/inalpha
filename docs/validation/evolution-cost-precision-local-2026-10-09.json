@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local isolated database verification; not production acceptance",
+  "commit": "665541c8",
+  "migration": "0062",
+  "precision": "NUMERIC(20,12)",
+  "checks": {
+    "isolated_database_tests_passed": 18,
+    "migration_tests_passed": 5,
+    "candidate_only_lossy_downgrade_blocked": true,
+    "exact_tiny_cost_roundtrip": "0.000000123456",
+    "legacy_amount_and_unknown_preserved": true,
+    "explicit_zero_preserved": true
+  },
+  "database": {
+    "chain": "0001 -> 0058 wallet -> 0059 diagnostics -> 0060 attempts -> 0061 usage -> 0062 cost precision",
+    "temporary_database_removed": true,
+    "existing_databases_modified": false
+  },
+  "limitations": [
+    "Historical amounts already rounded cannot be reconstructed",
+    "Recorded costs remain usage-based estimates, not verified provider billing",
+    "Production migration and deployment pending",
+    "Approval reliable submission and chat attribution remain incomplete"
+  ]
+}

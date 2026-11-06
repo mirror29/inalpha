@@ -13,8 +13,10 @@
 - 手续费比例固定（构造时传入），从现金扣
 - 不模拟 margin / 保证金 / 杠杆（D-7+ 接合约时再加）
 """
+
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import UUID
 
 from ..execution import perp_margin
@@ -321,17 +323,20 @@ class Portfolio:
         prev_realized = pos.realized_pnl  # 算本笔实现盈亏增量用（apply_fill 后会变）
 
         # ADR-0007：detect close **必须**在 apply_fill 之前，否则 prev_position 已变
+        staging = None
         if self._account_id is not None:
             staging = detect_close(
-                pos, msg,
+                pos,
+                msg,
                 account_id=self._account_id,
                 order_tag=msg.tag,
             )
-            if staging is not None:
-                self._close_trade_queue.append(staging)
 
         pos.apply_fill(
-            msg.side, msg.fill_quantity, msg.fill_price, msg.ts_event,
+            msg.side,
+            msg.fill_quantity,
+            msg.fill_price,
+            msg.ts_event,
             open_order_id=str(msg.client_order_id),
         )
         now_flat = pos.is_flat
@@ -341,11 +346,7 @@ class Portfolio:
         # 再用剩余 quantity 开新 leg"。Position.apply_fill 已经把被平那部分的 PnL
         # 累计到 pos.realized_pnl 里（model/positions.py:82-90），这里只需 round-trip
         # 入账 + 更新 baseline。**不 detect 的话 win_rate / round-trip 计数会长期错算**。
-        flipped = (
-            not was_flat
-            and not now_flat
-            and (prev_qty > 0) != (new_qty > 0)
-        )
+        flipped = not was_flat and not now_flat and (prev_qty > 0) != (new_qty > 0)
 
         # 现金 + 手续费
         notional = msg.fill_quantity * msg.fill_price
@@ -362,6 +363,13 @@ class Portfolio:
             margin_before = closed_qty * prev_avg / self._leverage
             if realized_increment < 0 and -realized_increment > margin_before > 0:
                 realized_increment = -margin_before
+                pos.realized_pnl = prev_realized + realized_increment
+                if staging is not None:
+                    staging = replace(
+                        staging,
+                        close_profit_abs=realized_increment,
+                        close_profit_pct=realized_increment / (closed_qty * prev_avg),
+                    )
             self._cash += realized_increment - fee
             # 强平罚金:tag=liquidation 时按名义额外扣(惩罚"靠强平兜底",与回测/live 同口径)
             if msg.tag == "liquidation":
@@ -373,6 +381,8 @@ class Portfolio:
             self._cash -= notional + fee
         else:
             self._cash += notional - fee
+        if staging is not None:
+            self._close_trade_queue.append(staging)
         self._total_fees += fee
         self._trade_count += 1
 
@@ -396,9 +406,7 @@ class Portfolio:
                 intent=intent,
                 tag=msg.tag,
                 # 三因子判定是否框架 guard 兜底出场（区分策略自带 stop_loss tag，CR #88）
-                is_guard=is_protective_signature(
-                    msg.side, msg.tag, msg.client_order_id
-                ),
+                is_guard=is_protective_signature(msg.side, msg.tag, msg.client_order_id),
             )
         )
 

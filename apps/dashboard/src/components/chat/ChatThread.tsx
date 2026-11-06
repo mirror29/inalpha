@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "@/i18n/navigation";
+
 import { useCopilotChatInternal } from "@copilotkit/react-core";
 import {
   History,
@@ -19,7 +21,8 @@ import {
 } from "react";
 
 import { cn } from "@/lib/cn";
-import { formatChatRunError } from "@/lib/chat-run-error";
+import { createChatErrorSubscriber } from "@/lib/chat-run-error";
+import { compactChatRequest } from "@/lib/chat-request-context";
 import {
   buildPageContextEnvelope,
   evolutionTargetFromPage,
@@ -69,6 +72,7 @@ export function ChatThread({
 
   const [draft, setDraft] = useState("");
   const page = usePageContext();
+  const router = useRouter();
   const [contextDismissed, setContextDismissed] = useState(false);
   useEffect(() => setContextDismissed(false), [page.kind, page.id]);
   const contextAttached = !contextDismissed;
@@ -139,6 +143,7 @@ export function ChatThread({
           : (input as Request).url;
       } catch { /* ignore */ }
       if (url.includes("/api/copilotkit")) {
+        init = compactChatRequest(init);
         const ctrl = new AbortController();
         const signal = init?.signal;
         if (signal) signal.addEventListener("abort", () => ctrl.abort());
@@ -173,20 +178,14 @@ export function ChatThread({
   useEffect(() => {
     const agent = hook.agent;
     if (!agent) return;
-    const sub = agent.subscribe({
-      onRunErrorEvent: ({ event }: { event?: { message?: string; code?: string } }) => {
-        const raw = event?.message;
-        const code = event?.code;
-        if (stoppingRef.current || /abort|BodyStreamBuffer|signal is aborted/i.test(`${raw ?? ""} ${code ?? ""}`)) return;
-        setChatError(formatChatRunError(
-          { message: raw, code },
-          {
-            generic: t("errorGeneric"),
-            incompleteStream: t("errorIncompleteStream"),
-          },
-        ));
+    const sub = agent.subscribe(createChatErrorSubscriber({
+      isStopping: () => stoppingRef.current,
+      onError: setChatError,
+      messages: {
+        generic: t("errorGeneric"),
+        incompleteStream: t("errorIncompleteStream"),
       },
-    } as Parameters<typeof agent.subscribe>[0]);
+    }));
     return () => sub.unsubscribe();
   }, [hook.agent, t]);
 
@@ -291,8 +290,10 @@ export function ChatThread({
 
   const evolutionTarget = contextAttached ? evolutionTargetFromPage(page) : null;
   const submitEvolution = useCallback(() => {
-    void submitText(t("context.evolvePrompt"));
-  }, [submitText, t]);
+    if (evolutionTarget && ["strategy_candidate", "paper_runner", "backtest_run", "e1_candidate"].includes(evolutionTarget.kind)) {
+      router.push(`/evolution/prepare?targetKind=${evolutionTarget.kind}&targetId=${evolutionTarget.id}`);
+    } else void submitText(t("context.evolvePrompt"));
+  }, [evolutionTarget, router, submitText, t]);
 
   useEffect(() => {
     const handler = (event: Event) => {

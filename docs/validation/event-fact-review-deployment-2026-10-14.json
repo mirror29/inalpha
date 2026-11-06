@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-14",
+  "pull_request": "https://github.com/mirror29/inalpha/pull/238",
+  "reviewed_head": "a4ee3ebf416936693f8e883a47dd80720b6228d5",
+  "deployed_commit": "9fdb8b8aa0d49a36eddc344c0955b41e28cd9848",
+  "reviewed_and_merged_tree": "bbdf9920f32f1fc7d28664231e219fc3e5d9a9b2",
+  "reviewed_merge_diff_empty": true,
+  "checks": {
+    "head_ci": 38497341280,
+    "head_ci_result": "success; all jobs passed",
+    "main_ci": 38499530189,
+    "main_ci_result": "success; all jobs passed",
+    "image_build": 38499530190,
+    "image_build_result": "seven images succeeded",
+    "automated_review": {
+      "run": 38497341314,
+      "attempt1": "GitHub GraphQL HTTP500 fetching diff; model review skipped despite overall workflow success",
+      "attempt2": "no publishable DeepSeek review at final head; not an automated review pass"
+    },
+    "prior_valid_reviews": {
+      "2114538e": "3 MEDIUM addressed by evidence/explicit error fix",
+      "80078a45": "2 MEDIUM fixed by dedicated source-missing sentinel and explicit invariant checks"
+    },
+    "independent_review": "incremental static source review no confirmed new P1/P2 after fixes; fixture summary mode; not independent test execution"
+  },
+  "deployment": {
+    "services": {
+      "data": {
+        "image": "9fdb8b8aa0d49a36eddc344c0955b41e28cd9848",
+        "container_id": "fbfb345a5aebcefd53338d23ad6cb50c532019f6966daf7624d3b5550326b11c",
+        "health": "healthy"
+      },
+      "research": {
+        "image": "9fdb8b8aa0d49a36eddc344c0955b41e28cd9848",
+        "container_id": "2310996af0ea5bdf87b7b636a33f19801636afc0bf5b9d8b86b2f98335e7c661",
+        "health": "healthy"
+      }
+    },
+    "other_eight_container_ids_unchanged": true,
+    "schema_before": "0068",
+    "schema_after": "0069",
+    "idle_guards": "five rounds; expected database/schema; pending/leased extraction, active E1/Loop/campaign and Data/Research established HTTP connections all zero",
+    "configuration_backup": "infra/.env.prod.before-event-fact-review-20261014T021422Z",
+    "database_backup": "infra/backups/event-fact-review-before-20261014T021422Z.dump",
+    "backup_modes": "600; independently checked",
+    "backup_toc_readable": true,
+    "restore_drill": false,
+    "rollback_images": {
+      "data": "ee655f3929d26ae4de9f86723258df4bf745a5b3",
+      "research": "4441cb07297aaa89e719bf7f164e7792084cfd3e"
+    },
+    "rollback_schema": "retain additive audit schema; do not discard recorded corrections"
+  },
+  "independent_production_read": {
+    "repo": "9fdb8b8aa0d49a36eddc344c0955b41e28cd9848",
+    "database": "inalpha",
+    "schema": "0069",
+    "correction_records": 0,
+    "fact_versions": {
+      "deterministic-event-extractor-v2": 375,
+      "deterministic-event-extractor-v3": 35
+    },
+    "loops": 0,
+    "campaigns": 0,
+    "public_login_http": 200,
+    "unauthenticated_http": {
+      "Data exact fact": 401,
+      "Data correction": 401,
+      "Research review": 401
+    }
+  },
+  "real_source_preview": {
+    "source_fact_id": "a35320f4-8583-4609-8e5a-ef3295e0edfa",
+    "original_type": "regulatory",
+    "v3_reviewed_type": "regulatory",
+    "applied": false,
+    "corrections_after": 0,
+    "path": "deployed Research helper -> Data with normal mint_data_event_token service authentication",
+    "limits": "not authenticated incoming Research HTTP or normal owner approval; genuine archived evidence, no fixture inputs; preview does not certify semantic correctness or eligibility"
+  },
+  "validation_references": [
+    "event-fact-corrections-local-2026-10-13.json",
+    "event-fact-review-local-2026-10-14.json"
+  ],
+  "limits": [
+    "No production correction was applied; 375 v2 facts unchanged",
+    "35 v3 versions are not 35 independent matched events",
+    "No new E2 search, champion, Forward or holdout",
+    "Production apply/replay, historical per-fact review and normal owner search acceptance remain pending",
+    "Complete local process recovery used synthetic service authority/source apps; not a production restart test",
+    "Historical unknown runtime charges remain unknown; automated CI review is separate from E2 runtime accounting"
+  ]
+}

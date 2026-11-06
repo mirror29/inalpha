@@ -5,6 +5,8 @@ import { MessageSquare } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { usePathname } from "@/i18n/navigation";
+
 import { ChatThread } from "./ChatThread";
 
 const LS_OPEN = "inalpha-chat-open";
@@ -31,6 +33,7 @@ const CHAT_DEFAULT_WIDTH = 400;
  * 避免 hydration mismatch;`threadId` 就绪后才挂 CopilotKit provider。
  */
 export function ConsoleChat() {
+  const pathname = usePathname();
   const t = useTranslations("chat");
   const [threadId, setThreadId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -73,6 +76,11 @@ export function ConsoleChat() {
     const w = Number(localStorage.getItem(LS_WIDTH));
     if (w >= CHAT_MIN_WIDTH && w <= CHAT_MAX_WIDTH) setWidth(w);
   }, []);
+
+  /** Preparation needs the available screen space, especially under the mobile chat overlay. */
+  useEffect(() => {
+    if (pathname === "/evolution/prepare") setOpen(false);
+  }, [pathname]);
 
   // open / width 变化:持久化 + 驱动 main reflow(globals.css 读 data-chat-open + --chat-w)。
   useEffect(() => {

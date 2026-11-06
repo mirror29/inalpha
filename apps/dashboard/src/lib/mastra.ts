@@ -35,7 +35,7 @@ export interface ChatHistoryMessage {
   role: "user" | "assistant" | "tool";
   content: string;
   /** assistant 消息上的工具调用（复原「调用中」chip + toolName 映射）。 */
-  toolCalls?: { id: string; function: { name: string; arguments: string } }[];
+  toolCalls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
   /** tool 结果消息回指的调用 id（复原「已完成 / 待确认 / 出错」chip）。 */
   toolCallId?: string;
 }
@@ -409,6 +409,7 @@ function expandDbMessage(m: RawMessage): ChatHistoryMessage[] {
       toolCalls: [
         {
           id: tp.toolCallId,
+          type: "function",
           function: { name: tp.toolName, arguments: stringifyToolPayload(tp.args) },
         },
       ],

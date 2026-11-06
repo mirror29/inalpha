@@ -254,7 +254,17 @@ def _number_text(value: int | float) -> str:
     return text or "0"
 
 
+class EvolutionPreparation(BaseModel):
+    """Approved immutable source/data identities, never user credentials."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    seed_source_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    dataset_content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class StartRunRequest(BaseModel):
+    retry_of_run_id: UUID | None = None
+    preparation: EvolutionPreparation | None = None
     seed_strategy_id: str = Field(default="sma_cross_v1", max_length=128)
     budget: int = Field(default=4, ge=1, le=24)
     config: EvolutionConfig
@@ -262,6 +272,10 @@ class StartRunRequest(BaseModel):
 
 
 class CandidateResponse(BaseModel):
+    usage_status: Literal["not_called", "known", "unknown", "legacy_unknown"] = "legacy_unknown"
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    parent_id: UUID | None = None
     candidate_id: UUID
     run_id: UUID
     slot: int
@@ -285,8 +299,24 @@ class CandidateResponse(BaseModel):
     updated_at: datetime | None = None
 
 
+class ChatPreparationCosts(BaseModel):
+    linked: bool
+    call_count: int | None = None
+    known_cost_usd: float | None = None
+    unknown_cost_count: int | None = None
+    shared_approval_count: int | None = None
+
+
 class RunStatusResponse(BaseModel):
+    lineage: dict[str, Any] | None = None
+    chat_preparation_costs: ChatPreparationCosts | None = None
+    known_cost_usd: float = 0
+    unknown_usage_count: int = 0
     run_id: UUID
+    experiment_id: UUID | None = None
+    retry_of_run_id: UUID | None = None
+    attempt_number: int = 1
+    retry_allowed: bool = False
     seed_strategy_id: str
     budget: int
     config: dict[str, Any]
@@ -434,6 +464,8 @@ class ImplementationResponse(BaseModel):
 
 
 class CampaignResponse(BaseModel):
+    lineage: dict[str, Any] | None = None
+    chat_preparation_costs: ChatPreparationCosts | None = None
     campaign_id: UUID
     owner_account_id: UUID
     source_run_id: UUID | None = None
@@ -530,6 +562,8 @@ class EvolutionLoopBudgetUsage(BaseModel):
 class EvolutionLoopResponse(BaseModel):
     """Compact durable workflow projection; heavy campaign details remain lazy."""
 
+    lineage: dict[str, Any] | None = None
+    chat_preparation_costs: ChatPreparationCosts | None = None
     loop_id: UUID
     owner_account_id: UUID
     requested_by_sub: str

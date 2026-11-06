@@ -16,3 +16,8 @@ describe("inferToolResultState", () => {
       .toBe("output-error");
   });
 });
+
+it("distinguishes insufficient evidence from successful research completion", () => {
+  expect(inferToolResultState(JSON.stringify({ status: "blocked", execution_started: false }))).toBe("output-blocked");
+  expect(inferToolResultState(JSON.stringify({ isError: true, deniedBy: "preflight" }))).toBe("output-blocked");
+});

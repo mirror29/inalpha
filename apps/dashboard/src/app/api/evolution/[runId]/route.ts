@@ -1,3 +1,4 @@
+import { withLineageOrigin } from "@/lib/evolution-display-target";
 import { NextResponse } from "next/server";
 
 import { backendFetch, BackendError } from "@/lib/backend";
@@ -36,6 +37,7 @@ export async function GET(
     const run = await backendFetch<EvolutionRun>("evolver", `/api/v1/runs/${runId}`, {
       timeoutMs: 5000,
     });
+    run.lineage = await withLineageOrigin(run.lineage);
     const payload: EvolutionRunDetailPayload = { run, asOf: new Date().toISOString() };
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

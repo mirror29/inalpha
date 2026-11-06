@@ -6,6 +6,7 @@ import type {
   PositionRecord,
   PositionWithMark,
   RunDetailPayload,
+  RunWalletPayload,
   StrategyCandidateSummary,
   StrategyRunDecisionRecord,
   StrategyRunRecord,
@@ -59,14 +60,17 @@ export async function GET(
             "paper",
             `/strategy_candidates/${run.candidate_id}`,
           ).catch(() => null),
-          fetchPositionWithMark(run.venue, run.symbol),
+          fetchPositionWithMark(run.id, run.venue, run.symbol),
           backendFetch<AccountSnapshot>("paper", "/accounts/me")
             .then((a) => a.base_currency)
             .catch(() => null),
         ])
       : [null, null, null];
 
+    const wallet = run ? await backendFetch<RunWalletPayload>("paper", `/strategy_runs/${id}/wallet`).catch(() => null) : null;
+    if (run && wallet?.wallet?.net_pnl != null) run.cumulative_pnl = wallet.wallet.net_pnl;
     const payload: RunDetailPayload = {
+      wallet,
       run,
       decisions: decisionsRes,
       candidate,
@@ -93,11 +97,11 @@ export async function GET(
 }
 
 /**
- * 该标的的账户当前持仓 + 最新价(浮动盈亏)。注意是**账户级**持仓 —— 同标的
- * 多个 run 共享同一仓位。空仓 / 接口失败返回 null;最新价拿不到不猜价,
+ * 本运行的独立持仓及带时效标记的行情。空仓或接口失败返回 null;最新价拿不到不猜价,
  * mark 标 stale、浮动盈亏留空(金融时效硬约束,与总览同款)。
  */
 async function fetchPositionWithMark(
+  runId: string,
   venue: string,
   symbol: string,
 ): Promise<PositionWithMark | null> {
@@ -105,7 +109,7 @@ async function fetchPositionWithMark(
   // 未来加 symbol 过滤或 limit,这里必须同步,否则超窗持仓会被静默当成"无持仓"。
   const positions = await backendFetch<PositionRecord[]>(
     "paper",
-    "/positions",
+    `/strategy_runs/${runId}/positions`,
   ).catch(() => [] as PositionRecord[]);
   const p = positions.find(
     (x) => x.venue === venue && x.symbol === symbol && x.quantity !== 0,
@@ -120,7 +124,7 @@ async function fetchPositionWithMark(
       ...p,
       mark_price: ticker.price,
       mark_stale: ticker.is_stale,
-      unrealized_pnl: (ticker.price - p.avg_open_price) * p.quantity,
+      unrealized_pnl: ticker.is_stale ? null : (ticker.price - p.avg_open_price) * p.quantity,
     };
   } catch {
     return { ...p, mark_price: null, mark_stale: true, unrealized_pnl: null };

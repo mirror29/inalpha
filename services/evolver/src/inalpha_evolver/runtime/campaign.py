@@ -19,11 +19,14 @@ from inalpha_paper.event_conversion import market_event_from_fact
 from inalpha_paper.evolution_execution_policy import frozen_protection_kwargs
 from inalpha_paper.execution.exchange import EventExecutionPolicy
 from inalpha_shared.db import get_conn
+from inalpha_shared.errors import ValidationError
 
 from ..api.schemas import CampaignConfig
 from ..campaign_preparation import discovery_facts
 from ..config import EvolverSettings
 from ..data import FrozenBarsLoader, FrozenDataset
+from ..data.event_coverage import inspect_event_coverage
+from ..data.partitions import event_partition_ends
 from ..data.persistent_snapshot import (
     decode_frozen_dataset,
     get_campaign_data_snapshot,
@@ -66,6 +69,14 @@ async def execute_campaign(campaign: dict[str, Any], settings: EvolverSettings) 
         return
     config = _campaign_config(campaign)
     dataset, snapshot = await _load_frozen_inputs(campaign, config, settings)
+    coverage = inspect_event_coverage(
+        dataset, [market_event_from_fact(fact) for fact in snapshot["facts"]],
+        config.event_asset_code, facts=snapshot["facts"],
+    )
+    if coverage["status"] == "blocked":
+        raise ValidationError("event inputs blocked: " + ", ".join(coverage["blocker_codes"])
+                              + "; review provenance and coverage before model access",
+                              details=coverage, code=coverage["blocker_codes"][0])
     loop_scope = await campaign_model_scope(campaign)
     mutator = (
         await build_owner_mutator(campaign, settings, loop_scope=loop_scope)
@@ -196,7 +207,7 @@ async def _execute_campaign(
     lease_token = UUID(str(campaign["lease_token"]))
     all_events = tuple(market_event_from_fact(item) for item in snapshot["facts"])
     search_dataset, validation_bars = _search_dataset(dataset)
-    discovery_end = max(2, int(len(dataset.bars) * 0.60))
+    discovery_end, _ = event_partition_ends(len(dataset.bars))
     discovery_cutoff = datetime.fromtimestamp(
         dataset.bars[discovery_end - 1].bar_known_at / 1e9, tz=UTC,
     )
@@ -252,6 +263,7 @@ async def _execute_campaign(
             if generation == 1 and current["frozen_config"].get("hypotheses_source") == "discovery_scaffold":
                 hypotheses = seed_generation_one(
                     {**snapshot, "facts": proposer_facts}, config.event_asset_code, config.asset_id,
+                    identity_namespace=campaign["campaign_id"],
                 )
             proposed = await propose_generation(
                 mutator,
@@ -266,6 +278,7 @@ async def _execute_campaign(
                     conn, campaign_id=campaign["campaign_id"], generation=generation,
                     hypotheses=hypotheses, lease_token=lease_token,
                     cost_usd=proposed.cost_usd, fallback_calls=proposed.fallback_calls,
+                    diagnostics=getattr(proposed, "diagnostics", ()),
                 )
         scores = await _evaluate_generation(
             campaign=current,
@@ -951,9 +964,7 @@ def _spec_tokens(spec: HypothesisSpec) -> set[str]:
 
 def _search_dataset(dataset: FrozenDataset) -> tuple[FrozenDataset, tuple[Any, ...]]:
     bars = dataset.bars
-    discovery_end = max(2, int(len(bars) * 0.6))
-    validation_end = max(discovery_end + 2, int(len(bars) * 0.8))
-    validation_end = min(validation_end, len(bars) - 1)
+    discovery_end, validation_end = event_partition_ends(len(bars))
     search_bars = bars[:validation_end]
     validation_bars = bars[discovery_end:validation_end]
     content_hash = hashlib.sha256(

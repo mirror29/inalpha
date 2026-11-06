@@ -1,0 +1,40 @@
+{
+  "database": "inalpha_process_audit_aad63303d6cb4b2c9ea0c15a5fb19923",
+  "scope": "isolated complete Evolver application; synthetic E2 expired-authority handoff records",
+  "e2_authorized_baseline_recovery": "not tested",
+  "production_recovery": "not tested",
+  "fixture": "expired authority; no real user grant or paid candidate",
+  "provider_credentials": "none; unusable fixture only",
+  "result": "passed",
+  "checkout_head": "c20c1704e6644f534adecff6f72070aee10cb040",
+  "runtime_source_trees": {
+    "services/evolver/src": "c0d4747d354ea8f275a1f2b5a4006570f2a615c7",
+    "services/paper/src": "e5e0c93175b2a9567a8aa965099adbb0f7fa7acc",
+    "services/_shared": "82bb0aae53142fda8e5784536b8f775e6a6dba93"
+  },
+  "dotenv_files_absent": true,
+  "runtime_source_clean": true,
+  "audit_database_retained": true,
+  "schema": "0067",
+  "forced_exit_code": -9,
+  "sigterm_exit_code": -15,
+  "restart_count": 2,
+  "configured_downstream_requests": 0,
+  "recovered": {
+    "status": "failed",
+    "failure_code": "LOOP_AUTHORIZATION_UNAVAILABLE",
+    "campaign_id": null,
+    "baseline_status": "completed",
+    "campaigns": 0
+  },
+  "evidence_kind": "Exploratory complete-process check using a local temporary harness derived from validate_process_recovery.py; not a maintained regression suite.",
+  "harness_sha256": "cc5662ce307745837ef9bfe9116d32ec32384a8132a03eb40ea38bb15399192a",
+  "fixture_setup": "Synthetic completed baseline and persisted dataset; authorization expiry set one second ahead, waited two seconds while application stopped; no production records or grants.",
+  "limits": [
+    "Not live-authority or paid-candidate recovery.",
+    "Not container or production restart acceptance.",
+    "SIGTERM return code -15 is not an exit-zero shutdown acceptance.",
+    "No audit of all outbound network; configured service endpoints were redirected to a rejecting loopback sink."
+  ],
+  "earlier_fixture_failure": "Initial fixture violated expires_at > authorized_at and was rolled back; corrected by natural short expiry. Failed audit database retained."
+}

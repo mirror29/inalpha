@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-08",
+  "pr": 193,
+  "merge_sha": "60a2691fbb4684b6491867fb158cc75b458a2052",
+  "symptom": "Restored conversation does not reply; history continuation rejected before model invocation",
+  "confirmed_server_errors": {
+    "count": 291,
+    "code": "invalid_literal",
+    "expected": "function",
+    "path": "messages[*].toolCalls[*].type",
+    "all_issues_same_category": true
+  },
+  "repair": {
+    "history": "Preserve AG-UI function discriminator for v4 and v5 stored tool parts, arguments, results and owner checks",
+    "failure_reporting": "Subscribe to HTTP/transport onRunFailed in addition to RUN_ERROR; preserve specific/handled stream errors within a run, reset on the real next-run lifecycle, keep explicit user stops silent"
+  },
+  "validation": {
+    "before_fix": "Both stored-history continuation cases rejected by actual installed RunAgentInputSchema",
+    "dashboard_tests": 116,
+    "typecheck": "passed",
+    "real_client": "Same installed HttpAgent executes SSE error then HTTP 400, callback precedence resets and isRunning ends false",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "previous_ci": "One earlier web build failed in Turbopack Google-font import mapping; latest complete CI run 37763026336 passed, no website source changes",
+    "deployed_bundle": {
+      "login_status": 200,
+      "history_call_discriminator": true,
+      "transport_failure_callback": true,
+      "scope": "Deployed bundle and public login smoke only; no paid owner chat turn submitted"
+    }
+  },
+  "deployment": {
+    "build_run": 37763477115,
+    "service": "dashboard",
+    "image": "ghcr.io/mirror29/inalpha-dashboard:60a2691fbb4684b6491867fb158cc75b458a2052",
+    "container": "525ec38f923a",
+    "healthy": true,
+    "created": "2026-10-08T10:30:20.165706881Z",
+    "started": "2026-10-08T10:30:20.607918599Z",
+    "backup": "infra/.env.prod.before-dashboard-20261008T103019Z",
+    "other_container_ids_unchanged": 9,
+    "http_and_mastra_connections_before_replacement": 0
+  },
+  "real_paid_chat_turn_verified": false,
+  "browser_acceptance": "Existing signed-in owner thread list readable; further browser interaction interrupted. No conversation text, user ID, cookies, tokens or keys reported. No model prompt sent. Reload and reopen restored history to replace old in-memory messages.",
+  "positive_e2_passed": false
+}

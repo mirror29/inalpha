@@ -1,0 +1,185 @@
+{
+  "checked_at": "2026-10-08T07:47:34.475769+00:00",
+  "scope": "User-requested real server input replenishment tasks; not a paid search or full positive E2 acceptance",
+  "diagnostic": {
+    "checked_at": "2026-10-08T07:39:47.396921+00:00",
+    "ingestion": [
+      {
+        "source": "coindesk",
+        "versions": 160,
+        "independent_articles": 127,
+        "earliest_accepted": "2026-09-30 10:36:41.830484+00:00",
+        "latest_accepted": "2026-10-08 06:24:02.958749+00:00"
+      },
+      {
+        "source": "kraken_blog",
+        "versions": 18,
+        "independent_articles": 18,
+        "earliest_accepted": "2026-09-30 10:51:42.231319+00:00",
+        "latest_accepted": "2026-10-07 13:43:25.570508+00:00"
+      }
+    ],
+    "jobs": [
+      {
+        "status": "completed",
+        "count": 178
+      }
+    ],
+    "latest_fact_types": [
+      {
+        "source": "coindesk",
+        "event_type": "exploit",
+        "facts": 4,
+        "btc_facts": 1,
+        "eligible_btc_facts": 1,
+        "selection_1h_facts": 0
+      },
+      {
+        "source": "coindesk",
+        "event_type": "listing",
+        "facts": 1,
+        "btc_facts": 0,
+        "eligible_btc_facts": 0,
+        "selection_1h_facts": 0
+      },
+      {
+        "source": "coindesk",
+        "event_type": "macro",
+        "facts": 3,
+        "btc_facts": 3,
+        "eligible_btc_facts": 3,
+        "selection_1h_facts": 2
+      },
+      {
+        "source": "coindesk",
+        "event_type": "other",
+        "facts": 108,
+        "btc_facts": 40,
+        "eligible_btc_facts": 0,
+        "selection_1h_facts": 0
+      },
+      {
+        "source": "coindesk",
+        "event_type": "partnership",
+        "facts": 1,
+        "btc_facts": 0,
+        "eligible_btc_facts": 0,
+        "selection_1h_facts": 0
+      },
+      {
+        "source": "coindesk",
+        "event_type": "regulatory",
+        "facts": 11,
+        "btc_facts": 1,
+        "eligible_btc_facts": 1,
+        "selection_1h_facts": 0
+      },
+      {
+        "source": "coindesk",
+        "event_type": "upgrade",
+        "facts": 1,
+        "btc_facts": 0,
+        "eligible_btc_facts": 0,
+        "selection_1h_facts": 0
+      },
+      {
+        "source": "kraken_blog",
+        "event_type": "listing",
+        "facts": 1,
+        "btc_facts": 0,
+        "eligible_btc_facts": 0,
+        "selection_1h_facts": 0
+      },
+      {
+        "source": "kraken_blog",
+        "event_type": "other",
+        "facts": 16,
+        "btc_facts": 0,
+        "eligible_btc_facts": 0,
+        "selection_1h_facts": 0
+      },
+      {
+        "source": "kraken_blog",
+        "event_type": "regulatory",
+        "facts": 1,
+        "btc_facts": 0,
+        "eligible_btc_facts": 0,
+        "selection_1h_facts": 0
+      }
+    ],
+    "raw_without_job": [
+      {
+        "count": 0
+      }
+    ],
+    "coinmarketcal_configured": false
+  },
+  "collection_task": {
+    "task": "e2-real-input-collect-once-20261008",
+    "started_at": "2026-10-08T07:41:20.569762+00:00",
+    "before": {
+      "versions": 178,
+      "articles": 145
+    },
+    "coinmarketcal_configured": false,
+    "after": {
+      "versions": 178,
+      "articles": 145
+    },
+    "finished_at": "2026-10-08T07:41:20.797496+00:00",
+    "method": "Existing EventArchiveScheduler one bounded tick; unchanged default feeds, first-seen policy and normal idempotent ingest/outbox.",
+    "model_calls": 0
+  },
+  "extraction_task": {
+    "task": "e2-real-input-extract-once-20261008",
+    "started_at": "2026-10-08T07:41:45.284833+00:00",
+    "finished_at": "2026-10-08T07:41:45.366098+00:00",
+    "completed_by_this_worker": 0,
+    "method": "Existing Research run_extraction_once with normal service authentication, outbox claim and lease fencing.",
+    "model_calls": 0
+  },
+  "source_probe": {
+    "checked_at": "2026-10-08T07:42:09.227467+00:00",
+    "providers": {
+      "coindesk": {
+        "status": "ok",
+        "returned_items": 25
+      },
+      "kraken_blog": {
+        "status": "ok",
+        "returned_items": 10
+      }
+    }
+  },
+  "result": "Both normal task batches executed; no new upstream article and no extraction backlog. Current RSS sources are snapshot-only; original selection window overlaps only the initial archive day. Historical provider is unconfigured.",
+  "model_calls": 0,
+  "added_model_cost_usd": 0,
+  "boundaries": [
+    "No service restart, manual SQL writes, synthetic facts, changed available_at, changed search window, reduced thresholds, Runner start, orders or holdout execution.",
+    "Tasks use existing service code. Extraction uses normal service identity, outbox leases and fencing.",
+    "Latest ledger type counts are diagnostics only, not independent selection coverage or matched-control/FDR validation."
+  ],
+  "alternative_asset_diagnostic": {
+    "checked_at": "2026-10-08T07:47:34.475769+00:00",
+    "scope": "Alternative-asset input diagnostic only; unchanged natural windows and qualification, no task/search start.",
+    "assets": {
+      "asset:BTC": {
+        "independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "qualifying_independent_events_by_type": [
+          {
+            "event_type": "macro",
+            "independent_events": 1
+          }
+        ],
+        "direct_independent_events_by_type": [],
+        "minimum_matched_event_pairs": 8,
+        "coverage_sufficient": false
+      }
+    }
+  }
+}

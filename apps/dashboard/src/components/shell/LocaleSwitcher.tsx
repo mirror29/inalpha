@@ -11,7 +11,7 @@ const LOCALES = [
 ] as const;
 
 /**
- * en / zh 切换 —— 保持当前路径,只换 locale 前缀(走 next-intl navigation)。
+ * en / zh 切换 —— 保持当前路径、查询参数与锚点，只换 locale 前缀(走 next-intl navigation)。
  */
 export function LocaleSwitcher() {
   const locale = useLocale();
@@ -27,7 +27,10 @@ export function LocaleSwitcher() {
             key={l.code}
             type="button"
             aria-pressed={active}
-            onClick={() => router.replace(pathname, { locale: l.code })}
+            onClick={() => {
+              const destination = `${pathname}${window.location.search}${window.location.hash}`;
+              router.replace(destination, { locale: l.code });
+            }}
             className={cn(
               "rounded px-2 py-1 font-mono text-xs transition-colors",
               active

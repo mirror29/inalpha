@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-09",
+  "scope": "Local implementation; not production acceptance",
+  "commits": {
+    "trusted_dispatch": "381dea21",
+    "dashboard_receipt": "923c5d3e"
+  },
+  "migration": "0063",
+  "checks": {
+    "orchestration_tests_passed": 580,
+    "dashboard_tests_passed": 161,
+    "typechecks": "passed",
+    "dashboard_build": "passed",
+    "isolated_database_tests_passed": 18,
+    "migration_tests_passed": 6,
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    }
+  },
+  "policy": [
+    "Direct execution is restricted to E1 frozen tasks",
+    "Fresh verified owner context and existing hooks/preflight/grant boundaries retained",
+    "Concurrent dispatch retries share one submission",
+    "Consumed commands recover the same operation ID under the original owner",
+    "Changed preparation fails without a new implicit approval",
+    "Persistence failure prevents costful execution",
+    "Direct receipts do not trigger another chat model turn"
+  ],
+  "pending": [
+    "Refresh recovery UI and approval status endpoint",
+    "Restart between decision recording and operation persistence",
+    "Real server owner approval and service restart verification",
+    "Chat cost attribution and full experiment lineage",
+    "Production migration/deployment and browser validation"
+  ],
+  "database": {
+    "temporary_database_removed": true,
+    "existing_databases_modified": false
+  }
+}

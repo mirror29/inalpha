@@ -4,9 +4,11 @@
 仅 crypto venue（connector 实现 ``fetch_perp_funding_rate``）支持;其余 422。
 fapi 不通时 ccxt 抛 → 上层 5xx,paper 侧 fallback(funding=0 + 标注失真)。
 """
+
 from __future__ import annotations
 
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from inalpha_shared.auth import User, get_current_user
@@ -31,9 +33,7 @@ async def get_perp_funding(
     """返回 ``venue/symbol`` 永续的 mark price + 当期 funding rate。"""
     venue = query.venue.strip().lower()
     if venue not in list_registered_venues():
-        raise PerpNotSupportedError(
-            f"venue {venue!r} not registered", details={"venue": venue}
-        )
+        raise PerpNotSupportedError(f"venue {venue!r} not registered", details={"venue": venue})
     conn = get_connector_for_venue(venue)
     fetch = getattr(conn, "fetch_perp_funding_rate", None)
     if fetch is None:
@@ -49,3 +49,27 @@ async def get_perp_funding(
         ts=out["ts"],
         next_funding_ts=out["next_funding_ts"],
     )
+
+
+@router.get("/perp/funding/history")
+async def get_funding_history(
+    _user: Annotated[User, Depends(get_current_user)],
+    venue: str,
+    symbol: str,
+    from_ts: datetime,
+    to_ts: datetime,
+) -> list[dict[str, Any]]:
+    """Published historical settlements for wallet accounting, bounded to seven days."""
+    if (
+        from_ts.tzinfo is None
+        or to_ts.tzinfo is None
+        or not 0 < (to_ts - from_ts).total_seconds() <= 7 * 86400
+    ):
+        raise PerpNotSupportedError("Timezone-aware funding range must be within seven days")
+    if venue.strip().lower() not in list_registered_venues():
+        raise PerpNotSupportedError("Venue not registered")
+    connector = get_connector_for_venue(venue.strip().lower())
+    fetch = getattr(connector, "fetch_perp_funding_history", None)
+    if fetch is None:
+        raise PerpNotSupportedError("Historical funding unavailable for venue")
+    return await fetch(symbol, from_ts, to_ts)

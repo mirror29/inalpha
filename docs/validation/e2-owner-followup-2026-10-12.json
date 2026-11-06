@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-12",
+  "scope": "Chrome native accessibility, existing owner session, production free preparation",
+  "target": "SOL/USDT 1h paper runner",
+  "window_utc": {
+    "from": "2026-10-01T14:00:00Z",
+    "cutoff": "2026-10-12T10:00:00Z",
+    "selection_from": "2026-10-08T03:00:00Z",
+    "selection_to": "2026-10-10T06:00:00Z"
+  },
+  "bars": {
+    "discovery": 156,
+    "selection": 52,
+    "holdout": 52
+  },
+  "selection_facts": 3,
+  "independent_event_upper_bound": 2,
+  "minimum_required": 8,
+  "search_started": false,
+  "approval_submitted": false,
+  "visual_observation": "Chinese desktop preparation uses the console header, panels, buttons and sidebar styling; screenshot inspected, not mobile acceptance.",
+  "finding": "Switching to English drops targetKind and targetId query parameters; source fix retains query and fragment. Production fix not deployed.",
+  "limits": [
+    "Necessary coverage remains insufficient.",
+    "No matched-control or FDR evaluation.",
+    "No paid search, champion, Forward or holdout acceptance.",
+    "UI observation is not bound to an independently sampled image SHA.",
+    "Last bar timestamps and distance to cutoff were not sampled; bar counts are UI observations, not freshness or continuity acceptance.",
+    "Locale regression test exercises the mocked navigation callback, not React DOM events or the real next-intl router."
+  ],
+  "isolated_regressions": {
+    "database": "inalpha_e2_acceptance_e11a381e0cba4e329608a73a8f2c21d4",
+    "migration": "fresh full migration chain",
+    "passed": 19,
+    "failed": 2,
+    "failures": "Both five-generation cases reached their existing 240-second timeout; root cause not established.",
+    "scope": "Synthetic database/runtime integration tests, not complete-service recovery or production research acceptance",
+    "audit_database_retained": true,
+    "first_run_reproduction": {
+      "passed": true,
+      "duration_seconds": 185.02,
+      "deadline_seconds": 240,
+      "production_code_changed": false,
+      "scope": "single first-run five-generation integration case, offline model, real evaluation engine",
+      "assertions": [
+        "generation 5 completed",
+        "40 hypotheses and 120 succeeded implementations",
+        "insufficient_evidence with no champion, Forward or holdout"
+      ],
+      "root_cause": "Resource contention is a hypothesis, not established. Original two timeout failures retained."
+    },
+    "checkpoint_resume_reproduction": {
+      "passed": true,
+      "duration_seconds": 217.45,
+      "deadline_seconds": 240,
+      "production_code_changed": false,
+      "offline_mutation_calls": 8,
+      "first_run_offline_mutation_calls": 10,
+      "scope": "persisted proposal replay within integration test, not process restart or real paid-provider replay",
+      "assertions": [
+        "generation 5 completed",
+        "40 hypotheses and 120 succeeded implementations",
+        "insufficient_evidence; no champion, Forward or holdout"
+      ]
+    }
+  },
+  "release": {
+    "pr": 228,
+    "merge_sha": "a1aa75ccf4dba6bd933f87bc7375d91d4d4f6b35",
+    "reviewed_head": "ac7ede2a618b477a51f8d58913fe50a279191852",
+    "exact_head_ci": "passed",
+    "main_ci": 38239680885,
+    "images": 38239680937,
+    "review": "Two automated MEDIUM test-quality findings; focused source review found no confirmed implementation blocker. Browser integration remains pending.",
+    "deployment": "aborted by second connection guard before container replacement",
+    "established_connections": [
+      0,
+      2
+    ],
+    "backup": "infra/.env.prod.before-dashboard-20261012T110324Z",
+    "backup_mode": "600",
+    "live_dashboard_sha": "12ac65d551fb75277645b5ee02c14b0e69653924",
+    "live_dashboard_container": "8e7decdc7d9e58ffe690043b2108daf61790a3a2a1a6aeb9b7dd63221fb0924e",
+    "live_dashboard_health": "healthy",
+    "container_ids_changed": false
+  }
+}

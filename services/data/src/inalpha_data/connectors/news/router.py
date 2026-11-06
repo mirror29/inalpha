@@ -62,7 +62,45 @@ class NewsRouter:
                 coverage=provider.coverage,
             )
 
-    def _select(self, query: NewsQuery) -> list[NewsProvider]:
+    async def fetch_archive_batches(self, query: NewsQuery) -> list[NewsResponse]:
+        """为持续归档保留每个来源的有界批次，避免全局排序挤掉较慢来源。"""
+        fetched_at = datetime.now(UTC)
+        selected = self._select(query, include_archive_only=True)
+        results = await asyncio.gather(
+            *(self._fetch_with_timeout(provider, query) for provider in selected)
+        )
+        batches = []
+        for provider, result in zip(selected, results, strict=True):
+            result.coverage = provider.coverage
+            status = _status(result)
+            batches.append(NewsResponse(
+                venue=query.venue,
+                market=query.market,
+                symbol=query.symbol,
+                as_of=query.as_of,
+                since=query.since,
+                fetched_at=fetched_at,
+                items=filter_and_dedupe(result.items, query, fetched_at=fetched_at),
+                providers=[status],
+                is_partial=status.status in {"timeout", "rate_limited", "upstream_error"},
+                coverage_complete=(
+                    not (query.as_of or query.since) or provider.coverage == "complete"
+                ),
+            ))
+        merged = filter_and_dedupe(
+            [item for batch in batches for item in batch.items],
+            query,
+            fetched_at=fetched_at,
+            apply_limit=False,
+        )
+        for batch in batches:
+            sources = {item.source_name for item in batch.items}
+            batch.items = [item for item in merged if item.source_name in sources]
+        return batches
+
+    def _select(
+        self, query: NewsQuery, *, include_archive_only: bool = False
+    ) -> list[NewsProvider]:
         """按市场初选来源，再按 provider capability 排除无覆盖组合。"""
         names: set[str]
         if query.market == "cn":
@@ -91,6 +129,7 @@ class NewsRouter:
                 provider.name in names
                 or ("rss" in names and provider.name.startswith("rss:"))
             )
+            and (include_archive_only or not getattr(provider, "archive_only", False))
             and provider.supports(query)
         ]
 

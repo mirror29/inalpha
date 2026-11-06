@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-10",
+  "scope": "Explicit E2 experiment preparation and frozen approval",
+  "deployment": "not_deployed",
+  "production_acceptance": "not_performed",
+  "model_calls_this_implementation": 0,
+  "tests": {
+    "evolver_full_isolated": {
+      "passed": 335,
+      "skipped": 1,
+      "warnings": 3,
+      "schema": "0066 at time of full run"
+    },
+    "migration_0067": {
+      "passed": 1
+    },
+    "approval_storage_and_encryption": {
+      "passed": 13,
+      "schema": "0067",
+      "includes": "E2 approved command restored with fresh store; foreign owner rejected"
+    },
+    "dashboard": {
+      "passed": 185
+    },
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "orchestration": {
+      "initial_full_run_passed": 637,
+      "skipped": 8,
+      "final_bounded_run": {
+        "passed": 632,
+        "failed": 7,
+        "reason": "Observed subprocess timeouts/null exit statuses and wall-clock assertion failure; local load is suspected, not established as the sole cause",
+        "skipped": 8
+      },
+      "isolated_failed_file_rerun": {
+        "passed": 11,
+        "failed": 0,
+        "thresholds_changed": false,
+        "scope": "The three files failing the final bounded run only; not a new full-suite pass"
+      },
+      "new_auth_boundary_tests_passed": 2,
+      "intermediate_full_run": {
+        "passed": 629,
+        "failed": 10,
+        "skipped": 8
+      }
+    },
+    "offline_agent_eval": {
+      "passed": 4,
+      "total": 4
+    },
+    "builds": [
+      "Dashboard production build passed",
+      "orchestration TypeScript build passed"
+    ],
+    "worker_data_drift_regression": {
+      "passed": 10,
+      "description": "Coverage tests include rejection before model execution when approved full-dataset hash changes"
+    }
+  },
+  "browser": {
+    "environment": "local Next.js with explicit synthetic network responses; not production evidence",
+    "verified": [
+      "Chinese desktop preparation and insufficient coverage",
+      "English mobile preparation, frozen approval and submitted loop link",
+      "390px viewport has no horizontal overflow",
+      "chat panel hidden on preparation route"
+    ],
+    "limitations": [
+      "Normal owner production execution not yet verified",
+      "Browser restart approval recovery not yet verified against real services"
+    ]
+  },
+  "remaining": [
+    "exact-head CI and review",
+    "deployment and normal owner acceptance",
+    "process-level recovery and in-flight request failures",
+    "real qualified five-generation search",
+    "champion and 30 real days plus three independent Forward events",
+    "one-time holdout and explicit human adoption"
+  ],
+  "code_head": "1a764256",
+  "production_read_only_observation": {
+    "repository_head": "1dc8fa7",
+    "services_observed_healthy": [
+      "Dashboard",
+      "Mastra",
+      "Evolver",
+      "Research",
+      "Data"
+    ],
+    "production_changes_this_implementation": false,
+    "dashboard_mastra_evolver_image_sha": "1dc8fa78f7d02857cc1c8968e9255db19b245a9f",
+    "database": "inalpha",
+    "schema": "0066",
+    "evolution_loop_count": 0
+  }
+}

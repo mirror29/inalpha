@@ -284,3 +284,140 @@ def test_dedupe_prefers_official_source_without_mutating_inputs() -> None:
     assert "wire" in result[0].alternative_sources
     assert media.alternative_sources == []
     assert official.alternative_sources == []
+
+
+async def test_archive_retains_slow_source_when_newer_source_fills_global_limit() -> None:
+    """归档按来源限制；正常新闻 API 仍按全局限制，且拒绝未来条目。"""
+    class Provider:
+        coverage = "snapshot_only"
+
+        def __init__(self, name: str, titles: list[str], timestamp: datetime) -> None:
+            self.name = name
+            self.titles = titles
+            self.timestamp = timestamp
+
+        def supports(self, query: NewsQuery) -> bool:
+            return True
+
+        async def fetch(self, query: NewsQuery) -> ProviderResult:
+            return ProviderResult(self.name, "ok", items=[
+                NewsItem(title=title, source_name=self.name, published_at=self.timestamp)
+                for title in self.titles
+            ])
+
+    router = NewsRouter([
+        Provider("rss:busy", ["new-1", "new-2"], datetime(2026, 7, 29, tzinfo=UTC)),
+        Provider("rss:official", ["older"], datetime(2026, 7, 28, tzinfo=UTC)),
+        Provider("rss:future", ["future"], datetime(2099, 7, 28, tzinfo=UTC)),
+    ])
+    query = NewsQuery(market="crypto", limit=2)
+    public = await router.fetch(query)
+    archived = await router.fetch_archive_batches(query)
+    assert [item.title for item in public.items] == ["new-1", "new-2"]
+    assert [[item.title for item in batch.items] for batch in archived] == [
+        ["new-1", "new-2"], ["older"], [],
+    ]
+
+
+async def test_archive_timeout_preserves_healthy_source_and_cached_observation() -> None:
+    """来源超时不丢健康条目；缓存观测时间不能更新成当前首次可见时间。"""
+    observed = datetime(2026, 7, 28, tzinfo=UTC)
+
+    class Provider:
+        coverage = "snapshot_only"
+
+        def __init__(self, name: str, *, slow: bool = False) -> None:
+            self.name = name
+            self.slow = slow
+
+        def supports(self, query: NewsQuery) -> bool:
+            return True
+
+        async def fetch(self, query: NewsQuery) -> ProviderResult:
+            if self.slow:
+                await asyncio.sleep(1)
+            return ProviderResult(self.name, "ok", items=[
+                NewsItem(title="visible", published_at=observed, fetched_at=observed,
+                         source_name=self.name),
+            ])
+
+    router = NewsRouter([
+        Provider("rss:healthy"), Provider("rss:slow", slow=True),
+    ], timeout_s=0.01)
+    batches = await router.fetch_archive_batches(NewsQuery(market="crypto"))
+    assert batches[0].items[0].fetched_at == observed
+    assert batches[0].is_partial is False
+    assert batches[1].is_partial is True
+    assert batches[1].providers[0].status == "timeout"
+    assert batches[1].items == []
+
+
+async def test_new_feeds_are_archive_only_and_public_scope_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新增来源进入归档，但不改变公共列表、覆盖判断及标的能力边界。"""
+    from unittest.mock import AsyncMock
+
+    from inalpha_data.connectors.news.feed_models import DEFAULT_CRYPTO_FEEDS
+
+    providers = [RssFeedProvider(feed, timeout_s=1) for feed in DEFAULT_CRYPTO_FEEDS]
+    for provider in providers:
+        monkeypatch.setattr(provider, "fetch", AsyncMock(return_value=ProviderResult(
+            provider.name, "ok", items=[NewsItem(
+                title=provider.definition.id, source_name=provider.definition.id,
+                published_at=datetime(2026, 7, 28, tzinfo=UTC),
+            )],
+        )))
+    try:
+        router = NewsRouter(providers)
+        query = NewsQuery(market="crypto", limit=50)
+        public = await router.fetch(query)
+        assert {item.source_name for item in public.items} == {"coindesk", "kraken_blog"}
+        assert {batch.items[0].source_name for batch in await router.fetch_archive_batches(query)} == {
+            "coindesk", "kraken_blog", "bitcoin_core_announcements", "cointelegraph",
+        }
+        archive_router = NewsRouter([p for p in providers if p.archive_only])
+        assert archive_router.has_coverage(query) is False
+        assert (await archive_router.fetch(query)).items == []
+        assert await router.fetch_archive_batches(NewsQuery(market="crypto", symbol="BTC")) == []
+    finally:
+        await router.close()
+
+
+async def test_archive_merges_cross_source_links_without_global_truncation() -> None:
+    """同链接保留官方赢家及替代来源，去重后不重新施加全局条数限制。"""
+    ts = datetime(2026, 7, 28, tzinfo=UTC)
+
+    class Provider:
+        coverage = "snapshot_only"
+
+        def __init__(self, name, items):
+            self.name = name
+            self.items = items
+
+        def supports(self, query):
+            return True
+
+        async def fetch(self, query):
+            return ProviderResult(self.name, "ok", items=self.items)
+
+    media = NewsItem(title="copy", link="https://event.test/a?utm_source=media",
+                     source_name="media", source_id="media-1", published_at=ts,
+                     source_tier="professional_media")
+    official = NewsItem(title="original", link="https://event.test/a",
+                        source_name="official", source_id="official-1", published_at=ts,
+                        source_tier="official")
+    unrelated = NewsItem(title="unrelated", link="https://event.test/b",
+                         source_name="other", published_at=ts)
+    router = NewsRouter([
+        Provider("rss:media", [media]), Provider("rss:official", [official]),
+        Provider("rss:other", [unrelated]),
+    ])
+    batches = await router.fetch_archive_batches(NewsQuery(market="crypto", limit=1))
+    assert batches[0].items == []
+    assert len(batches[1].items) == len(batches[2].items) == 1
+    winner = batches[1].items[0]
+    assert winner.source_id == "official-1"
+    assert winner.alternative_sources == ["media", "official"]
+    assert winner.published_at == ts
+    assert media.alternative_sources == official.alternative_sources == []

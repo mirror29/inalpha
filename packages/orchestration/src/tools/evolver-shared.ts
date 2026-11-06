@@ -8,6 +8,7 @@ import {
   evolutionRequestDigest,
   EvolverClient,
   type EvolutionConfig,
+  type EvolutionPreparation,
   type EvolutionStartRequest,
   type EventCampaignConfigInput,
   type EventCampaignRequest,
@@ -33,7 +34,7 @@ export async function getEvolverClient(ctx?: ToolRequestContext): Promise<Evolve
 }
 
 export async function getApprovedEvolutionRunContext(
-  input: { budget?: number; seedStrategyId?: string; config: EvolutionConfig },
+  input: { budget?: number; seedStrategyId?: string; retryOfRunId?: string; preparation?: EvolutionPreparation; config: EvolutionConfig },
   ctx?: ToolRequestContext,
 ): Promise<{
   client: EvolverClient;

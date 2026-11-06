@@ -18,6 +18,7 @@ class RssFeedProvider:
     def __init__(self, definition: FeedDefinition, *, timeout_s: float) -> None:
         self.definition = definition
         self.name = f"rss:{definition.id}"
+        self.archive_only = definition.archive_only
         self.coverage = "snapshot_only"
         self._client = httpx.AsyncClient(
             timeout=timeout_s,

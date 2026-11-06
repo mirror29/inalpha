@@ -6,8 +6,10 @@
 - 巡检告警：进入 decaying 告警一次；持续 decaying 不重复；恢复后 info + 重置
 - factor 服务不可用：capture / patrol 都静默跳过，不抛、不动 run
 """
+
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, ClassVar
 from uuid import uuid4
 
@@ -18,6 +20,7 @@ import inalpha_paper.factor_patrol as patrol_mod
 from inalpha_paper.config import get_paper_settings
 from inalpha_paper.factor_client import FactorServiceError
 from inalpha_paper.factor_patrol import FactorPatrol, capture_factor_baseline
+from inalpha_paper.storage import accounts, run_wallets
 from inalpha_paper.storage import strategy_candidates as candidates_store
 from inalpha_paper.storage import strategy_runs as runs_store
 
@@ -106,10 +109,22 @@ async def _insert_run_with_lineage() -> dict[str, Any]:
             code=f'"factor-patrol test candidate {uuid4().hex}"\n',
             factor_snapshot=_LINEAGE,
         )
-        return await runs_store.insert(
-            conn, candidate_id=candidate_id, account_id=uuid4(),
-            venue="binance", symbol="BTC/USDT", timeframe="1h", params={},
+        owner = uuid4()
+        await accounts.get_or_create(conn, owner)
+        run = await runs_store.insert(
+            conn,
+            candidate_id=candidate_id,
+            account_id=owner,
+            venue="binance",
+            symbol="BTC/USDT",
+            timeframe="1h",
+            params={},
+            allocation=Decimal(10000),
         )
+        await run_wallets.create(
+            conn, owner, run["id"], Decimal(10000), quote_currency="USDT", quote_rate=Decimal(1)
+        )
+        return await runs_store.get(conn, run["id"])
 
 
 def _log_codes(run: dict[str, Any]) -> list[str | None]:

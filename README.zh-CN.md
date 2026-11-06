@@ -24,6 +24,8 @@
 
 <p><em>每个因子提案、每次策略变异、每笔订单路由——都有日志、有版本、可复核。Agent 自己挑当前有效的因子来择时、自己写策略、自己进化；LLM 只负责写代码，工程纪律为每个决策背书。</em></p>
 
+<p><a href="https://dashboard.inalpha.dev"><strong>在线控制台</strong></a> &nbsp;·&nbsp; <a href="https://dashboard.inalpha.dev/register?from=/zh"><strong>申请账号试用</strong></a><br /><sub>提交账号申请，审核通过后通过邮件获取激活链接。</sub></p>
+
 </div>
 
 ---
@@ -48,6 +50,14 @@ Inalpha 是一个**用工程纪律驱动的专业量化 agent 框架**。它不�
 > **当前状态：** Inalpha 处于 **alpha** 阶段——79 因子配血缘 + 衰减巡检、受限 DSL 因子发现、三方制研究辩论、多市场模拟盘，以及 E1/E2 策略演化。feature flag 后的 E2 提供 point-in-time 事件快照、确定性假设 DSL、五代 campaign、Forward 证据与一次性 sealed holdout。演化绝不自动 promote、启动候选或下单。欢迎读代码、参与设计——**请勿用真实资金跑**（真钱实盘不在当前计划）。
 
 ---
+
+
+> **代码核对：2026-09-30。** owner 隔离的 EvolutionLoop 复用、持久化调度与租约/checkpoint
+> 恢复、原子阶段交接及有界授权/费用记账已落地。已有恢复与门禁自动化测试；真实环境的完整
+> 运行与重启验证仍需记录证据。最终采用仍需人工操作，实验性候选不可进入 Runner。
+> 下一步优先级统一见[当前状态文档](docs/04-current-state.md#未完成--下一步)。
+
+> E2 更新（2026-10-10）：显式新实验准备与冻结费用审批代码已落地；最新部署与正常 owner 验收状态以中央清单为准。E1 正常 owner 执行和 E2 输入不足拦截有生产证据；冠军、Forward、holdout 正向生产验收仍未完成。优先级统一见[当前状态清单](docs/04-current-state.md#未完成--下一步)。
 
 ## 操作者控制台
 

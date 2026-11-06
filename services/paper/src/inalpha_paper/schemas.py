@@ -732,6 +732,7 @@ class OrderRecord(BaseModel):
 class PositionRecord(BaseModel):
     """单个持仓行（GET /positions 响应里的元素）。"""
 
+    run_id: UUID | None = None
     venue: str
     symbol: str
     quantity: float
@@ -767,6 +768,9 @@ class AccountSnapshot(BaseModel):
     排除出折算并在 ``fx_warnings`` 点名（不静默用旧值 / 不乱猜汇率）。
     """
 
+    main_equity: float | None = None
+    run_wallets_equity: float = 0.0
+    run_wallets: list[dict[str, Any]] = Field(default_factory=list)
     account_id: str
     base_currency: str = Field(default="USD", description="D-11：报告 / 折算目标货币")
     initial_cash: float
@@ -1008,6 +1012,11 @@ class StrategyRunRecord(BaseModel):
         description="本 run 的资金额度(账户 base_currency 计);老数据为 null(旧语义固定 1 万)",
     )
     last_bar_ts: datetime | None = None
+    accounting_status: Literal["verified", "legacy_unverified", "contaminated"] = (
+        "legacy_unverified"
+    )
+    accounting_note: str | None = None
+    original_cumulative_pnl: float | None = None
     cumulative_pnl: float = 0.0
     run_log: list[dict[str, Any]] = Field(
         default_factory=list,

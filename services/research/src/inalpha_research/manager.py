@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from inalpha_shared import get_logger
+from inalpha_shared.usage import usage_stage
 
 from .llm.client import LLMClient, LLMError
 from .schemas import (
@@ -167,9 +168,10 @@ class ResearchManager:
             user_question=user_question,
         )
         try:
-            raw = await self._llm.complete_json(
-                system=_SYSTEM, user=user_prompt, max_tokens=_MANAGER_MAX_TOKENS
-            )
+            with usage_stage("synthesis"):
+                raw = await self._llm.complete_json(
+                    system=_SYSTEM, user=user_prompt, max_tokens=_MANAGER_MAX_TOKENS
+                )
         except LLMError as e:
             # manager 综合失败不应丢掉 analyst 成果——对齐 analyst ``_failed_brief`` /
             # debate ``_safe_speak`` 的容错哲学：降级返 neutral plan（带上 briefs /

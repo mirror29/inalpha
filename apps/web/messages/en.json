@@ -430,6 +430,8 @@
     ]
   },
   "cta": {
+    "trial": "Request trial access",
+    "trialNote": "Try Inalpha online. Apply for access; approved applicants receive an activation link by email. Existing users can sign in.",
     "eyebrow": "Get started",
     "title": "Star it. Read it. Tear it apart.",
     "sub": "Inalpha is alpha-stage and AGPL-3.0. No real money yet — every line is on GitHub.",

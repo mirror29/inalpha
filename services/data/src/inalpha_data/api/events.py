@@ -15,6 +15,9 @@ from ..connectors.coinmarketcal import get_connector
 from ..event_models import (
     CoinMarketCalImportRequest,
     EventCoverageResponse,
+    EventFactCorrectionRecord,
+    EventFactCorrectionRequest,
+    EventFactCorrectionResponse,
     EventFactListResponse,
     EventFactRecord,
     EventFactWriteRequest,
@@ -39,6 +42,7 @@ from ..service_auth import (
     require_snapshot_read,
 )
 from ..storage import events as store
+from ..storage.fact_corrections import CorrectionSourceNotFoundError, correct_fact
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -90,6 +94,31 @@ async def write_event_fact(
     return EventFactWriteResponse(fact=EventFactRecord(**row), created=created)
 
 
+@router.post("/facts/{fact_id}/corrections", response_model=EventFactCorrectionResponse)
+async def correct_event_fact(
+    fact_id: UUID,
+    request: EventFactCorrectionRequest,
+    db: DBConn,
+    identity: Annotated[DataServiceIdentity, Depends(require_event_extract)],
+) -> EventFactCorrectionResponse:
+    """Append an audited legacy review; retain prior versions and frozen snapshots."""
+    try:
+        audit, fact, created = await correct_fact(
+            db, fact_id, request, service_subject=identity.subject
+        )
+    except CorrectionSourceNotFoundError as exc:
+        raise EventRecordNotFoundError("source fact not found") from exc
+    except ValueError as exc:
+        raise InalphaError(
+            "correction could not preserve stored evidence", code="EVENT_FACT_CORRECTION_INVARIANT"
+        ) from exc
+    return EventFactCorrectionResponse(
+        correction=EventFactCorrectionRecord(**audit),
+        fact=EventFactRecord(**fact),
+        created=created,
+    )
+
+
 @router.get("/facts/visible", response_model=EventFactListResponse)
 async def list_visible_event_facts(
     cutoff: datetime,
@@ -109,6 +138,19 @@ async def list_visible_event_facts(
         cutoff=cutoff,
         facts=[EventFactRecord(**row) for row in facts],
     )
+
+
+@router.get("/facts/{fact_id}", response_model=EventFactRecord)
+async def get_reviewable_event_fact(
+    fact_id: UUID,
+    db: DBConn,
+    _identity: Annotated[DataServiceIdentity, Depends(require_event_extract)],
+) -> EventFactRecord:
+    """Read an exact immutable version only inside the extraction review boundary."""
+    row = await store.get_fact(db, fact_id)
+    if row is None:
+        raise EventRecordNotFoundError("source fact not found")
+    return EventFactRecord(**row)
 
 
 @router.get("/raw/{event_id}", response_model=RawEventRecord)

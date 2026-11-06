@@ -15,6 +15,7 @@ from inalpha_paper.data_client import DataClient
 from inalpha_paper.evaluation_executor import KillableEngineRunner
 from inalpha_paper.evolution_execution_policy import frozen_protection_kwargs
 from inalpha_shared.db import get_conn
+from inalpha_shared.errors import ConflictError
 
 from ..config import EvolverSettings
 from ..data import FrozenBarsLoader, FrozenDataset
@@ -42,7 +43,21 @@ async def execute_run(
             from_ts=config["from_ts"],
             as_of=config["as_of"],
         )
+    validate_prepared_dataset(run, dataset)
     await execute_frozen_run(run, dataset=dataset, mutator=mutator, settings=settings)
+
+
+def validate_prepared_dataset(run: dict[str, Any], dataset: FrozenDataset) -> None:
+    """Reject changed data before exchanging any model credential or generating candidates."""
+    preparation = run["config"].get("preparation")
+    if preparation is not None and (
+        dataset.manifest.content_sha256 != preparation["dataset_content_sha256"]
+        or run["seed_source_hash"] != preparation["seed_source_hash"]
+    ):
+        raise ConflictError(
+            "prepared source or data changed; prepare and approve a new attempt",
+            code="EVOLUTION_PREPARATION_CHANGED",
+        )
 
 
 async def execute_frozen_run(

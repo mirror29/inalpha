@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 
+from inalpha_evolver.api.schemas import CampaignResponse
 from inalpha_evolver.config import EvolverSettings
 from inalpha_evolver.data.persistent_snapshot import discovery_dataset, persist_loop_data_snapshot
 from inalpha_evolver.runtime import loop_campaign
@@ -109,3 +110,30 @@ async def test_handoff_creates_one_running_campaign_and_reuses_frozen_data(datab
     loop = await loops.get_loop(database, worker["loop_id"], worker["owner_account_id"])
     assert loop["status"] == "campaign_running"
     assert loop["campaign_id"] == campaign_id
+
+
+@pytest.mark.asyncio
+async def test_campaign_dispatch_retains_persisted_usage_identity(database, monkeypatch):
+    """Real dispatch must retain the owner subject consumed by the model usage recorder."""
+    worker, _, snapshot = await ready_loop(database)
+
+    @asynccontextmanager
+    async def connection():
+        yield database
+
+    async def fetch(*args, **kwargs):
+        return snapshot
+
+    monkeypatch.setattr(loop_campaign, "get_conn", connection)
+    monkeypatch.setattr(loop_campaign, "fetch_event_snapshot", fetch)
+    campaign_id = await loop_campaign.handoff_campaign(
+        worker,
+        EvolverSettings(EVENT_EVOLUTION_ENABLED=True),
+    )
+    claimed = await campaigns.claim_next_campaign(database, worker_id="usage-identity-test")
+    assert claimed is not None
+    assert claimed["campaign_id"] == campaign_id
+    assert claimed["requested_by_sub"] == worker["requested_by_sub"]
+    projected = await campaigns.get_campaign(database, campaign_id, worker["owner_account_id"])
+    assert projected["requested_by_sub"] == worker["requested_by_sub"]
+    assert "requested_by_sub" not in CampaignResponse(**projected).model_dump()

@@ -21,7 +21,9 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { mintServiceToken, defaultServiceSubject } from "../auth.js";
+import { trustedChatInvocation } from "../mastra/llm/chat-invocation-scope.js";
+import { AUTH_SUB_KEY } from "../hooks/with-hooks.js";
+import { resolveRequestToken } from "../auth.js";
 import { ResearchClient, type ResearchPlan } from "../clients/research.js";
 import { getSettings } from "../config.js";
 // D-13：复用 research.ts 的同一份 schema（含正则校验），避免两处独立漂移。
@@ -113,7 +115,9 @@ export const researchParallelDiveTool = createTool({
   execute: async (inputData, ctx) => {
     const tc = ctx?.requestContext as ToolRequestContext | undefined;
     const settings = getSettings();
-    const token = tc?.authToken ?? (await mintServiceToken({ sub: defaultServiceSubject() }));
+    const token = await resolveRequestToken(tc);
+    const owner = tc?.get?.(AUTH_SUB_KEY);
+    const invocationId = typeof owner === "string" ? trustedChatInvocation(tc, owner) : undefined;
     const baseParams = {
       venue: inputData.venue ?? "binance",
       symbol: inputData.symbol,
@@ -129,6 +133,7 @@ export const researchParallelDiveTool = createTool({
       const client = new ResearchClient({
         baseUrl: settings.researchServiceUrl,
         token,
+        invocationId,
         timeoutMs: 300_000,
       });
       try {

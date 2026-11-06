@@ -16,6 +16,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Literal
 
+from inalpha_shared.usage import usage_stage
+
 from ..llm.client import LLMClient
 from ..schemas import AnalystBrief, DebateTurn
 
@@ -65,7 +67,8 @@ class Researcher(ABC):
             history=history,
             round_no=round_no,
         )
-        raw = await self._llm.complete_json(system=system, user=user, max_tokens=max_tokens)
+        with usage_stage(f"debate:{type(self).__name__}"):
+            raw = await self._llm.complete_json(system=system, user=user, max_tokens=max_tokens)
         argument = str(raw.get("argument", "")).strip()
         if not argument:
             argument = "(empty argument from LLM)"

@@ -21,6 +21,7 @@ def prepare_frozen_bars(
     instrument_id: InstrumentId,
     context: MarketEvaluationContext,
     as_of: datetime,
+    requested_from: datetime,
 ) -> tuple[tuple[Bar, ...], str, float, datetime]:
     """Remove forming bars and validate a complete connector calendar grid."""
     now = _utc(as_of)
@@ -57,7 +58,7 @@ def prepare_frozen_bars(
                 "lag_seconds": lag,
             },
         )
-    _validate_grid(bars, context, now)
+    _validate_grid(bars, context, now, requested_from=requested_from)
     return tuple(bars), bars_content_hash(bars, instrument_id, context), lag, cutoff
 
 
@@ -65,8 +66,11 @@ def _validate_grid(
     bars: list[Bar],
     context: MarketEvaluationContext,
     as_of: datetime,
+    *,
+    requested_from: datetime,
 ) -> None:
-    expected = expected_bar_timestamps(context, _bar_datetime(bars[0]), as_of)
+    start = _utc(requested_from)
+    expected = expected_bar_timestamps(context, start, as_of)
     actual = tuple(_bar_datetime(bar) for bar in bars)
     expected_set, actual_set = set(expected), set(actual)
     missing = tuple(value for value in expected if value not in actual_set)
@@ -76,6 +80,8 @@ def _validate_grid(
             "bars do not match the connector calendar grid",
             code="EVOLUTION_DATA_GAP_INVALID",
             details={
+                "missing_count": len(missing),
+                "unexpected_count": len(unexpected),
                 "missing": [value.isoformat() for value in missing[:20]],
                 "unexpected": [value.isoformat() for value in unexpected[:20]],
             },

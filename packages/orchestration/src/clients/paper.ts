@@ -912,9 +912,10 @@ export class PaperClient {
     return await this.http.post<StrategyRunRecord>(`/strategy_runs/${runId}/stop`, {});
   }
 
-  async listStrategyRuns(filter?: { status?: string }): Promise<StrategyRunRecord[]> {
+  async listStrategyRuns(filter?: { status?: string; limit?: number }): Promise<StrategyRunRecord[]> {
     return await this.http.get<StrategyRunRecord[]>("/strategy_runs", {
       status: filter?.status,
+      limit: filter?.limit,
     });
   }
 

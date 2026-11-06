@@ -1,6 +1,6 @@
 # 01 · 架构总览
 
-> 状态：**现行架构总览**（2026-08-27）。
+> 状态：**现行架构总览**（2026-09-30 代码核对）。
 > 本文给"整体形态 + 各层职责 + 关键不变量"的高层视图；内核事件循环 / Clock /
 > MessageBus / 撮合 / 风控的详细设计见 [`03-kernel-design.md`](./03-kernel-design.md)；
 > 逐里程碑的落地状态见 [`04-current-state.md`](./04-current-state.md)。
@@ -59,7 +59,7 @@
 当前主要入口两个，面向不同用途：
 
 - **`mastra dev` playground（:4111）** — 跟 orchestrator agent 对话，并在 live trace UI 里
-  看每个 tool call / hook 事件 / approval token。当前主要的"对话 + 操作"入口。
+  看每个 tool call / hook 事件 / approval token。开发调试入口。
 - **`apps/dashboard`**（`:3001` · `app.inalpha.dev`）— **认证后的操作者控制台**：提供
   agent 对话、组合 / 持仓 / live runner / 演化 / 回测 / 因子 / 风控等页面。动态 Next
   Route Handler 作为 **BFF**，浏览器只访问同源 `/api/*`；服务端按登录用户签发 JWT，
@@ -90,7 +90,7 @@ Inalpha 的"大脑 + 护栏"。三件事：
 | **paper** | 8002 | 事件驱动内核（Clock / MessageBus / 撮合 / 风控）+ 回测引擎 + **live runner**（模拟盘按行情自动跑）+ **strategy_authoring**（LLM 自创策略三道沙盒 + fitness） |
 | **research** | 8003 | LLM 多 analyst（fundamental / sentiment / technical / valuation …）+ bull/bear 辩论 → `StrategyHint`，不直接下单 |
 | **factor** | 8004 | 因子库（pandas-ta / Alpha101 / qlib）+ IC 有效性检验；`factor.timing / .score / .catalog`，只产出信号 |
-| **evolver** | 8005 | E1 策略演化：冻结数据集与 LLM/定价快照、单代 unified-diff 变异、候选评估、owner-scoped 异步状态；显式审批后才可产生费用，且不会自动 promote / 启动策略 / 下单 |
+| **evolver** | 8005 | E1 单代 unified-diff 变异与候选审计；E2 事件共演化与持久化 EvolutionLoop（feature flag），拥有预算、调度、租约、checkpoint、冠军锁定和 holdout；不会自动 promote / 启动策略 / 下单 |
 | **_shared** | — | 跨服务基础设施（DataClient / 错误类型 / auth …），改前评估 |
 
 **核心不变量：回测 = 模拟盘 同代码（架构上可延伸到实盘，但真钱实盘不在当前计划）。** 同一份 `Strategy` 文件，只换 Clock
@@ -119,8 +119,24 @@ fundamentals；paper → risk 同进程前置守门（所有 Order 撮合前过 
 5. **LLM 无直下单路径**：tool 分桶 + permissions deny + plan/exec token + 领域审计
 6. **金融时效性**：读行情/新闻默认 `fresh=True`；freshness 看 `bars[-1].ts` 距 as_of
    的间隔，不看 bar 数量；数据不可用时显式降级 + 标低 confidence，不静默用过时数据
-7. **演化逐次授权且可复现**：产生 LLM 费用前冻结非密钥配置、定价与数据 manifest；审批绑定
-   owner + operation，5 分钟后过期；候选永不自动 promote、启动或下单
+7. **演化授权且可复现**：产生 LLM 费用前冻结非密钥配置、定价与数据 manifest。E1 每次新计费 run
+   显式审批；E2 点击或明确指令授权受预算约束的研究 Loop，内部迭代不逐代审批。启动 grant
+   绑定 owner / operation / config digest，Loop 启动有效期为 5 分钟；后续执行依赖持久化授权
+   （90 天有效）与有效租约，逐次模型请求检查预算和 fencing。密钥兑换 credential grant
+   最长 30 小时，不作为整个 Loop 的执行授权。候选永不自动 promote、启动或下单
+
+## E2 持久化研究闭环
+
+`EvolutionLoop` 按 owner 与 target 复用活动任务；数据库轮询调度不依赖对话存活。
+Loop/campaign 通过过期租约与 fencing token 恢复，proposal checkpoint 复用已提交的提案，
+阶段交接及 UI 事件原子提交。Paper 提供独立 Forward 沙盒，持久化闭合 bars、事实与撮合，
+以签名证据返回 Evolver；这些记录不进入普通账户、持仓、订单或 Runner。
+
+唯一冠军需通过至少 30 天、三个独立事件的 Forward（最多 90 天），随后执行一次封存
+holdout；崩溃恢复沿用同一 attempt。通过后仍需手动采用为 `runner_eligible=false` 的
+实验性研究资产。代码与自动化测试已落地，真实运行、重启和费用证据尚待验证；下一步统一见
+[`04-current-state.md`](./04-current-state.md)；闭环决策见
+[`designs/e2-event-evolution-loop.md`](./designs/e2-event-evolution-loop.md)。
 
 ## 延伸阅读
 

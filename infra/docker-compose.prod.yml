@@ -15,11 +15,18 @@ name: inalpha-prod
 #   - 应急本地构建:`up -d --build`(小内存机注意 OOM)。
 #   image 路径由 IMAGE_PREFIX/IMAGE_TAG 注入(见 .env.prod.example);CI 见 build-images.yml。
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-python-build: &python-build
   context: ../services
   dockerfile: ../infra/docker/Dockerfile.python
 
 x-svc-common: &svc-common
+  logging: *logging
   restart: unless-stopped
   depends_on:
     postgres:
@@ -30,6 +37,7 @@ x-svc-common: &svc-common
 
 services:
   postgres:
+    logging: *logging
     # 数据库镜像必须钉版本:latest-pg17 浮动 tag 在 pull/重建时可能拉到新版
     # TimescaleDB,轻则起不来重则静默破坏已有 hypertable。升级走显式改版本号。
     image: timescale/timescaledb:2.27.2-pg17
@@ -52,6 +60,7 @@ services:
     # 不映射端口到公网；仅容器内网可达
 
   redis:
+    logging: *logging
     image: redis:8-alpine
     container_name: inalpha-redis
     restart: unless-stopped
@@ -70,6 +79,7 @@ services:
 
   # 一次性：跑 DB 迁移到最新，app 服务依赖它 completed_successfully
   migrate:
+    logging: *logging
     image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-paper:${IMAGE_TAG:-latest}
     build:
       <<: *python-build
@@ -190,6 +200,7 @@ services:
       start_period: 30s
 
   mastra:
+    logging: *logging
     image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-mastra:${IMAGE_TAG:-latest}
     build:
       context: ../packages/orchestration
@@ -220,6 +231,7 @@ services:
   # 操作者控制台(Next16 standalone)。BFF 经容器名直连后端,零 CORS、JWT 同源(共用 .env.prod)。
   # 公网仅经 Cloudflare Tunnel 暴露 dashboard.inalpha.dev → dashboard:3001;后端服务一律不暴露。
   dashboard:
+    logging: *logging
     image: ${IMAGE_PREFIX:-ghcr.io/__CHANGE_ME__}/inalpha-dashboard:${IMAGE_TAG:-latest}
     build:
       context: ../apps/dashboard
@@ -269,6 +281,7 @@ services:
 
   # 公网入口：Cloudflare Tunnel（无需在 VPS 开入站端口，TLS/防护走 CF）
   cloudflared:
+    logging: *logging
     profiles: ["tunnel"]
     image: cloudflare/cloudflared:2026.6.0
     container_name: inalpha-cloudflared

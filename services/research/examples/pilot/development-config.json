@@ -1,0 +1,22 @@
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "provider_documented_version": "DeepSeek-V4.1-Flash",
+  "immutable_revision": null,
+  "training_cutoff": null,
+  "cutoff_evidence": "No verified training cutoff; price anonymization is not proof of no contamination.",
+  "model_metadata_source": "https://api-docs.deepseek.com/quick_start/pricing/",
+  "model_metadata_checked_at": "2026-10-12",
+  "limit_usd": "5",
+  "baseline_tokens": 4000,
+  "arm_tokens": 24000,
+  "samples": 2,
+  "revisions": 2,
+  "rounds": 2,
+  "pricing": {
+    "currency": "USD",
+    "version": "deepseek-peak-noncache-estimate-2026-10-12",
+    "input_usd_per_million": "0.3",
+    "output_usd_per_million": "1.2"
+  }
+}

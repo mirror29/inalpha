@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-13",
+  "scope": "Research-only prospective classifier deployment; not E2 acceptance",
+  "release": {
+    "pr": 233,
+    "reviewed_head": "786121b320adda7f9f13fbb33009f5a1e5fa3303",
+    "deployed_merge": "4441cb07297aaa89e719bf7f164e7792084cfd3e",
+    "reviewed_merge_diff": "empty",
+    "head_ci": 38356905384,
+    "main_ci": 38357410938,
+    "images": 38357410999,
+    "ci_images": "success",
+    "review": "Latest automatic CR returned no publishable body, not a pass. Earlier CJK finding fixed; independent incremental review ran 29 related tests and found no new blocker. Wider legacy/semantic issues tracked in #234."
+  },
+  "deployment": {
+    "research_container": "4f99f27d04f4baa945abb0be3cb018c564b0a65c86254fbde1256737ea448eb4",
+    "health": "healthy",
+    "unchanged_other_containers": 9,
+    "database": "inalpha",
+    "schema": "0068",
+    "migrations": false,
+    "rollback_sha": "592820a6d8d299a7b986c08b61edd40d674b5357",
+    "guards": "Four read-only checks: leased extraction jobs0, active E1/Loop0 and Research port8003 established connections0",
+    "config_backup": "infra/.env.prod.before-research-ban-20261013T064018Z",
+    "database_backup": "infra/backups/research-ban-before-20261013T064018Z.dump",
+    "backup_permissions": "600",
+    "backup_toc_readable": true,
+    "restore_drill": false,
+    "warning": "TimescaleDB continuous_agg circular foreign keys; backup listing is not a restore drill"
+  },
+  "independent_postcheck": {
+    "method": "Separate SSH invocation; exact image and healthy independently read",
+    "extractor_version": "deterministic-event-extractor-v3",
+    "health_http": 200,
+    "pure_function_cases": {
+      "bank": "other",
+      "CJK_adjacent_ban": "regulatory",
+      "exploit_plus_ban": "exploit"
+    },
+    "fixture_persistence": false,
+    "model_calls": 0,
+    "stored_fact_versions": {
+      "deterministic-event-extractor-v2": 375
+    },
+    "loops": 0,
+    "campaigns": 0
+  },
+  "limits": [
+    "No newly collected v3 fact had been observed at the immediate postcheck; future real extraction still to observe",
+    "Historical v2 facts were not rewritten or re-extracted",
+    "Runtime pure-function smoke is not production campaign or full fault-recovery acceptance",
+    "No real five-generation search, champion, Forward or holdout",
+    "English/mobile and locale-query UI acceptance remain pending"
+  ],
+  "follow_up": "https://github.com/mirror29/inalpha/issues/234"
+}

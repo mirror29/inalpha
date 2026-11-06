@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-13",
+  "code_commit": "e8365aa97c2919a5b2808cadebdc9a6dade565f5",
+  "scope": "Data prospective corrections for active v2 regulatory facts; no production writes or deployment",
+  "implementation": {
+    "migration": "0069 after 0068",
+    "authorization": "existing event_extract service identity; owner JWT rejected",
+    "time": "database clock after serialization; effective_at and source evidence unchanged",
+    "cross_classification": "atomic old canonical-key retirement plus canonical replacement; immutable audit links both",
+    "same_classification": "append one version",
+    "idempotency": "correction ID binds source hash, verified service subject and review payload",
+    "concurrency": "shared logical source/event lock with ingestion and ordinary extraction",
+    "downgrade": "ACCESS EXCLUSIVE audit-table lock; recorded corrections prevent downgrade"
+  },
+  "validation": {
+    "fresh_database_chain": "0058 wallet -> 0059 diagnostics -> 0068 -> 0069",
+    "tests": 33,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "test_files": [
+      "test_fact_corrections.py",
+      "test_event_models.py",
+      "test_event_service_auth.py",
+      "test_event_archive.py"
+    ],
+    "retained_audit_database": "inalpha_fact_corrections_759b7d9cc88044539f846180974e2215",
+    "recorded_audit_downgrade_rejected": true,
+    "ruff": "changed files passed",
+    "mypy": "new correction module, event_models and API passed; not a full-service claim",
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "review": "initial two P2 concurrency/downgrade issues corrected; independent incremental static review no additional confirmed P1/P2",
+    "storage_mypy": {
+      "current_errors": 4,
+      "main_shadow_baseline_errors": 11,
+      "remaining": "same tuple/dict-row errors outside modified write_fact; not full Data typecheck success"
+    },
+    "data_non_integration_regression": {
+      "tests": 222,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "retained_audit_database": "inalpha_fact_corrections_fab847347be54aa1855c86c6322be6af"
+    }
+  },
+  "failed_attempt": {
+    "test": "subsequent extraction fixture used local time before DB raw acceptance",
+    "result": "1 failed / 23 passed",
+    "resolution": "use returned raw accepted_at; production PIT validation unchanged",
+    "latest": "33 passed"
+  },
+  "limits": [
+    "Isolated database and route tests, not complete-service or production correction acceptance",
+    "No automatic correction sweep, trusted Research review caller still pending",
+    "No production migration or historical correction applied; production remains 0068",
+    "Corrected availability cannot qualify old frozen windows",
+    "Canonical identity recognizes the existing deterministic producer only",
+    "v3 classification is not universal semantic validation or FDR approval",
+    "No new model calls; historical unknown fees unchanged"
+  ],
+  "delivery": {
+    "status": "local commits; GitHub push failed twice with low-speed timeout",
+    "production_changes": false
+  }
+}

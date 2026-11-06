@@ -1,0 +1,119 @@
+{
+  "date": "2026-10-10",
+  "scope": "Read-only production diagnosis and local automatic snapshot/target semantics fixes; not deployed",
+  "commits": {
+    "supported_snapshot_evidence": "32111f75",
+    "target_readiness_semantics": "1d0d78d5"
+  },
+  "production_read_only": {
+    "schema": "0065",
+    "snapshot": {
+      "asset": "asset:SOL",
+      "cutoff": "2026-10-09T06:25:54.528Z",
+      "created_at": "2026-10-10T01:05:54.453408Z",
+      "filtered_event_types": [
+        "chain_halt",
+        "delisting",
+        "exploit",
+        "listing"
+      ],
+      "fact_count": 0
+    },
+    "asset_facts_visible_before_cutoff": {
+      "other": 4,
+      "upgrade": 1
+    },
+    "extraction_completed": 304,
+    "source_version_counts": {
+      "bitcoin_core_announcements": 5,
+      "coindesk": 212,
+      "cointelegraph": 66,
+      "kraken_blog": 21
+    },
+    "source_versions_are_not_independent_events": true,
+    "loops": 0,
+    "campaigns": 0,
+    "original_sol_window_cache_diagnostic": {
+      "cutoff": "2026-10-09T06:25:54.528Z",
+      "resolver_from_ts": "2026-04-12T06:25:54.528Z",
+      "closed_cached_bars": 4319,
+      "contiguous": true,
+      "selection_start": "2026-07-29T07:00:00Z",
+      "selection_end": "2026-09-03T06:00:00Z",
+      "visible_selection_facts": 0,
+      "qualification": "Cache-only necessary-input diagnostic at original cutoff, not a runtime frozen dataset or matched/FDR evaluation. No acceptance range modified."
+    }
+  },
+  "finding": {
+    "cause": "Automatic entry used the four direct-trigger types as the complete evidence filter, omitting supported confirmed/hybrid evidence",
+    "empty_direct_filter_does_not_prove_no_supported_facts": true
+  },
+  "local_resolution": {
+    "snapshot_supported_event_types": [
+      "listing",
+      "delisting",
+      "exploit",
+      "chain_halt",
+      "regulatory",
+      "upgrade",
+      "unlock",
+      "burn",
+      "partnership",
+      "macro",
+      "other"
+    ],
+    "supported_event_type_count": 11,
+    "direct_trigger_restrictions_unchanged": true,
+    "pit_owner_and_frozen_cutoff_preserved": true,
+    "facts_backdated": false,
+    "statistical_window_or_thresholds_changed": false,
+    "other_facts_do_not_demonstrate_qualified_evidence": true,
+    "target_event_snapshot_preflight": "not_checked",
+    "task_created_claim_requires_successful_loop_id": true,
+    "instructions_avoid_repeated_resolution_or_same_failed_start_retry": true,
+    "input_sufficiency_demonstrated": false,
+    "resolver_start_loop_action_proves_target_and_capability_only": true
+  },
+  "checks": {
+    "regression_before_fix": {
+      "failed": 7,
+      "passed": 2
+    },
+    "targeted_passed": 18,
+    "orchestration_tests_passed": 622,
+    "orchestration_tests_skipped": 7,
+    "test_files_passed": 65,
+    "test_files_skipped": 2,
+    "typecheck": "passed",
+    "build": "passed",
+    "offline_pr_evaluation": {
+      "passed": 4,
+      "total": 4,
+      "live_model_acceptance": false
+    },
+    "consistency": {
+      "passed": 19,
+      "failed": 0,
+      "existing_warnings": 12
+    },
+    "trigger_safety_regressions_passed": 11
+  },
+  "deployment": {
+    "deployed": false,
+    "production_versions_unchanged": true,
+    "documentation_sha_is_not_business_deployment_sha": true
+  },
+  "evidence_limits": [
+    "Read-only fact visibility does not establish independent matched events, FDR, profitability or Forward",
+    "Local automated and offline PR checks are not normal-owner live E2 acceptance",
+    "Existing historical snapshots are not rewritten"
+  ],
+  "pending": [
+    "Review and CI of business commits",
+    "Deploy pinned business code after the authorized release workflow",
+    "Normal-owner new snapshot at legitimate cutoff and coverage verification",
+    "Qualified real E2 search and champion",
+    "At least 30 real days and three independent Forward events, one-time holdout and explicit experimental adoption",
+    "Previously recorded response-loss, complete-restart recovery, explicit retry and fencing acceptance"
+  ]
+}

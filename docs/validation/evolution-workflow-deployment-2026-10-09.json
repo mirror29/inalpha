@@ -1,0 +1,127 @@
+{
+  "date": "2026-10-09",
+  "scope": "Coordinated production deployment and original-owner result visibility; approval execution recovery remains unverified",
+  "pr": 202,
+  "business_sha": "93ec6b2848c6670a529cacbada450f0bf8c92489",
+  "ci_run": 37947191667,
+  "image_build_run": 37948131465,
+  "ci": "all passed",
+  "image_build": "all passed",
+  "automated_cr": "No publishable review; not treated as review pass",
+  "specialist_review": "Final read-only review found no new blockers",
+  "schema_before": "0059",
+  "schema_after": "0065",
+  "configuration_backup": "infra/.env.prod.before-evolution-20261009T150833Z",
+  "database_backup": "infra/backups/evolution-before-20261009T150833Z.dump",
+  "backup_permissions": "600",
+  "services": {
+    "dashboard": {
+      "id": "da53231f3088431101379b7b9f27d42bb4eecdc046ba6cc975d58747dbf36f92",
+      "image": "ghcr.io/mirror29/inalpha-dashboard:93ec6b2848c6670a529cacbada450f0bf8c92489",
+      "state": "running"
+    },
+    "mastra": {
+      "id": "3c37b75fef9b50a6fd392f3a719650f5c73d91948cec4478af004f085b45ea1c",
+      "image": "ghcr.io/mirror29/inalpha-mastra:93ec6b2848c6670a529cacbada450f0bf8c92489",
+      "state": "running"
+    },
+    "evolver": {
+      "id": "8dec5c37aa7d3c2f28b87d1b51dbc5b5b6f0bf17e275dc7d9d29ff965fb41d7f",
+      "image": "ghcr.io/mirror29/inalpha-evolver:93ec6b2848c6670a529cacbada450f0bf8c92489",
+      "state": "running"
+    },
+    "data": {
+      "id": "e61ae92b2019b2b4f69fbc8e6c7f95c161e5eb45048bfbaec82c6d461907971f",
+      "image": "ghcr.io/mirror29/inalpha-data:ee655f3929d26ae4de9f86723258df4bf745a5b3",
+      "state": "running"
+    },
+    "paper": {
+      "id": "ec25617b1feda3ca10344bcd2e1d33e4491c450c772be5f900f6695be51fc724",
+      "image": "ghcr.io/mirror29/inalpha-paper:1d8494dd077c731a1d7e507035f6d3998b7ccefb",
+      "state": "running"
+    },
+    "factor": {
+      "id": "751f2cbfb28000ace666bacdbf03b636357fd620d5a4e041a06fc46394903b9f",
+      "image": "ghcr.io/mirror29/inalpha-factor:1d8494dd077c731a1d7e507035f6d3998b7ccefb",
+      "state": "running"
+    },
+    "research": {
+      "id": "465dea967b1022d78679f827fe165420fd99b9703d7780ec2784d7d675f740b7",
+      "image": "ghcr.io/mirror29/inalpha-research:1d8494dd077c731a1d7e507035f6d3998b7ccefb",
+      "state": "running"
+    },
+    "redis": {
+      "id": "4377f3064aa0160ac9e59fdc270e134b83d1526a87a857aba9082d75052b68be",
+      "image": "redis:8-alpine",
+      "state": "running"
+    },
+    "postgres": {
+      "id": "cdd60c8434a9022f720cd2b96dbf275e485ee0f18890f3793db011a192fb1540",
+      "image": "timescale/timescaledb:2.27.2-pg17",
+      "state": "running"
+    },
+    "cloudflared": {
+      "id": "d993c45012e59beb2be09fb6c54a90e448bafdcba3d7eae0e7cc8bbdd7cd2d5d",
+      "image": "cloudflare/cloudflared:2026.6.0",
+      "state": "running"
+    }
+  },
+  "changed_services": [
+    "dashboard",
+    "mastra",
+    "evolver"
+  ],
+  "unchanged_container_ids": [
+    "data",
+    "paper",
+    "factor",
+    "research",
+    "redis",
+    "postgres",
+    "cloudflared"
+  ],
+  "health": "All three replaced services healthy",
+  "predeployment": {
+    "active_e1_runs": 0,
+    "active_loops": 0,
+    "active_campaigns": 0,
+    "established_mastra_http": 0,
+    "established_dashboard_http": 0
+  },
+  "deployment_issues": [
+    {
+      "cause": "Strict deploy umask created six newly fetched tracked public migrations with mode 600; non-root migration process could not read them.",
+      "resolution": "Only those tracked public migration files were set to 644. Configuration and database backups remain 600. No app container was replaced at this failed step."
+    },
+    {
+      "cause": "Interactive compose run consumed remaining SSH script input after completing migration.",
+      "resolution": "Disabled compose run interactivity and redirected stdin to /dev/null, rechecked schema and idle tasks, then completed service replacement."
+    }
+  ],
+  "production_ui_checks": {
+    "normal_existing_owner_session": true,
+    "overview_loaded_tasks": 5,
+    "completed_e1_visible_without_expansion": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "SOL/USDT"
+    ],
+    "failed_e1_visible": 2,
+    "btc_detail": [
+      "Original, best accepted candidate and market comparison shown",
+      "8760 bars and 0.1% fee basis disclosed",
+      "High overfit risk and zero validation trades disclosed",
+      "Source strategy and attempt lineage shown",
+      "Known, recorded, rejected and unlinked preparation costs shown separately",
+      "E1 completion explicitly does not establish Forward or adoption evidence"
+    ]
+  },
+  "new_paid_model_calls": 0,
+  "pending": [
+    "Normal owner preflight/approval/direct submission with the new code",
+    "Response loss, refresh and approved-command recovery across full service restart",
+    "Explicit retry and old-worker fencing fault injection",
+    "Real mutation quality/cost calibration and supplier reconciliation",
+    "Real E2 champion, at least 30 real days and 3 independent Forward events, one-time holdout and explicit human adoption"
+  ]
+}

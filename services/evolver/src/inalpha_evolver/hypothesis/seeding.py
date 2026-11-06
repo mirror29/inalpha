@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID, uuid5
 
 from .models import HypothesisSpec
 
@@ -11,6 +12,8 @@ def seed_generation_one(
     snapshot: dict[str, Any],
     asset: str,
     asset_id: str,
+    *,
+    identity_namespace: UUID | None = None,
 ) -> list[HypothesisSpec]:
     """Create eight diverse, falsifiable slots grounded only in frozen fact IDs."""
     facts = [item for item in snapshot.get("facts", []) if isinstance(item, dict)]
@@ -108,6 +111,15 @@ def seed_generation_one(
             ),
         ]
     )
+    if identity_namespace is not None:
+        identities = {
+            item.hypothesis_id: uuid5(identity_namespace, f"generation:1:slot:{index}")
+            for index, item in enumerate(seeds)
+        }
+        seeds = [item.model_copy(update={
+            "hypothesis_id": identities[item.hypothesis_id],
+            "parent_ids": [identities.get(parent, parent) for parent in item.parent_ids],
+        }) for item in seeds]
     return seeds
 
 

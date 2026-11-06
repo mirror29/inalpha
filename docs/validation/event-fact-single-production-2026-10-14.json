@@ -1,0 +1,314 @@
+{
+  "date": "2026-10-14",
+  "status": "single_real_correction_and_explicit_replay_verified_not_complete_E2",
+  "business_commit": "9fdb8b8aa0d49a36eddc344c0955b41e28cd9848",
+  "schema": "0069",
+  "production_target_database": "inalpha",
+  "preview": {
+    "preview_only": true,
+    "count": 31,
+    "type_counts": {
+      "other": 15,
+      "regulatory": 16
+    },
+    "rows": [
+      {
+        "fact_id": "8a0ef52e-0a94-4552-8973-367f7a86719d",
+        "source": "kraken_blog",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "84bb2f18-6246-4431-a037-0a4a3d417595",
+        "source": "coindesk",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "3f107d19-9f8d-4375-864c-6dbc2022f46f",
+        "source": "coindesk",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "ceac2b04-cfec-43fb-a406-dff4234a6f56",
+        "source": "coindesk",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "a35320f4-8583-4609-8e5a-ef3295e0edfa",
+        "source": "coindesk",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "393b45eb-c45c-4d50-b0b8-55e6a3f66235",
+        "source": "coindesk",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "6fdea295-f3d6-4363-a5a2-c08edd2256f6",
+        "source": "coindesk",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "98bdc49e-e510-40ff-9c02-7c17a98aa987",
+        "source": "coindesk",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "b62100d3-2446-4506-ac69-a8a19f0009be",
+        "source": "coindesk",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "7b99f9dc-4d72-47ad-a789-1624d1d010a5",
+        "source": "coindesk",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "8feb3a7d-aed2-4e9c-8a6e-89bb048e4dd7",
+        "source": "coindesk",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "b56bd3ce-83fe-42e3-8070-9bf655f607cf",
+        "source": "coindesk",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "6cb9f96a-13a8-48c2-b127-fe63b0d602fb",
+        "source": "cointelegraph",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "9733ccf1-18c7-4c58-aef9-587f89c2b903",
+        "source": "cointelegraph",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "d98dd784-2679-4f8d-8254-c2fe3635c0c7",
+        "source": "cointelegraph",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "264eb6a9-3b95-480f-aaf1-e74ed150e543",
+        "source": "cointelegraph",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "9979f51b-304a-4993-bbf2-05aa7cbb94dd",
+        "source": "cointelegraph",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "dc74fb9c-2565-4e16-9366-8bc979eebe7f",
+        "source": "cointelegraph",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "0dbbf44f-5a87-4ed5-b179-67b317972f65",
+        "source": "coindesk",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "b5768c2a-e964-4756-86dc-39c3cc6f8e4c",
+        "source": "cointelegraph",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "c8b414ce-8e10-4e74-bde0-176d5a10e265",
+        "source": "cointelegraph",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "0d99a9da-e479-44ca-93f2-00b316efa5d1",
+        "source": "cointelegraph",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "81c935fb-4bd0-4899-bc02-00ebf4bd864b",
+        "source": "cointelegraph",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "03cf4d2e-d1cd-437e-ac03-8e00ad593527",
+        "source": "coindesk",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "bdb8cf6b-3d09-43d0-be19-a3b09e791fbf",
+        "source": "cointelegraph",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "bd44ece3-fa5e-4879-8ddc-ef3d421f461b",
+        "source": "coindesk",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "28a0b5a1-f884-4082-8d39-60cad1256e3d",
+        "source": "cointelegraph",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "6c5af6c8-22c8-477d-8b9d-714eb1ade596",
+        "source": "cointelegraph",
+        "reviewed_type": "regulatory",
+        "applied": false
+      },
+      {
+        "fact_id": "0d0633c1-2da5-4df4-897f-325960e356aa",
+        "source": "cointelegraph",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "45ec5698-69c3-4b07-9317-2009333a1b7a",
+        "source": "coindesk",
+        "reviewed_type": "other",
+        "applied": false
+      },
+      {
+        "fact_id": "10e12030-90f2-4a12-8c3b-44dfcbf2e0f6",
+        "source": "cointelegraph",
+        "reviewed_type": "other",
+        "applied": false
+      }
+    ],
+    "public_metadata_scope": "Fact IDs, source names, deterministic classifications and write status only; archived titles/content not republished. The individually inspected correction source is identified separately."
+  },
+  "reviewed_source": {
+    "fact_id": "8a0ef52e-0a94-4552-8973-367f7a86719d",
+    "source": "kraken_blog",
+    "title": "Token Spotlight: What is SoFiUSD (SOFID)?",
+    "archived_evidence_characters": 537,
+    "cause": "v2 regulatory ban substring matched bank in an educational stablecoin article",
+    "v3_classification": "other",
+    "no_regulatory_action_in_archived_evidence": true
+  },
+  "apply": {
+    "applied": true,
+    "created": true,
+    "source_fact_id": "8a0ef52e-0a94-4552-8973-367f7a86719d",
+    "reviewed_type": "other",
+    "correction_id": "d3a7748c-e309-4971-9298-3cedffbd3668",
+    "corrected_fact_id": "d3df6f9d-4cd5-4be0-99fc-317d7a5be148",
+    "retired_fact_id": "e8cf1c77-bf33-4544-b36c-1c5c1d4b04d6",
+    "available_at": "2026-10-14T03:05:54.098265Z",
+    "boundary": "deployed Research helper via authenticated Data API; no incoming Research HTTP or owner approval"
+  },
+  "explicit_replay_separate_process": {
+    "applied": true,
+    "created": false,
+    "source_fact_id": "8a0ef52e-0a94-4552-8973-367f7a86719d",
+    "reviewed_type": "other",
+    "correction_id": "d3a7748c-e309-4971-9298-3cedffbd3668",
+    "corrected_fact_id": "d3df6f9d-4cd5-4be0-99fc-317d7a5be148",
+    "retired_fact_id": "e8cf1c77-bf33-4544-b36c-1c5c1d4b04d6",
+    "available_at": "2026-10-14T03:05:54.098265Z",
+    "boundary": "deployed Research helper via authenticated Data API; no incoming Research HTTP or owner approval"
+  },
+  "verification": [
+    {
+      "source_hash_matches_frozen_request": true,
+      "source_fact_id": "8a0ef52e-0a94-4552-8973-367f7a86719d"
+    },
+    {
+      "before_correction_active_facts": [
+        {
+          "fact_id": "8a0ef52e-0a94-4552-8973-367f7a86719d",
+          "event_type": "regulatory",
+          "retracted": false
+        }
+      ],
+      "after_correction_active_facts": [
+        {
+          "fact_id": "d3df6f9d-4cd5-4be0-99fc-317d7a5be148",
+          "event_type": "other",
+          "retracted": false
+        }
+      ]
+    }
+  ],
+  "audit_count_for_source": 1,
+  "replacement_count_for_source": 1,
+  "retirement_count_for_source": 1,
+  "effective_time_raw_id_and_evidence_preserved": true,
+  "availability_generated_by_database_after_original": true,
+  "original_v2_versions_preserved": 375,
+  "observed_v3_versions_after": 38,
+  "version_count_caveat": "Initial deployment observation: 35 v3 versions. One subsequent completed normal extraction added 1 version, and the single cross-class correction atomically appended 1 retired version plus 1 replacement version, yielding 38. The explicit replay appended 0. These are fact versions, not correction operation counts or independent evaluable events.",
+  "saved_review_request_mode": "600",
+  "service_container_ids_unchanged_during_acceptance": true,
+  "loops": 0,
+  "campaigns": 0,
+  "new_e2_model_calls": 0,
+  "boundaries": [
+    "Authenticated deployed Research helper to Data API, not authenticated incoming Research review HTTP or normal owner E2 approval.",
+    "Two short-lived maintenance helper processes, not a restarted production Research service, not in-flight response-loss fault injection.",
+    "PIT query verifies the single corrected logical source before/after audit cutoff, not a complete immutable snapshot API acceptance.",
+    "31 previewed classifications are deterministic rule results, not 31 semantically validated or corrected facts.",
+    "Only the explicitly inspected SoFiUSD article was prospectively corrected; all other previewed records remain unmodified.",
+    "Chrome old page AX remained stale after free-check click; refresh showed blank content. No current coverage result or product failure conclusion obtained.",
+    "No paid E2 search, champion, Forward, holdout or adoption started."
+  ],
+  "version_count_reconciliation": [
+    {
+      "cutoff": "2026-10-14T03:05:55.098265+00:00",
+      "v3_count_at_cutoff": 38,
+      "this_operation_retirement_versions": 1,
+      "this_operation_replacement_versions": 1,
+      "other_v3_versions": 36
+    },
+    {
+      "normal_fact_id": "697872c9-f3c3-4ffe-b640-77699fd3fc5a",
+      "source": "cointelegraph",
+      "extractor_version": "deterministic-event-extractor-v3",
+      "created_at": "2026-10-14T02:31:07.616934+00:00",
+      "extraction_completed": true
+    }
+  ],
+  "observation_scope": "Initial single-correction evidence before the two later BTC confirmations documented separately in event-fact-btc-confirmation-2026-10-14.json.",
+  "retirement_version_semantics": {
+    "meaning": "source_fact_id identifies the preserved immutable original row; retired_fact_id identifies a newly appended retracted version under the same logical fact_key, not a mutation of source_fact_id. Both are market_event_facts.fact_id UUIDs. Active before/after listings intentionally exclude retracted versions.",
+    "independent_read_only_mapping": {
+      "source_fact_id": "8a0ef52e-0a94-4552-8973-367f7a86719d",
+      "source_version": 1,
+      "source_retracted": false,
+      "retirement_version_fact_id": "e8cf1c77-bf33-4544-b36c-1c5c1d4b04d6",
+      "retirement_version": 2,
+      "retirement_retracted": true,
+      "same_source_retirement_key": true,
+      "same_raw_id": true,
+      "same_evidence": true,
+      "same_effective_time": true,
+      "replacement_fact_id": "d3df6f9d-4cd5-4be0-99fc-317d7a5be148",
+      "replacement_type": "other",
+      "replacement_distinct_key": true
+    }
+  }
+}
