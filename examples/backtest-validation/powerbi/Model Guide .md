@@ -77,7 +77,7 @@ Create a relationship between:
 Create a relationship between:
 `backtest_runs[run_key]` and `validation_exceptions[run_key]`
 - **Cardinality:** One-to-many (1:*)
-- The `backtest_runs` table is the one side and `validation_exceptions` is the many side. 
+- The `backtest_runs` table is the one side and `validation_exceptions` is the many side.
 
 Use active, single-direction relationships from candidates to runs and from runs to fills/exceptions. Do not activate the latest-run soft reference. Use `backtest_runs[run_key]` as the drill-through anchor so the selected run filters its fills and exceptions.
 
@@ -214,7 +214,7 @@ Workflow:
 The generator computes the equity exception from the current synthetic values and exports `validation_exceptions.csv`. The equivalent `equity_consistency_check.sql` can independently check the Power BI fixture after importing its run/fill CSVs into SQLite. This query is separate from the 30 general checks because it requires the explicit zero-unrealized-P&L assumption.
 
 **Test Case: Equity Consistency Mismatch**
-The `validation_exceptions.csv` dataset contains a deliberate mathematical failure for run `R002`. 
+The `validation_exceptions.csv` dataset contains a deliberate mathematical failure for run `R002`.
 *(Note: The equity identity logic here strictly assumes 0 unrealized P&L, which aligns with the synthetic fixture's design assumptions. It is not generally valid for portfolios carrying open positions).*
 
 **Steps to Inspect:**

@@ -375,7 +375,7 @@ HAVING COUNT(t.run_key) = 0;
 -- 25. NEGATIVE FITNESS
 -- ============================================================
 
-SELECT 
+SELECT
     candidate_key,
     'negative_fitness_check' AS check_name,
     'informational' AS status,
