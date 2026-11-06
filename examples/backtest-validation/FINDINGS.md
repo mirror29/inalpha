@@ -26,7 +26,7 @@ Validation was performed using:
 - **SQLite** — reproducible SQL-based validation
 - **Power BI** — interactive inspection of candidate → run → fill lineage
 
-The SQLite validation script is the primary executable validation artifact.
+The SQLite validation script is the primary executable validation artifact. Its 30 queries use the SQLite negative-case fixture. The separate `powerbi/equity_consistency_check.sql` applies only to the Power BI fixture, which explicitly assumes zero unrealized P&L.
 
 ---
 
@@ -41,7 +41,7 @@ The synthetic fixture was intentionally constructed to exercise both successful 
 | Candidate key uniqueness | `C_DUP` detected twice | FAILURE DETECTED |
 | Run key uniqueness | `R_DUP_RUN` detected twice | FAILURE DETECTED |
 | Fill key uniqueness | `R_DUP_TRADE`, seq 1 duplicated | FAILURE DETECTED |
-| Candidate → Run relationship | Candidates without runs detected | FAILURE DETECTED |
+| Candidate → Run relationship | Candidates without runs detected | INFORMATIONAL |
 | Run → Candidate relationship | `R_ORPHAN` references missing candidate | FAILURE DETECTED |
 | Fill → Run relationship | `R_MISSING_RUN` references missing run | FAILURE DETECTED |
 | Reported trade count vs actual fills | Mismatches detected for `R_BAD_MATH` and `R_DUP_RUN` | FAILURE DETECTED |
@@ -55,9 +55,9 @@ The synthetic fixture was intentionally constructed to exercise both successful 
 | Required-field validation | Missing required values detected in `R_NULLS` | FAILURE DETECTED |
 | Initial-cash denominator validation | Zero `metric_initial_cash` detected in `R_ZERO_CASH` | FAILURE DETECTED |
 | Zero-fill runs | `R_ZERO_FILL` and `R_NULLS` identified | INFORMATIONAL |
-| Fitness validation | Negative fitness detected for `C_BAD_FIT` | FAILURE DETECTED |
+| Fitness diagnostic | Negative fitness detected for `C_BAD_FIT` | INFORMATIONAL |
 | Annualized-return validation | Mismatch detected for `R_ANN_ERR` | FAILURE DETECTED |
-| Global return summary | MAX = 99.0%, AVG = 11.9%, MIN = 0.0% | INFORMATIONAL |
+| Global return summary | MAX = 99.0%, AVG ≈ 11.7273%, MIN = 0.0% | INFORMATIONAL |
 
 ---
 
@@ -144,7 +144,8 @@ Detected cases include:
 - negative fee rate
 - non-positive trade quantity
 - non-positive fill price
-- negative fitness
+
+Negative fitness is informational: a negative score does not by itself indicate invalid data.
 
 These checks are intended to identify records requiring investigation. They do not by themselves establish that a strategy is profitable or that the underlying backtest engine is incorrect.
 

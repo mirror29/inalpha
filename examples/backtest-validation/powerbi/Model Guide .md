@@ -14,7 +14,7 @@ The prototype consists of:
 8. Connecting the two pages through drill-through.
 9. Verifying that filtering, exception inspection, and drill-through work correctly.
 
-The prototype is intended to demonstrate how candidate → backtest run → trade/fill lineage can be explored interactively, alongside an isolated workflow for inspecting validation exceptions.
+The prototype is intended to demonstrate how candidate → backtest run → trade/fill lineage can be explored interactively, alongside an isolated workflow for inspecting validation exceptions. Representative risk/performance metrics are synthetic display values; `metrics_validated` remains false. The structural pass flag describes the checks on the generated tables, not independent validation of all metrics.
 
 ---
 
@@ -76,10 +76,10 @@ Create a relationship between:
 ### 3.3 Exception Relationship
 Create a relationship between:
 `backtest_runs[run_key]` and `validation_exceptions[run_key]`
-- **Cardinality:** One-to-many (1:*) or One-to-one (1:1)
+- **Cardinality:** One-to-many (1:*)
 - The `backtest_runs` table is the one side and `validation_exceptions` is the many side. 
 
-*Note: Older documentation (`DATA_MODEL.md`) may incorrectly reference `backtest_trades[run_key]` as the drill-through anchor. Always use `backtest_runs[run_key]` to ensure bidirectional filtering compatibility.*
+Use active, single-direction relationships from candidates to runs and from runs to fills/exceptions. Do not activate the latest-run soft reference. Use `backtest_runs[run_key]` as the drill-through anchor so the selected run filters its fills and exceptions.
 
 ### 3.4 Model Structure
 The final model should visually represent:
@@ -147,14 +147,13 @@ Configure the tooltip fields using the relevant fields:
 ## 7. Drill-Through Configuration
 The run-performance dashboard is accessed through drill-through.
 On the run-performance page, enable:
-- **Cross-report:** On
+- **Cross-report:** Off (both pages belong to this report)
 - **Keep all filters:** On
 
 Add the drill-through fields:
-- `candidate_key`
 - `backtest_runs[run_key]`
-- `symbol`
-- `timeframe`
+
+Use the run key as the required drill-through field. Keep all filters preserves any additional candidate, symbol, and timeframe context. This also allows the exception table, which identifies a run, to reach the same page.
 
 ---
 
@@ -164,32 +163,29 @@ It contains:
 - Candidate & Run identifiers
 - KPI cards
 - Realised PnL chart, Fee chart, Price chart
-- PnL/Fee/Price composition (Donut chart)
+- Separate P&L, fee, and price displays
 - Detailed run metrics
 
 ---
 
 ## 9. Dashboard KPI Cards
 Configure the following KPI cards:
-- **Candidate Key:** `candidates[candidate_key]`
+- **Candidate Key:** `backtest_runs[candidate_key]`
 - **Run Key:** `backtest_runs[run_key]`
 - **Total Gross Realised PnL:** Measure created in Section 4.
 - **Total Fee:** `backtest_runs[total_fees]`
 - **Total Fills:** `backtest_runs[reported_num_trades]` (rename visual label to "Total Fills")
 - **Win Rate:** `backtest_runs[win_rate]`
-- **Fitness:** `candidates[fitness]`
+- **Fitness:** `backtest_runs[fitness]` (the selected run’s fitness)
 
 ---
 
 ## 10. Run Performance Line Chart
 - **X-Axis:** `backtest_trades[seq]`
-- **Values:** `Realized PnL`, `Fee`, `Price of share` (from `backtest_trades`)
+- **Values:** `backtest_trades[realized_pnl]`, `backtest_trades[fee]`, and `backtest_trades[fill_price]`. Use separate charts or axes for P&L/fees and price; they are not additive components.
 
-## 11. PnL / Fee / Price Donut Chart
-Provide a compact comparison of:
-- `Realized PnL`
-- `Fee`
-- `Price of share`
+## 11. P&L, Fee, and Price Display
+Show P&L, fee, and fill price separately. Do not use a parts-of-whole chart combining price with aggregate P&L or fees.
 
 ## 12. Dashboard Filtering
 The drill-through/filter context preserves the selected `candidate_key`, `run_key`, `symbol`, and `timeframe` from Page 1.
@@ -215,7 +211,7 @@ Workflow:
 ---
 
 ## 21. Exception Inspection Workflow
-To ensure auditability, the dashboard allows operators to track SQL validation failures directly to the affected records without polluting the primary 1:* relational model.
+The generator computes the equity exception from the current synthetic values and exports `validation_exceptions.csv`. The equivalent `equity_consistency_check.sql` can independently check the Power BI fixture after importing its run/fill CSVs into SQLite. This query is separate from the 30 general checks because it requires the explicit zero-unrealized-P&L assumption.
 
 **Test Case: Equity Consistency Mismatch**
 The `validation_exceptions.csv` dataset contains a deliberate mathematical failure for run `R002`. 
@@ -242,4 +238,4 @@ To verify the model is working correctly, confirm the following values in your P
 
 **Verification Status:**
 - Python/SQL generation steps: **Verified**
-- Power BI Desktop path: **Pending execution/Verification** *(Note: Insert Power BI version here once verified)*.
+- Power BI Desktop path: the author [reported successful hierarchy filtering and R002 exception drill-through](https://github.com/mirror29/inalpha/pull/176#issuecomment-6556733709) on **2.159.883.0 64-bit (October 2026)**. The maintainer has not independently run Power BI Desktop; Python/SQL verification does not substitute for that UI check.

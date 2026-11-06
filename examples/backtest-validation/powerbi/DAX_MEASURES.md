@@ -113,3 +113,17 @@ because Power BI supports custom measures.
 If a future requirement calls for a specific derived metric to be calculated
 inside Power BI, that measure can be added explicitly and documented from the
 final PBIX/model.
+
+
+## Net Equity Change
+
+```DAX
+Net Equity Change =
+SUM(backtest_runs[final_equity]) - SUM(backtest_runs[metric_initial_cash])
+```
+
+Keep this separate from gross realized P&L. In the synthetic Power BI fixture,
+fees reduce net equity change and R002 contains a deliberate $50 equity discrepancy.
+Other representative metrics in that fixture are display values, not independently
+verified backtest outputs. Display run-level rates and fitness for a single selected
+run; do not sum them across runs.

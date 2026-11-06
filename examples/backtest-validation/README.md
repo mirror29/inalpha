@@ -75,3 +75,40 @@ To repeat the validation from scratch, rerun:
 `examples/backtest-validation/create_synthetic_db.py`
 
 This recreates the synthetic CSV files and SQLite database, after which the same `validation_checks.sql` file can be run against the newly generated database.
+
+
+## Isolated command-line reproduction
+
+Run from the repository root. The SQLite fixture deliberately contains duplicate keys and missing fields; the Power BI fixture has clean relationships and a separate R002 equity exception. Keep them in separate directories.
+
+```bash
+validation_tmp=$(mktemp -d)
+cp examples/backtest-validation/create_synthetic_db.py "$validation_tmp/"
+python3 "$validation_tmp/create_synthetic_db.py"
+sqlite3 -header -column "$validation_tmp/synthetic_validation.db" < examples/backtest-validation/sql/validation_checks.sql
+```
+
+For Power BI, generate the separate CSV bundle in a fresh directory:
+
+```bash
+powerbi_tmp=$(mktemp -d)
+python3 -m venv "$powerbi_tmp/.venv"
+"$powerbi_tmp/.venv/bin/python" -m pip install pandas
+cp "examples/backtest-validation/powerbi/Generate data for model.py" "$powerbi_tmp/generate.py"
+(cd "$powerbi_tmp" && .venv/bin/python generate.py)
+```
+
+Import the four CSV files under `$powerbi_tmp/fixture_output/` using [the model guide](<powerbi/Model Guide .md>) and [Power Query definitions](powerbi/POWER_QUERY.md). The generator refuses to overwrite an existing `fixture_output` directory. These commands use only public synthetic data and make no production connections.
+
+
+## Automated fixture regression checks
+
+With pandas installed, run from the repository root:
+
+```bash
+python3 -m unittest discover -s examples/backtest-validation/powerbi -p test_fixture.py
+```
+
+The tests cover required-field nulls through exported validation metadata, legitimate nullable candidate fields, duplicate keys and broken references, dynamic equity exceptions, documented aggregates, CSV schemas, and overwrite protection. CI runs these tests and the general SQLite checks.
+
+The Power BI generator's `REQUIRED_COLUMNS` defines its structural validation scope. Candidate `fitness` and `last_backtest_run_key` may be null; representative risk/performance metrics are not independently validated. An absent latest-run pointer and a candidate without runs are valid. `structural_checks_passed` is a bundle-level result, while `metrics_validated` remains false. Equity exceptions are calculated separately under this fixture's zero-unrealized-P&L assumption.

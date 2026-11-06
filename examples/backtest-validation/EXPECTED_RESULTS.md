@@ -50,7 +50,7 @@ The validation queries deliberately separate **missing values** from
 | 22 | Missing `total_return_pct`                      | `R_NULLS`                                 | **FAILURE** — 1 row                                                                                                       |
 | 23 | Non-positive `metric_initial_cash`              | `R_ZERO_CASH`                             | **FAILURE** — 1 row; value `0.0`                                                                                          |
 | 24 | Zero actual trades                              | `R_ZERO_FILL`, `R_NULLS`                  | **INFORMATIONAL** — 2 rows                                                                                                |
-| 25 | Negative fitness                                | `C_BAD_FIT`                               | **FAILURE** — 1 row; fitness `-5.0`                                                                                       |
+| 25 | Negative fitness                                | `C_BAD_FIT`                               | **INFORMATIONAL** — 1 row; fitness `-5.0`                                                                                       |
 | 26 | Global return summary                           | All runs with non-null `total_return_pct` | **INFORMATIONAL** — 1 aggregate row                                                                                       |
 | 27 | Invalid `num_bars_processed`                    | `R_BAD_MATH`, `R_NULLS`                   | **FAILURE** — 2 rows                                                                                                      |
 | 28 | Unsupported timeframe                           | `R_BAD_MATH`, `R_BAD_TF`, `R_NULLS`       | **FAILURE** — 3 rows                                                                                                      |
@@ -337,3 +337,13 @@ They demonstrate that the validation logic can detect:
 
 They are **not** intended to represent production trading performance,
 profitability, or live-market behavior.
+
+
+## Separate Power BI equity check
+
+The 30 queries above apply to the SQLite negative-case fixture. The additional
+[`powerbi/equity_consistency_check.sql`](powerbi/equity_consistency_check.sql)
+applies only to the Power BI fixture's explicit zero-unrealized-P&L assumption.
+Do not apply it to the SQLite controls or arbitrary snapshots with open positions.
+For the default Power BI fixture it returns exactly one failure: R002, expected
+12110.87 and actual 12160.87. Removing the injected $50 discrepancy yields no rows.

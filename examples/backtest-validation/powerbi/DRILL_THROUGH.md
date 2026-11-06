@@ -5,7 +5,9 @@ Power BI prototype.
 
 Power BI is used here as an **analytical exploration layer**. Validation of
 data quality and metric consistency is performed separately through the SQL
-validation layer.
+validation layer and the Power BI fixture generator. The current reproducible setup
+is specified in [the model guide](<Model Guide .md>); the descriptive page names below
+may be renamed without changing the model.
 
 ---
 
@@ -223,14 +225,9 @@ the trading activity rather than only looking at the final aggregate result.
 
 ## Realized P&L, Fee and Price Summary
 
-The Basic Details page also contains a donut visualization titled:
-
-**Realized PnL, Fee and Price of share**
-
-This provides a visual summary of the values displayed for the selected run.
-
-It complements the sequential chart by providing an aggregate visual view
-alongside the fill-by-fill sequence.
+The Basic Details page shows gross realized P&L and total fees separately, with
+fill price on its own chart or axis. These are not additive parts of a whole.
+A combined price/P&L/fee donut is not part of the reproducible fixture setup.
 
 ---
 
@@ -299,3 +296,20 @@ The Power BI report therefore complements the SQL validation layer rather than
 duplicating it.
 
 Realized P&L is used as the primary analytical value because it is recorded at the trade/fill level in backtest_trades. Summing it allows the decomposition tree to trace the realized trading result through candidate, run, symbol, and timeframe before drilling into the underlying fill sequence. Other run-level performance metrics remain available as contextual fields rather than being independently reconstructed in DAX.
+
+
+## Current Fixture Fields and Exception Path
+
+Use `backtest_trades[realized_pnl]`, `backtest_trades[fee]`, and
+`backtest_trades[fill_price]` for the sequence charts. Use `backtest_runs[run_key]`
+as the required drill-through field, with Keep all filters enabled. Display the
+candidate identifier from `backtest_runs[candidate_key]` and fitness from
+`backtest_runs[fitness]` on the run detail page so a run-only exception filter has
+unambiguous values. Relationships are active and single-direction from candidate
+to run and from run to fills/exceptions.
+
+Import the generator's `validation_exceptions.csv` and use `backtest_runs[run_key]`
+in the exception table alongside its check, status, and details. The default R002
+row must drill through to exactly its 10 fills. See the model guide for expected
+values and the distinction between author-reported Desktop verification and
+maintainer Python/SQL verification.

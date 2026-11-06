@@ -44,7 +44,7 @@
 | max_drawdown_duration_bars | Engine-reported drawdown duration |
 | fitness | Run fitness |
 | validation_json | Validation metadata |
-| started_at_utc / finished_at_utc / created_at_utc | Run timestamps |
+| created_at_utc / updated_at_utc | Run timestamps in the Power BI fixture |
 
 ## backtest_trades
 
@@ -63,3 +63,5 @@
 | intent | Fill/order intent |
 
 `_utc` fields are UTC timestamps. A fill is one simulated execution event; multiple fills can form a round trip.
+
+The Power BI fixture has 7 candidate columns, 38 run columns, and 11 fill columns. It does not export `started_at_utc` or `finished_at_utc`. The SQLite negative-case fixture intentionally uses a smaller schema; it is not the Power BI import dataset.
