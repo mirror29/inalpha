@@ -4,7 +4,11 @@ import pandas as pd
 from datetime import datetime, timedelta
 import json
 
-def generate_raw_data(equity_defect_run="R002", equity_defect_amount=50.0, inject_structural_defect=False):
+def generate_raw_data(equity_defect_run="R002", equity_defect_amount=50.0, 
+                      inject_structural_defect=False,
+                      inject_duplicate_seq=False,
+                      inject_invalid_pointer=False,
+                      inject_null_quantity=False):
     """Generates the base DataFrames in memory, allowing defect injection for testing."""
     configs = [
         {"symbol": "BTC/USDT", "timeframe": "1h", "venue": "binance", "strategy_kind": "trend_following"},
@@ -142,6 +146,18 @@ def generate_raw_data(equity_defect_run="R002", equity_defect_amount=50.0, injec
         broken_run['run_key'] = r_df.iloc[1]['run_key'] 
         broken_run['candidate_key'] = 'C999' 
         r_df = pd.concat([r_df, pd.DataFrame([broken_run])], ignore_index=True)
+        
+    if inject_duplicate_seq:
+        # P2 Case: Set the second R001 fill's sequence to the first fill's sequence
+        t_df.at[1, 'seq'] = t_df.at[0, 'seq']
+        
+    if inject_invalid_pointer:
+        # P2 Case: Set C001's latest-run pointer to R004 (which is owned by C002)
+        c_df.loc[c_df['candidate_key'] == 'C001', 'last_backtest_run_key'] = 'R004'
+        
+    if inject_null_quantity:
+        # P2 Case: Set the first fill's required quantity to null
+        t_df.at[0, 'quantity'] = None
 
     return c_df, r_df, t_df
 
@@ -150,19 +166,37 @@ def validate_data(c_df, r_df, t_df):
     exceptions = []
     structural_passed = True
     
-    # 1. Structural Checks (Uniqueness, Ref Integrity, Fill-Count, Nulls)
+    # 1. Structural Checks
+    # Uniqueness: PKs and Composite Keys
     if c_df['candidate_key'].duplicated().any() or r_df['run_key'].duplicated().any():
         structural_passed = False
-        
-    if not r_df['candidate_key'].isin(c_df['candidate_key']).all() or not t_df['run_key'].isin(r_df['run_key']).all():
+    if t_df.duplicated(subset=['run_key', 'seq']).any():
         structural_passed = False
         
+    # Referential Integrity: Foreign Keys
+    if not r_df['candidate_key'].isin(c_df['candidate_key']).all():
+        structural_passed = False
+    if not t_df['run_key'].isin(r_df['run_key']).all():
+        structural_passed = False
+        
+    # Latest-run pointer validity (existence and ownership)
+    for _, c_row in c_df.iterrows():
+        pointer = c_row['last_backtest_run_key']
+        if pd.notna(pointer) and pointer != '':
+            target_run = r_df[r_df['run_key'] == pointer]
+            if target_run.empty or target_run.iloc[0]['candidate_key'] != c_row['candidate_key']:
+                structural_passed = False
+                
+    # Fill-Count verification
     trade_counts = t_df.groupby('run_key').size()
     for _, run in r_df.iterrows():
         if run['reported_num_trades'] != trade_counts.get(run['run_key'], 0):
             structural_passed = False
             
-    if c_df['candidate_key'].isnull().any() or r_df['run_key'].isnull().any():
+    # Null checks on required fields
+    if c_df['candidate_key'].isnull().any() or r_df['run_key'].isnull().any() or t_df['run_key'].isnull().any():
+        structural_passed = False
+    if t_df['quantity'].isnull().any() or t_df['seq'].isnull().any():
         structural_passed = False
 
     # 2. Dynamic Equity Consistency Check
@@ -213,10 +247,25 @@ def run_tests():
     e3, _ = validate_data(c3, r3, t3)
     assert "expected 12110.87, actual 12210.87" in e3[0]['details'], "Exception values must update dynamically"
     
-    # Test 4: Negative fixture (broken relationships and duplicate keys)
+    # Test 4: Negative fixture (broken relationships and duplicate primary keys)
     c4, r4, t4 = generate_raw_data(inject_structural_defect=True)
     _, s4 = validate_data(c4, r4, t4)
-    assert s4 is False, "Structural checks MUST fail on duplicate keys or broken FKs"
+    assert s4 is False, "Structural checks MUST fail on duplicate PKs or broken FKs"
+
+    # Test 5: Negative fixture (duplicate composite key in trades)
+    c5, r5, t5 = generate_raw_data(inject_duplicate_seq=True)
+    _, s5 = validate_data(c5, r5, t5)
+    assert s5 is False, "Structural checks MUST fail on duplicate (run_key, seq)"
+
+    # Test 6: Negative fixture (invalid latest-run pointer ownership)
+    c6, r6, t6 = generate_raw_data(inject_invalid_pointer=True)
+    _, s6 = validate_data(c6, r6, t6)
+    assert s6 is False, "Structural checks MUST fail on invalid last_backtest_run_key pointer"
+
+    # Test 7: Negative fixture (null required field)
+    c7, r7, t7 = generate_raw_data(inject_null_quantity=True)
+    _, s7 = validate_data(c7, r7, t7)
+    assert s7 is False, "Structural checks MUST fail on null required fields"
     
     print("All regression tests passed successfully.\n")
 
@@ -231,7 +280,6 @@ def generate_powerbi_dataset():
     c_df, r_df, t_df = generate_raw_data(equity_defect_run="R002", equity_defect_amount=50.0)
     r_df, e_df = apply_validations(c_df, r_df, t_df)
     
-    # Handle edge case where no exceptions are generated so a blank CSV is still exported
     if e_df.empty:
         e_df = pd.DataFrame(columns=["run_key", "check_name", "status", "details"])
         
