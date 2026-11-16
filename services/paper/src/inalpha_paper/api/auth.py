@@ -185,6 +185,7 @@ class ReviewResponse(BaseModel):
     subject: str
     access_status: Literal["invited", "rejected"]
     activation_token: str | None = None
+    email: str | None = None
 
 
 class ActivateRequest(BaseModel):
@@ -447,7 +448,7 @@ async def review_waitlist_user(
                 updated_at = now()
             FROM target
             WHERE reviewed.subject = target.subject
-            RETURNING reviewed.subject, target.previous_status
+            RETURNING reviewed.subject, reviewed.email, target.previous_status
             """,
             (
                 subject,
@@ -490,6 +491,7 @@ async def review_waitlist_user(
         await db.commit()
     return ReviewResponse(
         subject=row["subject"],
+        email=row.get("email"),
         access_status=next_status,
         activation_token=(
             activation_secret.get_secret_value() if activation_secret is not None else None

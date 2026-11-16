@@ -35,7 +35,7 @@ export function WaitlistClient() {
   );
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [activation, setActivation] = useState<{ email: string; link: string } | null>(null);
+  const [activation, setActivation] = useState<{ email: string; link: string; delivery?: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function review(user: WaitlistUser, decision: "approve" | "reject") {
@@ -62,10 +62,10 @@ export function WaitlistClient() {
         },
       );
       if (!response.ok) throw new Error(String(response.status));
-      const result = (await response.json()) as { activation_token?: string | null };
+      const result = (await response.json()) as { activation_token?: string | null; email_delivery?: string };
       if (decision === "approve" && result.activation_token) {
         const link = `${window.location.origin}/activate?from=${encodeURIComponent(`/${locale}`)}#token=${encodeURIComponent(result.activation_token)}`;
-        setActivation({ email: user.email, link });
+        setActivation({ email: user.email, link, delivery: result.email_delivery });
         setCopied(false);
       }
       await mutate();
@@ -97,7 +97,7 @@ export function WaitlistClient() {
   }
 
   const users = data?.users ?? [];
-  if (users.length === 0) {
+  if (users.length === 0 && !activation) {
     return (
       <div className="rounded-lg border border-border-subtle bg-bg-elev/40 p-10 text-center">
         <UserRoundCheck className="mx-auto size-8 text-cyan" strokeWidth={1.5} />
@@ -111,9 +111,9 @@ export function WaitlistClient() {
       {actionError && <p role="alert" className="text-sm text-fox-red">{actionError}</p>}
       {activation && (
         <div role="status" className="rounded-lg border border-cyan/30 bg-cyan/5 p-5">
-          <p className="text-sm font-medium text-fg">{t("activationReady")}</p>
+          <p className="text-sm font-medium text-fg">{t(activation.delivery === "sent" ? "emailSent" : "activationReady")}</p>
           <p className="mt-2 text-xs leading-5 text-fg-muted">
-            {t("activationInstructions", { email: activation.email })}
+            {t(activation.delivery === "sent" ? "emailSentInstructions" : "emailFailedInstructions", { email: activation.email })}
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <input readOnly value={activation.link} aria-label={t("activationLink")} className="min-w-0 flex-1 rounded-md border border-border-subtle bg-bg-deep/60 px-3 py-2 font-mono text-xs text-cyan" />

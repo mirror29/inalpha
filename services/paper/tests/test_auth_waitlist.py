@@ -114,6 +114,7 @@ def test_register_pending_then_admin_approves(
     )
     assert approved.status_code == 200, approved.text
     assert approved.json()["access_status"] == "invited"
+    assert approved.json()["email"] == _APPLICANT_EMAIL
     activation_token = approved.json()["activation_token"]
     assert isinstance(activation_token, str)
 

@@ -240,8 +240,13 @@ services:
     restart: unless-stopped
     # 凭据隔离(最小权限):dashboard 是公网前端,**不挂 env_file** —— 那会把 DB/Redis/LLM/
     # Binance/tunnel 全部凭据注入前端容器(RCE 即全泄)。BFF 实际只需 JWT_SECRET + 6 个内网 URL;
-    # JWT_SECRET 经 compose 从 .env.prod 插值,只此一个 secret 进容器。
+    # 凭据经 compose 显式插值；SMTP 授权码仅供服务端发送审批邮件。
     environment:
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ACTIVATION_PUBLIC_URL: ${ACTIVATION_PUBLIC_URL:-https://dashboard.inalpha.dev}
       NODE_ENV: production
       PORT: 3001
       JWT_SECRET: ${JWT_SECRET:?required}
