@@ -24,7 +24,7 @@ describe("activation email", () => {
     expect(await sendActivationEmail("applicant@example.com", "abc/def")).toBe("sent");
     const message = sendMail.mock.calls[0][0];
     expect(message.to).toEqual({ address: "applicant@example.com", name: "" });
-    expect(message.text).toContain("https://dashboard.example.com/activate?from=%2Fzh#token=abc%2Fdef");
+    expect(message.text).toContain("https://dashboard.example.com/activate#token=abc%2Fdef");
     expect(message.text).not.toContain("test-only");
     expect(close).toHaveBeenCalled();
   });
@@ -35,6 +35,19 @@ describe("activation email", () => {
       address: "first,last@example.com",
       name: "",
     });
+  });
+
+  it("bounds the overall SMTP wait and closes a stalled connection", async () => {
+    vi.useFakeTimers();
+    try {
+      sendMail.mockReturnValue(new Promise(() => {}));
+      const result = sendActivationEmail("a@example.com", "token");
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await result).toBe("failed");
+      expect(close).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns a safe failure on SMTP rejection", async () => {

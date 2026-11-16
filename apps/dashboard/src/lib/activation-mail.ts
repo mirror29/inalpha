@@ -15,7 +15,7 @@ export async function sendActivationEmail(
   try {
     const origin = new URL(ACTIVATION_PUBLIC_URL);
     if (origin.protocol !== "https:" || origin.username || origin.password) return "failed";
-    const link = new URL("/activate?from=%2Fzh", origin);
+    const link = new URL("/activate", origin);
     link.hash = `token=${encodeURIComponent(token)}`;
     const transport = nodemailer.createTransport({
       host: SMTP_HOST,
@@ -28,15 +28,19 @@ export async function sendActivationEmail(
       logger: false,
       debug: false,
     });
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
-      const result = await transport.sendMail({
+      const result = await Promise.race([transport.sendMail({
         from: { name: "Inalpha", address: SMTP_USER },
         to: { address: email, name: "" },
         subject: "Inalpha 试用申请已通过 / Your trial is approved",
         text: `你的 Inalpha 试用申请已通过！请打开以下链接设置密码并激活账号：\n\n${link.href}\n\n链接一次性有效，48 小时后过期。重新签发后旧链接失效。若非本人申请，请忽略此邮件。\n\nYour Inalpha trial is approved. Open the link above to set your password and activate your account. This one-time link expires in 48 hours. If you did not apply, ignore this email.`,
-      });
+      }), new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(new Error("SMTP deadline exceeded")), 15_000);
+      })]);
       return result.accepted.length > 0 ? "sent" : "failed";
     } finally {
+      clearTimeout(deadline);
       transport.close();
     }
   } catch {
