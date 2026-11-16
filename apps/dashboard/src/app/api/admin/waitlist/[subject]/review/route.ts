@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { sendActivationEmail } from "@/lib/activation-mail";
+
 import { backendFetch } from "@/lib/backend";
 
 import { reviewErrorResponse } from "./review-error";
@@ -32,7 +34,12 @@ export async function POST(
   }
 
   try {
-    const result = await backendFetch<{ subject: string; access_status: string }>(
+    const result = await backendFetch<{
+      subject: string;
+      access_status: string;
+      activation_token?: string | null;
+      email?: string | null;
+    }>(
       "paper",
       `/auth/waitlist/${encodeURIComponent(subject)}/review`,
       {
@@ -40,7 +47,11 @@ export async function POST(
         body: { decision, expected_reviewed_at: expectedReviewedAt },
       },
     );
-    return NextResponse.json(result, {
+    const email_delivery =
+      decision === "approve" && result.activation_token
+        ? await sendActivationEmail(result.email, result.activation_token)
+        : undefined;
+    return NextResponse.json({ ...result, email_delivery }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (err) {

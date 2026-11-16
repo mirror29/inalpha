@@ -71,3 +71,16 @@ pnpm build
 
 认证、演化与部署边界也见仓库根 README 和
 [`docs/01-architecture-overview.md`](../../docs/01-architecture-overview.md)。
+
+### 试用审批邮件
+
+管理员批准试用或重新生成激活链接后，Dashboard 服务端使用 SMTP 自动发送中英双语激活邮件。
+收件地址来自 Paper 审批结果，链接有效期仍为 48 小时；邮件服务器接受邮件不代表最终送达。
+拒绝申请和审批冲突不会发信。SMTP 失败不回滚审批，页面保留复制链接的手动兜底；
+重新生成会使旧链接失效，不进行后台自动重试。
+
+配置 `SMTP_HOST`、`SMTP_PORT`（默认 465，隐式 TLS）、`SMTP_USER`、`SMTP_PASSWORD`
+及 `ACTIVATION_PUBLIC_URL`（公开 HTTPS 控制台地址）。发件人使用 `SMTP_USER`。
+163 邮箱须开启 SMTP，并使用客户端授权码而非登录密码；证书校验保持开启。
+本地可写入忽略的根目录 `.env.local`；生产写入 `infra/.env.prod`，更新 Paper 与 Dashboard
+镜像并重建 Dashboard 容器使配置生效。密钥不得提交版本库或写入日志。

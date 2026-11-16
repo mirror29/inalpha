@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { sendActivationEmail } from "@/lib/activation-mail";
 import { backendFetch } from "@/lib/backend";
 
 import { reviewErrorResponse } from "./review-error";
 import { POST } from "./route";
 
+vi.mock("@/lib/activation-mail", () => ({
+  sendActivationEmail: vi.fn().mockResolvedValue("sent"),
+}));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/backend", () => ({ backendFetch: vi.fn() }));
 
@@ -23,13 +27,17 @@ function context(subject = "user:applicant/one") {
 }
 
 describe("admin waitlist review BFF", () => {
-  beforeEach(() => mockedBackendFetch.mockReset());
+  beforeEach(() => {
+    mockedBackendFetch.mockReset();
+    vi.mocked(sendActivationEmail).mockReset().mockResolvedValue("sent");
+  });
 
   it("encodes the subject and forwards a valid decision", async () => {
     mockedBackendFetch.mockResolvedValue({
       subject: "user:applicant/one",
       access_status: "invited",
       activation_token: "one-time-token",
+      email: "applicant@example.com",
     });
 
     const response = await POST(
@@ -42,7 +50,10 @@ describe("admin waitlist review BFF", () => {
       subject: "user:applicant/one",
       access_status: "invited",
       activation_token: "one-time-token",
+      email: "applicant@example.com",
+      email_delivery: "sent",
     });
+    expect(sendActivationEmail).toHaveBeenCalledWith("applicant@example.com", "one-time-token");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(mockedBackendFetch).toHaveBeenCalledWith(
       "paper",
@@ -52,6 +63,33 @@ describe("admin waitlist review BFF", () => {
         body: { decision: "approve", expected_reviewed_at: null },
       },
     );
+  });
+
+  it("preserves approval when SMTP fails", async () => {
+    mockedBackendFetch.mockResolvedValue({
+      access_status: "invited",
+      email: "a@example.com",
+      activation_token: "token",
+    });
+    vi.mocked(sendActivationEmail).mockResolvedValue("failed");
+    const response = await POST(
+      request({ decision: "approve", expected_reviewed_at: null }),
+      context(),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      access_status: "invited",
+      activation_token: "token",
+      email_delivery: "failed",
+    });
+  });
+
+  it("does not send for rejected or conflicting reviews", async () => {
+    mockedBackendFetch.mockResolvedValue({ access_status: "rejected" });
+    await POST(request({ decision: "reject", expected_reviewed_at: null }), context());
+    mockedBackendFetch.mockRejectedValue({ status: 409 });
+    await POST(request({ decision: "approve", expected_reviewed_at: null }), context());
+    expect(sendActivationEmail).not.toHaveBeenCalled();
   });
 
   it("rejects malformed decisions before calling the backend", async () => {
